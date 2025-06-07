@@ -268,7 +268,7 @@ class ASDFDBManager:
         self._execute_query(query, params)
         logging.info(f"Updated status for artifact ID '{artifact_id}' to '{status}'.")
 
-        def get_component_counts_by_status(self, project_id: str) -> dict[str, int]:
+    def get_component_counts_by_status(self, project_id: str) -> dict[str, int]:
         """
         Gets the count of artifacts for each status for a given project.
         This supports the "Development Progress Summary" report.
