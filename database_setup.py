@@ -34,8 +34,29 @@ def create_tables(conn):
                 );
             """)
             logging.info("Table 'Projects' created successfully or already exists.")
+            # SQL statement to create the Artifacts table (Record-of-Work-Done)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS Artifacts (
+                    artifact_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id TEXT NOT NULL,
+                    file_path TEXT,
+                    artifact_name TEXT,
+                    artifact_type TEXT,
+                    signature TEXT,
+                    short_description TEXT,
+                    version INTEGER,
+                    status TEXT,
+                    last_modified_timestamp TEXT NOT NULL,
+                    commit_hash TEXT,
+                    micro_spec_id TEXT,
+                    dependencies TEXT,
+                    unit_test_status TEXT,
+                    FOREIGN KEY (project_id) REFERENCES Projects (project_id)
+                );
+            """)
+            logging.info("Table 'Artifacts' created successfully or already exists.")
         except Error as e:
-            logging.error(f"Error creating 'Projects' table: {e}")
+            logging.error(f"Error creating tables: {e}")
     else:
         logging.error("Database connection is not established.")
 
