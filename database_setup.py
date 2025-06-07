@@ -85,6 +85,18 @@ def create_tables(conn):
                 );
             """)
             logging.info("Table 'FactoryKnowledgeBase' created successfully or already exists.")
+            # SQL statement to create the ProjectHistory table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS ProjectHistory (
+                    history_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    project_id TEXT NOT NULL,
+                    project_name TEXT,
+                    project_root_folder TEXT,
+                    archive_file_path TEXT,
+                    last_stop_timestamp TEXT NOT NULL
+                );
+            """)
+            logging.info("Table 'ProjectHistory' created successfully or already exists.")
         except Error as e:
             logging.error(f"Error creating tables: {e}")
     else:
