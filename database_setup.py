@@ -55,6 +55,17 @@ def create_tables(conn):
                 );
             """)
             logging.info("Table 'Artifacts' created successfully or already exists.")
+            # SQL statement to create the OrchestrationState table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS OrchestrationState (
+                    project_id TEXT PRIMARY KEY,
+                    current_f_phase TEXT,
+                    status_details TEXT,
+                    last_saved_timestamp TEXT NOT NULL,
+                    FOREIGN KEY (project_id) REFERENCES Projects (project_id)
+                );
+            """)
+            logging.info("Table 'OrchestrationState' created successfully or already exists.")
         except Error as e:
             logging.error(f"Error creating tables: {e}")
     else:
