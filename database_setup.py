@@ -66,6 +66,14 @@ def create_tables(conn):
                 );
             """)
             logging.info("Table 'OrchestrationState' created successfully or already exists.")
+            # SQL statement to create the FactoryConfig table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS FactoryConfig (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                );
+            """)
+            logging.info("Table 'FactoryConfig' created successfully or already exists.")
         except Error as e:
             logging.error(f"Error creating tables: {e}")
     else:
