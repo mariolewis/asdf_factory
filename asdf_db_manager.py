@@ -307,6 +307,21 @@ class ASDFDBManager:
         cursor = self._execute_query(query, params)
         return cursor.fetchall()
 
+    def get_all_artifacts_for_project(self, project_id: str) -> list[sqlite3.Row]:
+        """
+        Retrieves all artifact records for a given project, ordered by name.
+        This supports the "Development Progress Summary" report.
+
+        Args:
+            project_id (str): The ID of the project.
+
+        Returns:
+            list[sqlite3.Row]: A list of Row objects for all artifacts in the project.
+        """
+        query = "SELECT * FROM Artifacts WHERE project_id = ? ORDER BY artifact_name"
+        cursor = self._execute_query(query, (project_id,))
+        return cursor.fetchall()
+
     # --- FactoryConfig CRUD Operations ---
 
     def set_config_value(self, key: str, value: str):
