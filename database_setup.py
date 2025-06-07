@@ -74,6 +74,17 @@ def create_tables(conn):
                 );
             """)
             logging.info("Table 'FactoryConfig' created successfully or already exists.")
+            # SQL statement to create the FactoryKnowledgeBase table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS FactoryKnowledgeBase (
+                    learning_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    problem_context TEXT NOT NULL,
+                    solution_or_clarification TEXT NOT NULL,
+                    category TEXT,
+                    creation_timestamp TEXT NOT NULL
+                );
+            """)
+            logging.info("Table 'FactoryKnowledgeBase' created successfully or already exists.")
         except Error as e:
             logging.error(f"Error creating tables: {e}")
     else:
