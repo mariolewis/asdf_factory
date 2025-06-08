@@ -40,7 +40,7 @@ with st.sidebar:
         st.markdown("## Autonomous Software Development Factory")
 
     st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
-    page = st.radio("Navigation", ["Project", "Settings", "Reports"], label_visibility="collapsed")
+    page = st.radio("Navigation", ["Project", "Reports", "Settings"], label_visibility="collapsed")
     st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
 
     st.markdown("<h3 style='color: #FFC300;'>Project Information</h3>", unsafe_allow_html=True)
