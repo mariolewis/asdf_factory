@@ -53,7 +53,7 @@ class TestAgent_AppTarget:
             1.  **Comprehensive Coverage:** Your tests MUST cover the "happy path" (normal successful execution), edge cases (e.g., null inputs, empty lists, boundary values), and error handling (how the code should behave with invalid inputs).
             2.  **Adherence to Coding Standard:** The unit test code you generate MUST follow the same coding standards as the application code.
             3.  **Use Standard Testing Frameworks:** Assume the use of standard testing frameworks for the target language (e.g., pytest for Python, JUnit/Mockito for Java/Kotlin).
-            4.  **Raw Code Output:** Your output MUST BE ONLY the raw source code for the unit tests. Do not include any extra text, explanations, or markdown formatting like ```python ... ```.
+            4.  **Raw Code Output:** Your entire response MUST BE ONLY the raw source code for the unit tests. Do not include any conversational text or explanations outside of the code itself. The code you generate MUST include comments and docstrings as required by the coding standard.
 
             **--- INPUTS ---**
 
@@ -73,6 +73,11 @@ class TestAgent_AppTarget:
             response = model.generate_content(prompt)
 
             return response.text
+
+        except Exception as e:
+            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            print(error_message) # Or use a proper logger
+            return error_message
 
         except Exception as e:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"

@@ -54,7 +54,8 @@ class LogicAgent_AppTarget:
             - The plan must be detailed enough for a developer (or another AI) to write code from it without having to make major assumptions.
             - It must cover the main logic, data handling, and any error conditions mentioned in the spec.
             - It must be language-agnostic. Do not use Python, Java, or any other specific language syntax. Use clear, English-based pseudocode.
-            - Structure the output with clear steps, functions, and logic flow.
+            - Be explicit and low-level in your instructions. Detail loops, conditionals, function/method calls, and variable assignments. Avoid high-level abstract descriptions.
+            - Structure the output with clear steps.
 
             **Micro-Specification to Process:**
             ---

@@ -50,7 +50,7 @@ class CodeAgent_AppTarget:
             **MANDATORY INSTRUCTIONS:**
             1.  **Strictly Adhere to Coding Standard:** You MUST follow all rules in the provided coding standard. This includes naming conventions, formatting, docstrings, comments, and structural principles. This is the highest priority.
             2.  **Implement Only the Provided Logic:** You MUST implement ONLY the logic and steps described in the logical plan. Do not add new features, and do not make assumptions about logic not present in the plan.
-            3.  **Raw Code Output:** Your output MUST BE ONLY the raw source code for the component. Do not include any extra text, explanations, introductions, or markdown formatting like ```python ... ```.
+            3.  **Raw Code Output:** Your entire response MUST BE ONLY the raw source code for the component. Do not include any conversational text or explanations outside of the code itself. The code you generate MUST include comments and docstrings as required by the provided Coding Standard.
 
             **--- INPUTS ---**
 
@@ -70,6 +70,11 @@ class CodeAgent_AppTarget:
             response = model.generate_content(prompt)
 
             return response.text
+
+        except Exception as e:
+            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            print(error_message) # Or use a proper logger
+            return error_message
 
         except Exception as e:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"
