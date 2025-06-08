@@ -81,6 +81,31 @@ class MasterOrchestrator:
             self.current_phase = FactoryPhase.IDLE
             raise
 
+    def set_phase(self, phase_name: str):
+        """
+        Sets the current project phase.
+
+        This provides a controlled way for the GUI or other components to
+        signal a transition in the factory's workflow.
+
+        Args:
+            phase_name (str): The name of the phase to transition to
+                              (e.g., "SPEC_ELABORATION").
+        """
+        if not self.project_id:
+            logging.error("Cannot set phase; no active project.")
+            return
+
+        try:
+            # Find the corresponding Enum member from the string name
+            new_phase = FactoryPhase[phase_name]
+            self.current_phase = new_phase
+            logging.info(f"Project '{self.project_name}' phase changed to: {self.current_phase.name}")
+            # In a future implementation, this would also save the state
+            # to the OrchestrationState table in the database.
+        except KeyError:
+            logging.error(f"Attempted to set an invalid phase: {phase_name}")
+
     def pause_project(self):
         """
         Pauses the currently active project. (Placeholder)
