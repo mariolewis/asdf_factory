@@ -111,6 +111,7 @@ class ASDFDBManager:
             project_id TEXT PRIMARY KEY,
             project_name TEXT NOT NULL,
             creation_timestamp TEXT NOT NULL
+            final_spec_text TEXT
         );
         """
         self._execute_query(create_projects_table)
@@ -222,6 +223,19 @@ class ASDFDBManager:
         query = "SELECT * FROM Projects WHERE project_id = ?"
         cursor = self._execute_query(query, (project_id,))
         return cursor.fetchone()
+
+    def save_final_specification(self, project_id: str, spec_text: str):
+        """
+        Saves the finalized specification text to the project's record.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            spec_text (str): The final, approved specification text.
+        """
+        query = "UPDATE Projects SET final_spec_text = ? WHERE project_id = ?"
+        params = (spec_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved final specification for project ID '{project_id}'.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 
