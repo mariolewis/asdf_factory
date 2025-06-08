@@ -1,3 +1,5 @@
+import google.generativeai as genai
+
 """
 This module contains the CodeAgent_AppTarget class.
 """
@@ -9,11 +11,19 @@ class CodeAgent_AppTarget:
     programming language, adhering to the project's coding standard.
     """
 
-    def __init__(self):
+    def __init__(self, api_key: str):
         """
         Initializes the CodeAgent_AppTarget.
+
+        Args:
+            api_key (str): The Gemini API key for authentication.
         """
-        pass
+        if not api_key:
+            raise ValueError("API key cannot be empty.")
+
+        self.api_key = api_key
+        # Configure the genai library with the API key upon initialization.
+        genai.configure(api_key=self.api_key)
 
     def generate_code_for_component(self, logic_plan: str, coding_standard: str) -> str:
         """
@@ -29,8 +39,39 @@ class CodeAgent_AppTarget:
 
         Returns:
             str: The generated source code for the component.
+                 Returns an error message string if an API call fails.
         """
-        # TODO: Implement the logic to call the Gemini API to generate the source code
-        # based on the logic plan and coding standard, as per F-Phase 3.
+        try:
+            model = genai.GenerativeModel('gemini-pro')
 
-        pass
+            prompt = f"""
+            You are an expert software developer. Your task is to write clean, efficient, and production-ready source code based on a provided logical plan and a strict coding standard.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Strictly Adhere to Coding Standard:** You MUST follow all rules in the provided coding standard. This includes naming conventions, formatting, docstrings, comments, and structural principles. This is the highest priority.
+            2.  **Implement Only the Provided Logic:** You MUST implement ONLY the logic and steps described in the logical plan. Do not add new features, and do not make assumptions about logic not present in the plan.
+            3.  **Raw Code Output:** Your output MUST BE ONLY the raw source code for the component. Do not include any extra text, explanations, introductions, or markdown formatting like ```python ... ```.
+
+            **--- INPUTS ---**
+
+            **1. The Logical Plan to Implement:**
+            ```
+            {logic_plan}
+            ```
+
+            **2. The Coding Standard to Follow:**
+            ```
+            {coding_standard}
+            ```
+
+            **--- Generated Source Code ---**
+            """
+
+            response = model.generate_content(prompt)
+
+            return response.text
+
+        except Exception as e:
+            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            print(error_message) # Or use a proper logger
+            return error_message
