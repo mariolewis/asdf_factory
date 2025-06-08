@@ -11,6 +11,8 @@ Git repository. (ASDF PRD v0.2, Phase 0)
 
 import streamlit as st
 import os
+import subprocess
+
 
 class EnvironmentSetupAgent_AppTarget:
     """
@@ -26,6 +28,46 @@ class EnvironmentSetupAgent_AppTarget:
         """Initializes the EnvironmentSetupAgent_AppTarget."""
         pass
 
+    def _run_git_initialization_step(self):
+        """
+        Handles the Git repository initialization step.
+        This is a private method intended for use by run_setup_flow.
+        """
+        st.subheader("Initialize Git Repository")
+
+        project_path = st.session_state.project_root_path
+        git_dir = os.path.join(project_path, '.git')
+
+        # Check if git is already initialized and update session state accordingly.
+        if os.path.exists(git_dir):
+            st.session_state.git_initialized = True
+
+        if st.session_state.git_initialized:
+            st.success("Git repository is initialized in the project folder.")
+        else:
+            st.info("The project folder is not yet a Git repository. This is a required step.")
+            if st.button("Initialize Git Repository"):
+                try:
+                    # Using subprocess to run the 'git init' command.
+                    # The 'cwd' argument sets the current working directory for the command.
+                    result = subprocess.run(
+                        ['git', 'init'],
+                        cwd=project_path,
+                        capture_output=True,
+                        text=True,
+                        check=True
+                    )
+                    st.session_state.git_initialized = True
+                    st.success("Successfully initialized an empty Git repository.")
+                    st.code(result.stdout)
+                    st.rerun()
+                except FileNotFoundError:
+                    st.error("Error: The 'git' command was not found. Is Git installed and in your system's PATH variable?")
+                except subprocess.CalledProcessError as e:
+                    st.error(f"Failed to initialize Git repository. Error:\n{e.stderr}")
+                except Exception as e:
+                    st.error(f"An unexpected error occurred: {e}")
+
     def run_setup_flow(self):
         """
         Executes the full environment setup flow, starting with defining the project path.
@@ -39,17 +81,20 @@ class EnvironmentSetupAgent_AppTarget:
         # Using a subheader for a sub-step, per our formatting discussion.
         st.subheader("Define Target Project Root Folder")
 
-        # Initialize required keys in session state for this step.
-        # [cite_start]Adheres to Streamlit best practices for state management. [cite: 491, 492]
+        # Initialize required keys in session state for this flow.
         if 'project_root_path' not in st.session_state:
             st.session_state.project_root_path = None
         if 'path_confirmed' not in st.session_state:
             st.session_state.path_confirmed = False
+        if 'git_initialized' not in st.session_state:
+            st.session_state.git_initialized = False
 
-        # If path is already confirmed, show a success message and stop.
-        # The flow will continue to the next step in a future implementation.
         if st.session_state.path_confirmed:
             st.success(f"Project root folder confirmed: `{st.session_state.project_root_path}`")
+            # --- Divider for visual separation ---
+            st.divider()
+            # Call the next step in the flow
+            self._run_git_initialization_step()
         else:
             path_input = st.text_input(
                 "Enter the full local path for the new target application's root folder:",
@@ -60,19 +105,11 @@ class EnvironmentSetupAgent_AppTarget:
             if st.button("Confirm Project Folder"):
                 if path_input:
                     try:
-                        # Sanitize and normalize the path for the OS
                         normalized_path = os.path.normpath(path_input)
-
-                        # Create the directory. exist_ok=True prevents an error if it already exists.
                         os.makedirs(normalized_path, exist_ok=True)
-
-                        # [cite_start]Store the confirmed path in the session state [cite: 491]
                         st.session_state.project_root_path = normalized_path
                         st.session_state.path_confirmed = True
-
-                        # Force an immediate rerun of the script to reflect the new state
                         st.rerun()
-
                     except Exception as e:
                         st.error(f"An error occurred while creating the directory: {e}")
                         st.error("Please check the path for invalid characters or permission issues and try again.")
