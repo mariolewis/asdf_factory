@@ -165,12 +165,36 @@ if page == "Project":
                             st.markdown(message["content"])
 
                     # Get PM's input
-                    if prompt := st.chat_input("Provide clarifications or ask questions..."):
-                        # Add PM's message to chat history
+                    if prompt := st.chat_input("Provide clarifications to address the points above..."):
+                        # Add PM's message to chat history for context
                         st.session_state.clarification_chat.append({"role": "user", "content": prompt})
-                        # TODO: In the next step, this prompt will be sent back to the agent
-                        # to generate a refined spec or ask more questions.
-                        st.rerun()
+
+                        with st.spinner("AI is refining the specification based on your feedback..."):
+                            try:
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                if not api_key:
+                                    st.error("Cannot proceed. LLM API Key is not set in Settings.")
+                                else:
+                                    agent = SpecClarificationAgent(api_key=api_key)
+                                    revised_spec = agent.refine_specification(
+                                        original_spec_text=st.session_state.specification_text,
+                                        issues_found=st.session_state.clarification_issues,
+                                        pm_clarification=prompt
+                                    )
+                                    # This is the core of the loop: the spec is updated with the new version.
+                                    st.session_state.specification_text = revised_spec
+
+                                    # Clear the issues and chat to reset the loop for re-analysis.
+                                    st.session_state.clarification_issues = None
+                                    st.session_state.clarification_chat = []
+
+                                    st.success("✅ Specification draft updated.")
+                                    time.sleep(2) # Give user time to read the success message.
+                                    st.rerun()
+
+                            except Exception as e:
+                                st.error(f"An error occurred during refinement: {e}")
 
                 # --- Button to start the loop ---
                 else:
