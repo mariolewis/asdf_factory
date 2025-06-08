@@ -96,7 +96,41 @@ class EnvironmentSetupAgent_AppTarget:
 
         # Display guidance based on selected language
         if st.session_state.language == "Python":
-            st.info("Guidance for setting up a Python virtual environment and installing dependencies via `pip` will be provided here.", icon="🐍")
+            with st.expander("Python Environment Setup Guide", expanded=True):
+            st.markdown(f"""
+                **Best Practice:** It is highly recommended to use a virtual environment for each Python project to manage dependencies separately.
+
+                **Step 1: Verify Python Installation**
+
+                [cite_start]As per the ASDF PRD, we must first check if the required tool is already installed[cite: 72]. Open your command prompt or terminal and run the following command to ensure you have Python 3.9+ installed:
+                """)
+            st.code("python --version", language="bash")
+            st.markdown("""
+                If Python is not installed or the version is older than 3.9, please install or update it from the official [Python website](https://www.python.org/).
+
+                **Step 2: Create a Virtual Environment**
+
+                Navigate to your project's root folder (`{st.session_state.project_root_path}`) in your terminal and run this command:
+                """)
+            st.code("python -m venv venv", language="bash")
+            st.markdown("This will create a `venv` folder inside your project directory. This is a crucial step for isolating project dependencies.")
+
+            st.markdown("""
+                **Step 3: Activate the Virtual Environment**
+
+                To start using the virtual environment, you need to activate it.
+                - **On Windows:**
+                """)
+            st.code(".\\venv\\Scripts\\activate", language="bash")
+            st.markdown("- **On macOS/Linux:**")
+            st.code("source venv/bin/activate", language="bash")
+            st.markdown("Your terminal prompt should now change to indicate that the virtual environment is active. All subsequent `pip` commands will install packages into this environment.")
+
+            st.markdown("""
+                **Step 4: Create a Dependencies File**
+
+                With your virtual environment active, please create an empty file named `requirements.txt` in your project's root folder. This file will be used later by ASDF to manage your project's Python dependencies.
+                """)
         elif st.session_state.language == "Kotlin":
             st.info("Guidance for setting up a Kotlin project with Gradle or Maven will be provided here.", icon="💡")
 
