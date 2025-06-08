@@ -336,6 +336,29 @@ class ASDFDBManager:
         cursor = self._execute_query(query, (project_id,))
         return cursor.fetchall()
 
+    def add_or_update_artifact(self, artifact_data: dict):
+        """
+        Creates a new artifact record or replaces an existing one using the primary key.
+        This effectively handles both INSERT and UPDATE operations (UPSERT).
+
+        Args:
+            artifact_data (dict): A dictionary of the artifact's data.
+                                  It MUST include the 'artifact_id' primary key.
+        """
+        if 'artifact_id' not in artifact_data:
+            raise ValueError("artifact_data must contain 'artifact_id' for an add_or_update operation.")
+
+        # This uses the dictionary keys for columns and question marks for placeholders
+        columns = ', '.join(artifact_data.keys())
+        placeholders = ', '.join('?' * len(artifact_data))
+
+        # INSERT OR REPLACE is a SQLite-specific command that simplifies UPSERT logic.
+        query = f"INSERT OR REPLACE INTO Artifacts ({columns}) VALUES ({placeholders})"
+
+        params = tuple(artifact_data.values())
+        self._execute_query(query, params)
+        logging.info(f"Successfully added or updated artifact with ID '{artifact_data['artifact_id']}'.")
+
     # --- FactoryConfig CRUD Operations ---
 
     def set_config_value(self, key: str, value: str):
