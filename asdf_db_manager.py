@@ -110,7 +110,7 @@ class ASDFDBManager:
         CREATE TABLE IF NOT EXISTS Projects (
             project_id TEXT PRIMARY KEY,
             project_name TEXT NOT NULL,
-            creation_timestamp TEXT NOT NULL
+            creation_timestamp TEXT NOT NULL,
             final_spec_text TEXT
         );
         """
