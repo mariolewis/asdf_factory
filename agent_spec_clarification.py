@@ -122,6 +122,59 @@ class SpecClarificationAgent:
             logging.error(f"Gemini API call failed during issue identification: {e}")
             raise
 
+    def refine_specification(self, original_spec_text: str, issues_found: str, pm_clarification: str) -> str:
+        """
+        Refines the specification draft based on PM feedback.
+
+        This method takes the original spec, the issues identified by the AI,
+        and the PM's clarification, and generates a new version of the spec.
+
+        Args:
+            original_spec_text: The current version of the specification.
+            issues_found: The list of issues the AI previously identified.
+            pm_clarification: The PM's response to address the issues.
+
+        Returns:
+            The revised specification text.
+
+        Raises:
+            Exception: If the API call fails or returns an empty response.
+        """
+        prompt = textwrap.dedent(f"""
+            As an expert software architect, your task is to revise a software specification draft.
+            You have the original draft, a list of issues previously identified with it, and a set of clarifications from the Product Manager (PM).
+
+            Your goal is to integrate the PM's clarifications to resolve the identified issues and produce a new, more complete, and unambiguous version of the specification. Do not omit any parts of the original specification that were not discussed; only modify the parts that are affected by the clarifications. Ensure the new version is a complete, standalone document.
+
+            **Original Specification Draft:**
+            ---
+            {original_spec_text}
+            ---
+
+            **Issues You Identified:**
+            ---
+            {issues_found}
+            ---
+
+            **Product Manager's Clarifications:**
+            ---
+            {pm_clarification}
+            ---
+
+            Please provide the complete, revised specification draft below.
+        """)
+
+        try:
+            logging.info("Calling Gemini API to refine the specification...")
+            response = self.model.generate_content(prompt)
+            if not response.text:
+                raise ValueError("The AI model returned an empty response during refinement.")
+            logging.info("Successfully received refined specification from API.")
+            return response.text
+        except Exception as e:
+            logging.error(f"Gemini API call failed during spec refinement: {e}")
+            raise
+
     def run_clarification_loop(self, spec_text: str):
         """
         Manages the iterative loop of analyzing the spec, asking questions,
