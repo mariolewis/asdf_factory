@@ -77,6 +77,51 @@ class SpecClarificationAgent:
             # Re-raise the exception so the UI layer can catch it and display an error.
             raise
 
+    def identify_potential_issues(self, spec_text: str) -> str:
+        """
+        Analyzes a specification draft to identify ambiguities, contradictions,
+        or underspecified areas by calling the generative AI model.
+
+        Args:
+            spec_text: The full text of the specification draft.
+
+        Returns:
+            A string containing a list of potential issues identified by the AI.
+
+        Raises:
+            Exception: If the API call fails or returns an empty response.
+        """
+        prompt = textwrap.dedent(f"""
+            As an expert requirements analyst, please review the following software specification draft.
+            Your task is to identify and list any ambiguities, contradictions, underspecified features, or missing information that would prevent a developer from building the application without making assumptions.
+            Pay close attention to:
+            - Vague requirements (e.g., "fast", "user-friendly").
+            - Undefined user flows.
+            - Incomplete or conflicting business logic.
+            - Missing details in the database schema (e.g., missing columns, unclear relationships, unspecified data types).
+            - Unclear error handling conditions.
+
+            Present your findings as a numbered list of issues. For each issue, briefly explain the problem. If you find no issues, please state that the specification appears to be clear and complete.
+
+            The specification draft is:
+            ---
+            {spec_text}
+            ---
+        """)
+
+        try:
+            logging.info("Calling Gemini API to identify potential spec issues...")
+            response = self.model.generate_content(prompt)
+
+            if not response.text:
+                raise ValueError("The AI model returned an empty response when identifying issues.")
+
+            logging.info("Successfully received issue analysis from API.")
+            return response.text
+        except Exception as e:
+            logging.error(f"Gemini API call failed during issue identification: {e}")
+            raise
+
     def run_clarification_loop(self, spec_text: str):
         """
         Manages the iterative loop of analyzing the spec, asking questions,
