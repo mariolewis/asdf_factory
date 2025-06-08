@@ -28,10 +28,7 @@ class EnvironmentSetupAgent_AppTarget:
 
     def run_setup_flow(self):
         """
-        Executes the full environment setup flow.
-
-        This method will be called by the MasterOrchestrator to start
-        the setup process for a new target application.
+        Executes the full environment setup flow, starting with defining the project path.
         """
         st.header("Phase 0: Target Application Environment Setup")
         st.write(
@@ -39,6 +36,45 @@ class EnvironmentSetupAgent_AppTarget:
             "for the new application you want to build."
         )
 
-        # The detailed interactive steps for guiding the user will be
-        # implemented here sequentially.
-        st.info("Agent logic for setup steps will be implemented here.", icon="ℹ️")
+        # Using a subheader for a sub-step, per our formatting discussion.
+        st.subheader("Define Target Project Root Folder")
+
+        # Initialize required keys in session state for this step.
+        # [cite_start]Adheres to Streamlit best practices for state management. [cite: 491, 492]
+        if 'project_root_path' not in st.session_state:
+            st.session_state.project_root_path = None
+        if 'path_confirmed' not in st.session_state:
+            st.session_state.path_confirmed = False
+
+        # If path is already confirmed, show a success message and stop.
+        # The flow will continue to the next step in a future implementation.
+        if st.session_state.path_confirmed:
+            st.success(f"Project root folder confirmed: `{st.session_state.project_root_path}`")
+        else:
+            path_input = st.text_input(
+                "Enter the full local path for the new target application's root folder:",
+                placeholder="e.g., E:\\ASDF_Projects\\MyNewApp",
+                help="This is the main directory where all the code for your new application will be stored."
+            )
+
+            if st.button("Confirm Project Folder"):
+                if path_input:
+                    try:
+                        # Sanitize and normalize the path for the OS
+                        normalized_path = os.path.normpath(path_input)
+
+                        # Create the directory. exist_ok=True prevents an error if it already exists.
+                        os.makedirs(normalized_path, exist_ok=True)
+
+                        # [cite_start]Store the confirmed path in the session state [cite: 491]
+                        st.session_state.project_root_path = normalized_path
+                        st.session_state.path_confirmed = True
+
+                        # Force an immediate rerun of the script to reflect the new state
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"An error occurred while creating the directory: {e}")
+                        st.error("Please check the path for invalid characters or permission issues and try again.")
+                else:
+                    st.warning("Please enter a path before confirming.")
