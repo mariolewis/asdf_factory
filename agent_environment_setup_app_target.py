@@ -44,6 +44,10 @@ class EnvironmentSetupAgent_AppTarget:
 
         if st.session_state.git_initialized:
             st.success("Git repository is initialized in the project folder.")
+            # --- Divider for visual separation ---
+            st.divider()
+            # Call the next step in the flow
+            self._run_tech_stack_setup_step()
         else:
             st.info("The project folder is not yet a Git repository. This is a required step.")
             if st.button("Initialize Git Repository"):
@@ -67,6 +71,34 @@ class EnvironmentSetupAgent_AppTarget:
                     st.error(f"Failed to initialize Git repository. Error:\n{e.stderr}")
                 except Exception as e:
                     st.error(f"An unexpected error occurred: {e}")
+
+    def _run_tech_stack_setup_step(self):
+        """
+        Handles the technology stack identification and setup guidance.
+        """
+        st.subheader("Technology Stack Setup")
+
+        # Initialize session state for this step
+        if 'language' not in st.session_state:
+            st.session_state.language = None
+        if 'frameworks' not in st.session_state:
+            st.session_state.frameworks = []
+
+        # Part 1: Select Programming Language
+        st.write("First, please specify the primary programming language for your target application.")
+        language = st.selectbox(
+            "Primary Language:",
+            ["", "Python", "Kotlin"], # Add other languages here in the future
+            key='language_select'
+        )
+
+        st.session_state.language = language
+
+        # Display guidance based on selected language
+        if st.session_state.language == "Python":
+            st.info("Guidance for setting up a Python virtual environment and installing dependencies via `pip` will be provided here.", icon="🐍")
+        elif st.session_state.language == "Kotlin":
+            st.info("Guidance for setting up a Kotlin project with Gradle or Maven will be provided here.", icon="💡")
 
     def run_setup_flow(self):
         """
