@@ -91,41 +91,66 @@ if page == "Project":
 
         # --- Phase: Specification Elaboration ---
         elif current_phase_name == "SPEC_ELABORATION":
-            st.header("Phase 1: Specification Elaboration")
-            st.markdown(
-                "Please upload the specification documents for your target application. "
-                [cite_start]"Supported formats are `.txt`, `.md`, and `.docx`. [cite: 341, 686, 1031, 1376]"
-            )
-
-            uploaded_files = st.file_uploader(
-                "Upload Specification Documents",
-                type=["txt", "md", "docx"],
-                accept_multiple_files=True
-            )
+            st.header("Phase 1: Project Initialization & Specification Elaboration")
+            st.markdown("Please provide the initial specification for your target application using one of the methods below.")
 
             if 'specification_text' not in st.session_state:
                 st.session_state.specification_text = None
 
-            if uploaded_files:
-                bootstrap_agent = ProjectBootstrapAgent()
-                extracted_text, messages = bootstrap_agent.extract_text_from_files(uploaded_files)
+            # Create two tabs for the two input modes as per PRD F-Phase 1.
+            tab1, tab2 = st.tabs(["Upload Specification Documents", "Enter Brief Description"])
 
-                for msg in messages:
-                    st.warning(msg)
+            with tab1:
+                st.markdown("Upload one or more documents containing your application's specifications. Supported formats are `.txt`, `.md`, and `.docx`.")
+                uploaded_files = st.file_uploader(
+                    "Upload Specification Documents",
+                    type=["txt", "md", "docx"],
+                    accept_multiple_files=True,
+                    label_visibility="collapsed"
+                )
+                if st.button("Process Uploaded Documents"):
+                    if uploaded_files:
+                        bootstrap_agent = ProjectBootstrapAgent()
+                        extracted_text, messages = bootstrap_agent.extract_text_from_files(uploaded_files)
+                        for msg in messages:
+                            st.warning(msg)
+                        if extracted_text:
+                            st.session_state.specification_text = extracted_text
+                            st.rerun()
+                    else:
+                        st.warning("Please upload at least one document.")
 
-                if extracted_text:
-                    st.session_state.specification_text = extracted_text
-                    st.success("✅ Files processed successfully!")
-                    with st.expander("View Extracted Specification Text"):
-                        st.text_area("", value=extracted_text, height=300, disabled=True)
+            with tab2:
+                st.markdown("Enter a brief, one or two paragraph description of your target application. The AI will expand this into a draft specification.")
+                brief_desc_input = st.text_area("Brief Description", height=150, key="brief_desc")
+                if st.button("Process Brief Description"):
+                    if brief_desc_input:
+                        with st.spinner("AI is expanding the description into a draft specification..."):
+                            try:
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                if not api_key:
+                                    st.error("Cannot proceed. LLM API Key is not set in Settings.")
+                                else:
+                                    clarification_agent = SpecClarificationAgent(api_key=api_key)
+                                    expanded_text = clarification_agent.expand_brief_description(brief_desc_input)
+                                    st.session_state.specification_text = expanded_text
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"An error occurred while communicating with the AI: {e}")
+                    else:
+                        st.warning("Please enter a description.")
 
+            st.divider()
+
+            # This section appears below the tabs, once specification_text is populated from either path.
             if st.session_state.specification_text:
+                st.subheader("Processed Specification Draft")
+                st.text_area("", value=st.session_state.specification_text, height=300, disabled=True, key="spec_draft_display")
                 st.divider()
-                if st.button("Proceed to Specification Clarification", use_container_width=True):
-                    # This will trigger the next agent in a future step
-                    st.info("This concludes the bootstrap process. The next step will be the clarification loop.")
-                    # st.session_state.orchestrator.set_phase("PLANNING")
-                    # st.rerun()
+                if st.button("Begin Specification Clarification Loop", use_container_width=True):
+                    # This will trigger the main clarification loop in a future step.
+                    st.info("This concludes the initial input step. The next step will be the clarification loop.")
 
         # --- Default View for other phases ---
         else:
