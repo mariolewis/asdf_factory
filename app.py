@@ -159,6 +159,32 @@ if page == "Project":
                 if st.session_state.clarification_issues:
                     st.subheader("Clarification Required")
 
+                    st.markdown("Once all issues are resolved and the draft below is final, approve it to proceed.")
+                    if st.button("✅ Approve Specification and Proceed to Planning", use_container_width=True, type="primary"):
+                        with st.spinner("Finalizing specification and moving to next phase..."):
+                            try:
+                                # Save the final spec to the DB
+                                with st.session_state.orchestrator.db_manager as db:
+                                    db.save_final_specification(
+                                        st.session_state.orchestrator.project_id,
+                                        st.session_state.specification_text
+                                    )
+                                # Set the new phase
+                                st.session_state.orchestrator.set_phase("PLANNING")
+
+                                # Cleanup session state for this phase
+                                for key in ['specification_text', 'clarification_issues', 'clarification_chat', 'spec_draft_display', 'brief_desc']:
+                                    if key in st.session_state:
+                                        del st.session_state[key]
+
+                                st.success("Specification Approved!")
+                                time.sleep(2)
+                                st.rerun()
+
+                            except Exception as e:
+                                st.error(f"An error occurred during finalization: {e}")
+                    st.divider()
+
                     # Display chat history for the clarification
                     for message in st.session_state.clarification_chat:
                         with st.chat_message(message["role"]):
