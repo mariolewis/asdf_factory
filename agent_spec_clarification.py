@@ -8,6 +8,8 @@ PM to resolve ambiguities in a specification draft, including database details.
 (ASDF Dev Plan v0.2, F-Dev 2.3)
 """
 
+import logging
+import textwrap
 import google.generativeai as genai
 from typing import List
 
@@ -35,19 +37,45 @@ class SpecClarificationAgent:
 
     def expand_brief_description(self, brief_description: str) -> str:
         """
-        Expands a brief user description into a detailed draft specification.
-        (Placeholder for LLM call)
-        [cite_start](ASDF PRD v0.2, Phase 1, Option B) [cite: 210, 213]
+        Expands a brief user description into a detailed draft specification
+        by calling the generative AI model.
+        (ASDF PRD v0.2, Phase 1, Option B)
+
+        Args:
+            brief_description: The user-provided brief description.
+
+        Returns:
+            The AI-generated detailed specification draft as a string.
+
+        Raises:
+            Exception: If the API call fails or returns an empty response.
         """
-        # TODO: Implement the LLM call to expand the description.
-        prompt = f"Expand the following brief application description into a detailed, structured draft specification, including any obvious entities that would require database tables. The description is: '{brief_description}'"
+        # The prompt instructs the AI on its role and the required output format,
+        # including the critical requirement for database table specs.
+        prompt = textwrap.dedent(f"""
+            As an expert software architect, expand the following brief application description into a detailed, structured draft specification.
+            The draft should be comprehensive and well-organized, suitable for a development team to begin work.
+            Crucially, if the description implies the need for data storage, include a dedicated 'Database Schema' section with detailed specifications for the necessary database tables, including column names, data types (e.g., TEXT, INTEGER, REAL, BLOB), and descriptions for each column.
 
-        # In a real run, we would get the response from the model.
-        # response = self.model.generate_content(prompt)
-        # return response.text
+            The user's brief description is:
+            ---
+            {brief_description}
+            ---
+        """)
 
-        # Placeholder response:
-        return f"// This is a placeholder for the AI-generated expanded specification based on: '{brief_description}'"
+        try:
+            logging.info("Calling Gemini API to expand brief description...")
+            response = self.model.generate_content(prompt)
+
+            if not response.text:
+                raise ValueError("The AI model returned an empty response.")
+
+            logging.info("Successfully received expanded specification from API.")
+            return response.text
+        except Exception as e:
+            logging.error(f"Gemini API call failed during spec expansion: {e}")
+            # Re-raise the exception so the UI layer can catch it and display an error.
+            raise
 
     def run_clarification_loop(self, spec_text: str):
         """
