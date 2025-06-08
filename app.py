@@ -143,14 +143,53 @@ if page == "Project":
 
             st.divider()
 
-            # This section appears below the tabs, once specification_text is populated from either path.
+            # This section appears below the tabs, once specification_text is populated.
             if st.session_state.specification_text:
                 st.subheader("Processed Specification Draft")
                 st.text_area("", value=st.session_state.specification_text, height=300, disabled=True, key="spec_draft_display")
                 st.divider()
-                if st.button("Begin Specification Clarification Loop", use_container_width=True):
-                    # This will trigger the main clarification loop in a future step.
-                    st.info("This concludes the initial input step. The next step will be the clarification loop.")
+
+                # Initialize session state keys for the clarification loop
+                if 'clarification_issues' not in st.session_state:
+                    st.session_state.clarification_issues = None
+                if 'clarification_chat' not in st.session_state:
+                    st.session_state.clarification_chat = []
+
+                # --- Main Clarification Loop UI ---
+                if st.session_state.clarification_issues:
+                    st.subheader("Clarification Required")
+
+                    # Display chat history for the clarification
+                    for message in st.session_state.clarification_chat:
+                        with st.chat_message(message["role"]):
+                            st.markdown(message["content"])
+
+                    # Get PM's input
+                    if prompt := st.chat_input("Provide clarifications or ask questions..."):
+                        # Add PM's message to chat history
+                        st.session_state.clarification_chat.append({"role": "user", "content": prompt})
+                        # TODO: In the next step, this prompt will be sent back to the agent
+                        # to generate a refined spec or ask more questions.
+                        st.rerun()
+
+                # --- Button to start the loop ---
+                else:
+                    if st.button("Analyze Specification & Begin Clarification", use_container_width=True):
+                        with st.spinner("AI is analyzing the specification for issues..."):
+                            try:
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                if not api_key:
+                                    st.error("Cannot proceed. LLM API Key is not set in Settings.")
+                                else:
+                                    agent = SpecClarificationAgent(api_key=api_key)
+                                    issues = agent.identify_potential_issues(st.session_state.specification_text)
+                                    st.session_state.clarification_issues = issues
+                                    # Add the AI's findings as the first message in the clarification chat
+                                    st.session_state.clarification_chat.append({"role": "assistant", "content": issues})
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"An error occurred during analysis: {e}")
 
         # --- Default View for other phases ---
         else:
