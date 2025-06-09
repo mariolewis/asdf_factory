@@ -286,7 +286,8 @@ if page == "Project":
             with col1:
                 if st.button("▶️ Proceed", use_container_width=True, type="primary"):
                     st.toast("Proceeding with component development...")
-                    # TODO: Add call to orchestrator to handle 'proceed' logic.
+                    st.session_state.orchestrator.handle_proceed_action()
+                    st.rerun()
 
             with col2:
                 if st.button("⏸️ Pause", use_container_width=True):
@@ -294,11 +295,11 @@ if page == "Project":
                     st.session_state.orchestrator.pause_project()
                     st.rerun()
 
-
             with col3:
                 if st.button("🔁 Request Change", use_container_width=True):
                     st.toast("Initiating change management workflow...")
-                    # TODO: Add call to orchestrator to handle 'change' logic.
+                    st.session_state.orchestrator.handle_change_request_action()
+                    st.rerun()
 
             with col4:
                 if st.button("⏹️ Discontinue", use_container_width=True):

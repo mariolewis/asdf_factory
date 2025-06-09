@@ -14,6 +14,8 @@ class FactoryPhase(Enum):
     ENV_SETUP_TARGET_APP = auto()
     SPEC_ELABORATION = auto()
     PLANNING = auto()
+    GENESIS = auto()
+    CHANGE_MANAGEMENT = auto()
     # Add other phases as they are developed
 
 class MasterOrchestrator:
@@ -105,6 +107,36 @@ class MasterOrchestrator:
             # to the OrchestrationState table in the database.
         except KeyError:
             logging.error(f"Attempted to set an invalid phase: {phase_name}")
+
+    def handle_proceed_action(self):
+        """
+        Handles the logic for when the PM clicks 'Proceed' at a checkpoint.
+
+        This is a placeholder for the core logic of F-Phase 3 where the
+        orchestrator would fetch the next component from the plan and
+        invoke the necessary development agents.
+        """
+        if self.current_phase == FactoryPhase.GENESIS:
+            logging.info("PM chose to 'Proceed'. Orchestrator will now begin development of the next component.")
+            # TODO: Implement logic to get the next component from the dev plan
+            # and kick off the LogicAgent, CodeAgent, etc.
+            pass
+        else:
+            logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
+
+    def handle_change_request_action(self):
+        """
+        Handles the logic for when the PM clicks 'Request Change' at a checkpoint.
+
+        As per the PRD, this initiates the Change Management pipeline (F-Phase 6).
+        """
+        if self.current_phase == FactoryPhase.GENESIS:
+            logging.info("PM chose to 'Request Change'. Invoking the Change Management pipeline.")
+            self.set_phase("CHANGE_MANAGEMENT")
+            # TODO: Implement logic to hand off control to the ImpactAnalysisAgent.
+            pass
+        else:
+            logging.warning(f"Received 'Request Change' action in an unexpected phase: {self.current_phase.name}")
 
     def pause_project(self):
         """
