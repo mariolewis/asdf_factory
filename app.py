@@ -281,7 +281,7 @@ if page == "Project":
             """)
 
             # Create columns for the buttons for a clean layout.
-            col1, col2, col3, col4, _ = st.columns([1, 1, 1, 1, 3])
+            col1, col2, col3, col4, col5 = st.columns(5)
 
             with col1:
                 if st.button("▶️ Proceed", use_container_width=True, type="primary"):
@@ -290,22 +290,184 @@ if page == "Project":
                     st.rerun()
 
             with col2:
+                if st.button("✍️ Raise CR", use_container_width=True):
+                    st.toast("Raising new Change Request...")
+                    st.session_state.orchestrator.handle_raise_cr_action()
+                    st.rerun()
+
+            with col3:
+                if st.button("🔁 Implement CR", use_container_width=True):
+                    st.toast("Opening Change Request Register...")
+                    # TODO: Add call to orchestrator to handle 'Implement CR' logic.
+                    st.rerun()
+
+            with col4:
                 if st.button("⏸️ Pause", use_container_width=True):
                     st.toast("Pausing factory operations...")
                     st.session_state.orchestrator.pause_project()
                     st.rerun()
 
-            with col3:
-                if st.button("🔁 Request Change", use_container_width=True):
-                    st.toast("Initiating change management workflow...")
-                    st.session_state.orchestrator.handle_change_request_action()
-                    st.rerun()
-
-            with col4:
+            with col5:
                 if st.button("⏹️ Discontinue", use_container_width=True):
                     st.toast("Discontinuing project...")
                     st.session_state.orchestrator.discontinue_project()
                     st.rerun()
+
+        # --- Phase: Raising a Change Request ---
+        elif current_phase_name == "RAISING_CHANGE_REQUEST":
+            st.header("Phase 6: Raise New Change Request")
+            st.markdown("Please provide a detailed description of the change you are requesting below. This will be logged in the Change Request Register.")
+
+            # Use session state to hold the text area's value to prevent loss on reruns
+            if 'cr_description' not in st.session_state:
+                st.session_state.cr_description = ""
+
+            # The widget's key is separate from the session state variable
+            st.session_state.cr_description = st.text_area(
+                "Change Request Description:",
+                value=st.session_state.cr_description,
+                height=250
+            )
+
+            st.divider()
+            col1, col2, _ = st.columns([1, 1, 5])
+
+            with col1:
+                if st.button("Save Change Request", use_container_width=True, type="primary"):
+                    if st.session_state.cr_description.strip():
+                        if st.session_state.orchestrator.save_new_change_request(st.session_state.cr_description):
+                            st.toast("✅ Change Request saved!")
+                            # Clean up the session state variable and rerun to go back to the Genesis phase
+                            del st.session_state.cr_description
+                            st.rerun()
+                        else:
+                            st.error("Failed to save the Change Request.")
+                    else:
+                        st.warning("The change request description cannot be empty.")
+
+            with col2:
+                if st.button("Cancel", use_container_width=True):
+                    # Clean up the session state variable and return to the Genesis phase
+                    del st.session_state.cr_description
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
+
+        # --- Phase: Implementing a Change Request ---
+        elif current_phase_name == "IMPLEMENTING_CHANGE_REQUEST":
+            st.header("Phase 6: Implement Requested Change")
+            st.markdown("Select a Change Request from the register below to view options.")
+
+            change_requests = st.session_state.orchestrator.get_all_change_requests()
+
+            if not change_requests:
+                st.warning("There are no change requests in the register.")
+            else:
+                # Prepare data for display in a pandas DataFrame
+                cr_data_for_df = []
+                for cr in change_requests:
+                    cr_data_for_df.append({
+                        "ID": cr['cr_id'],
+                        "Status": cr['status'],
+                        "Impact": cr['impact_rating'],
+                        "Description": cr['description'],
+                        "Analysis Summary": cr['impact_analysis_details']
+                    })
+
+                df = pd.DataFrame(cr_data_for_df)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                # Allow PM to select a CR by ID
+                cr_ids = [cr['cr_id'] for cr in change_requests]
+                selected_cr_id = st.selectbox("Select a Change Request ID to action:", options=[""] + cr_ids)
+
+                if selected_cr_id:
+                    selected_cr = next((cr for cr in change_requests if cr['cr_id'] == selected_cr_id), None)
+
+                    st.subheader(f"Actions for CR-{selected_cr_id}")
+
+                    # --- Business Logic for Buttons ---
+                    is_raised_status = selected_cr['status'] == 'RAISED'
+                    has_impact_analysis = selected_cr['impact_rating'] is not None
+
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+                        # "Edit" is only enabled for CRs that have not yet been analyzed.
+                        if st.button("✏️ Edit CR", use_container_width=True, disabled=not is_raised_status):
+                            st.session_state.orchestrator.handle_edit_cr_action(selected_cr_id)
+                            st.rerun()
+
+                    with col2:
+                        # The "Delete" button is also only enabled for "RAISED" CRs.
+                        if st.button("🗑️ Delete CR", use_container_width=True, disabled=not is_raised_status):
+                            with st.popover("Confirm Deletion"):
+                                st.write(f"Are you sure you want to permanently delete CR-{selected_cr_id}?")
+                                if st.button("Yes, Confirm Delete", type="primary"):
+                                    st.session_state.orchestrator.handle_delete_cr_action(selected_cr_id)
+                                    st.toast(f"Change Request {selected_cr_id} deleted.")
+                                    st.rerun()
+
+                    with col3:
+                        if st.button("🔬 Run Impact Analysis", use_container_width=True, disabled=has_impact_analysis):
+                            st.session_state.orchestrator.handle_run_impact_analysis_action(selected_cr_id)
+                            st.toast(f"Impact analysis running for CR-{selected_cr_id}...")
+                            st.rerun()
+
+                    with col4:
+                        if st.button("▶️ Implement CR", use_container_width=True, type="primary", disabled=not has_impact_analysis):
+                            st.session_state.orchestrator.handle_implement_cr_action(selected_cr_id)
+                            st.toast(f"Starting implementation for CR-{selected_cr_id}...")
+                            st.rerun()
+
+            st.divider()
+            if st.button("⬅️ Back to Main Checkpoint"):
+                st.session_state.orchestrator.set_phase("GENESIS")
+                st.rerun()
+
+        # --- Phase: Editing a Change Request ---
+        elif current_phase_name == "EDITING_CHANGE_REQUEST":
+            st.header("Phase 6: Edit Change Request")
+
+            # Get the details of the CR to be edited from the orchestrator
+            cr_details = st.session_state.orchestrator.get_active_cr_details_for_edit()
+
+            if not cr_details:
+                st.error("Error: Could not load Change Request details for editing.")
+                if st.button("⬅️ Back to Register"):
+                    st.session_state.orchestrator.cancel_cr_edit()
+                    st.rerun()
+            else:
+                # Use session state to hold the text area's value.
+                # Initialize it with the existing description only once.
+                if 'cr_edit_description' not in st.session_state:
+                    st.session_state.cr_edit_description = cr_details.get('description', '')
+
+                st.markdown(f"You are editing **CR-{cr_details['cr_id']}**.")
+
+                # The widget's value is bound to the session state variable.
+                st.session_state.cr_edit_description = st.text_area(
+                    "Change Request Description:",
+                    value=st.session_state.cr_edit_description,
+                    height=250
+                )
+
+                st.divider()
+                col1, col2, _ = st.columns([1, 1, 5])
+
+                with col1:
+                    if st.button("Save Changes", use_container_width=True, type="primary"):
+                        if st.session_state.orchestrator.save_edited_change_request(st.session_state.cr_edit_description):
+                            st.toast("✅ Change Request updated!")
+                            del st.session_state.cr_edit_description # Clean up
+                            st.rerun()
+                        else:
+                            st.error("Failed to save changes.")
+
+                with col2:
+                    if st.button("Cancel", use_container_width=True):
+                        st.session_state.orchestrator.cancel_cr_edit()
+                        del st.session_state.cr_edit_description # Clean up
+                        st.rerun()
 
         # --- Default View for other phases ---
         else:

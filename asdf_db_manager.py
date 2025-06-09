@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
+from datetime import datetime
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -105,16 +106,21 @@ class ASDFDBManager:
         """
         logging.info("Attempting to create database tables if they don't exist.")
 
-        # SQL for creating the Projects table
-        create_projects_table = """
-        CREATE TABLE IF NOT EXISTS Projects (
-            project_id TEXT PRIMARY KEY,
-            project_name TEXT NOT NULL,
+        # SQL for creating the ChangeRequestRegister table
+        create_cr_register_table = """
+        CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
+            cr_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            description TEXT NOT NULL,
             creation_timestamp TEXT NOT NULL,
-            final_spec_text TEXT
+            last_modified_timestamp TEXT,
+            status TEXT NOT NULL,
+            impact_rating TEXT,
+            impact_analysis_details TEXT,
+            FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );
         """
-        self._execute_query(create_projects_table)
+        self._execute_query(create_cr_register_table)
 
         # SQL for creating the Artifacts (RoWD) table
         create_artifacts_table = """
@@ -188,6 +194,21 @@ class ASDFDBManager:
         """
         self._execute_query(create_project_history_table)
 
+        # SQL for creating the ChangeRequestRegister table
+        create_cr_register_table = """
+        CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
+            cr_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id TEXT NOT NULL,
+            description TEXT NOT NULL,
+            creation_timestamp TEXT NOT NULL,
+            status TEXT NOT NULL,
+            impact_rating TEXT,
+            impact_analysis_details TEXT,
+            FOREIGN KEY (project_id) REFERENCES Projects (project_id)
+        );
+        """
+        self._execute_query(create_cr_register_table)
+
         logging.info("Finished creating database tables.")
 
         # --- Project CRUD Operations ---
@@ -236,6 +257,19 @@ class ASDFDBManager:
         params = (spec_text, project_id)
         self._execute_query(query, params)
         logging.info(f"Saved final specification for project ID '{project_id}'.")
+
+    def update_project_technology(self, project_id: str, technology_stack: str):
+        """
+        Updates the technology_stack for a given project.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            technology_stack (str): The name of the technology (e.g., 'Python', 'Kotlin').
+        """
+        query = "UPDATE Projects SET technology_stack = ? WHERE project_id = ?"
+        params = (technology_stack, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set technology stack for project ID '{project_id}' to '{technology_stack}'.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 
@@ -448,6 +482,126 @@ class ASDFDBManager:
         query = "DELETE FROM ProjectHistory WHERE history_id = ?"
         self._execute_query(query, (history_id,))
         logging.info(f"Deleted project history record with ID '{history_id}'.")
+
+    # --- ChangeRequestRegister CRUD Operations ---
+
+    def get_all_change_requests_for_project(self, project_id: str) -> list:
+        """
+        Retrieves all change request records for a given project.
+
+        Args:
+            project_id (str): The ID of the project.
+
+        Returns:
+            list: A list of row objects representing all change requests for the project,
+                  ordered by the most recent first.
+        """
+        query = "SELECT * FROM ChangeRequestRegister WHERE project_id = ? ORDER BY creation_timestamp DESC"
+        cursor = self._execute_query(query, (project_id,))
+        change_requests = cursor.fetchall()
+        logging.info(f"Retrieved {len(change_requests)} change requests for project ID '{project_id}'.")
+        return change_requests
+
+    def add_change_request(self, project_id: str, description: str) -> int:
+        """
+        Adds a new change request to the ChangeRequestRegister table.
+
+        Args:
+            project_id (str): The ID of the project this change request belongs to.
+            description (str): The PM's description of the requested change.
+
+        Returns:
+            int: The ID (primary key) of the newly created change request record.
+        """
+        query = """
+        INSERT INTO ChangeRequestRegister
+        (project_id, description, creation_timestamp, status)
+        VALUES (?, ?, ?, ?)
+        """
+        timestamp = datetime.utcnow().isoformat()
+        status = "RAISED" # Initial status for any new change request
+        params = (project_id, description, timestamp, status)
+
+        cursor = self._execute_query(query, params)
+        new_cr_id = cursor.lastrowid
+        logging.info(f"Added new change request with ID '{new_cr_id}' for project '{project_id}'.")
+        return new_cr_id
+
+    def update_change_request(self, cr_id: int, new_description: str):
+        """
+        Updates the description of a given change request and resets its
+        impact analysis fields.
+
+        The business logic layer (e.g., MasterOrchestrator) is responsible
+        for ensuring this is only called on CRs with a 'RAISED' status.
+
+        Args:
+            cr_id (int): The ID of the change request to update.
+            new_description (str): The new, updated description for the change.
+        """
+        query = """
+        UPDATE ChangeRequestRegister
+        SET description = ?,
+            impact_rating = NULL,
+            impact_analysis_details = NULL,
+            last_modified_timestamp = ?
+        WHERE cr_id = ?
+        """
+        timestamp = datetime.utcnow().isoformat()
+        params = (new_description, timestamp, cr_id)
+        self._execute_query(query, params)
+        logging.info(f"Updated change request ID '{cr_id}' and reset its impact analysis.")
+
+    def delete_change_request(self, cr_id: int):
+        """
+        Deletes a specific change request from the register.
+
+        The business logic layer (e.g., MasterOrchestrator) is responsible
+        for ensuring this is only called on CRs with a 'RAISED' status.
+
+        Args:
+            cr_id (int): The ID of the change request to delete.
+        """
+        query = "DELETE FROM ChangeRequestRegister WHERE cr_id = ?"
+        params = (cr_id,)
+        self._execute_query(query, params)
+        logging.info(f"Deleted change request with ID '{cr_id}'.")
+
+    def update_cr_impact_analysis(self, cr_id: int, rating: str, details: str):
+        """
+        Updates a change request record with the results of an impact analysis.
+
+        Args:
+            cr_id (int): The ID of the change request to update.
+            rating (str): The assessed impact rating (e.g., "Minor", "Medium", "Major").
+            details (str): The summary text of the impact analysis findings.
+        """
+        query = """
+        UPDATE ChangeRequestRegister
+        SET impact_rating = ?,
+            impact_analysis_details = ?,
+            status = 'IMPACT_ANALYZED',
+            last_modified_timestamp = ?
+        WHERE cr_id = ?
+        """
+        timestamp = datetime.utcnow().isoformat()
+        params = (rating, details, timestamp, cr_id)
+        self._execute_query(query, params)
+        logging.info(f"Updated CR ID '{cr_id}' with impact analysis results.")
+
+    def get_cr_by_id(self, cr_id: int):
+        """
+        Retrieves a single change request by its primary key.
+
+        Args:
+            cr_id (int): The ID of the change request to retrieve.
+
+        Returns:
+            A row object representing the change request, or None if not found.
+        """
+        query = "SELECT * FROM ChangeRequestRegister WHERE cr_id = ?"
+        cursor = self._execute_query(query, (cr_id,))
+        return cursor.fetchone()
 
     # --- OrchestrationState CRUD Operations ---
 
