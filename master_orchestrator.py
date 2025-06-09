@@ -1,14 +1,16 @@
 import logging
 import uuid
+import json
 from datetime import datetime
 from enum import Enum, auto
+from pathlib import Path
 
 from asdf_db_manager import ASDFDBManager
 from logic_agent_app_target import LogicAgent_AppTarget
 from code_agent_app_target import CodeAgent_AppTarget
 from test_agent_app_target import TestAgent_AppTarget
 from doc_update_agent_rowd import DocUpdateAgentRoWD
-# NOTE: We will use BuildAndCommitAgent_AppTarget in the next step.
+from build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -129,79 +131,92 @@ class MasterOrchestrator:
             return
 
         logging.info("PM chose to 'Proceed'. Orchestrator will now begin development of the next component.")
+        project_root_path = None
+        build_agent = None
 
         try:
             with self.db_manager as db:
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key:
-                    logging.error("CRITICAL: Cannot proceed with code generation. LLM_API_KEY is not set.")
-                    # In a real UI, we would display a blocking error message here.
-                    return
+                    raise Exception("CRITICAL: LLM_API_KEY is not set.")
 
-                # --- In a real run, this data would be fetched from the Development Plan ---
-                # For this implementation, we use placeholder data as the Planning phase is not yet complete.
+                project_details = db.get_project_by_id(self.project_id)
+                project_root_path = Path(project_details['project_root_folder'])
+                if not project_root_path or not project_root_path.is_dir():
+                    raise Exception(f"Project root folder '{project_root_path}' is not valid.")
+
+                # --- Placeholder data for development plan task ---
                 micro_spec_id = f"ms_{uuid.uuid4().hex[:6]}"
                 micro_spec_content = "Create a Python utility function named 'is_valid_email' that takes one string argument (email_address) and returns True if the string is a valid email format, otherwise False. It should handle basic format checking (e.g., presence of '@' and '.')."
                 component_name = "is_valid_email"
                 component_type = "FUNCTION"
-                file_path = "src/utils/validators.py"
+                component_file_path = "src/utils/validators.py"
+                test_file_path = "tests/test_validators.py"
                 coding_standard = "Follow PEP 8 standards. Include a clear docstring explaining the function's purpose, arguments, and return value."
-                # -------------------------------------------------------------------------
+                # --------------------------------------------------
 
                 logging.info(f"Executing Genesis Pipeline for component: {component_name}")
 
-                # 1. Instantiate Agents
+                # 1. Instantiate Generation Agents
                 logic_agent = LogicAgent_AppTarget(api_key=api_key)
                 code_agent = CodeAgent_AppTarget(api_key=api_key)
                 test_agent = TestAgent_AppTarget(api_key=api_key)
-                doc_agent = DocUpdateAgentRoWD(db_manager=self.db_manager)
 
-                # 2. Generate Logic
-                logging.info("Invoking LogicAgent...")
+                # 2. Generate Logic, Code, and Tests
                 logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
-                if "An error occurred" in logic_plan:
-                    raise Exception(f"LogicAgent failed: {logic_plan}")
-
-                # 3. Generate Code
-                logging.info("Invoking CodeAgent...")
                 source_code = code_agent.generate_code_for_component(logic_plan, coding_standard)
-                if "An error occurred" in source_code:
-                    raise Exception(f"CodeAgent failed: {source_code}")
-
-                # 4. Generate Unit Tests
-                logging.info("Invoking TestAgent...")
                 unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content)
-                if "An error occurred" in unit_tests:
-                    raise Exception(f"TestAgent failed: {unit_tests}")
 
-                # NOTE: In a full implementation, the 'BuildAndCommitAgent' would be called here
-                # to write the source_code and unit_tests to their respective files, run the tests,
-                # and commit to Git upon success. For now, we proceed assuming success.
+                # 3. Write generated code to files
+                full_component_path = project_root_path / component_file_path
+                full_test_path = project_root_path / test_file_path
+                full_component_path.parent.mkdir(parents=True, exist_ok=True)
+                full_test_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(full_component_path, "w", encoding="utf-8") as f:
+                    f.write(source_code)
+                with open(full_test_path, "w", encoding="utf-8") as f:
+                    f.write(unit_tests)
 
-                # 5. Update Record-of-Work-Done (RoWD)
-                logging.info("Invoking DocUpdateAgentRoWD to update the database...")
+                # 4. Instantiate Build Agent and run tests
+                build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+                # For a Python project, running 'pytest' is the build/test step
+                tests_passed, test_output = build_agent.build_component("pytest")
+
+                if not tests_passed:
+                    raise Exception(f"Build failed: Unit tests did not pass.\n{test_output}")
+
+                # 5. Commit changes to Git
+                commit_message = f"feat: Add component '{component_name}' with passing unit tests"
+                files_to_add = [component_file_path, test_file_path]
+                commit_success, commit_result = build_agent.commit_changes(files_to_add, commit_message)
+
+                if not commit_success:
+                    raise Exception(f"Git commit failed: {commit_result}")
+
+                # 6. Update Record-of-Work-Done (RoWD)
+                doc_agent = DocUpdateAgentRoWD(db_manager=self.db_manager)
                 artifact_id = f"art_{uuid.uuid4().hex[:8]}"
+                commit_hash = commit_result.split(":")[-1].strip()
                 artifact_data = {
                     "artifact_id": artifact_id,
                     "project_id": self.project_id,
-                    "file_path": file_path,
+                    "file_path": component_file_path,
                     "artifact_name": component_name,
                     "artifact_type": component_type,
                     "short_description": micro_spec_content,
-                    "status": "CODING_COMPLETED", # This would be UNIT_TESTS_PASSING after the build agent runs
+                    "status": "UNIT_TESTS_PASSING",
+                    "unit_test_status": "TESTS_PASSING",
+                    "commit_hash": commit_hash,
                     "version": 1,
                     "last_modified_timestamp": datetime.utcnow().isoformat(),
-                    "micro_spec_id": micro_spec_id,
-                    "unit_test_status": "PENDING_EXECUTION"
+                    "micro_spec_id": micro_spec_id
                 }
                 doc_agent.update_artifact_record(artifact_data)
 
                 logging.info(f"Genesis Pipeline completed successfully for component: {component_name}")
-                # The orchestrator remains in the GENESIS phase for the next checkpoint.
 
         except Exception as e:
             logging.error(f"Genesis Pipeline failed. Error: {e}")
-            # Here, we would transition to the DEBUG_PM_ESCALATION phase
             self.escalate_for_manual_debug()
 
     def handle_raise_cr_action(self):
