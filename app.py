@@ -82,6 +82,11 @@ if page == "Project":
             if st.session_state.get('git_initialized'):
                 st.divider()
                 if st.button("Complete Environment Setup & Proceed to Phase 1", use_container_width=True):
+                    with st.session_state.orchestrator.db_manager as db:
+                        db.update_project_technology(
+                            st.session_state.orchestrator.project_id,
+                            st.session_state.language
+                        )
                     st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
                     # Clean up session state keys used by the setup agent
                     for key in ['project_root_path', 'path_confirmed', 'git_initialized', 'language', 'language_select', 'frameworks']:
@@ -240,6 +245,66 @@ if page == "Project":
                                     st.rerun()
                             except Exception as e:
                                 st.error(f"An error occurred during analysis: {e}")
+
+        # --- Phase: Planning ---
+        elif current_phase_name == "PLANNING":
+            st.header("Phase 2: Strategic Development Planning")
+            st.info("This is a placeholder for the Development Planning UI.")
+            st.markdown("In a future step, the `PlanningAgent` will generate the development plan here for your approval.")
+
+            st.divider()
+
+            # This button allows us to manually advance to the next phase for now.
+            if st.button("Approve Plan & Proceed to Development", use_container_width=True, type="primary"):
+                st.session_state.orchestrator.set_phase("GENESIS")
+                st.rerun()
+
+        # --- Phase: Genesis (Iterative Development) ---
+        elif current_phase_name == "GENESIS":
+            st.header("Phase 3: Iterative Component Development")
+
+            # PM Checkpoint UI (as per PRD F-Phase 3)
+            st.subheader("PM Checkpoint")
+
+            # NOTE: In a real implementation, these values would be dynamically
+            # populated by the MasterOrchestrator from the development plan.
+            previous_component = "User Login UI"
+            current_component = "User Profile Data Class"
+            micro_spec_id = "MS-0042"
+
+            st.markdown(f"""
+            Development of **'{previous_component}'** was successful.
+
+            Next component in the plan is: **'{current_component}'** (based on micro-spec `{micro_spec_id}`).
+
+            How would you like to proceed?
+            """)
+
+            # Create columns for the buttons for a clean layout.
+            col1, col2, col3, col4, _ = st.columns([1, 1, 1, 1, 3])
+
+            with col1:
+                if st.button("▶️ Proceed", use_container_width=True, type="primary"):
+                    st.toast("Proceeding with component development...")
+                    # TODO: Add call to orchestrator to handle 'proceed' logic.
+
+            with col2:
+                if st.button("⏸️ Pause", use_container_width=True):
+                    st.toast("Pausing factory operations...")
+                    st.session_state.orchestrator.pause_project()
+                    st.rerun()
+
+
+            with col3:
+                if st.button("🔁 Request Change", use_container_width=True):
+                    st.toast("Initiating change management workflow...")
+                    # TODO: Add call to orchestrator to handle 'change' logic.
+
+            with col4:
+                if st.button("⏹️ Discontinue", use_container_width=True):
+                    st.toast("Discontinuing project...")
+                    st.session_state.orchestrator.discontinue_project()
+                    st.rerun()
 
         # --- Default View for other phases ---
         else:
