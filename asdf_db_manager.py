@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -567,6 +567,20 @@ class ASDFDBManager:
         cursor = self._execute_query(query)
         return cursor.fetchall()
 
+    def get_project_history_by_id(self, history_id: int) -> sqlite3.Row | None:
+        """
+        Retrieves a single project history record by its primary key.
+
+        Args:
+            history_id (int): The history_id of the record to retrieve.
+
+        Returns:
+            sqlite3.Row | None: A Row object representing the history record, or None if not found.
+        """
+        query = "SELECT * FROM ProjectHistory WHERE history_id = ?"
+        cursor = self._execute_query(query, (history_id,))
+        return cursor.fetchone()
+
     def delete_project_from_history(self, history_id: int):
         """
         Deletes a project record from the ProjectHistory table.
@@ -613,7 +627,8 @@ class ASDFDBManager:
         (project_id, description, creation_timestamp, status)
         VALUES (?, ?, ?, ?)
         """
-        timestamp = datetime.utcnow().isoformat()
+        # CORRECTED: Using timezone-aware datetime
+        timestamp = datetime.now(timezone.utc).isoformat()
         status = "RAISED" # Initial status for any new change request
         params = (project_id, description, timestamp, status)
 
@@ -683,6 +698,21 @@ class ASDFDBManager:
         params = (rating, details, timestamp, cr_id)
         self._execute_query(query, params)
         logging.info(f"Updated CR ID '{cr_id}' with impact analysis results.")
+
+    def update_cr_status(self, cr_id: int, new_status: str):
+        """
+        Updates the status of a specific change request.
+
+        Args:
+            cr_id (int): The ID of the change request to update.
+            new_status (str): The new status to set.
+        """
+        query = "UPDATE ChangeRequestRegister SET status = ?, last_modified_timestamp = ? WHERE cr_id = ?"
+        # CORRECTED: Using timezone-aware datetime
+        timestamp = datetime.now(timezone.utc).isoformat()
+        params = (new_status, timestamp, cr_id)
+        self._execute_query(query, params)
+        logging.info(f"Updated status for CR ID '{cr_id}' to '{new_status}'.")
 
     def get_cr_by_id(self, cr_id: int):
         """

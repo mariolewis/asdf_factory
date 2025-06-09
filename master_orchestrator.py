@@ -11,6 +11,7 @@ from code_agent_app_target import CodeAgent_AppTarget
 from test_agent_app_target import TestAgent_AppTarget
 from doc_update_agent_rowd import DocUpdateAgentRoWD
 from build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
+from agent_refactoring_planner_app_target import RefactoringPlannerAgent_AppTarget
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,6 +49,7 @@ class MasterOrchestrator:
         self.project_name: str | None = None
         self.active_cr_id_for_edit: int | None = None
         self.current_phase: FactoryPhase = FactoryPhase.IDLE
+        self.active_plan = None # Add this line
 
         # Ensure core tables exist on startup
         with self.db_manager as db:
@@ -275,23 +277,60 @@ class MasterOrchestrator:
 
     def handle_implement_cr_action(self, cr_id: int):
         """
-        Handles the logic for when the PM selects a CR and confirms its implementation.
-
-        This kicks off the detailed planning for the selected change.
-
-        Args:
-            cr_id (int): The ID of the change request to be implemented.
+        Handles the logic for when the PM confirms a CR for implementation.
+        This orchestrates the RefactoringPlannerAgent to create a detailed
+        plan for the Genesis Pipeline to execute.
         """
         logging.info(f"PM has confirmed implementation for Change Request ID: {cr_id}.")
-        logging.info("Transitioning to Refactoring/Planning for the selected change.")
 
-        # TODO: Implement logic to update the CR status to 'PLANNING_IN_PROGRESS'.
-        # TODO: Invoke the RefactoringPlannerAgent with the details of the selected CR.
-        # TODO: After the new plan is created, hand off execution to the Genesis pipeline.
+        try:
+            with self.db_manager as db:
+                # 1. Get necessary context from the database
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("CRITICAL: LLM_API_KEY is not set.")
 
-        # For now, we'll just log the action and return to the main checkpoint.
-        self.set_phase("GENESIS")
-        pass
+                cr_details = db.get_cr_by_id(cr_id)
+                if not cr_details:
+                    raise Exception(f"Could not find details for CR ID {cr_id}")
+
+                project_details = db.get_project_by_id(self.project_id)
+                final_spec_text = project_details['final_spec_text']
+
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
+
+                # 2. Update CR status to show planning is in progress
+                db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
+                logging.info(f"Updated status for CR-{cr_id} to PLANNING_IN_PROGRESS.")
+
+                # 3. Instantiate and invoke the RefactoringPlannerAgent
+                planner_agent = RefactoringPlannerAgent_AppTarget(api_key=api_key)
+                logging.info(f"Invoking RefactoringPlannerAgent for CR-{cr_id}...")
+                new_plan = planner_agent.create_refactoring_plan(
+                    change_request_desc=cr_details['description'],
+                    final_spec_text=final_spec_text,
+                    rowd_json=rowd_json
+                )
+
+                if "An error occurred" in new_plan:
+                    raise Exception(f"RefactoringPlannerAgent failed: {new_plan}")
+
+                # 4. Store the newly generated plan in the orchestrator's state
+                # NOTE: In a future iteration, this plan would be saved to a dedicated
+                # 'DevelopmentPlans' table in the database.
+                self.active_plan = new_plan
+                logging.info("Successfully generated new development plan from Change Request.")
+                logging.debug(f"New Plan:\n{self.active_plan}")
+
+                # 5. Transition to the Genesis phase to begin execution of the new plan
+                self.set_phase("GENESIS")
+                logging.info("Transitioning to GENESIS phase to execute the new plan.")
+
+        except Exception as e:
+            logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
+            # Optionally, reset the phase or escalate
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST") # Return to previous screen on error
 
     def handle_run_impact_analysis_action(self, cr_id: int):
         """
