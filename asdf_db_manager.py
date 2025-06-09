@@ -641,13 +641,6 @@ class ASDFDBManager:
         """
         Updates the description of a given change request and resets its
         impact analysis fields.
-
-        The business logic layer (e.g., MasterOrchestrator) is responsible
-        for ensuring this is only called on CRs with a 'RAISED' status.
-
-        Args:
-            cr_id (int): The ID of the change request to update.
-            new_description (str): The new, updated description for the change.
         """
         query = """
         UPDATE ChangeRequestRegister
@@ -657,7 +650,8 @@ class ASDFDBManager:
             last_modified_timestamp = ?
         WHERE cr_id = ?
         """
-        timestamp = datetime.utcnow().isoformat()
+        # CORRECTED: Using timezone-aware UTC time
+        timestamp = datetime.now(timezone.utc).isoformat()
         params = (new_description, timestamp, cr_id)
         self._execute_query(query, params)
         logging.info(f"Updated change request ID '{cr_id}' and reset its impact analysis.")
@@ -680,11 +674,6 @@ class ASDFDBManager:
     def update_cr_impact_analysis(self, cr_id: int, rating: str, details: str):
         """
         Updates a change request record with the results of an impact analysis.
-
-        Args:
-            cr_id (int): The ID of the change request to update.
-            rating (str): The assessed impact rating (e.g., "Minor", "Medium", "Major").
-            details (str): The summary text of the impact analysis findings.
         """
         query = """
         UPDATE ChangeRequestRegister
@@ -694,7 +683,8 @@ class ASDFDBManager:
             last_modified_timestamp = ?
         WHERE cr_id = ?
         """
-        timestamp = datetime.utcnow().isoformat()
+        # CORRECTED: Using timezone-aware UTC time
+        timestamp = datetime.now(timezone.utc).isoformat()
         params = (rating, details, timestamp, cr_id)
         self._execute_query(query, params)
         logging.info(f"Updated CR ID '{cr_id}' with impact analysis results.")

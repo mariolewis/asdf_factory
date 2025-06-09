@@ -1,7 +1,7 @@
 import logging
 import uuid
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum, auto
 from pathlib import Path
 
@@ -69,31 +69,22 @@ class MasterOrchestrator:
     def start_new_project(self, project_name: str):
         """
         Initializes a new project.
-
-        This method follows the logic for 'Start New Project' from F-Phase 7.
-        It creates a new project record in the database and sets the orchestrator's
-        state to begin the development process for the new project.
-
-        Args:
-            project_name (str): The human-readable name for the new project.
         """
         if self.project_id:
             logging.warning(f"A project '{self.project_name}' is already active. Starting a new one will override it in this session.")
-            # [cite_start]In a future implementation, we would call the Stop & Export logic here as per PRD[cite: 312].
 
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
         self.project_name = project_name
-        self.current_phase = FactoryPhase.ENV_SETUP_TARGET_APP # Set initial phase after start
-        timestamp = datetime.utcnow().isoformat()
+        self.current_phase = FactoryPhase.ENV_SETUP_TARGET_APP
+        # CORRECTED: Using timezone-aware UTC time
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         try:
             with self.db_manager as db:
                 db.create_project(self.project_id, self.project_name, timestamp)
             logging.info(f"Successfully started new project: '{self.project_name}' (ID: {self.project_id})")
-            logging.info(f"Orchestrator status: {self.get_status()}")
         except Exception as e:
             logging.error(f"Failed to start new project '{self.project_name}': {e}")
-            # Reset state on failure
             self.project_id = None
             self.project_name = None
             self.current_phase = FactoryPhase.IDLE
@@ -514,8 +505,8 @@ class MasterOrchestrator:
 
     def pause_project(self):
         """
-        [cite_start]Pauses the currently active project by saving its state to the DB. [cite: 282]
-        [cite_start]The project remains the active project. [cite: 283]
+        Pauses the currently active project by saving its state to the DB.
+        The project remains the active project.
         """
         if not self.project_id:
             logging.warning("No active project to pause.")
@@ -523,13 +514,13 @@ class MasterOrchestrator:
 
         try:
             with self.db_manager as db:
-                # In a real implementation, state_details would be a rich JSON object
                 db.save_orchestration_state(
                     project_id=self.project_id,
                     current_phase=self.current_phase.name,
-                    current_step="paused_at_checkpoint", # Example step
+                    current_step="paused_at_checkpoint",
                     state_details='{"details": "State saved on pause"}',
-                    timestamp=datetime.utcnow().isoformat()
+                    # CORRECTED: Using timezone-aware UTC time
+                    timestamp=datetime.now(timezone.utc).isoformat()
                 )
             logging.info(f"Project '{self.project_name}' paused and state saved.")
         except Exception as e:
@@ -558,45 +549,38 @@ class MasterOrchestrator:
         archive_dir = Path(archive_dir)
         archive_dir.mkdir(parents=True, exist_ok=True)
 
-        # Define file paths
         rowd_file = archive_dir / f"{archive_name}_rowd.json"
         cr_file = archive_dir / f"{archive_name}_cr.json"
 
         try:
             with self.db_manager as db:
-                # 1. Fetch all data for the active project
                 artifacts = db.get_all_artifacts_for_project(self.project_id)
                 change_requests = db.get_all_change_requests_for_project(self.project_id)
                 project_details = db.get_project_by_id(self.project_id)
 
-                # [cite_start]2. Export RoWD (Artifacts) to JSON file [cite: 288]
                 artifacts_list = [dict(row) for row in artifacts]
                 with open(rowd_file, 'w', encoding='utf-8') as f:
                     json.dump(artifacts_list, f, indent=4)
 
-                # [cite_start]3. Export Change Requests to a separate JSON file [cite: 290]
                 cr_list = [dict(row) for row in change_requests]
                 with open(cr_file, 'w', encoding='utf-8') as f:
                     json.dump(cr_list, f, indent=4)
 
-                # [cite_start]4. Create a record in the ProjectHistory table [cite: 291]
                 db.add_project_to_history(
                     project_id=self.project_id,
                     project_name=self.project_name,
-                    # Storing the *archive file path* is crucial. We'll store the RoWD file path.
                     root_folder=project_details['project_root_folder'] if project_details else "N/A",
                     archive_file_path=str(rowd_file),
-                    timestamp=datetime.utcnow().isoformat()
+                    # CORRECTED: Using timezone-aware UTC time
+                    timestamp=datetime.now(timezone.utc).isoformat()
                 )
 
-                # [cite_start]5. Clear the active tables for the project [cite: 292]
                 self._clear_active_project_data(db)
 
-            # 6. Reset orchestrator state
-            logging.info(f"Successfully exported project '{self.project_name}' to {archive_dir}")
             self.project_id = None
             self.project_name = None
             self.current_phase = FactoryPhase.IDLE
+            logging.info(f"Successfully exported project '{self.project_name}' to {archive_dir}")
             return True
 
         except Exception as e:
