@@ -370,6 +370,101 @@ class ASDFDBManager:
         cursor = self._execute_query(query, (project_id,))
         return cursor.fetchall()
 
+    def delete_all_artifacts_for_project(self, project_id: str):
+        """
+        Deletes all artifact records for a given project from the Artifacts table.
+
+        Args:
+            project_id (str): The ID of the project whose artifacts should be deleted.
+        """
+        query = "DELETE FROM Artifacts WHERE project_id = ?"
+        self._execute_query(query, (project_id,))
+        logging.info(f"Deleted all RoWD artifacts for project ID '{project_id}'.")
+
+    def delete_all_change_requests_for_project(self, project_id: str):
+        """
+        Deletes all change requests for a given project.
+
+        Args:
+            project_id (str): The ID of the project whose CRs should be deleted.
+        """
+        query = "DELETE FROM ChangeRequestRegister WHERE project_id = ?"
+        self._execute_query(query, (project_id,))
+        logging.info(f"Deleted all Change Requests for project ID '{project_id}'.")
+
+    def delete_orchestration_state_for_project(self, project_id: str):
+        """
+        Deletes the orchestration state record for a given project.
+
+        Args:
+            project_id (str): The ID of the project whose state should be deleted.
+        """
+        query = "DELETE FROM OrchestrationState WHERE project_id = ?"
+        self._execute_query(query, (project_id,))
+        logging.info(f"Deleted Orchestration State for project ID '{project_id}'.")
+
+    def bulk_insert_artifacts(self, artifacts_data: list[dict]):
+        """
+        Inserts multiple artifact records into the database.
+        This is used when loading an archived project.
+
+        Args:
+            artifacts_data (list[dict]): A list of dictionaries, where each
+                                         dictionary represents an artifact's data.
+        """
+        if not artifacts_data:
+            return
+
+        # Assumes all dicts have the same keys as the first one
+        columns = ', '.join(artifacts_data[0].keys())
+        placeholders = ', '.join('?' for _ in artifacts_data[0])
+        query = f"INSERT INTO Artifacts ({columns}) VALUES ({placeholders})"
+
+        # Create a list of tuples from the list of dicts
+        params = [tuple(d.values()) for d in artifacts_data]
+
+        if not self.conn:
+            raise ConnectionError("Database connection is not open. Use 'with' statement.")
+        try:
+            cursor = self.conn.cursor()
+            cursor.executemany(query, params)
+            self.conn.commit()
+            logging.info(f"Bulk inserted {len(artifacts_data)} artifacts.")
+        except sqlite3.Error as e:
+            logging.error(f"Bulk artifact insert failed: {e}\nQuery: {query}")
+            self.conn.rollback()
+            raise
+
+    def bulk_insert_change_requests(self, cr_data: list[dict]):
+        """
+        Inserts multiple change request records into the database.
+        This is used when loading an archived project.
+
+        Args:
+            cr_data (list[dict]): A list of dictionaries, where each
+                                   dictionary represents a change request's data.
+        """
+        if not cr_data:
+            return
+
+        columns = ', '.join(cr_data[0].keys())
+        placeholders = ', '.join('?' for _ in cr_data[0])
+        query = f"INSERT INTO ChangeRequestRegister ({columns}) VALUES ({placeholders})"
+
+        params = [tuple(d.values()) for d in cr_data]
+
+        if not self.conn:
+            raise ConnectionError("Database connection is not open. Use 'with' statement.")
+        try:
+            cursor = self.conn.cursor()
+            cursor.executemany(query, params)
+            self.conn.commit()
+            logging.info(f"Bulk inserted {len(cr_data)} change requests.")
+        except sqlite3.Error as e:
+            logging.error(f"Bulk change request insert failed: {e}\nQuery: {query}")
+            self.conn.rollback()
+            raise
+
     def add_or_update_artifact(self, artifact_data: dict):
         """
         Creates a new artifact record or replaces an existing one using the primary key.
