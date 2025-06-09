@@ -18,6 +18,7 @@ class FactoryPhase(Enum):
     RAISING_CHANGE_REQUEST = auto()
     IMPLEMENTING_CHANGE_REQUEST = auto()
     EDITING_CHANGE_REQUEST = auto()
+    DEBUG_PM_ESCALATION = auto()
     # Add other phases as they are developed
 
 class MasterOrchestrator:
@@ -385,3 +386,27 @@ class MasterOrchestrator:
         self.project_name = None
         self.current_phase = FactoryPhase.IDLE
         pass
+
+    def escalate_for_manual_debug(self):
+        """
+        Transitions the factory into the state where the PM must intervene
+        after automated debugging has failed.
+        """
+        logging.warning("Automated debugging failed after max attempts. Escalating to PM.")
+        self.set_phase("DEBUG_PM_ESCALATION")
+
+    def handle_pm_debug_choice(self, choice: str, details: dict = None):
+        """
+        Handles the decision made by the PM during a debug escalation.
+
+        Args:
+            choice (str): The option selected by the PM (e.g., 'RETRY', 'MANUAL', 'IGNORE').
+            details (dict, optional): Any additional details provided by the PM. Defaults to None.
+        """
+        logging.info(f"PM selected debug option: {choice}")
+        # In a real implementation, this would trigger different agent workflows.
+        # For now, we will just log the choice and return to the main GENESIS phase
+        # to not get stuck in the escalation screen during development.
+        # TODO: Implement the distinct logic for each PM choice.
+
+        self.set_phase("GENESIS")
