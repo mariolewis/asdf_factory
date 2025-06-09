@@ -53,6 +53,43 @@ with st.sidebar:
         display_value = value if value is not None else "N/A"
         st.markdown(f"**{label}:** {display_value}")
 
+    st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
+    st.markdown("<h3 style='color: #FFC300;'>Project Lifecycle</h3>", unsafe_allow_html=True)
+
+    if st.button("📂 Load Archived Project", use_container_width=True):
+        st.session_state.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
+        st.rerun()
+
+    # --- Stop & Export UI Flow ---
+    if st.session_state.orchestrator.project_id:
+        if st.button("⏹️ Stop & Export Active Project", use_container_width=True):
+            st.session_state.show_export_confirmation = True
+
+        if st.session_state.get("show_export_confirmation"):
+            with st.form("export_form"):
+                st.warning("This will archive the current project and clear the active session. This cannot be undone.")
+                archive_name_input = st.text_input(
+                    "Enter a name for the archive file:",
+                    value=f"{st.session_state.orchestrator.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}"
+                )
+
+                # Get the default path from config
+                with st.session_state.orchestrator.db_manager as db:
+                    archive_path = db.get_config_value("DEFAULT_ARCHIVE_PATH") or "data/archives"
+
+                submitted = st.form_submit_button("Confirm and Export")
+                if submitted:
+                    if archive_name_input:
+                        success = st.session_state.orchestrator.stop_and_export_project(archive_path, archive_name_input)
+                        if success:
+                            st.toast("✅ Project exported successfully!")
+                        else:
+                            st.error("Failed to export project.")
+                        st.session_state.show_export_confirmation = False
+                        st.rerun()
+                    else:
+                        st.error("Archive name cannot be empty.")
+
 
 # --- Main Application UI ---
 
@@ -308,9 +345,9 @@ if page == "Project":
                     st.rerun()
 
             with col5:
-                if st.button("⏹️ Discontinue", use_container_width=True):
-                    st.toast("Discontinuing project...")
-                    st.session_state.orchestrator.discontinue_project()
+                if st.button("⏹️ Stop & Export", use_container_width=True):
+                    # This button now triggers the same confirmation flow as the sidebar button
+                    st.session_state.show_export_confirmation = True
                     st.rerun()
 
         # --- Phase: Raising a Change Request ---
@@ -502,6 +539,62 @@ if page == "Project":
                     st.toast("Acknowledging bug and logging as known issue...")
                     st.session_state.orchestrator.handle_pm_debug_choice("IGNORE")
                     st.rerun()
+
+        # --- Phase: Viewing Project History to Load ---
+        elif current_phase_name == "VIEWING_PROJECT_HISTORY":
+            st.header("Load an Archived Project")
+
+            project_history = st.session_state.orchestrator.get_project_history()
+
+            if not project_history:
+                st.warning("There are no archived projects in the history.")
+            else:
+                history_data = [
+                    {
+                        "ID": row['history_id'],
+                        "Project Name": row['project_name'],
+                        "Project ID": row['project_id'],
+                        "Archived On": row['last_stop_timestamp'],
+                        "Archive Path": row['archive_file_path']
+                    }
+                    for row in project_history
+                ]
+                df = pd.DataFrame(history_data)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                history_ids = [row['history_id'] for row in project_history]
+                selected_id = st.selectbox("Select a Project ID to load:", options=[""] + history_ids)
+
+                if st.button("Load Selected Project", disabled=(not selected_id)):
+                    with st.spinner("Loading project data..."):
+                        error_message = st.session_state.orchestrator.load_archived_project(selected_id)
+                        if error_message:
+                            st.error(f"Failed to load project: {error_message}")
+                        else:
+                            st.toast("Project loaded successfully!")
+                            st.rerun()
+
+            st.divider()
+            if st.button("⬅️ Back to Main Page"):
+                st.session_state.orchestrator.set_phase("IDLE")
+                st.rerun()
+
+        # --- Phase: Awaiting Context Re-establishment ---
+        elif current_phase_name == "AWAITING_CONTEXT_REESTABLISHMENT":
+            st.header("Project Loaded: Context Re-establishment Required")
+            st.success(f"Successfully loaded all data for project: **{st.session_state.orchestrator.project_name}**.")
+            st.info(
+                """
+                **Next Steps:**
+                As per the ASDF operational flow, the project's context must now be re-established.
+                You will be guided through the following phases again:
+                1.  **Environment Setup:** To prepare the project's local environment and file system.
+                2.  **Specification Elaboration:** To re-upload the original specification documents, allowing the system to refresh its understanding.
+                """
+            )
+            if st.button("Begin Context Re-establishment", type="primary"):
+                st.session_state.orchestrator.set_phase("ENV_SETUP_TARGET_APP")
+                st.rerun()
 
         # --- Default View for other phases ---
         else:
