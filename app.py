@@ -469,6 +469,40 @@ if page == "Project":
                         del st.session_state.cr_edit_description # Clean up
                         st.rerun()
 
+        # --- Phase: Debug PM Escalation ---
+        elif current_phase_name == "DEBUG_PM_ESCALATION":
+            st.header("Automated Debugging Failed")
+            st.error("The factory's automated debugging pipeline could not resolve the issue after multiple attempts.")
+
+            # In a real implementation, the orchestrator would pass the failure details here
+            failure_details = "Error in component 'UserProfileData.kt': NullPointerException on line 42."
+            st.warning(f"**Failure Details:** {failure_details}")
+
+            st.markdown("---")
+            st.subheader("PM Intervention Required")
+            st.markdown("Please choose how you would like to proceed:")
+
+            # [cite_start]PM Options as per PRD F-Phase 5 [cite: 245]
+            col1, col2, col3, _ = st.columns([1.5, 2, 2, 2])
+
+            with col1:
+                if st.button("🔄 Retry AI Debugging", use_container_width=True):
+                    st.toast("Retrying automated debug cycles...")
+                    st.session_state.orchestrator.handle_pm_debug_choice("RETRY")
+                    st.rerun()
+
+            with col2:
+                if st.button("⏸️ Pause for Manual Investigation", use_container_width=True):
+                    st.toast("Pausing factory for manual investigation...")
+                    st.session_state.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
+                    st.rerun()
+
+            with col3:
+                if st.button("⚠️ Acknowledge & Ignore Bug", use_container_width=True):
+                    st.toast("Acknowledging bug and logging as known issue...")
+                    st.session_state.orchestrator.handle_pm_debug_choice("IGNORE")
+                    st.rerun()
+
         # --- Default View for other phases ---
         else:
             st.subheader(f"Project View (Phase: {current_phase_name})")
