@@ -337,23 +337,12 @@ class MasterOrchestrator:
             return []
 
     def pause_project(self):
-        """def handle_raise_cr_action(self):
         """
-        Handles the logic for when the PM clicks 'Raise New Change Request'.
-
-        This transitions the factory into the state for capturing the details
-        of the new change request.
-        """
-        if self.current_phase == FactoryPhase.GENESIS:
-            logging.info("PM initiated 'Raise New Change Request'. Transitioning to CR input screen.")
-            self.set_phase("RAISING_CHANGE_REQUEST")
-        else:
-            logging.warning(f"Received 'Raise CR' action in an unexpected phase: {self.current_phase.name}")
         Pauses the currently active project. (Placeholder)
 
         As per F-Phase 7, this will save the complete current state of the
         orchestration to the database, allowing for a graceful pause.
-        [cite_start]The project remains the active project. [cite: 314, 315]
+        [cite_start]The project remains the active project. [cite: 330, 331]
         """
         if not self.project_id:
             logging.warning("No active project to pause.")
