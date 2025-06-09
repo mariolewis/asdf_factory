@@ -49,7 +49,8 @@ class MasterOrchestrator:
         self.project_name: str | None = None
         self.active_cr_id_for_edit: int | None = None
         self.current_phase: FactoryPhase = FactoryPhase.IDLE
-        self.active_plan = None # Add this line
+        self.active_plan = None
+        self.active_plan_cursor = 0 # Add this line
 
         # Ensure core tables exist on startup
         with self.db_manager as db:
@@ -126,16 +127,28 @@ class MasterOrchestrator:
     def handle_proceed_action(self):
         """
         Handles the logic for when the PM clicks 'Proceed' at a checkpoint.
-        This method executes the core Genesis Pipeline for one component.
+        This method executes the core Genesis Pipeline for the current task
+        in the active development plan.
         """
         if self.current_phase != FactoryPhase.GENESIS:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
             return
 
-        logging.info("PM chose to 'Proceed'. Orchestrator will now begin development of the next component.")
-        project_root_path = None
-        build_agent = None
+        if not self.active_plan or not isinstance(self.active_plan, list):
+            logging.warning("Proceed action called, but no active development plan is loaded. Nothing to execute.")
+            # In a real scenario, this might guide the PM to the planning phase.
+            return
 
+        # Check if the plan is already completed
+        if self.active_plan_cursor >= len(self.active_plan):
+            logging.info("Proceed action called, but the active plan is already complete.")
+            return
+
+        # Get the current task from the plan using the cursor
+        task = self.active_plan[self.active_plan_cursor]
+        logging.info(f"PM chose to 'Proceed'. Executing task {self.active_plan_cursor + 1}/{len(self.active_plan)}: {task.get('micro_spec_id')}")
+
+        project_root_path = None
         try:
             with self.db_manager as db:
                 api_key = db.get_config_value("LLM_API_KEY")
@@ -144,63 +157,43 @@ class MasterOrchestrator:
 
                 project_details = db.get_project_by_id(self.project_id)
                 project_root_path = Path(project_details['project_root_folder'])
-                if not project_root_path or not project_root_path.is_dir():
-                    raise Exception(f"Project root folder '{project_root_path}' is not valid.")
 
-                # --- Placeholder data for development plan task ---
-                micro_spec_id = f"ms_{uuid.uuid4().hex[:6]}"
-                micro_spec_content = "Create a Python utility function named 'is_valid_email' that takes one string argument (email_address) and returns True if the string is a valid email format, otherwise False. It should handle basic format checking (e.g., presence of '@' and '.')."
-                component_name = "is_valid_email"
-                component_type = "FUNCTION"
-                component_file_path = "src/utils/validators.py"
-                test_file_path = "tests/test_validators.py"
+                # --- Extract task details from the structured plan ---
+                micro_spec_id = task.get("micro_spec_id")
+                micro_spec_content = task.get("task_description")
+                component_name = task.get("component_name")
+                component_type = task.get("component_type")
+                component_file_path = task.get("component_file_path")
+                test_file_path = task.get("test_file_path")
                 coding_standard = "Follow PEP 8 standards. Include a clear docstring explaining the function's purpose, arguments, and return value."
-                # --------------------------------------------------
 
-                logging.info(f"Executing Genesis Pipeline for component: {component_name}")
-
-                # 1. Instantiate Generation Agents
+                # 1. Instantiate Agents
                 logic_agent = LogicAgent_AppTarget(api_key=api_key)
                 code_agent = CodeAgent_AppTarget(api_key=api_key)
                 test_agent = TestAgent_AppTarget(api_key=api_key)
+                build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+                doc_agent = DocUpdateAgentRoWD(db_manager=db)
 
                 # 2. Generate Logic, Code, and Tests
                 logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
                 source_code = code_agent.generate_code_for_component(logic_plan, coding_standard)
                 unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content)
 
-                # 3. Write generated code to files
-                full_component_path = project_root_path / component_file_path
-                full_test_path = project_root_path / test_file_path
-                full_component_path.parent.mkdir(parents=True, exist_ok=True)
-                full_test_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(full_component_path, "w", encoding="utf-8") as f:
-                    f.write(source_code)
-                with open(full_test_path, "w", encoding="utf-8") as f:
-                    f.write(unit_tests)
+                # 3. Build, Test, and Commit
+                build_success, build_output = build_agent.build_and_commit_component(
+                    component_path=component_file_path,
+                    component_code=source_code,
+                    test_path=test_file_path,
+                    test_code=unit_tests
+                )
 
-                # 4. Instantiate Build Agent and run tests
-                build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-                # For a Python project, running 'pytest' is the build/test step
-                tests_passed, test_output = build_agent.build_component("pytest")
+                if not build_success:
+                    raise Exception(f"Build failed for component {component_name}: {build_output}")
 
-                if not tests_passed:
-                    raise Exception(f"Build failed: Unit tests did not pass.\n{test_output}")
-
-                # 5. Commit changes to Git
-                commit_message = f"feat: Add component '{component_name}' with passing unit tests"
-                files_to_add = [component_file_path, test_file_path]
-                commit_success, commit_result = build_agent.commit_changes(files_to_add, commit_message)
-
-                if not commit_success:
-                    raise Exception(f"Git commit failed: {commit_result}")
-
-                # 6. Update Record-of-Work-Done (RoWD)
-                doc_agent = DocUpdateAgentRoWD(db_manager=self.db_manager)
-                artifact_id = f"art_{uuid.uuid4().hex[:8]}"
-                commit_hash = commit_result.split(":")[-1].strip()
+                # 4. Update Record-of-Work-Done (RoWD)
+                commit_hash = build_output.split(":")[-1].strip()
                 artifact_data = {
-                    "artifact_id": artifact_id,
+                    "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
                     "project_id": self.project_id,
                     "file_path": component_file_path,
                     "artifact_name": component_name,
@@ -210,15 +203,27 @@ class MasterOrchestrator:
                     "unit_test_status": "TESTS_PASSING",
                     "commit_hash": commit_hash,
                     "version": 1,
-                    "last_modified_timestamp": datetime.utcnow().isoformat(),
+                    "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
                     "micro_spec_id": micro_spec_id
                 }
                 doc_agent.update_artifact_record(artifact_data)
+                logging.info(f"Successfully executed and logged task for component: {component_name}")
 
-                logging.info(f"Genesis Pipeline completed successfully for component: {component_name}")
+                # 5. Advance the plan cursor
+                self.active_plan_cursor += 1
+
+                # 6. Check for plan completion
+                if self.active_plan_cursor >= len(self.active_plan):
+                    logging.info("Active development plan has been fully executed.")
+                    # Find the associated CR and mark it as completed
+                    active_cr = db.get_cr_by_status(self.project_id, "PLANNING_IN_PROGRESS")
+                    if active_cr:
+                        db.update_cr_status(active_cr['cr_id'], "COMPLETED")
+                    self.active_plan = None
+                    self.active_plan_cursor = 0
 
         except Exception as e:
-            logging.error(f"Genesis Pipeline failed. Error: {e}")
+            logging.error(f"Genesis Pipeline failed while executing plan. Error: {e}")
             self.escalate_for_manual_debug()
 
     def handle_raise_cr_action(self):
@@ -319,7 +324,8 @@ class MasterOrchestrator:
                 # 4. Store the newly generated plan in the orchestrator's state
                 # NOTE: In a future iteration, this plan would be saved to a dedicated
                 # 'DevelopmentPlans' table in the database.
-                self.active_plan = new_plan
+                self.active_plan = json.loads(new_plan)
+                self.active_plan_cursor = 0
                 logging.info("Successfully generated new development plan from Change Request.")
                 logging.debug(f"New Plan:\n{self.active_plan}")
 

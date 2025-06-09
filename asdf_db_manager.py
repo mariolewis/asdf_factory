@@ -728,6 +728,21 @@ class ASDFDBManager:
         cursor = self._execute_query(query, (cr_id,))
         return cursor.fetchone()
 
+    def get_cr_by_status(self, project_id: str, status: str) -> sqlite3.Row | None:
+        """
+        Retrieves the first change request for a project with a specific status.
+
+        Args:
+            project_id (str): The ID of the project.
+            status (str): The status to filter by.
+
+        Returns:
+            sqlite3.Row | None: A Row object representing the CR, or None if not found.
+        """
+        query = "SELECT * FROM ChangeRequestRegister WHERE project_id = ? AND status = ? LIMIT 1"
+        cursor = self._execute_query(query, (project_id, status))
+        return cursor.fetchone()
+
     # --- OrchestrationState CRUD Operations ---
 
     def save_orchestration_state(self, project_id: str, current_phase: str, current_step: str, state_details: str, timestamp: str):
