@@ -182,7 +182,7 @@ class SpecClarificationAgent:
         (Placeholder for the main agent logic)
         [cite_start](ASDF PRD v0.2, Phase 1) [cite: 215, 225]
         """
-        # TODO: Implement the full clarification loop logic.
+        #    Implement the full clarification loop logic.
         # 1. Analyze spec_text for ambiguities, missing details, etc.
         # 2. Generate questions for the PM.
         # 3. Present questions and get feedback via the GUI.

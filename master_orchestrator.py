@@ -6,12 +6,14 @@ from enum import Enum, auto
 from pathlib import Path
 
 from asdf_db_manager import ASDFDBManager
-from logic_agent_app_target import LogicAgent_AppTarget
-from code_agent_app_target import CodeAgent_AppTarget
-from test_agent_app_target import TestAgent_AppTarget
-from doc_update_agent_rowd import DocUpdateAgentRoWD
-from build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
-from agent_refactoring_planner_app_target import RefactoringPlannerAgent_AppTarget
+from agents.logic_agent_app_target import LogicAgent_AppTarget
+from agents.code_agent_app_target import CodeAgent_AppTarget
+from agents.test_agent_app_target import TestAgent_AppTarget
+from agents.doc_update_agent_rowd import DocUpdateAgentRoWD
+from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
+from agents.agent_refactoring_planner_app_target import RefactoringPlannerAgent_AppTarget
+from agents.agent_integration_planner_app_target import IntegrationPlannerAgent
+from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

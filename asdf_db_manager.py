@@ -106,7 +106,19 @@ class ASDFDBManager:
         """
         logging.info("Attempting to create database tables if they don't exist.")
 
-        # SQL for creating the ChangeRequestRegister table
+        # CORRECTED: Added the missing CREATE TABLE statement for the Projects table.
+        create_projects_table = """
+        CREATE TABLE IF NOT EXISTS Projects (
+            project_id TEXT PRIMARY KEY,
+            project_name TEXT NOT NULL,
+            creation_timestamp TEXT NOT NULL,
+            technology_stack TEXT,
+            project_root_folder TEXT,
+            final_spec_text TEXT
+        );
+        """
+        self._execute_query(create_projects_table)
+
         create_cr_register_table = """
         CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
             cr_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,7 +134,6 @@ class ASDFDBManager:
         """
         self._execute_query(create_cr_register_table)
 
-        # SQL for creating the Artifacts (RoWD) table
         create_artifacts_table = """
         CREATE TABLE IF NOT EXISTS Artifacts (
             artifact_id TEXT PRIMARY KEY,
@@ -144,7 +155,6 @@ class ASDFDBManager:
         """
         self._execute_query(create_artifacts_table)
 
-        # SQL for creating the OrchestrationState table
         create_orchestration_state_table = """
         CREATE TABLE IF NOT EXISTS OrchestrationState (
             state_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -158,7 +168,6 @@ class ASDFDBManager:
         """
         self._execute_query(create_orchestration_state_table)
 
-        # SQL for creating the FactoryConfig table
         create_factory_config_table = """
         CREATE TABLE IF NOT EXISTS FactoryConfig (
             key TEXT PRIMARY KEY,
@@ -168,7 +177,6 @@ class ASDFDBManager:
         """
         self._execute_query(create_factory_config_table)
 
-        # SQL for creating the FactoryKnowledgeBase table
         create_factory_knowledge_base_table = """
         CREATE TABLE IF NOT EXISTS FactoryKnowledgeBase (
             entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -181,7 +189,6 @@ class ASDFDBManager:
         """
         self._execute_query(create_factory_knowledge_base_table)
 
-        # SQL for creating the ProjectHistory table
         create_project_history_table = """
         CREATE TABLE IF NOT EXISTS ProjectHistory (
             history_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,21 +200,6 @@ class ASDFDBManager:
         );
         """
         self._execute_query(create_project_history_table)
-
-        # SQL for creating the ChangeRequestRegister table
-        create_cr_register_table = """
-        CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
-            cr_id INTEGER PRIMARY KEY AUTOINCREMENT,
-            project_id TEXT NOT NULL,
-            description TEXT NOT NULL,
-            creation_timestamp TEXT NOT NULL,
-            status TEXT NOT NULL,
-            impact_rating TEXT,
-            impact_analysis_details TEXT,
-            FOREIGN KEY (project_id) REFERENCES Projects (project_id)
-        );
-        """
-        self._execute_query(create_cr_register_table)
 
         logging.info("Finished creating database tables.")
 
