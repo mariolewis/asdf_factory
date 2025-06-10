@@ -28,14 +28,6 @@ class IntegrationPlannerAgent:
     def create_integration_plan(self, new_artifacts_json: str, existing_code_files: dict[str, str]) -> str:
         """
         Generates a JSON-based plan for integrating new components.
-
-        Args:
-            new_artifacts_json (str): A JSON string list of RoWD records for the new artifacts.
-            existing_code_files (dict[str, str]): A dictionary where keys are file paths
-                                                   and values are the string content of those files.
-                                                   These are the files that may need modification.
-        Returns:
-            str: A JSON string detailing the required code modifications.
         """
         try:
             # Prepare the context of existing files for the prompt
@@ -43,6 +35,7 @@ class IntegrationPlannerAgent:
             for path, content in existing_code_files.items():
                 existing_files_context += f"--- File: {path} ---\n```\n{content}\n```\n\n"
 
+            # CORRECTED: Escaped all literal curly braces in the JSON schema example.
             prompt = f"""
             You are a senior software engineer specializing in system integration.
             Your task is to create a detailed plan to integrate newly created software components into an existing codebase.
@@ -88,8 +81,7 @@ class IntegrationPlannerAgent:
 
             response = self.model.generate_content(prompt)
             cleaned_response = response.text.strip()
-            # Validate if the response is a valid JSON object
-            json.loads(cleaned_response)
+            json.loads(cleaned_response) # Validate if the response is a valid JSON object
             return cleaned_response
 
         except json.JSONDecodeError as e:
