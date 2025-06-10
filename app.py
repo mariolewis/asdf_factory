@@ -283,6 +283,16 @@ if page == "Project":
                             except Exception as e:
                                 st.error(f"An error occurred during analysis: {e}")
 
+        # --- Phase: Integration & Verification ---
+        elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
+            st.header("Phase 3.5: Automated Integration & Verification")
+            with st.spinner("Running automated integration, final build, and verification tests... This may take a moment."):
+                st.session_state.orchestrator._run_integration_and_verification_phase()
+
+            st.success("Integration and verification process complete.")
+            time.sleep(2)
+            st.rerun()
+
         # --- Phase: Planning ---
         elif current_phase_name == "PLANNING":
             st.header("Phase 2: Strategic Development Planning")

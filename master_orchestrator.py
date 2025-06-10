@@ -21,6 +21,7 @@ class FactoryPhase(Enum):
     IDLE = auto()
     ENV_SETUP_TARGET_APP = auto()
     SPEC_ELABORATION = auto()
+    INTEGRATION_AND_VERIFICATION = auto()
     PLANNING = auto()
     GENESIS = auto()
     RAISING_CHANGE_REQUEST = auto()
@@ -205,16 +206,102 @@ class MasterOrchestrator:
 
                 # 6. Check for plan completion
                 if self.active_plan_cursor >= len(self.active_plan):
-                    logging.info("Active development plan has been fully executed.")
-                    # Find the associated CR and mark it as completed
-                    active_cr = db.get_cr_by_status(self.project_id, "PLANNING_IN_PROGRESS")
-                    if active_cr:
-                        db.update_cr_status(active_cr['cr_id'], "COMPLETED")
+                    logging.info("All components in the plan have been generated. Transitioning to Integration & Verification phase.")
                     self.active_plan = None
                     self.active_plan_cursor = 0
+                    self.set_phase("INTEGRATION_AND_VERIFICATION")
 
         except Exception as e:
             logging.error(f"Genesis Pipeline failed while executing plan. Error: {e}")
+            self.escalate_for_manual_debug()
+
+    def _run_integration_and_verification_phase(self):
+        """
+        Executes the full F-Phase 3.5 workflow.
+        """
+        logging.info("Starting Phase 3.5: Automated Integration & Verification.")
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                project_details = db.get_project_by_id(self.project_id)
+                project_root_path = Path(project_details['project_root_folder'])
+
+                # 1. Get context: new artifacts and existing main files
+                # For this example, we assume 'app.py' or a main script is the integration point.
+                # A more advanced version would identify these files dynamically.
+                integration_target_file = "src/main.py" # Example target
+
+                # Create the file if it doesn't exist
+                if not (project_root_path / integration_target_file).exists():
+                    (project_root_path / integration_target_file).parent.mkdir(parents=True, exist_ok=True)
+                    (project_root_path / integration_target_file).write_text("# Main application entry point\n", encoding='utf-8')
+
+                existing_files = {
+                    integration_target_file: (project_root_path / integration_target_file).read_text(encoding='utf-8')
+                }
+
+                # Fetch artifacts with status 'UNIT_TESTS_PASSING' that need integration
+                new_artifacts = db.get_artifacts_by_statuses(self.project_id, ["UNIT_TESTS_PASSING"])
+                if not new_artifacts:
+                    logging.warning("Integration phase started, but no new artifacts found to integrate. Skipping.")
+                    self.set_phase("PLANNING") # Or another appropriate phase
+                    return
+
+                new_artifacts_json = json.dumps([dict(row) for row in new_artifacts], indent=4)
+
+                # 2. Invoke IntegrationPlannerAgent
+                logging.info("Invoking IntegrationPlannerAgent...")
+                planner_agent = IntegrationPlannerAgent(api_key=api_key)
+                integration_plan_str = planner_agent.create_integration_plan(new_artifacts_json, existing_files)
+                integration_plan = json.loads(integration_plan_str)
+
+                if "error" in integration_plan:
+                    raise Exception(f"IntegrationPlannerAgent failed: {integration_plan['error']}")
+
+                # 3. Invoke OrchestrationCodeAgent for each file to be modified
+                logging.info("Invoking OrchestrationCodeAgent to apply integration plan...")
+                code_agent = OrchestrationCodeAgent(api_key=api_key)
+                all_modified_files = []
+                for file_path, modifications in integration_plan.items():
+                    all_modified_files.append(file_path)
+                    original_code = existing_files[file_path]
+                    modifications_json = json.dumps(modifications)
+                    modified_code = code_agent.apply_modifications(original_code, modifications_json)
+                    (project_root_path / file_path).write_text(modified_code, encoding='utf-8')
+                    logging.info(f"Successfully applied integration modifications to {file_path}.")
+
+                # 4. Final Build, Verification, and Commit
+                logging.info("Invoking BuildAndCommitAgent for final verification and commit...")
+                build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+                tests_passed, test_output = build_agent.build_component("pytest")
+
+                if not tests_passed:
+                    raise Exception(f"Final integration verification failed.\n{test_output}")
+
+                # Find the CR that triggered this work and create a commit message
+                active_cr = db.get_cr_by_status(self.project_id, "PLANNING_IN_PROGRESS")
+                commit_message = f"feat: Integrate components for CR-{active_cr['cr_id']}" if active_cr else "feat: Integrate newly developed components"
+
+                # Add all new and modified files to the commit
+                files_to_commit = all_modified_files + [art['file_path'] for art in new_artifacts]
+                commit_success, commit_result = build_agent.commit_changes(files_to_commit, commit_message)
+
+                if not commit_success:
+                    raise Exception(f"Final Git commit failed: {commit_result}")
+
+                # 5. Update artifact and CR statuses
+                commit_hash = commit_result.split(":")[-1].strip()
+                for art in new_artifacts:
+                    db.update_artifact_status(art['artifact_id'], "INTEGRATION_TESTED", commit_hash)
+
+                if active_cr:
+                    db.update_cr_status(active_cr['cr_id'], "COMPLETED")
+
+                logging.info("Phase 3.5: Integration & Verification completed successfully.")
+                self.set_phase("PLANNING") # Return to planning/checkpoint for next steps
+
+        except Exception as e:
+            logging.error(f"Integration & Verification Phase failed. Error: {e}")
             self.escalate_for_manual_debug()
 
     def handle_raise_cr_action(self):
