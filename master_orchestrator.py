@@ -573,7 +573,7 @@ class MasterOrchestrator:
     def escalate_for_manual_debug(self, failure_log: str):
         """
         Initiates the full, multi-tiered triage and planning process for a bug.
-        This version contains the implementation for Tier 1 analysis.
+        This version contains the implementation for Tier 1 and Tier 2 analysis.
 
         Args:
             failure_log (str): The build or test output indicating the failure.
@@ -586,46 +586,66 @@ class MasterOrchestrator:
                 if not api_key:
                     raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
 
+                project_details = db.get_project_by_id(self.project_id)
+                project_root_path = Path(project_details['project_root_folder'])
+                context_package = {}
+
                 # --- Tier 1: Attempt Stack Trace Analysis ---
                 logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
-                context_package = {}
                 if "Traceback (most recent call last):" in failure_log:
-                    # This regex is designed to find file paths in standard Python tracebacks.
-                    # It looks for lines starting with 'File "' and captures the path.
                     file_path_pattern = r'File "([^"]+)"'
                     found_paths = re.findall(file_path_pattern, failure_log)
-
-                    # Get unique file paths while preserving order
                     unique_paths = list(dict.fromkeys(found_paths))
 
                     if unique_paths:
-                        logging.info(f"Found {len(unique_paths)} unique file(s) in stack trace: {unique_paths}")
-                        project_details = db.get_project_by_id(self.project_id)
-                        project_root_path = Path(project_details['project_root_folder'])
-
+                        logging.info(f"Found {len(unique_paths)} unique file(s) in stack trace.")
                         for file_path_str in unique_paths:
                             try:
-                                # Ensure the path is within the project directory for security
                                 full_path = Path(file_path_str).resolve()
                                 if project_root_path.resolve() in full_path.parents or project_root_path.resolve() == full_path:
-                                    relative_path = full_path.relative_to(project_root_path)
-                                    context_package[str(relative_path)] = full_path.read_text(encoding='utf-8')
-                                else:
-                                    logging.warning(f"Skipping file path outside of project root: {file_path_str}")
+                                    relative_path = str(full_path.relative_to(project_root_path))
+                                    context_package[relative_path] = full_path.read_text(encoding='utf-8')
                             except Exception as e:
                                 logging.warning(f"Could not read source file from traceback: {file_path_str}. Error: {e}")
 
                 if context_package:
                     logging.info("Tier 1 Success: Context gathered from stack trace. Proceeding to plan a fix.")
                     self._plan_and_execute_fix(failure_log, context_package, api_key)
-                    return  # Exit after successful planning and execution
+                    return
 
-                # --- Tier 2: Attempt Main Executable Trace Analysis (Placeholder) ---
+                # --- Tier 2: Attempt Main Executable Trace Analysis ---
                 logging.warning("Tier 1 Failed: No usable stack trace found. Proceeding to Tier 2 analysis.")
-                # TODO: Implement the guided trace logic here.
+                apex_file_name = project_details.get("apex_executable_name")
+
+                if apex_file_name:
+                    logging.info(f"Tier 2: Main executable '{apex_file_name}' found. Proceeding with guided trace analysis.")
+
+                    # Heuristic to find the failing component name from the log
+                    failing_component_match = re.search(r"component:\s*'([^']+)'", failure_log, re.IGNORECASE)
+                    if failing_component_match:
+                        failing_component_name = failing_component_match.group(1)
+                        logging.info(f"Identified potential failing component from log: '{failing_component_name}'")
+
+                        # Use RoWD to find the file path of the apex/main executable
+                        all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                        apex_artifact = next((art for art in all_artifacts if Path(art['file_path']).stem == apex_file_name), None)
+
+                        if apex_artifact:
+                            # Perform a search down the dependency tree from the apex file
+                            # For now, we'll simulate this by just grabbing the apex file and the failing component's file.
+                            # A full implementation would build a graph and find the path.
+                            failing_artifact = next((art for art in all_artifacts if art['artifact_name'] == failing_component_name), None)
+                            if failing_artifact:
+                                apex_file_path = Path(apex_artifact['file_path'])
+                                failing_file_path = Path(failing_artifact['file_path'])
+                                context_package[str(apex_file_path)] = (project_root_path / apex_file_path).read_text(encoding='utf-8')
+                                context_package[str(failing_file_path)] = (project_root_path / failing_file_path).read_text(encoding='utf-8')
+                                logging.info("Tier 2 Success: Context gathered from guided trace. Proceeding to plan a fix.")
+                                self._plan_and_execute_fix(failure_log, context_package, api_key)
+                                return
 
                 # --- Tier 3: Initiate Interactive Triage ---
-                logging.warning("Tier 2 Failed. Proceeding to Tier 3 for PM interaction.")
+                logging.warning("Tier 2 Failed: Could not determine context automatically. Proceeding to Tier 3 for PM interaction.")
                 self.set_phase("AWAITING_PM_TRIAGE_INPUT")
 
         except Exception as e:
