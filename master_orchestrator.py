@@ -32,6 +32,7 @@ class FactoryPhase(Enum):
     DEBUG_PM_ESCALATION = auto()
     VIEWING_PROJECT_HISTORY = auto()
     AWAITING_CONTEXT_REESTABLISHMENT = auto()
+    AWAITING_PM_TRIAGE_INPUT = auto()
     # Add other phases as they are developed
 
 class MasterOrchestrator:
@@ -568,13 +569,64 @@ class MasterOrchestrator:
         # Future implementation will load state from DB and set the correct phase.
         pass
 
-    def escalate_for_manual_debug(self):
+    def escalate_for_manual_debug(self, failure_log: str):
         """
-        Transitions the factory into the state where the PM must intervene
-        after automated debugging has failed.
+        Initiates the full, multi-tiered triage and planning process for a bug.
+        This replaces the previous simpler escalation method.
+
+        Args:
+            failure_log (str): The build or test output indicating the failure.
         """
-        logging.warning("Automated debugging failed after max attempts. Escalating to PM.")
-        self.set_phase("DEBUG_PM_ESCALATION")
+        logging.info("Initiating multi-tiered debugging process...")
+
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
+
+                # --- Tier 1: Attempt Automated Stack Trace Analysis ---
+                # TODO: Implement a robust stack trace parser here.
+                # For now, we simulate by checking for the word "Traceback".
+                if "Traceback (most recent call last):" in failure_log:
+                    logging.info("Tier 1 Success: Stack trace found. Proceeding with stack trace analysis.")
+                    # TODO: Implement logic to parse the traceback, identify all files in the call stack,
+                    # read their source code, and build a context package.
+                    # For now, we will simulate this context.
+                    context_package = {"source_code_from_trace": "Simulated source code from stack trace..."}
+
+                    # If context is gathered, proceed to planning a fix.
+                    self._plan_and_execute_fix(context_package, api_key)
+                    return # Exit after successful planning
+
+                # --- Tier 2: Attempt Main Executable Trace Analysis ---
+                logging.warning("Tier 1 Failed: No stack trace found. Proceeding to Tier 2 analysis.")
+                project_details = db.get_project_by_id(self.project_id)
+                apex_file_name = project_details.get("apex_executable_name")
+
+                if apex_file_name:
+                    logging.info(f"Tier 2: Apex file '{apex_file_name}' found. Proceeding with guided trace analysis.")
+                    # TODO: Implement the guided trace logic:
+                    # 1. Identify failing component from failure_log.
+                    # 2. Start at the apex file.
+                    # 3. Use RoWD to traverse dependencies, searching for the failing component.
+                    # 4. Read the source code of all files on the hypothesized path.
+                    # For now, we will simulate this context.
+                    context_package = {"source_code_from_apex_trace": "Simulated source code from apex trace..."}
+
+                    # If context is gathered, proceed to planning a fix.
+                    self._plan_and_execute_fix(context_package, api_key)
+                    return # Exit after successful planning
+
+                # --- Tier 3: Initiate Interactive Triage ---
+                logging.warning("Tier 2 Failed: No apex file defined or trace failed. Proceeding to Tier 3.")
+                self.set_phase("AWAITING_PM_TRIAGE_INPUT")
+                # The UI will now take over to ask the PM for input.
+
+        except Exception as e:
+            logging.error(f"A critical error occurred during the triage process: {e}")
+            # If the triage process itself fails, escalate for full manual investigation.
+            self.set_phase("DEBUG_PM_ESCALATION")
 
     def handle_pm_debug_choice(self, choice: str, details: dict = None):
         """
@@ -744,3 +796,33 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to retrieve project history: {e}")
             return []
+
+    def _plan_and_execute_fix(self, context_package: dict, api_key: str):
+        """
+        A helper method that invokes the FixPlannerAgent with gathered context
+        and prepares the resulting plan for execution by the Genesis pipeline.
+
+        Args:
+            context_package (dict): A dictionary containing the context (e.g., source code).
+            api_key (str): The LLM API key.
+        """
+        logging.info("Invoking FixPlannerAgent with rich context to generate a fix plan...")
+
+        # TODO: Instantiate and call the actual FixPlannerAgent.
+        # planner_agent = FixPlannerAgent(api_key=api_key)
+        # fix_plan = planner_agent.create_fix_plan(context_package)
+
+        # For now, we simulate a successful plan generation.
+        simulated_plan = [{
+            "micro_spec_id": "fix_ms_001",
+            "task_description": "In the file 'src/utils/validators.py', correct the regex in the 'is_valid_email' function to properly handle subdomains.",
+            "component_name": "is_valid_email",
+            "component_type": "FUNCTION",
+            "component_file_path": "src/utils/validators.py",
+            "test_file_path": "tests/test_validators.py"
+        }]
+
+        self.active_plan = simulated_plan
+        self.active_plan_cursor = 0
+        self.set_phase("GENESIS")
+        logging.info("Successfully generated a fix plan. Transitioning to GENESIS phase to apply the fix.")
