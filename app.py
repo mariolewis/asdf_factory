@@ -125,17 +125,34 @@ if page == "Project":
             if st.session_state.get('git_initialized'):
                 st.divider()
                 if st.button("Complete Environment Setup & Proceed to Phase 1", use_container_width=True):
-                    with st.session_state.orchestrator.db_manager as db:
-                        db.update_project_technology(
-                            st.session_state.orchestrator.project_id,
-                            st.session_state.language
-                        )
-                    st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
-                    # Clean up session state keys used by the setup agent
-                    for key in ['project_root_path', 'path_confirmed', 'git_initialized', 'language', 'language_select', 'frameworks']:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
+                    # Get the apex file name from session state
+                    apex_file = st.session_state.get("apex_file_name_input", "").strip()
+                    if not apex_file:
+                        st.error("Please provide a main Executable File Name before proceeding.")
+                    else:
+                        with st.session_state.orchestrator.db_manager as db:
+                            # Save the technology stack
+                            db.update_project_technology(
+                                st.session_state.orchestrator.project_id,
+                                st.session_state.language
+                            )
+                            # Save the new apex file name
+                            db.update_project_apex_file(
+                                st.session_state.orchestrator.project_id,
+                                apex_file
+                            )
+
+                        st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
+
+                        # Clean up session state keys used by the setup agent
+                        keys_to_clear = [
+                            'project_root_path', 'path_confirmed', 'git_initialized',
+                            'language', 'language_select', 'frameworks', 'apex_file_name_input'
+                        ]
+                        for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
 
         # --- Phase: Specification Elaboration ---
         elif current_phase_name == "SPEC_ELABORATION":

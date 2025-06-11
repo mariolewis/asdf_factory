@@ -114,6 +114,7 @@ class ASDFDBManager:
             creation_timestamp TEXT NOT NULL,
             technology_stack TEXT,
             project_root_folder TEXT,
+            apex_executable_name TEXT,
             final_spec_text TEXT
         );
         """
@@ -262,6 +263,19 @@ class ASDFDBManager:
         params = (technology_stack, project_id)
         self._execute_query(query, params)
         logging.info(f"Set technology stack for project ID '{project_id}' to '{technology_stack}'.")
+
+    def update_project_apex_file(self, project_id: str, apex_name: str):
+        """
+        Updates the apex_executable_name for a given project.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            apex_name (str): The name of the apex executable file (without extension).
+        """
+        query = "UPDATE Projects SET apex_executable_name = ? WHERE project_id = ?"
+        params = (apex_name, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set apex file for project ID '{project_id}' to '{apex_name}'.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 

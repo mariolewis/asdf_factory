@@ -186,6 +186,24 @@ class EnvironmentSetupAgent_AppTarget:
                     ASDF will place all new Kotlin source code files inside this `src/main/kotlin` directory.
                     """))
 
+        # At the end of _run_tech_stack_setup_step()
+        st.divider()
+        if st.session_state.language:
+            self._run_apex_definition_step()
+
+    def _run_apex_definition_step(self):
+        """
+        Handles the definition of the project's main executable file.
+        """
+        st.subheader("Name the Main Executable File)")
+        st.markdown("Please provide a name for the main executable file for your application, **without the file extension**.")
+
+        st.text_input(
+            "Executable File Name:",
+            placeholder="e.g., 'main' for main.py, or 'app' for app.py",
+            key="apex_file_name_input"
+        )
+
     def run_setup_flow(self):
         """
         Executes the full environment setup flow, starting with defining the project path.
