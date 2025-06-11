@@ -539,6 +539,40 @@ if page == "Project":
                         del st.session_state.cr_edit_description # Clean up
                         st.rerun()
 
+        # --- Phase: Awaiting PM Triage Input ---
+        elif current_phase_name == "AWAITING_PM_TRIAGE_INPUT":
+            st.header("Phase 5: Interactive Triage")
+            st.warning("Automated Triage Failed: The system could not automatically determine the context of the failure.")
+            st.info(
+                """
+                **Your input is required to proceed.**
+
+                Please describe the failure below. If you have access to any error messages from the
+                console or the screen, please paste them here. The Triage Agent will use this
+                information to attempt to form a hypothesis.
+                """
+            )
+
+            pm_description = st.text_area(
+                "Describe the failure or paste any error logs:",
+                height=200,
+                key="pm_triage_input"
+            )
+
+            st.divider()
+            col1, col2, _ = st.columns([1.5, 2, 4])
+
+            with col1:
+                if st.button("Submit for Analysis", use_container_width=True, type="primary", disabled=not pm_description):
+                    with st.spinner("Submitting your description for analysis..."):
+                        st.session_state.orchestrator.handle_pm_triage_input(pm_description)
+                    st.rerun()
+
+            with col2:
+                if st.button("Skip to Manual Debugging", use_container_width=True):
+                    st.session_state.orchestrator.set_phase("DEBUG_PM_ESCALATION")
+                    st.rerun()
+
         # --- Phase: Debug PM Escalation ---
         elif current_phase_name == "DEBUG_PM_ESCALATION":
             st.header("Automated Debugging Failed")
