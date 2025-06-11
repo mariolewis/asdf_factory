@@ -368,7 +368,7 @@ if page == "Project":
             with col3:
                 if st.button("🔁 Implement CR", use_container_width=True):
                     st.toast("Opening Change Request Register...")
-                    # TODO: Add call to orchestrator to handle 'Implement CR' logic.
+                    st.session_state.orchestrator.handle_view_cr_register_action()
                     st.rerun()
 
             with col4:
@@ -707,7 +707,7 @@ elif page == "Settings":
     with st.session_state.orchestrator.db_manager as db:
         all_config = db.get_all_config_values()
 
-    st.number_input("Maximum Automated Debug Attempts", min_value=1, key="max_debug_attempts", value=int(all_config.get("MAX_DEBUG_ATTEMPTS", 5)))
+    st.number_input("Maximum Automated Debug Attempts", min_value=1, key="max_debug_attempts", value=int(all_config.get("MAX_DEBUG_ATTEMPTS", 2)))
     pm_checkpoint_options = {"ALWAYS_ASK": "Always ask before proceeding", "AUTO_PROCEED": "Automatically proceed if successful"}
     current_pm_behavior = all_config.get("PM_CHECKPOINT_BEHAVIOR", "ALWAYS_ASK")
     pm_checkpoint_index = list(pm_checkpoint_options.keys()).index(current_pm_behavior)
