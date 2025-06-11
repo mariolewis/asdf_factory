@@ -596,7 +596,7 @@ class MasterOrchestrator:
                     context_package = {"source_code_from_trace": "Simulated source code from stack trace..."}
 
                     # If context is gathered, proceed to planning a fix.
-                    self._plan_and_execute_fix(context_package, api_key)
+                    self._plan_and_execute_fix(failure_log, context_package, api_key)
                     return # Exit after successful planning
 
                 # --- Tier 2: Attempt Main Executable Trace Analysis ---
@@ -615,7 +615,7 @@ class MasterOrchestrator:
                     context_package = {"source_code_from_apex_trace": "Simulated source code from apex trace..."}
 
                     # If context is gathered, proceed to planning a fix.
-                    self._plan_and_execute_fix(context_package, api_key)
+                    self._plan_and_execute_fix(failure_log, context_package, api_key)
                     return # Exit after successful planning
 
                 # --- Tier 3: Initiate Interactive Triage ---
@@ -797,32 +797,37 @@ class MasterOrchestrator:
             logging.error(f"Failed to retrieve project history: {e}")
             return []
 
-    def _plan_and_execute_fix(self, context_package: dict, api_key: str):
+    def _plan_and_execute_fix(self, failure_log: str, context_package: dict, api_key: str):
         """
         A helper method that invokes the FixPlannerAgent with gathered context
         and prepares the resulting plan for execution by the Genesis pipeline.
 
         Args:
-            context_package (dict): A dictionary containing the context (e.g., source code).
+            failure_log (str): The error log or failure description.
+            context_package (dict): A dictionary containing the source code of relevant files.
             api_key (str): The LLM API key.
         """
         logging.info("Invoking FixPlannerAgent with rich context to generate a fix plan...")
 
-        # TODO: Instantiate and call the actual FixPlannerAgent.
-        # planner_agent = FixPlannerAgent(api_key=api_key)
-        # fix_plan = planner_agent.create_fix_plan(context_package)
+        # For now, we will pass the first available source code as the context.
+        # This will be enhanced when we implement the full trace analysis.
+        relevant_code = next(iter(context_package.values()), "No code context available.")
 
-        # For now, we simulate a successful plan generation.
-        simulated_plan = [{
-            "micro_spec_id": "fix_ms_001",
-            "task_description": "In the file 'src/utils/validators.py', correct the regex in the 'is_valid_email' function to properly handle subdomains.",
-            "component_name": "is_valid_email",
-            "component_type": "FUNCTION",
-            "component_file_path": "src/utils/validators.py",
-            "test_file_path": "tests/test_validators.py"
-        }]
+        planner_agent = FixPlannerAgent_AppTarget(api_key=api_key)
+        fix_plan_str = planner_agent.create_fix_plan(
+            root_cause_hypothesis=failure_log,
+            relevant_code=relevant_code
+        )
 
-        self.active_plan = simulated_plan
+        # Check for errors from the agent call
+        if "error" in fix_plan_str:
+            raise Exception(f"FixPlannerAgent failed to generate a plan: {fix_plan_str}")
+
+        fix_plan = json.loads(fix_plan_str)
+        if not fix_plan:
+             raise Exception("FixPlannerAgent returned an empty plan.")
+
+        self.active_plan = fix_plan
         self.active_plan_cursor = 0
         self.set_phase("GENESIS")
         logging.info("Successfully generated a fix plan. Transitioning to GENESIS phase to apply the fix.")
