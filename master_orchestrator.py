@@ -15,6 +15,7 @@ from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarge
 from agents.agent_refactoring_planner_app_target import RefactoringPlannerAgent_AppTarget
 from agents.agent_integration_planner_app_target import IntegrationPlannerAgent
 from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
+from agents.agent_triage_app_target import TriageAgent_AppTarget
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -855,3 +856,42 @@ class MasterOrchestrator:
         self.active_plan_cursor = 0
         self.set_phase("GENESIS")
         logging.info("Successfully generated a fix plan. Transitioning to GENESIS phase to apply the fix.")
+
+    def handle_pm_triage_input(self, pm_error_description: str):
+        """
+        Handles the text input provided by the PM during interactive triage (Tier 3).
+
+        Args:
+            pm_error_description (str): The PM's description of the error.
+        """
+        logging.info("Tier 3: Received manual error description from PM. Attempting to generate fix plan.")
+
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("Cannot proceed with triage. LLM API Key is not set.")
+
+                # In this tier, we don't have code context, so we rely on the Triage Agent
+                # to form a hypothesis from the PM's description alone.
+                triage_agent = TriageAgent_AppTarget(api_key=api_key)
+                hypothesis = triage_agent.analyze_and_hypothesize(
+                    error_logs=pm_error_description,
+                    relevant_code="No specific code context available; base analysis on description."
+                )
+
+                if "An error occurred" in hypothesis:
+                    raise Exception(f"TriageAgent failed: {hypothesis}")
+
+                # We now have a hypothesis, but no code context yet.
+                # We will pass this to the fix planner. A future enhancement would be
+                # to use this hypothesis to find and load relevant code.
+                simulated_context_package = {"description_based_hypothesis": hypothesis}
+
+                # Use the existing fix planning method with the new context
+                self._plan_and_execute_fix(hypothesis, simulated_context_package, api_key)
+
+        except Exception as e:
+            logging.error(f"Tier 3 interactive triage failed. Error: {e}")
+            # If even the interactive triage fails, escalate to the final manual debug screen.
+            self.set_phase("DEBUG_PM_ESCALATION")
