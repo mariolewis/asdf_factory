@@ -120,6 +120,7 @@ class ASDFDBManager:
         """
         self._execute_query(create_projects_table)
 
+        # Find this statement and add the new column
         create_cr_register_table = """
         CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
             cr_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,10 +131,10 @@ class ASDFDBManager:
             status TEXT NOT NULL,
             impact_rating TEXT,
             impact_analysis_details TEXT,
+            impacted_artifact_ids TEXT, -- Add this line
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );
         """
-        self._execute_query(create_cr_register_table)
 
         create_artifacts_table = """
         CREATE TABLE IF NOT EXISTS Artifacts (
@@ -677,21 +678,24 @@ class ASDFDBManager:
         self._execute_query(query, params)
         logging.info(f"Deleted change request with ID '{cr_id}'.")
 
-    def update_cr_impact_analysis(self, cr_id: int, rating: str, details: str):
+    def update_cr_impact_analysis(self, cr_id: int, rating: str, details: str, artifact_ids: list[str]):
         """
         Updates a change request record with the results of an impact analysis.
         """
+        # Convert the list of artifact IDs to a JSON string for storage
+        ids_json = json.dumps(artifact_ids)
+
         query = """
         UPDATE ChangeRequestRegister
         SET impact_rating = ?,
             impact_analysis_details = ?,
+            impacted_artifact_ids = ?,
             status = 'IMPACT_ANALYZED',
             last_modified_timestamp = ?
         WHERE cr_id = ?
         """
-        # CORRECTED: Using timezone-aware UTC time
         timestamp = datetime.now(timezone.utc).isoformat()
-        params = (rating, details, timestamp, cr_id)
+        params = (rating, details, ids_json, timestamp, cr_id)
         self._execute_query(query, params)
         logging.info(f"Updated CR ID '{cr_id}' with impact analysis results.")
 

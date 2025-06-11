@@ -424,23 +424,38 @@ class MasterOrchestrator:
     def handle_run_impact_analysis_action(self, cr_id: int):
         """
         Orchestrates the running of an impact analysis for a specific CR.
-
-        Args:
-            cr_id (int): The ID of the change request to be analyzed.
         """
         logging.info(f"PM has requested to run impact analysis for CR ID: {cr_id}.")
-
-        # TODO: In F-Dev 5, invoke the actual ImpactAnalysisAgent here.
-        # For now, we will simulate the agent's output for UI development purposes.
-        simulated_rating = "Medium"
-        simulated_details = "Simulated analysis: This change will likely affect the UserProfile class and the authentication module. Database schema changes may be required in the 'Users' table."
-
         try:
             with self.db_manager as db:
-                db.update_cr_impact_analysis(cr_id, simulated_rating, simulated_details)
-            logging.info(f"Successfully simulated and saved impact analysis for CR ID: {cr_id}.")
+                # Get necessary context
+                api_key = db.get_config_value("LLM_API_KEY")
+                cr_details = db.get_cr_by_id(cr_id)
+                project_details = db.get_project_by_id(self.project_id)
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+
+                # Prepare context for the agent
+                rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
+
+                # Invoke the agent
+                agent = ImpactAnalysisAgent_AppTarget(api_key=api_key)
+                rating, summary, impacted_ids = agent.analyze_impact(
+                    change_request_desc=cr_details['description'],
+                    final_spec_text=project_details['final_spec_text'],
+                    rowd_json=rowd_json
+                )
+
+                if rating is None:
+                    # The agent failed, log the summary which now contains the error
+                    raise Exception(f"ImpactAnalysisAgent failed: {summary}")
+
+                # Save the real results to the database
+                db.update_cr_impact_analysis(cr_id, rating, summary, impacted_ids)
+                logging.info(f"Successfully ran and saved impact analysis for CR ID: {cr_id}.")
+
         except Exception as e:
-            logging.error(f"Failed to save impact analysis results for CR ID {cr_id}: {e}")
+            logging.error(f"Failed to run impact analysis for CR ID {cr_id}: {e}")
+            # Optionally, set an error state to be displayed in the UI
 
     def handle_delete_cr_action(self, cr_id: int):
         """

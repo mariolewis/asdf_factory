@@ -30,81 +30,52 @@ class ImpactAnalysisAgent_AppTarget:
         self.api_key = api_key
         genai.configure(api_key=self.api_key)
 
-    def analyze_impact(self, change_request_desc: str, final_spec_text: str, rowd_json: str) -> tuple[str | None, str | None]:
+    def analyze_impact(self, change_request_desc: str, final_spec_text: str, rowd_json: str) -> tuple[str | None, str | None, list[str] | None]:
         """
-        Performs a high-level impact analysis and assigns a rating.
-
-        Args:
-            change_request_desc (str): The description of the change request.
-            final_spec_text (str): The full text of the finalized application specification.
-            rowd_json (str): A JSON string representing the list of artifacts in the
-                             Record-of-Work-Done (RoWD).
+        Performs a high-level impact analysis, assigning a rating and identifying
+        the specific artifacts that are impacted.
 
         Returns:
-            tuple[str | None, str | None]: A tuple containing:
-                                           - The impact rating ("Minor", "Medium", "Major").
-                                           - A summary of the analysis.
-                                           Returns (None, "Error message") on failure.
+            A tuple containing (impact_rating, impact_summary, impacted_artifact_ids).
+            Returns (None, None, None) on failure.
         """
         try:
             model = genai.GenerativeModel('gemini-pro')
 
             prompt = f"""
-            You are a seasoned Software Architect. Your task is to perform a high-level impact analysis
-            of a proposed change request based on the project's specification and its current state
-            as documented in the Record-of-Work-Done (RoWD).
+            You are a seasoned Software Architect. Your task is to perform a high-level impact analysis of a proposed change request.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze the Change:** Carefully read the Change Request Description to understand what is being asked.
-            2.  **Compare with Specification:** Compare the change request against the original Finalized Specification to identify deviations or new requirements.
-            3.  **Analyze RoWD:** Examine the provided RoWD (a JSON list of all software artifacts like classes, functions, files) to identify which existing components are likely to be affected (created, modified, or deleted).
-            4.  **Determine Impact Rating:** Based on your analysis, determine the impact rating.
-                -   **Minor:** The change affects a single component, is cosmetic, or requires a very small, isolated code change.
-                -   **Medium:** The change affects a few interacting components or requires moderate logic changes.
-                -   **Major:** The change is architectural, affects many components, impacts the database schema, or alters a core feature of the application.
-            5.  **Write Summary:** Write a brief, one or two-paragraph summary explaining your reasoning for the rating. Mention the key artifacts from the RoWD that are likely to be impacted.
-            6.  **JSON Output:** Your entire response MUST be a single, valid JSON object with two keys: "impact_rating" and "impact_summary". The value for "impact_rating" must be one of "Minor", "Medium", or "Major".
+            1.  **Analysis:** Analyze the Change Request Description, the full Application Specification, and the Record-of-Work-Done (RoWD) JSON to determine the impact.
+            2.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
+            3.  **JSON Schema:** The JSON object MUST have three keys:
+                - `impact_rating`: Your assessment of the impact ("Minor", "Medium", or "Major").
+                - `impact_summary`: A brief, one-paragraph summary explaining your reasoning.
+                - `impacted_artifact_ids`: A JSON array of strings, where each string is the `artifact_id` from the RoWD for a component you believe will be directly created, modified, or deleted by this change. This is the most critical output.
+            4.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
 
             **--- INPUTS ---**
-
-            **1. Change Request Description:**
-            ```
-            {change_request_desc}
-            ```
-
-            **2. Finalized Application Specification:**
-            ```
-            {final_spec_text}
-            ```
-
-            **3. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):**
-            ```json
-            {rowd_json}
-            ```
+            **1. Change Request Description:** `{change_request_desc}`
+            **2. Finalized Application Specification:** `{final_spec_text}`
+            **3. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):** `{rowd_json}`
 
             **--- Impact Analysis (JSON Output) ---**
             """
 
-            response = model.generate_content(prompt)
-
-            # Clean the response to ensure it's valid JSON
+            response = self.model.generate_content(prompt)
             cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
-
             analysis_result = json.loads(cleaned_response)
 
             rating = analysis_result.get("impact_rating")
             summary = analysis_result.get("impact_summary")
+            impacted_ids = analysis_result.get("impacted_artifact_ids", [])
 
-            if rating not in ["Minor", "Medium", "Major"]:
-                raise ValueError("Invalid impact rating received from AI.")
+            if rating not in ["Minor", "Medium", "Major"] or not isinstance(impacted_ids, list):
+                raise ValueError("Invalid format received from AI.")
 
-            return rating, summary
+            return rating, summary, impacted_ids
 
-        except json.JSONDecodeError as e:
-            error_msg = f"Error decoding AI response as JSON: {e}\nResponse was: {response.text}"
-            logging.error(error_msg)
-            return None, error_msg
         except Exception as e:
             error_msg = f"An unexpected error occurred during impact analysis: {e}"
             logging.error(error_msg)
-            return None, error_msg
+            return None, error_msg, None
