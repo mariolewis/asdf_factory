@@ -1,3 +1,7 @@
+# A conservative character limit to prevent exceeding the LLM's context window.
+# This serves as a proxy for token count.
+CONTEXT_CHARACTER_LIMIT = 15000
+
 import logging
 import uuid
 import json
@@ -366,60 +370,76 @@ class MasterOrchestrator:
     def handle_implement_cr_action(self, cr_id: int):
         """
         Handles the logic for when the PM confirms a CR for implementation.
-        This orchestrates the RefactoringPlannerAgent to create a detailed
-        plan for the Genesis Pipeline to execute.
+        This orchestrates the RefactoringPlannerAgent, providing it with
+        hybrid context (metadata + source code) and managing context size.
         """
         logging.info(f"PM has confirmed implementation for Change Request ID: {cr_id}.")
 
         try:
             with self.db_manager as db:
-                # 1. Get necessary context from the database
+                # 1. Get standard context
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key:
                     raise Exception("CRITICAL: LLM_API_KEY is not set.")
 
                 cr_details = db.get_cr_by_id(cr_id)
-                if not cr_details:
-                    raise Exception(f"Could not find details for CR ID {cr_id}")
-
                 project_details = db.get_project_by_id(self.project_id)
-                final_spec_text = project_details['final_spec_text']
-
                 all_artifacts = db.get_all_artifacts_for_project(self.project_id)
                 rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
+                project_root_path = Path(project_details['project_root_folder'])
 
-                # 2. Update CR status to show planning is in progress
+                # 2. HYBRID CONTEXT GATHERING
+                source_code_context = {}
+                impacted_ids_json = cr_details.get('impacted_artifact_ids')
+                if impacted_ids_json:
+                    impacted_ids = json.loads(impacted_ids_json)
+                    logging.info(f"Fetching source code for {len(impacted_ids)} impacted artifact(s)...")
+                    for artifact_id in impacted_ids:
+                        artifact_record = db.get_artifact_by_id(artifact_id)
+                        if artifact_record and artifact_record['file_path']:
+                            try:
+                                source_path = project_root_path / artifact_record['file_path']
+                                source_code_context[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
+                            except Exception as e:
+                                logging.warning(f"Could not read source for artifact {artifact_record['artifact_name']}: {e}")
+
+                # 3. **NEW: CONTEXT WINDOW MANAGEMENT**
+                total_chars = sum(len(code) for code in source_code_context.values())
+                if total_chars > CONTEXT_CHARACTER_LIMIT:
+                    logging.warning(
+                        f"Total source code size ({total_chars} chars) exceeds limit "
+                        f"({CONTEXT_CHARACTER_LIMIT} chars). Falling back to metadata-only analysis "
+                        f"to avoid context window errors."
+                    )
+                    # Clear the source code context to perform the fallback
+                    source_code_context = {}
+
+                # 4. Update CR status
                 db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
-                logging.info(f"Updated status for CR-{cr_id} to PLANNING_IN_PROGRESS.")
 
-                # 3. Instantiate and invoke the RefactoringPlannerAgent
+                # 5. Invoke the RefactoringPlannerAgent
                 planner_agent = RefactoringPlannerAgent_AppTarget(api_key=api_key)
-                logging.info(f"Invoking RefactoringPlannerAgent for CR-{cr_id}...")
-                new_plan = planner_agent.create_refactoring_plan(
+                new_plan_str = planner_agent.create_refactoring_plan(
                     change_request_desc=cr_details['description'],
-                    final_spec_text=final_spec_text,
-                    rowd_json=rowd_json
+                    final_spec_text=project_details['final_spec_text'],
+                    rowd_json=rowd_json,
+                    source_code_context=source_code_context
                 )
 
-                if "An error occurred" in new_plan:
-                    raise Exception(f"RefactoringPlannerAgent failed: {new_plan}")
+                if "error" in new_plan_str:
+                    raise Exception(f"RefactoringPlannerAgent failed: {new_plan_str}")
 
-                # 4. Store the newly generated plan in the orchestrator's state
-                # NOTE: In a future iteration, this plan would be saved to a dedicated
-                # 'DevelopmentPlans' table in the database.
-                self.active_plan = json.loads(new_plan)
+                # 6. Store the plan and reset the cursor
+                self.active_plan = json.loads(new_plan_str)
                 self.active_plan_cursor = 0
                 logging.info("Successfully generated new development plan from Change Request.")
-                logging.debug(f"New Plan:\n{self.active_plan}")
 
-                # 5. Transition to the Genesis phase to begin execution of the new plan
+                # 7. Transition to the Genesis phase
                 self.set_phase("GENESIS")
-                logging.info("Transitioning to GENESIS phase to execute the new plan.")
 
         except Exception as e:
             logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
-            # Optionally, reset the phase or escalate
-            self.set_phase("IMPLEMENTING_CHANGE_REQUEST") # Return to previous screen on error
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
     def handle_run_impact_analysis_action(self, cr_id: int):
         """
