@@ -73,7 +73,11 @@ with st.sidebar:
 
         if st.session_state.get("show_export_confirmation"):
             with st.form("export_form"):
-                st.warning("This will archive the current project and clear the active session. This cannot be undone.")
+                st.warning(
+                    "**Archive Project Confirmation**\n\n"
+                    "This will save all project data to an external archive file and clear the active session. "
+                    "This action is for permanently archiving your work, unlike the temporary 'Pause' function. This cannot be undone."
+                )
                 archive_name_input = st.text_input(
                     "Enter a name for the archive file:",
                     value=f"{st.session_state.orchestrator.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}"
@@ -86,11 +90,14 @@ with st.sidebar:
                 submitted = st.form_submit_button("Confirm and Export")
                 if submitted:
                     if archive_name_input:
-                        success = st.session_state.orchestrator.stop_and_export_project(archive_path, archive_name_input)
-                        if success:
+                        archive_file_path = st.session_state.orchestrator.stop_and_export_project(archive_path, archive_name_input)
+                        if archive_file_path:
                             st.toast("✅ Project exported successfully!")
+                            # Store the success message in the session state to display after the rerun
+                            st.session_state.last_action_success_message = f"Project archived successfully. RoWD data saved to: `{archive_file_path}`"
                         else:
                             st.error("Failed to export project.")
+
                         st.session_state.show_export_confirmation = False
                         st.rerun()
                     else:
@@ -100,6 +107,10 @@ with st.sidebar:
 # --- Main Application UI ---
 
 if page == "Project":
+    # --- Display success message from last action if it exists ---
+    if "last_action_success_message" in st.session_state:
+        st.success(st.session_state.last_action_success_message)
+        del st.session_state.last_action_success_message # Clear after displaying
     # --- Logic for starting a new project (if none is active) ---
     if not st.session_state.orchestrator.project_id:
         st.subheader("Start a New Project")
