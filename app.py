@@ -213,7 +213,13 @@ if page == "Project":
                                     st.session_state.specification_text = expanded_text
                                     st.rerun()
                             except Exception as e:
-                                st.error(f"An error occurred while communicating with the AI: {e}")
+                                st.error(
+                                    "An error occurred while communicating with the AI. "
+                                    "This could be due to a network issue, an invalid API key, or a problem with the AI service."
+                                )
+                                st.info("💡 **Suggestion:** Please verify your API key in the 'Settings' page and check your internet connection before trying again.")
+                                logging.error(f"Spec Expansion Error: {e}")
+
                     else:
                         st.warning("Please enter a description.")
 
@@ -259,6 +265,8 @@ if page == "Project":
 
                             except Exception as e:
                                 st.error(f"An error occurred during finalization: {e}")
+                                logging.error(f"Specification Finalization Error: {e}")
+
                     st.divider()
 
                     # Display chat history for the clarification
@@ -278,7 +286,7 @@ if page == "Project":
                                 if not api_key:
                                     st.error("Cannot proceed. LLM API Key is not set in Settings.")
                                 else:
-                                    agent = SpecClarificationAgent(api_key=api_key)agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                                    agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                                     revised_spec = agent.refine_specification(
                                         original_spec_text=st.session_state.specification_text,
                                         issues_found=st.session_state.clarification_issues,
@@ -296,7 +304,36 @@ if page == "Project":
                                     st.rerun()
 
                             except Exception as e:
-                                st.error(f"An error occurred during refinement: {e}")
+                                st.error(
+                                    "An error occurred while refining the specification. "
+                                    "This could be due to a network issue, an invalid API key, or a problem with the AI service."
+                                )
+                                st.info("💡 **Suggestion:** Please verify your API key in the 'Settings' page and check your internet connection before trying again.")
+                                logging.error(f"Spec Refinement Error: {e}")
+
+                # --- Button to start the loop ---
+                else:
+                    if st.button("Analyze Specification & Begin Clarification", use_container_width=True):
+                        with st.spinner("AI is analyzing the specification for issues..."):
+                            try:
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                if not api_key:
+                                    st.error("Cannot proceed. LLM API Key is not set in Settings.")
+                                else:
+                                    agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                                    issues = agent.identify_potential_issues(st.session_state.specification_text)
+                                    st.session_state.clarification_issues = issues
+                                    # Add the AI's findings as the first message in the clarification chat
+                                    st.session_state.clarification_chat.append({"role": "assistant", "content": issues})
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(
+                                    "An error occurred during specification analysis. "
+                                    "This could be due to a network issue, an invalid API key, or a problem with the AI service."
+                                )
+                                st.info("💡 **Suggestion:** Please verify your API key in the 'Settings' page and check your internet connection before trying again.")
+                                logging.error(f"Spec Analysis Error: {e}")
 
                 # --- Button to start the loop ---
                 else:
