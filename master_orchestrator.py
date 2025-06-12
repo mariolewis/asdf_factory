@@ -923,7 +923,7 @@ class MasterOrchestrator:
 
                 # In this tier, we don't have code context, so we rely on the Triage Agent
                 # to form a hypothesis from the PM's description alone.
-                triage_agent = TriageAgent_AppTarget(api_key=api_key)
+                triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=db)
                 hypothesis = triage_agent.analyze_and_hypothesize(
                     error_logs=pm_error_description,
                     relevant_code="No specific code context available; base analysis on description."
