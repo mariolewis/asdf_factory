@@ -197,7 +197,7 @@ if page == "Project":
                                 if not api_key:
                                     st.error("Cannot proceed. LLM API Key is not set in Settings.")
                                 else:
-                                    clarification_agent = SpecClarificationAgent(api_key=api_key)
+                                    clarification_agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                                     expanded_text = clarification_agent.expand_brief_description(brief_desc_input)
                                     st.session_state.specification_text = expanded_text
                                     st.rerun()
@@ -267,7 +267,7 @@ if page == "Project":
                                 if not api_key:
                                     st.error("Cannot proceed. LLM API Key is not set in Settings.")
                                 else:
-                                    agent = SpecClarificationAgent(api_key=api_key)
+                                    agent = SpecClarificationAgent(api_key=api_key)agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                                     revised_spec = agent.refine_specification(
                                         original_spec_text=st.session_state.specification_text,
                                         issues_found=st.session_state.clarification_issues,
@@ -297,7 +297,7 @@ if page == "Project":
                                 if not api_key:
                                     st.error("Cannot proceed. LLM API Key is not set in Settings.")
                                 else:
-                                    agent = SpecClarificationAgent(api_key=api_key)
+                                    agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                                     issues = agent.identify_potential_issues(st.session_state.specification_text)
                                     st.session_state.clarification_issues = issues
                                     # Add the AI's findings as the first message in the clarification chat
