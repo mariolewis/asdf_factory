@@ -775,18 +775,27 @@ class MasterOrchestrator:
         logging.info(f"Cleared all active data for project ID: {self.project_id}")
 
 
-    def stop_and_export_project(self, archive_dir: str | Path, archive_name: str) -> bool:
+    def stop_and_export_project(self, archive_dir: str | Path, archive_name: str) -> str | None:
         """
         Exports all project data to files, adds a record to history,
         and clears the active project from the database.
+
+        Args:
+            archive_dir (str | Path): The base directory for the archive.
+            archive_name (str): The name for the archive files (without extension).
+
+        Returns:
+            str | None: The full path to the created RoWD archive file on success,
+                        or None on failure.
         """
         if not self.project_id:
             logging.warning("No active project to stop and export.")
-            return False
+            return None
 
         archive_dir = Path(archive_dir)
         archive_dir.mkdir(parents=True, exist_ok=True)
 
+        # Define the primary archive file path (for the RoWD)
         rowd_file = archive_dir / f"{archive_name}_rowd.json"
         cr_file = archive_dir / f"{archive_name}_cr.json"
 
@@ -809,7 +818,6 @@ class MasterOrchestrator:
                     project_name=self.project_name,
                     root_folder=project_details['project_root_folder'] if project_details else "N/A",
                     archive_file_path=str(rowd_file),
-                    # CORRECTED: Using timezone-aware UTC time
                     timestamp=datetime.now(timezone.utc).isoformat()
                 )
 
@@ -819,11 +827,11 @@ class MasterOrchestrator:
             self.project_name = None
             self.current_phase = FactoryPhase.IDLE
             logging.info(f"Successfully exported project '{self.project_name}' to {archive_dir}")
-            return True
+            return str(rowd_file)
 
         except Exception as e:
             logging.error(f"Failed to stop and export project: {e}")
-            return False
+            return None
 
 
     def load_archived_project(self, history_id: int):
