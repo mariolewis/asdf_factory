@@ -60,13 +60,36 @@ class MasterOrchestrator:
         self.active_cr_id_for_edit: int | None = None
         self.current_phase: FactoryPhase = FactoryPhase.IDLE
         self.active_plan = None
-        self.active_plan_cursor = 0 # Add this line
+        self.active_plan_cursor = 0
 
-        # Ensure core tables exist on startup
+        # --- CONFIGURE LOGGING ---
+        # Get the configured logging level from the database.
         with self.db_manager as db:
+            # Ensure core tables exist before we try to read from them.
             db.create_tables()
+            # Default to 'Standard' if no value is found in the database.
+            log_level_str = db.get_config_value("LOGGING_LEVEL") or "Standard"
+
+        # Map the string from the database to a logging level constant.
+        # As per PRD 5.6.5, "Detailed" and "Debug" offer higher verbosity.
+        log_level_map = {
+            "Standard": logging.INFO,
+            "Detailed": logging.DEBUG,
+            "Debug": logging.DEBUG,
+        }
+        log_level = log_level_map.get(log_level_str, logging.INFO)
+
+        # Configure the root logger for the entire application.
+        # We use force=True to override any basicConfig that might have been
+        # set by an imported module automatically.
+        logging.basicConfig(
+            level=log_level,
+            format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
+            force=True
+        )
 
         logging.info("MasterOrchestrator initialized.")
+        logging.debug(f"Logging level set to '{log_level_str}' ({log_level}).")
 
     def get_status(self) -> dict:
         """Returns the current status of the orchestrator."""
