@@ -755,7 +755,7 @@ elif page == "Settings":
     with st.session_state.orchestrator.db_manager as db:
         all_config = db.get_all_config_values()
 
-    st.number_input("Maximum Automated Debug Attempts", min_value=1, key="max_debug_attempts", value=int(all_config.get("MAX_DEBUG_ATTEMPTS", 2)))
+    st.number_input("Initial Automated Fix Retries", min_value=1, key="max_debug_attempts", value=int(all_config.get("MAX_DEBUG_ATTEMPTS", 2)), help="The number of times the system will try a direct fix for a bug before escalating to more advanced analysis strategies.")
     pm_checkpoint_options = {"ALWAYS_ASK": "Always ask before proceeding", "AUTO_PROCEED": "Automatically proceed if successful"}
     current_pm_behavior = all_config.get("PM_CHECKPOINT_BEHAVIOR", "ALWAYS_ASK")
     pm_checkpoint_index = list(pm_checkpoint_options.keys()).index(current_pm_behavior)
