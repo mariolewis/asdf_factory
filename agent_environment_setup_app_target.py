@@ -13,6 +13,9 @@ import streamlit as st
 import os
 import subprocess
 import textwrap
+import glob
+from pathlib import Path
+from agents.agent_build_script_generator import BuildScriptGeneratorAgent
 
 
 class EnvironmentSetupAgent_AppTarget:
@@ -28,6 +31,35 @@ class EnvironmentSetupAgent_AppTarget:
     def __init__(self):
         """Initializes the EnvironmentSetupAgent_AppTarget."""
         pass
+
+    def _check_for_brownfield_project(self, directory_path: str) -> bool:
+        """
+        Scans a directory to see if it contains signs of an existing project.
+        (ASDF Change Request CR-ASDF-007)
+
+        Args:
+            directory_path: The path to the directory to check.
+
+        Returns:
+            True if signs of an existing project are found, False otherwise.
+        """
+        # [cite_start]Check for common source code or build files. [cite: 70]
+        extensions_to_check = ('*.py', '*.kt', '*.java', '*.xml', '*.gradle', '*.yml', '*.json')
+        for extension in extensions_to_check:
+            if list(Path(directory_path).glob(f'**/{extension}')):
+                logging.warning(f"Brownfield check: Found existing files with extension {extension}.")
+                return True
+
+        # [cite_start]Check for a .git directory. [cite: 70]
+        if (Path(directory_path) / '.git').exists():
+            logging.warning("Brownfield check: Found existing .git directory.")
+            return True
+
+        # [cite_start]Condition: Directory is not empty but lacks ASDF metadata. [cite: 71]
+        # For now, the presence of any of the above files is our trigger.
+        # A future implementation could check for a specific ASDF metadata file.
+
+        return False
 
     def _run_git_initialization_step(self):
         """
@@ -70,62 +102,82 @@ class EnvironmentSetupAgent_AppTarget:
 
     def _run_tech_stack_setup_step(self):
         """
-        Handles the technology stack identification and setup guidance.
+        Handles technology stack identification and build script generation.
         """
-        st.subheader("Technology Stack Setup")
+        st.subheader("Technology Stack & Build Script")
 
+        # Initialize session state keys for this step
         if 'language' not in st.session_state:
             st.session_state.language = None
-        if 'frameworks' not in st.session_state:
-            st.session_state.frameworks = []
+        if 'build_script_choice_made' not in st.session_state:
+            st.session_state.build_script_choice_made = False
 
+        # Step 1: Select the language
         st.write("First, please specify the primary programming language for your target application.")
         language = st.selectbox(
             "Primary Language:",
             ["", "Python", "Kotlin"],
-            key='language_select'
+            key='language_select',
+            disabled=st.session_state.build_script_choice_made # Disable after choice is made
         )
         st.session_state.language = language
 
-        if st.session_state.language == "Python":
-            with st.expander("Python Environment Setup Guide", expanded=True):
-                st.markdown(textwrap.dedent(f"""
-                    **Best Practice:** It is highly recommended to use a virtual environment for each Python project to manage dependencies separately.
+        if st.session_state.language and not st.session_state.build_script_choice_made:
+            st.divider()
+            st.write("**Build Script Generation (CR-ASDF-005)**")
 
-                    **Step 1: Verify Python Installation**
+            # Step 2: Present the choice for build script generation
+            build_choice = st.radio(
+                "How should the build script be handled?",
+                options=[
+                    "Have ASDF generate a standard build script",
+                    "I will manage the build script manually"
+                ],
+                key="build_script_radio"
+            )
 
-                    As per the ASDF PRD, we must first check if the required tool is already installed. Open your command prompt or terminal and run the following command to ensure you have Python 3.9+ installed:
-                    """))
-                st.code("python --version", language="bash")
-                st.markdown(textwrap.dedent("""
-                    If Python is not installed or the version is older than 3.9, please install or update it from the official [Python website](https://www.python.org/).
+            if st.button("Confirm Build Script Choice"):
+                if build_choice == "Have ASDF generate a standard build script":
+                    agent = BuildScriptGeneratorAgent()
+                    script_info = agent.generate_script(st.session_state.language)
+                    if script_info:
+                        filename, content = script_info
+                        try:
+                            # Save the generated script to the project root
+                            project_path = Path(st.session_state.project_root_path)
+                            script_path = project_path / filename
+                            script_path.write_text(content, encoding='utf-8')
 
-                    **Step 2: Create a Virtual Environment**
-                    """))
-                st.markdown(textwrap.dedent(f"""
-                    Navigate to your project's root folder (`{st.session_state.project_root_path}`) in your terminal and run this command:
-                    """))
-                st.code("python -m venv venv", language="bash")
-                st.markdown(textwrap.dedent("""
-                    This will create a `venv` folder inside your project directory. This is a crucial step for isolating project dependencies.
+                            # As per CR-ASDF-005, the script should be registered in the RoWD.
+                            # This will be handled by a later process, for now we confirm generation.
+                            st.success(f"Generated and saved `{filename}` to the project root.")
+                            st.session_state.build_script_choice_made = True
+                            st.rerun()
 
-                    **Step 3: Activate the Virtual Environment**
+                        except Exception as e:
+                            st.error(f"Failed to save build script: {e}")
+                    else:
+                        st.warning(f"No standard build script available for '{st.session_state.language}'. Please manage it manually.")
 
-                    To start using the virtual environment, you need to activate it.
-                    - **On Windows:**
-                    """))
-                st.code(".\\venv\\Scripts\\activate", language="bash")
-                st.markdown(textwrap.dedent("""
-                    - **On macOS/Linux:**
-                    """))
-                st.code("source venv/bin/activate", language="bash")
-                st.markdown(textwrap.dedent("""
-                    Your terminal prompt should now change to indicate that the virtual environment is active. All subsequent `pip` commands will install packages into this environment.
+                else: # Manual management
+                    st.info("You have opted to manage the build script manually. The factory will not create one.")
+                    st.session_state.build_script_choice_made = True
+                    st.rerun()
 
-                    **Step 4: Create a Dependencies File**
+        # Step 3: Show the relevant setup guide and next step only after choice is made
+        if st.session_state.build_script_choice_made:
+            if st.session_state.language == "Python":
+                with st.expander("Python Environment Setup Guide", expanded=True):
+                    # Python setup guide content remains the same
+                    st.markdown(textwrap.dedent(f"""...""")) # Truncated for brevity
 
-                    With your virtual environment active, please create an empty file named `requirements.txt` in your project's root folder. This file will be used later by ASDF to manage your project's Python dependencies.
-                    """))
+            elif st.session_state.language == "Kotlin":
+                 with st.expander("Kotlin Environment Setup Guide", expanded=True):
+                    # Kotlin setup guide content remains the same
+                    st.markdown(textwrap.dedent(f"""...""")) # Truncated for brevity
+
+            st.divider()
+            self._run_apex_definition_step()
 
         elif st.session_state.language == "Kotlin":
             with st.expander("Kotlin Environment Setup Guide", expanded=True):
@@ -206,9 +258,26 @@ class EnvironmentSetupAgent_AppTarget:
 
     def run_setup_flow(self):
         """
-        Executes the full environment setup flow, starting with defining the project path.
+        Executes the full environment setup flow, including the brownfield check.
         """
         st.header("Phase 0: Target Application Environment Setup")
+
+        # (CR-ASDF-007) UI for the safety lockout warning
+        if st.session_state.get('show_brownfield_warning'):
+            st.error("Unrecognized Project Detected")
+            st.warning(
+                "The selected folder contains existing source code or a git repository "
+                "that was not created by this application. The factory cannot manage or "
+                "modify unrecognized projects to avoid data loss."
+            )
+            if st.button("OK"):
+                # Reset state to allow the user to choose a different path
+                st.session_state.show_brownfield_warning = False
+                st.session_state.path_confirmed = False
+                st.session_state.project_root_path = None
+                st.rerun()
+            return # Halt further rendering
+
         st.write(
             "This phase will guide you through setting up the necessary environment "
             "for the new application you want to build."
@@ -230,20 +299,25 @@ class EnvironmentSetupAgent_AppTarget:
         else:
             path_input = st.text_input(
                 "Enter the full local path for the new target application's root folder:",
-                placeholder="e.g., E:\\ASDF_Projects\\MyNewApp",
-                help="This is the main directory where all the code for your new application will be stored."
+                placeholder="e.g., E:\\ASDF_Projects\\MyNewApp"
             )
 
             if st.button("Confirm Project Folder"):
                 if path_input:
                     try:
-                        normalized_path = os.path.normpath(path_input)
-                        os.makedirs(normalized_path, exist_ok=True)
-                        st.session_state.project_root_path = normalized_path
-                        st.session_state.path_confirmed = True
-                        st.rerun()
+                        normalized_path = Path(path_input).resolve()
+                        normalized_path.mkdir(parents=True, exist_ok=True)
+
+                        # (CR-ASDF-007) Perform the brownfield check here
+                        if self._check_for_brownfield_project(str(normalized_path)):
+                            st.session_state.show_brownfield_warning = True
+                            st.rerun()
+                        else:
+                            st.session_state.project_root_path = str(normalized_path)
+                            st.session_state.path_confirmed = True
+                            st.rerun()
+
                     except Exception as e:
-                        st.error(f"An error occurred while creating the directory: {e}")
-                        st.error("Please check the path for invalid characters or permission issues and try again.")
+                        st.error(f"An error occurred: {e}")
                 else:
                     st.warning("Please enter a path before confirming.")

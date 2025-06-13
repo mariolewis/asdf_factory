@@ -28,33 +28,43 @@ class RefactoringPlannerAgent_AppTarget:
         self.api_key = api_key
         genai.configure(api_key=self.api_key)
 
-    def create_refactoring_plan(self, change_request_desc: str, final_spec_text: str, rowd_json: str) -> str:
+    def create_refactoring_plan(self, change_request_desc: str, final_spec_text: str, rowd_json: str, source_code_context: dict | None = None) -> str:
         """
-        Generates a detailed, sequential plan of micro-specifications to implement a change.
+        Generates a detailed, sequential plan of micro-specifications to implement a change,
+        optionally using the full source code of impacted components for higher accuracy.
         """
         try:
             model = genai.GenerativeModel('gemini-pro')
 
-            # CORRECTED: Escaped the literal curly braces in the prompt from {} to {{}}.
+            # --- Prepare the source code context for the prompt ---
+            source_code_context_str = "# No specific source code provided for review.\n"
+            if source_code_context:
+                source_code_context_str = "--- Full Source Code of Impacted Artifacts (for detailed review) ---\n"
+                for file_path, code in source_code_context.items():
+                    source_code_context_str += f"### File: {file_path}\n```\n{code}\n```\n\n"
+
             prompt = f"""
-            You are an expert Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format to implement a given change request. This plan will be composed of "micro-specifications" that will be executed by other AI agents.
+            You are an expert Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format to implement a given change request. The plan can include creating/modifying source code, as well as modifying declarative configuration files.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element in the array must be a JSON object `{{}}` representing one micro-specification.
-            2.  **JSON Object Schema:** Each JSON object (micro-specification) MUST have the following keys:
-                - `micro_spec_id`: A unique string identifier for the task (e.g., "ms_chg_001").
-                - `task_description`: A detailed, natural language description of the task for the AI agents to follow.
-                - `component_name`: The name of the primary artifact being created or modified (e.g., "is_valid_email", "UserProfile").
-                - `component_type`: The type of artifact (e.g., "FUNCTION", "CLASS", "FILE").
-                - `component_file_path`: The relative path to the component's source file (e.g., "src/utils/validators.py").
-                - `test_file_path`: The relative path to the component's unit test file (e.g., "tests/test_validators.py").
-            3.  **Analyze and Deconstruct:** Analyze the change request and deconstruct the work into the smallest logical, sequential steps. Each step becomes one JSON object in the array.
-            4.  **Do Not Include Other Text:** Do not include any text, explanations, or markdown formatting like ```json outside of the raw JSON array itself.
+            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element must be a JSON object `{{}}` representing one micro-specification.
+            2.  **JSON Object Schema:** Each JSON object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
+            3.  **Component Types:** The `component_type` key MUST be one of the following strings:
+                - `FUNCTION`
+                - `CLASS`
+                - `DB_MIGRATION_SCRIPT` (for database schema changes)
+                - `BUILD_SCRIPT_MODIFICATION` (for changes to pom.xml, build.gradle, etc.)
+                - `CONFIG_FILE_UPDATE` (for changes to .properties, .yml files, etc.)
+            4.  **Non-Destructive Changes:** For `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE` types, the `task_description` MUST contain the specific, non-destructive change snippet (e.g., a single SQL `ALTER TABLE` statement, an XML dependency snippet to add, a single new key-value pair). DO NOT output the entire file content for these types. The goal is to modify, not replace.
+            5.  **Analysis:** Base your plan on the Change Request, the overall Application Specification, the RoWD metadata, and critically, the **full source code** of the impacted artifacts if it is provided. This source code is the ground truth.
+            6.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
             **--- INPUTS ---**
             **1. Change Request to Implement:** {change_request_desc}
             **2. Finalized Application Specification:** {final_spec_text}
             **3. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):** {rowd_json}
+            **4. Source Code Context:**
+            {source_code_context_str}
 
             **--- Detailed Refactoring Plan (JSON Array Output) ---**
             """
@@ -62,7 +72,7 @@ class RefactoringPlannerAgent_AppTarget:
             response = self.model.generate_content(prompt)
             cleaned_response = response.text.strip()
             if cleaned_response.startswith("[") and cleaned_response.endswith("]"):
-                json.loads(cleaned_response) # Final validation
+                json.loads(cleaned_response)
                 return cleaned_response
             else:
                 raise ValueError("AI response was not in the expected JSON array format.")

@@ -115,7 +115,8 @@ class ASDFDBManager:
             technology_stack TEXT,
             project_root_folder TEXT,
             apex_executable_name TEXT,
-            final_spec_text TEXT
+            final_spec_text TEXT,
+            tech_spec_text TEXT
         );
         """
         self._execute_query(create_projects_table)
@@ -251,6 +252,20 @@ class ASDFDBManager:
         params = (spec_text, project_id)
         self._execute_query(query, params)
         logging.info(f"Saved final specification for project ID '{project_id}'.")
+
+    def save_tech_specification(self, project_id: str, tech_spec_text: str):
+        """
+        Saves the formal Technical Specification Document text to the project's record.
+        (ASDF Change Request CR-ASDF-001)
+
+        Args:
+            project_id (str): The ID of the project to update.
+            tech_spec_text (str): The final, approved technical specification text.
+        """
+        query = "UPDATE Projects SET tech_spec_text = ? WHERE project_id = ?"
+        params = (tech_spec_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved technical specification for project ID '{project_id}'.")
 
     def update_project_technology(self, project_id: str, technology_stack: str):
         """

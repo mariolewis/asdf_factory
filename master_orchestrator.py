@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timezone
 from enum import Enum, auto
 from pathlib import Path
+import git
 
 from asdf_db_manager import ASDFDBManager
 from agents.logic_agent_app_target import LogicAgent_AppTarget
@@ -20,6 +21,8 @@ from agents.agent_refactoring_planner_app_target import RefactoringPlannerAgent_
 from agents.agent_integration_planner_app_target import IntegrationPlannerAgent
 from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 from agents.agent_triage_app_target import TriageAgent_AppTarget
+from agents.agent_code_review import CodeReviewAgent
+from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,9 +32,12 @@ class FactoryPhase(Enum):
     IDLE = auto()
     ENV_SETUP_TARGET_APP = auto()
     SPEC_ELABORATION = auto()
+    TECHNICAL_SPECIFICATION = auto()
     INTEGRATION_AND_VERIFICATION = auto()
     PLANNING = auto()
     GENESIS = auto()
+    AWAITING_PM_DECLARATIVE_CHECKPOINT = auto()
+    AWAITING_PREFLIGHT_RESOLUTION = auto()
     RAISING_CHANGE_REQUEST = auto()
     IMPLEMENTING_CHANGE_REQUEST = auto()
     EDITING_CHANGE_REQUEST = auto()
@@ -61,6 +67,8 @@ class MasterOrchestrator:
         self.current_phase: FactoryPhase = FactoryPhase.IDLE
         self.active_plan = None
         self.active_plan_cursor = 0
+        self.task_awaiting_approval = None
+        self.preflight_check_result = None
 
         # --- CONFIGURE LOGGING ---
         # Get the configured logging level from the database.
@@ -98,6 +106,37 @@ class MasterOrchestrator:
             "project_name": self.project_name,
             "current_phase": self.current_phase.name
         }
+
+    def load_development_plan(self, plan_json_string: str):
+        """
+        Loads a JSON plan into the orchestrator's active state.
+
+        Args:
+            plan_json_string (str): A string containing the JSON array of the plan.
+        """
+        try:
+            plan = json.loads(plan_json_string)
+            if isinstance(plan, list):
+                self.active_plan = plan
+                self.active_plan_cursor = 0
+                logging.info(f"Successfully loaded development plan with {len(plan)} tasks.")
+            else:
+                raise ValueError("Plan must be a list (JSON array).")
+        except (json.JSONDecodeError, ValueError) as e:
+            logging.error(f"Failed to load development plan: {e}")
+            self.active_plan = None
+
+    def get_current_task_details(self) -> dict | None:
+        """
+        Safely retrieves the current task from the active plan.
+
+        Returns:
+            A dictionary of the current task details, or None if no active plan
+            or the plan is complete.
+        """
+        if self.active_plan and self.active_plan_cursor < len(self.active_plan):
+            return self.active_plan[self.active_plan_cursor]
+        return None
 
     def start_new_project(self, project_name: str):
         """
@@ -150,29 +189,21 @@ class MasterOrchestrator:
 
     def handle_proceed_action(self):
         """
-        Handles the logic for when the PM clicks 'Proceed' at a checkpoint.
-        This method executes the core Genesis Pipeline for the current task
-        in the active development plan.
+        Handles the logic for the Genesis Pipeline, now acting as a dispatcher
+        based on component type, as per CR-ASDF-003.
         """
         if self.current_phase != FactoryPhase.GENESIS:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
             return
 
-        if not self.active_plan or not isinstance(self.active_plan, list):
-            logging.warning("Proceed action called, but no active development plan is loaded. Nothing to execute.")
-            # In a real scenario, this might guide the PM to the planning phase.
+        if not self.active_plan or not isinstance(self.active_plan, list) or self.active_plan_cursor >= len(self.active_plan):
+            logging.warning("Proceed action called, but no valid active development plan is loaded or the plan is complete.")
             return
 
-        # Check if the plan is already completed
-        if self.active_plan_cursor >= len(self.active_plan):
-            logging.info("Proceed action called, but the active plan is already complete.")
-            return
-
-        # Get the current task from the plan using the cursor
         task = self.active_plan[self.active_plan_cursor]
-        logging.info(f"PM chose to 'Proceed'. Executing task {self.active_plan_cursor + 1}/{len(self.active_plan)}: {task.get('micro_spec_id')}")
+        component_type = task.get("component_type", "CLASS") # Default to CLASS for backward compatibility
+        logging.info(f"PM chose 'Proceed'. Executing task for component: {task.get('component_name')} of type: {component_type}")
 
-        project_root_path = None
         try:
             with self.db_manager as db:
                 api_key = db.get_config_value("LLM_API_KEY")
@@ -182,70 +213,152 @@ class MasterOrchestrator:
                 project_details = db.get_project_by_id(self.project_id)
                 project_root_path = Path(project_details['project_root_folder'])
 
-                # --- Extract task details from the structured plan ---
-                micro_spec_id = task.get("micro_spec_id")
-                micro_spec_content = task.get("task_description")
-                component_name = task.get("component_name")
-                component_type = task.get("component_type")
-                component_file_path = task.get("component_file_path")
-                test_file_path = task.get("test_file_path")
-                coding_standard = "Follow PEP 8 standards. Include a clear docstring explaining the function's purpose, arguments, and return value."
+                # --- Path 1: Standard Source Code Generation (FUNCTION/CLASS) ---
+                if component_type in ["FUNCTION", "CLASS"]:
+                    self._execute_source_code_generation_task(task, project_root_path, db, api_key)
 
-                # 1. Instantiate Agents
-                logic_agent = LogicAgent_AppTarget(api_key=api_key)
-                code_agent = CodeAgent_AppTarget(api_key=api_key)
-                test_agent = TestAgent_AppTarget(api_key=api_key)
-                build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-                doc_agent = DocUpdateAgentRoWD(db_manager=db)
+                # --- Path 2: Declarative/Config File Modification ---
+                elif component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
+                    # For now, this path executes automatically. The interactive PM checkpoint
+                    # will be added in the next step.
+                    self._execute_declarative_modification_task(task, project_root_path, db, api_key)
 
-                # 2. Generate Logic, Code, and Tests
-                logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
-                source_code = code_agent.generate_code_for_component(logic_plan, coding_standard)
-                unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content)
+                else:
+                    raise ValueError(f"Unknown component_type '{component_type}' in development plan.")
 
-                # 3. Build, Test, and Commit
-                build_success, build_output = build_agent.build_and_commit_component(
-                    component_path=component_file_path,
-                    component_code=source_code,
-                    test_path=test_file_path,
-                    test_code=unit_tests
-                )
-
-                if not build_success:
-                    raise Exception(f"Build failed for component {component_name}: {build_output}")
-
-                # 4. Update Record-of-Work-Done (RoWD)
-                commit_hash = build_output.split(":")[-1].strip()
-                artifact_data = {
-                    "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
-                    "project_id": self.project_id,
-                    "file_path": component_file_path,
-                    "artifact_name": component_name,
-                    "artifact_type": component_type,
-                    "short_description": micro_spec_content,
-                    "status": "UNIT_TESTS_PASSING",
-                    "unit_test_status": "TESTS_PASSING",
-                    "commit_hash": commit_hash,
-                    "version": 1,
-                    "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
-                    "micro_spec_id": micro_spec_id
-                }
-                doc_agent.update_artifact_record(artifact_data)
-                logging.info(f"Successfully executed and logged task for component: {component_name}")
-
-                # 5. Advance the plan cursor
+                # --- Advance Plan Cursor on Success ---
                 self.active_plan_cursor += 1
-
-                # 6. Check for plan completion
                 if self.active_plan_cursor >= len(self.active_plan):
-                    logging.info("All components in the plan have been generated. Transitioning to Integration & Verification phase.")
-                    self.active_plan = None
-                    self.active_plan_cursor = 0
+                    logging.info("Development plan complete. Transitioning to Integration & Verification.")
                     self.set_phase("INTEGRATION_AND_VERIFICATION")
 
         except Exception as e:
-            logging.error(f"Genesis Pipeline failed while executing plan. Error: {e}")
-            self.escalate_for_manual_debug()
+            logging.error(f"Genesis Pipeline failed while executing plan for {task.get('component_name')}. Error: {e}")
+            self.escalate_for_manual_debug(str(e))
+
+    def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
+        """
+        Handles the 'generate -> review -> correct' workflow for standard source code.
+        This private method is called by handle_proceed_action.
+        """
+        logging.info(f"Executing standard code generation for: {task.get('component_name')}")
+
+        # ... [The entire logic from the previous version of handle_proceed_action for the review loop] ...
+        # This includes instantiating agents, generating logic, code, running the review loop,
+        # generating tests, building, committing, and updating the RoWD.
+        # This refactoring keeps the main dispatcher method clean.
+
+        all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
+        rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
+        micro_spec_content = task.get("task_description")
+        component_name = task.get("component_name")
+
+        logic_agent = LogicAgent_AppTarget(api_key=api_key)
+        code_agent = CodeAgent_AppTarget(api_key=api_key)
+        review_agent = CodeReviewAgent(api_key=api_key)
+        test_agent = TestAgent_AppTarget(api_key=api_key)
+        build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+        doc_agent = DocUpdateAgentRoWD(db_manager=self.db_manager)
+
+        logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
+        source_code = code_agent.generate_code_for_component(logic_plan, "Follow PEP 8 standards.")
+
+        MAX_REVIEW_ATTEMPTS = 2
+        review_status, discrepancies = "fail", ""
+        for attempt in range(MAX_REVIEW_ATTEMPTS):
+            review_status, discrepancies = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json)
+            if review_status == "pass":
+                break
+            else:
+                if attempt < MAX_REVIEW_ATTEMPTS - 1:
+                    source_code = code_agent.generate_code_for_component(logic_plan, "Follow PEP 8 standards.", feedback=discrepancies)
+
+        if review_status != "pass":
+            raise Exception(f"Component '{component_name}' failed code review after all attempts. Last feedback: {discrepancies}")
+
+        unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content)
+        build_success, build_output = build_agent.build_and_commit_component(task.get("component_file_path"), source_code, task.get("test_file_path"), unit_tests)
+
+        if not build_success:
+            raise Exception(f"Build failed for component {component_name}: {build_output}")
+
+        commit_hash = build_output.split(":")[-1].strip()
+        doc_agent.update_artifact_record({
+            "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
+            "file_path": task.get("component_file_path"), "artifact_name": component_name,
+            "artifact_type": task.get("component_type"), "short_description": micro_spec_content,
+            "status": "UNIT_TESTS_PASSING", "unit_test_status": "TESTS_PASSING",
+            "commit_hash": commit_hash, "version": 1,
+            "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+            "micro_spec_id": task.get("micro_spec_id")
+        })
+
+    def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
+        """
+        Pauses the workflow to await PM confirmation for a declarative change.
+        """
+        component_name = task.get("component_name")
+        logging.info(f"High-risk modification detected for '{component_name}'. Pausing for PM checkpoint.")
+
+        # Store the task that needs approval and set the phase to wait for the UI
+        self.task_awaiting_approval = task
+        self.set_phase("AWAITING_PM_DECLARATIVE_CHECKPOINT")
+
+    def handle_declarative_checkpoint_decision(self, decision: str):
+        """
+        Processes the PM's decision from the declarative checkpoint.
+
+        Args:
+            decision (str): The decision made by the PM ("EXECUTE" or "MANUAL").
+        """
+        if not self.task_awaiting_approval:
+            logging.error("Received a checkpoint decision, but no task is awaiting approval.")
+            return
+
+        task = self.task_awaiting_approval
+        component_name = task.get("component_name")
+        logging.info(f"PM made decision '{decision}' for component '{component_name}'.")
+
+        try:
+            with self.db_manager as db:
+                if decision == "EXECUTE_AUTOMATICALLY":
+                    api_key = db.get_config_value("LLM_API_KEY")
+                    project_details = db.get_project_by_id(self.project_id)
+                    project_root_path = Path(project_details['project_root_folder'])
+                    file_to_modify_path_str = task.get("component_file_path")
+                    file_to_modify = project_root_path / file_to_modify_path_str
+
+                    if not file_to_modify.exists():
+                        raise FileNotFoundError(f"Cannot modify file '{file_to_modify_path_str}' because it does not exist.")
+
+                    original_code = file_to_modify.read_text(encoding='utf-8')
+                    change_snippet = task.get("task_description")
+
+                    orch_agent = OrchestrationCodeAgent(api_key=api_key)
+                    modified_code = orch_agent.apply_modifications(original_code, change_snippet)
+                    file_to_modify.write_text(modified_code, encoding='utf-8')
+
+                    build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+                    commit_message = f"refactor: Apply approved modification to {component_name}"
+                    build_agent.commit_changes([file_to_modify_path_str], commit_message)
+
+                    # Here you would update the RoWD record for this task to "COMPLETED"
+                    logging.info(f"Automatically executed and committed modification for {component_name}.")
+
+                elif decision == "WILL_EXECUTE_MANUALLY":
+                    # Here you would update the RoWD record to a status like "AWAITING_MANUAL_EXECUTION"
+                    logging.info(f"Acknowledged that PM will manually execute change for {component_name}.")
+
+        finally:
+            # Clean up and continue the plan
+            self.task_awaiting_approval = None
+            self.set_phase("GENESIS")
+            # We call handle_proceed_action again to process the *next* item in the plan
+            # But we must ensure the cursor is advanced first to avoid a loop
+            self.active_plan_cursor += 1
+            # This logic might need refinement to avoid immediately processing next step
+            # For now, we'll just log and let the UI trigger the next "proceed"
+            logging.info("Returning to Genesis phase to continue with the next task.")
 
     def _run_integration_and_verification_phase(self):
         """
@@ -330,7 +443,7 @@ class MasterOrchestrator:
                     db.update_cr_status(active_cr['cr_id'], "COMPLETED")
 
                 logging.info("Phase 3.5: Integration & Verification completed successfully.")
-                self.set_phase("PLANNING") # Return to planning/checkpoint for next steps
+                self.set_phase("GENESIS") # Return to Genesis checkpoint to show plan is complete
 
         except Exception as e:
             logging.error(f"Integration & Verification Phase failed. Error: {e}")
@@ -833,64 +946,143 @@ class MasterOrchestrator:
             logging.error(f"Failed to stop and export project: {e}")
             return None
 
+    def _perform_preflight_checks(self, project_root_str: str) -> dict:
+        """
+        Performs a sequence of pre-flight checks on an existing project environment.
+
+        Args:
+            project_root_str: The path to the project's root folder.
+
+        Returns:
+            A dictionary containing the status and a message.
+        """
+        project_root = Path(project_root_str)
+
+        # 1. Path Validation
+        if not project_root.exists():
+            return {"status": "PATH_NOT_FOUND", "message": f"The project folder could not be found. Please confirm the new location: {project_root_str}"}
+
+        # 2. VCS Validation
+        if not (project_root / '.git').is_dir():
+            return {"status": "GIT_MISSING", "message": "The project folder was found, but the Git repository is missing. Please re-initialize the repository."}
+
+        try:
+            repo = git.Repo(project_root)
+        except git.InvalidGitRepositoryError:
+            return {"status": "GIT_MISSING", "message": "The project folder contains an invalid Git repository."}
+
+        # 3. State Drift Validation
+        if repo.is_dirty(untracked_files=True):
+            return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository."}
+
+        # 4. Core Artifact Validation (Placeholder for more complex logic)
+        # This check is basic for now. A future version would iterate through the RoWD
+        # and ensure key files exist. We'll simulate one check.
+        if "build.gradle.kts" in [p.name for p in project_root.iterdir()]:
+             logging.info("Pre-flight check: Found build.gradle.kts, core artifact check passed (simulated).")
+
+        # All checks passed
+        return {"status": "ALL_PASS", "message": "Project environment successfully verified."}
+
+    def handle_discard_changes(self, project_id: str):
+        """
+        Handles the 'Discard all local changes' expert option for a project
+        with state drift. Resets the git repository and re-runs checks.
+        """
+        logging.warning(f"Executing 'git reset --hard' for project {project_id}")
+        try:
+            with self.db_manager as db:
+                # We need the project path from the history table to perform the reset
+                history_record = db.get_project_history_by_id(project_id) # Assuming project_id is the history_id here
+                if not history_record:
+                     history_records = db.get_project_history()
+                     history_record = next((p for p in history_records if p['project_id'] == project_id), None)
+
+                if not history_record:
+                    raise Exception(f"Could not find history record for project ID {project_id} to get path.")
+
+                project_root = Path(history_record['project_root_folder'])
+                repo = git.Repo(project_root)
+
+                # Reset the repository to the last commit
+                repo.git.reset('--hard', 'HEAD')
+                logging.info(f"Successfully reset repository at {project_root}")
+
+                # Re-run pre-flight checks to confirm the environment is now clean
+                check_result = self._perform_preflight_checks(str(project_root))
+                self.preflight_check_result = check_result
+                # The UI will re-render based on this updated result
+
+        except Exception as e:
+            logging.error(f"Failed to discard changes for project {project_id}: {e}")
+            self.preflight_check_result = {"status": "ERROR", "message": str(e)}
 
     def load_archived_project(self, history_id: int):
         """
-        Loads an archived project's data into the active tables.
+        Loads an archived project's data, performs pre-flight checks,
+        and sets the appropriate phase for UI resolution.
         """
         try:
             with self.db_manager as db:
-                # [cite_start]Safety export any currently active project first [cite: 294]
                 if self.project_id:
-                    # In a real GUI flow, we'd get a path from the user. For now, we create a default.
                     default_archive_path = Path("data/safety_archives")
                     archive_name = f"{self.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                     self.stop_and_export_project(default_archive_path, archive_name)
 
-                # Get the selected project's history record
-                history_record = db.get_project_history_by_id(history_id) # Assumes this method exists
+                history_record = db.get_project_history_by_id(history_id)
                 if not history_record:
-                    logging.error(f"No project history found for ID {history_id}")
-                    return f"Error: No project history found for ID {history_id}"
+                    error_msg = f"Error: No project history found for ID {history_id}"
+                    self.preflight_check_result = {"status": "ERROR", "message": error_msg}
+                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
+                    return
 
                 rowd_file_path = Path(history_record['archive_file_path'])
-                # Infer CR file path from RoWD file path
                 cr_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_cr.json"))
 
-                # [cite_start]Check if archive files exist before proceeding [cite: 298]
                 if not rowd_file_path.exists():
                     error_msg = f"Archive file not found at path: {rowd_file_path}"
-                    logging.error(error_msg)
-                    return error_msg # This message will be shown in the GUI
+                    self.preflight_check_result = {"status": "ERROR", "message": error_msg}
+                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
+                    return
 
-                # Clear any lingering data before import
+                # Perform the checks BEFORE loading data
+                project_root_str = history_record['project_root_folder']
+                check_result = self._perform_preflight_checks(project_root_str)
+                self.preflight_check_result = check_result
+
+                # If checks fail fatally, we don't bother loading the data yet.
+                # The user must resolve the issue first.
+                if check_result['status'] in ["PATH_NOT_FOUND", "GIT_MISSING", "STATE_DRIFT"]:
+                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
+                    logging.info(f"Pre-flight checks failed ({check_result['status']}). Pausing for user resolution.")
+                    return
+
+                # --- If checks pass, proceed to load data ---
                 self._clear_active_project_data(db)
 
-                # [cite_start]Import RoWD data [cite: 303]
                 with open(rowd_file_path, 'r', encoding='utf-8') as f:
                     artifacts_to_load = json.load(f)
                 if artifacts_to_load:
                     db.bulk_insert_artifacts(artifacts_to_load)
 
-                # Import Change Request data
                 if cr_file_path.exists():
                     with open(cr_file_path, 'r', encoding='utf-8') as f:
                         crs_to_load = json.load(f)
                     if crs_to_load:
                         db.bulk_insert_change_requests(crs_to_load)
 
-                # Set the orchestrator's state to the loaded project
                 self.project_id = history_record['project_id']
                 self.project_name = history_record['project_name']
-                # [cite_start]Set phase to begin context re-establishment [cite: 304, 305]
-                self.set_phase("AWAITING_CONTEXT_REESTABLISHMENT")
-                logging.info(f"Successfully loaded archived project '{self.project_name}'. Awaiting context re-establishment.")
-                return None # Indicates success
+
+                # Set the phase for UI resolution
+                self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
+                logging.info(f"Successfully loaded archived project '{self.project_name}'. Awaiting pre-flight resolution.")
 
         except Exception as e:
             error_msg = f"A critical error occurred while loading the project: {e}"
             logging.error(error_msg)
-            return error_msg
+            self.preflight_check_result = {"status": "ERROR", "message": error_msg}
+            self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
 
     def get_project_history(self):
