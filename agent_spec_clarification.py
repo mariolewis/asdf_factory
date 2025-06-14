@@ -40,7 +40,7 @@ class SpecClarificationAgent:
         self.db_manager = db_manager
 
         # As per the PRD, the clarification loop must handle DB table specs.
-        # [cite_start]This was confirmed by the PM. [cite: 218, 228]
+        # This was confirmed by the PM.
 
     def _extract_tags_from_spec(self, spec_text: str) -> list[str]:
         """A simple helper to extract potential search tags from spec text."""

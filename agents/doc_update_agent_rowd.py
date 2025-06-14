@@ -5,7 +5,7 @@ This module contains the DocUpdateAgentRoWD class.
 class DocUpdateAgentRoWD:
     """
     Agent responsible for updating the Record-of-Work-Done (RoWD) database
-    [cite_start]for the target application. [cite: 52, 148]
+    for the target application.
     """
 
     def __init__(self, db_manager):

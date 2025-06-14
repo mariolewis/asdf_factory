@@ -116,7 +116,9 @@ class ASDFDBManager:
             project_root_folder TEXT,
             apex_executable_name TEXT,
             final_spec_text TEXT,
-            tech_spec_text TEXT
+            tech_spec_text TEXT,
+            is_build_automated BOOLEAN NOT NULL DEFAULT 1,
+            coding_standard_text TEXT
         );
         """
         self._execute_query(create_projects_table)
@@ -136,6 +138,7 @@ class ASDFDBManager:
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );
         """
+        self._execute_query(create_cr_register_table)
 
         create_artifacts_table = """
         CREATE TABLE IF NOT EXISTS Artifacts (
@@ -267,6 +270,19 @@ class ASDFDBManager:
         self._execute_query(query, params)
         logging.info(f"Saved technical specification for project ID '{project_id}'.")
 
+    def save_coding_standard(self, project_id: str, standard_text: str):
+        """
+        Saves the approved Coding Standard text to the project's record.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            standard_text (str): The final, approved coding standard text.
+        """
+        query = "UPDATE Projects SET coding_standard_text = ? WHERE project_id = ?"
+        params = (standard_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved coding standard for project ID '{project_id}'.")
+
     def update_project_technology(self, project_id: str, technology_stack: str):
         """
         Updates the technology_stack for a given project.
@@ -292,6 +308,21 @@ class ASDFDBManager:
         params = (apex_name, project_id)
         self._execute_query(query, params)
         logging.info(f"Set apex file for project ID '{project_id}' to '{apex_name}'.")
+
+    def update_project_build_automation_status(self, project_id: str, is_automated: bool):
+        """
+        Updates the build automation status for a given project.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            is_automated (bool): True if ASDF should manage the build, False otherwise.
+        """
+        # SQLite uses 1 for True and 0 for False
+        status_as_int = 1 if is_automated else 0
+        query = "UPDATE Projects SET is_build_automated = ? WHERE project_id = ?"
+        params = (status_as_int, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set build automation status for project ID '{project_id}' to {is_automated}.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 
@@ -632,6 +663,26 @@ class ASDFDBManager:
         change_requests = cursor.fetchall()
         logging.info(f"Retrieved {len(change_requests)} change requests for project ID '{project_id}'.")
         return change_requests
+
+    def get_change_requests_by_statuses(self, project_id: str, statuses: list[str]) -> list:
+        """
+        Retrieves all change requests for a project that match a list of statuses.
+
+        Args:
+            project_id (str): The ID of the project.
+            statuses (list[str]): A list of statuses to filter by.
+
+        Returns:
+            list: A list of row objects representing the matching change requests.
+        """
+        if not statuses:
+            return []
+
+        placeholders = ', '.join('?' for _ in statuses)
+        query = f"SELECT * FROM ChangeRequestRegister WHERE project_id = ? AND status IN ({placeholders}) ORDER BY creation_timestamp DESC"
+        params = (project_id,) + tuple(statuses)
+        cursor = self._execute_query(query, params)
+        return cursor.fetchall()
 
     def add_change_request(self, project_id: str, description: str) -> int:
         """

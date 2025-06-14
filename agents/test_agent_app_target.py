@@ -1,3 +1,4 @@
+import logging
 import google.generativeai as genai
 
 """
@@ -25,18 +26,14 @@ class TestAgent_AppTarget:
         # Configure the genai library with the API key upon initialization.
         genai.configure(api_key=self.api_key)
 
-    def generate_unit_tests_for_component(self, source_code: str, component_spec: str) -> str:
+    def generate_unit_tests_for_component(self, source_code: str, component_spec: str, coding_standard: str) -> str:
         """
-        Generates unit test code for a given component.
-
-        This method will interact with the Gemini API, providing the component's
-        source code and specification as context to produce relevant and
-        effective unit tests.
+        Generates unit test code for a given component, adhering to a standard.
 
         Args:
             source_code (str): The source code of the component to be tested.
-            component_spec (str): The micro-specification describing the component's
-                                  expected behavior.
+            component_spec (str): The micro-specification describing behavior.
+            coding_standard (str): The coding standard to enforce.
 
         Returns:
             str: The generated source code for the unit tests.
@@ -47,13 +44,14 @@ class TestAgent_AppTarget:
 
             prompt = f"""
             You are an expert Software Quality Assurance (QA) Engineer specializing in automated testing.
-            Your task is to write a comprehensive suite of unit tests for the provided source code, based on its specification.
+            Your task is to write a comprehensive suite of unit tests for the provided source code, based on its specification and adhering to a strict coding standard.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Comprehensive Coverage:** Your tests MUST cover the "happy path" (normal successful execution), edge cases (e.g., null inputs, empty lists, boundary values), and error handling (how the code should behave with invalid inputs).
-            2.  **Adherence to Coding Standard:** The unit test code you generate MUST follow the same coding standards as the application code.
+            1.  **Comprehensive Coverage:** Your tests MUST cover the "happy path," edge cases (e.g., null inputs, empty lists, boundary values), and error handling.
+            2.  **Adherence to Coding Standard:** The unit test code you generate MUST follow all rules in the provided coding standard.
             3.  **Use Standard Testing Frameworks:** Assume the use of standard testing frameworks for the target language (e.g., pytest for Python, JUnit/Mockito for Java/Kotlin).
-            4.  **Raw Code Output:** Your entire response MUST BE ONLY the raw source code for the unit tests. Do not include any conversational text or explanations outside of the code itself. The code you generate MUST include comments and docstrings as required by the coding standard.
+            4.  **No Citations:** Your output must NOT contain any citation markers (e.g., ``, `` etc.). The generated code must be clean and immediately compilable.
+            5.  **Raw Code Output:** Your entire response MUST BE ONLY the raw source code for the unit tests.
 
             **--- INPUTS ---**
 
@@ -67,6 +65,11 @@ class TestAgent_AppTarget:
             {source_code}
             ```
 
+            **3. The Coding Standard to Follow:**
+            ```
+            {coding_standard}
+            ```
+
             **--- Generated Unit Test Source Code ---**
             """
 
@@ -76,12 +79,7 @@ class TestAgent_AppTarget:
 
         except Exception as e:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"
-            print(error_message) # Or use a proper logger
-            return error_message
-
-        except Exception as e:
-            error_message = f"An error occurred while communicating with the Gemini API: {e}"
-            print(error_message) # Or use a proper logger
+            logging.error(error_message)
             return error_message
 
     def generate_integration_tests(self, components: list[dict], integration_spec: str) -> str:
@@ -155,5 +153,5 @@ class TestAgent_AppTarget:
         except Exception as e:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"
             # In a real scenario, this would use the configured logger
-            print(error_message)
+            logging.error(error_message)
             return error_message

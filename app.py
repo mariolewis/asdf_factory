@@ -11,6 +11,7 @@ from agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
 from agent_project_bootstrap import ProjectBootstrapAgent
 from agent_spec_clarification import SpecClarificationAgent
 from agents.agent_planning_app_target import PlanningAgent_AppTarget
+from agents.agent_report_generator import ReportGeneratorAgent
 
 # Import the new agent from the 'agents' subfolder
 from agents.agent_project_scoping import ProjectScopingAgent
@@ -116,25 +117,34 @@ if page == "Project":
         status_info = st.session_state.orchestrator.get_status()
         current_phase_name = status_info.get("current_phase")
 
-        if current_phase_name == "ENV_SETUP_TARGET_APP":
-            setup_agent = EnvironmentSetupAgent_AppTarget()
-            setup_agent.run_setup_flow()
-            if st.session_state.get('git_initialized'):
-                st.divider()
-                if st.button("Complete Environment Setup & Proceed", use_container_width=True):
-                    apex_file = st.session_state.get("apex_file_name_input", "").strip()
-                    if not apex_file:
-                        st.error("Please provide a main Executable File Name.")
-                    else:
-                        with st.session_state.orchestrator.db_manager as db:
-                            db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.language)
-                            db.update_project_apex_file(st.session_state.orchestrator.project_id, apex_file)
-                        st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
-                        keys_to_clear = ['project_root_path', 'path_confirmed', 'git_initialized', 'language', 'language_select', 'frameworks', 'apex_file_name_input']
-                        for key in keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        st.rerun()
+        if st.button("Complete Environment Setup & Proceed", use_container_width=True):
+                apex_file = st.session_state.get("apex_file_name_input", "").strip()
+                if not apex_file:
+                    st.error("Please provide a main Executable File Name.")
+                # Also ensure the build script choice has been made
+                elif 'build_script_choice_made' not in st.session_state or not st.session_state.build_script_choice_made:
+                    st.error("Please confirm your Build Script choice before proceeding.")
+                else:
+                    with st.session_state.orchestrator.db_manager as db:
+                        db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.language)
+                        db.update_project_apex_file(st.session_state.orchestrator.project_id, apex_file)
+                        # Add this call to the new DAO method
+                        db.update_project_build_automation_status(
+                            st.session_state.orchestrator.project_id,
+                            st.session_state.get('is_build_automated', True) # Defaults to True
+                        )
+
+                    st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
+                    # Add the new session state keys to the cleanup list
+                    keys_to_clear = [
+                        'project_root_path', 'path_confirmed', 'git_initialized',
+                        'language', 'language_select', 'frameworks', 'apex_file_name_input',
+                        'build_script_choice_made', 'is_build_automated'
+                    ]
+                    for key in keys_to_clear:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
 
         elif current_phase_name == "SPEC_ELABORATION":
             st.header("Phase 1: Project Initialization & Specification Elaboration")
@@ -239,7 +249,28 @@ if page == "Project":
 
                     if st.session_state.clarification_issues:
                         st.subheader("Clarification Required")
-                        if st.button("✅ Approve Specification and Proceed", use_container_width=True, type="primary"):
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ Approve Specification and Proceed", use_container_width=True, type="primary"):
+                                with st.spinner("Finalizing specification..."):
+                                    with st.session_state.orchestrator.db_manager as db:
+                                        db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.specification_text)
+                                    st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
+                                    # ... (rest of the button logic is the same)
+                        with col2:
+                            # Add the download button
+                            report_generator = ReportGeneratorAgent()
+                            spec_docx_bytes = report_generator.generate_text_document_docx(
+                                title=f"Application Specification - {st.session_state.orchestrator.project_name}",
+                                content=st.session_state.specification_text
+                            )
+                            st.download_button(
+                                label="📄 Print to .docx",
+                                data=spec_docx_bytes,
+                                file_name=f"Application_Specification_{st.session_state.orchestrator.project_id}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                use_container_width=True
+                            )
                             with st.spinner("Finalizing specification..."):
                                 with st.session_state.orchestrator.db_manager as db:
                                     db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.specification_text)
@@ -324,7 +355,31 @@ if page == "Project":
 
             # --- Approval Step ---
             if st.session_state.tech_spec_draft:
-                if st.button("Approve Technical Specification and Proceed to Planning", type="primary"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Approve Technical Specification", use_container_width=True, type="primary"):
+                        with st.spinner("Saving technical specification..."):
+                            with st.session_state.orchestrator.db_manager as db:
+                                db.save_tech_specification(
+                                    st.session_state.orchestrator.project_id,
+                                    st.session_state.tech_spec_draft
+                                )
+                            st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
+                            # ... (rest of the button logic is the same)
+                with col2:
+                    # Add the download button
+                    report_generator = ReportGeneratorAgent()
+                    tech_spec_docx_bytes = report_generator.generate_text_document_docx(
+                        title=f"Technical Specification - {st.session_state.orchestrator.project_name}",
+                        content=st.session_state.tech_spec_draft
+                    )
+                    st.download_button(
+                        label="📄 Print to .docx",
+                        data=tech_spec_docx_bytes,
+                        file_name=f"Technical_Specification_{st.session_state.orchestrator.project_id}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True
+                    )
                     with st.spinner("Saving technical specification..."):
                         with st.session_state.orchestrator.db_manager as db:
                             db.save_tech_specification(
@@ -333,7 +388,7 @@ if page == "Project":
                             )
 
                         # Transition to the next phase
-                        st.session_state.orchestrator.set_phase("PLANNING")
+                        st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
 
                         # Clean up session state for this phase
                         for key in ['tech_spec_choice', 'tech_spec_draft']:
@@ -341,18 +396,61 @@ if page == "Project":
                                 del st.session_state[key]
                         st.rerun()
 
-        # Other phases remain unchanged for now
-        elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
-            st.header("Phase 3.5: Automated Integration & Verification")
-            st.info("The factory is now integrating all newly developed components, performing a full system build, and running verification tests.")
+        elif current_phase_name == "CODING_STANDARD_GENERATION":
+            st.header("Phase 2.A: Coding Standard Generation")
+            st.markdown("Here you can generate a project-specific coding standard based on the technical specification. This standard will be enforced by all code-generating agents.")
 
-            with st.spinner("Running automated integration... This may take a moment."):
-                # This backend method runs the entire phase 3.5 logic
-                st.session_state.orchestrator._run_integration_and_verification_phase()
+            # Initialize session state
+            if 'coding_standard_draft' not in st.session_state:
+                st.session_state.coding_standard_draft = ""
 
-            st.success("Integration and verification process complete.")
-            time.sleep(2) # Pause for 2 seconds to allow the user to read the message
-            st.rerun()
+            # Button to trigger the agent
+            if st.button("Generate Coding Standard Draft"):
+                with st.spinner("AI is generating the coding standard..."):
+                    try:
+                        with st.session_state.orchestrator.db_manager as db:
+                            api_key = db.get_config_value("LLM_API_KEY")
+                            project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                            tech_spec = project_details.get('tech_spec_text')
+
+                        if not api_key or not tech_spec:
+                            st.error("Cannot generate standard: Missing API Key or Technical Specification.")
+                        else:
+                            from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
+                            agent = CodingStandardAgent_AppTarget(api_key=api_key)
+                            standard = agent.generate_standard(tech_spec)
+                            st.session_state.coding_standard_draft = standard
+                    except Exception as e:
+                        st.error(f"Failed to generate coding standard: {e}")
+
+            # Text area for review and editing
+            st.session_state.coding_standard_draft = st.text_area(
+                "Coding Standard Document",
+                value=st.session_state.coding_standard_draft,
+                height=400,
+                help="You can edit the AI-generated coding standard here before approving."
+            )
+
+            st.divider()
+
+            # Approval Step
+            if st.session_state.coding_standard_draft:
+                if st.button("Approve Coding Standard and Proceed to Planning", type="primary"):
+                    with st.spinner("Saving coding standard..."):
+                        with st.session_state.orchestrator.db_manager as db:
+                            db.save_coding_standard(
+                                st.session_state.orchestrator.project_id,
+                                st.session_state.coding_standard_draft
+                            )
+
+                        # Transition to the next phase
+                        st.session_state.orchestrator.set_phase("PLANNING")
+
+                        # Clean up session state for this phase
+                        if 'coding_standard_draft' in st.session_state:
+                            del st.session_state['coding_standard_draft']
+                        st.rerun()
+
 
         elif current_phase_name == "PLANNING":
             st.header("Phase 2: Strategic Development Planning")
@@ -370,19 +468,26 @@ if page == "Project":
                 st.json(st.session_state.development_plan)
 
                 st.divider()
-                col1, _, col3 = st.columns([1, 2, 1.5])
-
+                col1, col2, col3 = st.columns([1.5, 1, 1.5])
                 with col1:
                     # The button to approve the plan and proceed
                     if st.button("✅ Approve Plan & Proceed to Development", type="primary"):
-                        # Load the plan into the orchestrator
-                        st.session_state.orchestrator.load_development_plan(st.session_state.development_plan)
-                        # Transition to the Genesis phase
-                        st.session_state.orchestrator.set_phase("GENESIS")
-                        # Clean up session state
-                        del st.session_state.development_plan
-                        st.toast("Plan approved! Starting development...")
-                        st.rerun()
+                        # ... (rest of the button logic is the same)
+                with col2:
+                    # Add the download button
+                    report_generator = ReportGeneratorAgent()
+                    dev_plan_docx_bytes = report_generator.generate_text_document_docx(
+                        title=f"Sequential Development Plan - {st.session_state.orchestrator.project_name}",
+                        content=st.session_state.development_plan,
+                        is_code=True # Format this content as code
+                    )
+                    st.download_button(
+                        label="📄 Print to .docx",
+                        data=dev_plan_docx_bytes,
+                        file_name=f"Development_Plan_{st.session_state.orchestrator.project_id}.docx",
+                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        use_container_width=True
+                    )
                 with col3:
                     # The button to re-generate the plan
                     if st.button("🔄 Re-generate Development Plan"):
@@ -450,7 +555,7 @@ if page == "Project":
                     if st.button("▶️ Proceed to Integration & Verification"):
                          st.session_state.orchestrator.set_phase("INTEGRATION_AND_VERIFICATION")
                          st.rerun()
-                    return # Stop rendering the buttons below
+                    st.stop() # Stop rendering the buttons below
 
                 # Create columns for the buttons for a clean layout.
                 col1, col2, col3, col4, col5 = st.columns(5)
@@ -481,6 +586,19 @@ if page == "Project":
                     if st.button("⏹️ Stop & Export", use_container_width=True):
                         st.session_state.show_export_confirmation = True
                         st.rerun()
+
+
+        elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
+            st.header("Phase 3.5: Automated Integration & Verification")
+            st.info("The factory is now integrating all newly developed components, performing a full system build, and running verification tests.")
+
+            with st.spinner("Running automated integration... This may take a moment."):
+                # This backend method runs the entire phase 3.5 logic
+                st.session_state.orchestrator._run_integration_and_verification_phase()
+
+            st.success("Integration and verification process complete.")
+            time.sleep(2) # Pause for 2 seconds to allow the user to read the message
+            st.rerun()
 
         # (CR-ASDF-003) UI for the new PM Checkpoint on declarative changes
         elif current_phase_name == "AWAITING_PM_DECLARATIVE_CHECKPOINT":
@@ -518,6 +636,162 @@ if page == "Project":
                 st.session_state.orchestrator.set_phase("GENESIS")
                 if st.button("Go Back"):
                     st.rerun()
+
+        elif current_phase_name == "RAISING_CHANGE_REQUEST":
+            st.header("Phase 6: Raise New Change Request")
+            st.markdown("Please provide a detailed description of the change you are requesting below. This will be logged in the Change Request Register.")
+
+            # Use session state to hold the text area's value to prevent loss on reruns
+            if 'cr_description' not in st.session_state:
+                st.session_state.cr_description = ""
+
+            # The widget's key is separate from the session state variable
+            st.session_state.cr_description = st.text_area(
+                "Change Request Description:",
+                value=st.session_state.cr_description,
+                height=250
+            )
+
+            st.divider()
+            col1, col2, _ = st.columns([1, 1, 5])
+
+            with col1:
+                if st.button("Save Change Request", use_container_width=True, type="primary"):
+                    if st.session_state.cr_description.strip():
+                        if st.session_state.orchestrator.save_new_change_request(st.session_state.cr_description):
+                            st.toast("✅ Change Request saved!")
+                            # Clean up the session state variable and rerun to go back to the Genesis phase
+                            del st.session_state.cr_description
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Failed to save the Change Request.")
+                    else:
+                        st.warning("The change request description cannot be empty.")
+
+            with col2:
+                if st.button("Cancel", use_container_width=True):
+                    # Clean up the session state variable and return to the Genesis phase
+                    if 'cr_description' in st.session_state:
+                        del st.session_state.cr_description
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
+
+        elif current_phase_name == "IMPLEMENTING_CHANGE_REQUEST":
+            st.header("Phase 6: Implement Requested Change")
+            st.markdown("Select a Change Request from the register below to view available actions.")
+
+            change_requests = st.session_state.orchestrator.get_all_change_requests()
+
+            if not change_requests:
+                st.warning("There are no change requests in the register for this project.")
+            else:
+                # Prepare data for display in a pandas DataFrame
+                cr_data_for_df = []
+                for cr in change_requests:
+                    cr_data_for_df.append({
+                        "ID": cr['cr_id'],
+                        "Status": cr['status'],
+                        "Impact": cr['impact_rating'],
+                        "Description": cr['description'],
+                        "Analysis Summary": cr['impact_analysis_details']
+                    })
+
+                df = pd.DataFrame(cr_data_for_df)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+
+                # Allow PM to select a CR by ID
+                cr_ids = [cr['cr_id'] for cr in change_requests]
+                selected_cr_id_str = st.selectbox("Select a Change Request ID to action:", options=[""] + [str(i) for i in cr_ids])
+
+                if selected_cr_id_str:
+                    selected_cr_id = int(selected_cr_id_str)
+                    selected_cr = next((cr for cr in change_requests if cr['cr_id'] == selected_cr_id), None)
+
+                    st.subheader(f"Actions for CR-{selected_cr_id}")
+
+                    # Business Logic for enabling/disabling buttons based on CR status
+                    is_raised_status = selected_cr['status'] == 'RAISED'
+                    is_impact_analyzed = selected_cr['status'] == 'IMPACT_ANALYZED'
+
+                    col1, col2, col3, col4 = st.columns(4)
+
+                    with col1:
+                        if st.button("✏️ Edit CR", use_container_width=True, disabled=not is_raised_status, help="You can only edit a CR before its impact has been analyzed."):
+                            st.session_state.orchestrator.handle_edit_cr_action(selected_cr_id)
+                            st.rerun()
+
+                    with col2:
+                        if st.button("🗑️ Delete CR", use_container_width=True, disabled=not is_raised_status, help="You can only delete a CR before its impact has been analyzed."):
+                            # Use a popover for a confirmation dialog to prevent accidental deletion
+                            with st.popover("Confirm Deletion"):
+                                st.write(f"Are you sure you want to permanently delete CR-{selected_cr_id}?")
+                                if st.button("Yes, Confirm Delete", type="primary"):
+                                    st.session_state.orchestrator.handle_delete_cr_action(selected_cr_id)
+                                    st.toast(f"Change Request {selected_cr_id} deleted.")
+                                    st.rerun()
+
+                    with col3:
+                        if st.button("🔬 Run Impact Analysis", use_container_width=True, disabled=not is_raised_status, help="Run analysis to determine the scope and impact of the change."):
+                            with st.spinner(f"Running impact analysis for CR-{selected_cr_id}..."):
+                                st.session_state.orchestrator.handle_run_impact_analysis_action(selected_cr_id)
+                            st.toast(f"Impact analysis complete for CR-{selected_cr_id}.")
+                            st.rerun()
+
+                    with col4:
+                        if st.button("▶️ Implement CR", use_container_width=True, type="primary", disabled=not is_impact_analyzed, help="Generate a development plan and begin implementation."):
+                            with st.spinner(f"Generating refactoring plan for CR-{selected_cr_id}..."):
+                                st.session_state.orchestrator.handle_implement_cr_action(selected_cr_id)
+                            st.rerun()
+
+            st.divider()
+            if st.button("⬅️ Back to Main Checkpoint"):
+                st.session_state.orchestrator.set_phase("GENESIS")
+                st.rerun()
+
+        elif current_phase_name == "EDITING_CHANGE_REQUEST":
+            st.header("Phase 6: Edit Change Request")
+
+            # Get the details of the CR to be edited from the orchestrator
+            cr_details = st.session_state.orchestrator.get_active_cr_details_for_edit()
+
+            if not cr_details:
+                st.error("Error: Could not load Change Request details for editing.")
+                if st.button("⬅️ Back to Register"):
+                    st.session_state.orchestrator.cancel_cr_edit()
+                    st.rerun()
+            else:
+                # Use session state to hold the text area's value.
+                # Initialize it with the existing description only once.
+                if 'cr_edit_description' not in st.session_state:
+                    st.session_state.cr_edit_description = cr_details.get('description', '')
+
+                st.markdown(f"You are editing **CR-{cr_details['cr_id']}**.")
+
+                st.session_state.cr_edit_description = st.text_area(
+                    "Change Request Description:",
+                    value=st.session_state.cr_edit_description,
+                    height=250
+                )
+
+                st.divider()
+                col1, col2, _ = st.columns([1, 1, 5])
+
+                with col1:
+                    if st.button("Save Changes", use_container_width=True, type="primary"):
+                        if st.session_state.orchestrator.save_edited_change_request(st.session_state.cr_edit_description):
+                            st.toast("✅ Change Request updated!")
+                            del st.session_state.cr_edit_description # Clean up
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Failed to save changes.")
+
+                with col2:
+                    if st.button("Cancel Edit", use_container_width=True):
+                        st.session_state.orchestrator.cancel_cr_edit()
+                        del st.session_state.cr_edit_description # Clean up
+                        st.rerun()
 
         elif current_phase_name == "VIEWING_PROJECT_HISTORY":
             st.header("Load an Archived Project")
@@ -613,33 +887,190 @@ if page == "Project":
             st.info("The UI for this phase is under construction.")
 
 elif page == "Settings":
-    # Settings page code remains the same as before
-    st.markdown("<h2>Factory Settings</h2>", unsafe_allow_html=True)
+    st.header("Factory Settings")
+    st.markdown("Configure the operational parameters of the ASDF.")
+    st.divider()
+
+    # --- LLM API Key Management ---
     st.subheader("LLM API Key Management")
     def save_api_key():
         if st.session_state.api_key_input:
             with st.session_state.orchestrator.db_manager as db:
                 db.set_config_value("LLM_API_KEY", st.session_state.api_key_input)
-            st.success("API Key saved!")
+            st.success("✅ LLM API Key saved!")
+        else:
+            st.warning("API Key field cannot be empty.")
+
     def clear_api_key():
         with st.session_state.orchestrator.db_manager as db:
             db.set_config_value("LLM_API_KEY", "")
         st.session_state.api_key_input = ""
-        st.success("API Key cleared.")
+        st.success("✅ LLM API Key cleared.")
+
     with st.session_state.orchestrator.db_manager as db:
-        key_status = "Set" if db.get_config_value("LLM_API_KEY") else "Not Set"
-    st.markdown(f"**Status:** `{key_status}`")
-    st.text_input("Enter/Update LLM API Key", type="password", key="api_key_input")
-    c1, c2, c3 = st.columns([1,1,5])
-    c1.button("Save Key", on_click=save_api_key, use_container_width=True)
-    c2.button("Clear Key", on_click=clear_api_key, use_container_width=True, disabled=(key_status == "Not Set"))
-    st.markdown("---")
-    # Add other settings fields here if needed in future steps
+        current_key_value = db.get_config_value("LLM_API_KEY")
+        key_status = "Set" if current_key_value else "Not Set"
+
+    st.markdown(f"**Current Status:** `{key_status}`")
+    st.text_input("Enter or Update LLM API Key", type="password", key="api_key_input")
+    col1, col2, _ = st.columns([1, 1, 5])
+    with col1:
+        col1.button("Save Key", on_click=save_api_key, use_container_width=True)
+    with col2:
+        col2.button("Clear Key", on_click=clear_api_key, use_container_width=True, disabled=(key_status == "Not Set"))
+
+    st.divider()
+
+    # --- Additional Settings ---
+    st.subheader("Additional Settings")
+
+    # Load all settings from DB to populate widgets
+    with st.session_state.orchestrator.db_manager as db:
+        all_config = db.get_all_config_values()
+
+    # Create widgets for each configurable parameter
+    st.number_input(
+        "Maximum Automated Debug Attempts",
+        min_value=1,
+        key="max_debug_attempts",
+        value=int(all_config.get("MAX_DEBUG_ATTEMPTS", 2)),
+        help="Defines the number of automated fix attempts the Debug Pipeline will perform before escalating to the PM."
+    )
+
+    pm_checkpoint_options = {"ALWAYS_ASK": "Always ask before proceeding", "AUTO_PROCEED": "Automatically proceed if successful"}
+    current_pm_behavior = all_config.get("PM_CHECKPOINT_BEHAVIOR", "ALWAYS_ASK")
+    pm_checkpoint_index = list(pm_checkpoint_options.keys()).index(current_pm_behavior)
+    st.selectbox(
+        "PM Checkpoint Behavior (Genesis Phase)",
+        options=pm_checkpoint_options.values(),
+        index=pm_checkpoint_index,
+        key="pm_checkpoint_behavior",
+        help="Controls the factory's behavior after successfully developing a component."
+    )
+
+    logging_options = ["Standard", "Detailed", "Debug"]
+    current_logging_level = all_config.get("LOGGING_LEVEL", "Standard")
+    # Handle case where saved value might not be in the list
+    try:
+        logging_index = logging_options.index(current_logging_level)
+    except ValueError:
+        logging_index = 0 # Default to Standard
+    st.selectbox(
+        "ASDF Operational Logging Level",
+        options=logging_options,
+        index=logging_index,
+        key="logging_level",
+        help="Controls the verbosity of ASDF's internal logs, useful for troubleshooting the factory application itself."
+    )
+
+    st.text_input("Default Base Path for New Target Projects", key="default_project_path", value=all_config.get("DEFAULT_PROJECT_PATH", ""), help="Optional. Set a default parent directory (e.g., 'C:\\Users\\YourName\\Projects'). When you start a new project, ASDF will suggest a path inside this directory, which you can still edit for each project.")
+    st.text_input("Default Project Archive Path", key="default_archive_path", value=all_config.get("DEFAULT_ARCHIVE_PATH", ""), help="Optional. Set a default folder for saving project archives when you use the 'Stop & Export' feature. This provides a consistent location to find your exported project data.")
+
+    def save_additional_settings():
+        """Callback function to save all settings to the database."""
+        settings_to_save = {
+            "MAX_DEBUG_ATTEMPTS": st.session_state.max_debug_attempts,
+            "LOGGING_LEVEL": st.session_state.logging_level,
+            "DEFAULT_PROJECT_PATH": st.session_state.default_project_path,
+            "DEFAULT_ARCHIVE_PATH": st.session_state.default_archive_path
+        }
+        # Convert selected UI text back to the key for storage
+        selected_pm_behavior_value = st.session_state.pm_checkpoint_behavior
+        for key, value in pm_checkpoint_options.items():
+            if value == selected_pm_behavior_value:
+                settings_to_save["PM_CHECKPOINT_BEHAVIOR"] = key
+                break
+
+        with st.session_state.orchestrator.db_manager as db:
+            for key, value in settings_to_save.items():
+                db.set_config_value(key, str(value))
+        st.success("✅ Additional settings saved!")
+
+    st.button("Save All Additional Settings", on_click=save_additional_settings, type="primary", use_container_width=True)
 
 elif page == "Reports":
-    # Reports page code remains the same as before
-    st.markdown("<h2>Project Reports</h2>", unsafe_allow_html=True)
-    if not st.session_state.orchestrator.project_id:
-        st.warning("Start a project to view reports.")
+    st.header("Project Reports")
+
+    # --- Project Selection Logic ---
+    report_project_id = st.session_state.orchestrator.project_id
+    project_history = st.session_state.orchestrator.get_project_history()
+
+    # If no project is active, prompt the user to select one from history
+    if not report_project_id and project_history:
+        st.info("No project is currently active. Please select a project from the history to view its reports.")
+
+        history_options = {f"{row['project_name']} (ID: {row['project_id']})": row['project_id'] for row in project_history}
+        selected_option = st.selectbox("Select a Project:", options=[""] + list(history_options.keys()))
+
+        if selected_option:
+            report_project_id = history_options[selected_option]
+
+    elif not report_project_id and not project_history:
+        st.warning("Please start a new project or load an archived project to view reports.")
+        st.stop()
+
+    if not report_project_id:
+        st.stop() # Stop if no project is active and none is selected
+
+    st.subheader(f"Displaying Reports for Project ID: {report_project_id}")
+
+    # --- Instantiate the report generator agent ---
+    # We create it here to ensure it's available for both reports
+    try:
+        from agents.agent_report_generator import ReportGeneratorAgent
+        report_generator = ReportGeneratorAgent()
+    except ImportError:
+        st.error("ReportGeneratorAgent could not be loaded. Please check the 'agents' directory.")
+        st.stop()
+
+
+    # --- Report 1: Development Progress Summary ---
+    st.divider()
+    st.markdown("#### Development Progress Summary")
+    with st.session_state.orchestrator.db_manager as db:
+        all_artifacts = db.get_all_artifacts_for_project(report_project_id)
+        status_counts = db.get_component_counts_by_status(report_project_id)
+
+    if not all_artifacts:
+        st.info("No components have been defined for this project yet.")
     else:
-        st.info("Report generation is under construction.")
+        total_components = len(all_artifacts)
+        st.metric(label="Total Components Defined", value=total_components)
+
+        # Display status counts in columns for a cleaner look
+        cols = st.columns(len(status_counts) or 1)
+        for i, (status, count) in enumerate(status_counts.items()):
+            cols[i].metric(label=status.replace("_", " ").title(), value=count)
+
+        # Download button for this report
+        summary_docx_bytes = report_generator.generate_progress_summary_docx(total_components, status_counts)
+        st.download_button(
+            label="📄 Print to .docx",
+            data=summary_docx_bytes,
+            file_name=f"ASDF_Progress_Summary_{report_project_id}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+    # --- Report 2: Change Requests & Bug Fixes ---
+    st.divider()
+    st.markdown("#### Change Requests & Bug Fixes")
+
+    filter_option = st.selectbox("Filter by:", options=["Pending", "Closed", "All"])
+
+    report_data = st.session_state.orchestrator.get_cr_and_bug_report_data(report_project_id, filter_option)
+
+    if not report_data:
+        st.info(f"No items found for the '{filter_option}' filter.")
+    else:
+        df = pd.DataFrame(report_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        # Download button for this report
+        cr_bug_docx_bytes = report_generator.generate_cr_bug_report_docx(report_data, filter_option)
+        st.download_button(
+            label="📄 Print to .docx",
+            data=cr_bug_docx_bytes,
+            file_name=f"ASDF_CR_Bug_Report_{report_project_id}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key="cr_bug_download"
+        )

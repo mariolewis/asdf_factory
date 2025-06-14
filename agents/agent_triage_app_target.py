@@ -123,3 +123,51 @@ class TriageAgent_AppTarget:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"
             logging.error(error_message)
             return error_message
+
+    def perform_apex_trace_analysis(self, rowd_json: str, apex_file_name: str, failing_component_name: str) -> list[str]:
+        """
+        Performs a guided dependency trace using the RoWD to find a likely
+        execution path from the main executable to a failing component.
+
+        Args:
+            rowd_json (str): A JSON string of all artifacts in the RoWD.
+            apex_file_name (str): The name of the main starting executable file.
+            failing_component_name (str): The name of the component where failure is suspected.
+
+        Returns:
+            A list of file paths representing the likely call stack.
+        """
+        logging.info(f"TriageAgent: Performing Tier 2 Apex Trace Analysis from '{apex_file_name}' to '{failing_component_name}'.")
+
+        prompt = textwrap.dedent(f"""
+            You are a dependency analysis expert. Your task is to analyze a JSON representation of a project's Record-of-Work-Done (RoWD) to determine a likely execution path that leads to a failure.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Analyze Dependencies:** The RoWD contains a 'dependencies' key for each artifact, which lists the `artifact_id`s it calls. You must use this information to trace a path.
+            2.  **Find the Path:** Trace a likely call stack (a sequence of files) starting from the main executable file (`apex_file_name`) and ending at the `failing_component_name`.
+            3.  **JSON Array Output:** Your response MUST be a single, valid JSON array of strings. Each string in the array should be the `file_path` of an artifact in the determined execution path.
+            4.  **Order Matters:** The file paths in the array must be in the logical order of execution, starting with the file path of the apex executable.
+            5.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
+
+            **--- INPUTS ---**
+            **1. Main Executable Name (Starting Point):** `{apex_file_name}`
+            **2. Failing Component Name (End Point):** `{failing_component_name}`
+            **3. Record-of-Work-Done (RoWD) JSON Data:**
+            {rowd_json}
+
+            **--- Likely Execution Path (JSON Array of file_path strings) ---**
+        """)
+
+        try:
+            response = self.model.generate_content(prompt)
+            cleaned_response = response.text.strip()
+            # Basic validation to ensure we got a list-like string
+            if cleaned_response.startswith('[') and cleaned_response.endswith(']'):
+                # The orchestrator will handle the final JSON parsing
+                return cleaned_response
+            else:
+                logging.error(f"Apex Trace Analysis returned invalid format: {cleaned_response}")
+                return "[]" # Return empty list on format error
+        except Exception as e:
+            logging.error(f"Apex Trace Analysis API call failed: {e}")
+            return "[]" # Return empty list on failure

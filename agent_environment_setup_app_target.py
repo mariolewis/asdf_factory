@@ -43,19 +43,19 @@ class EnvironmentSetupAgent_AppTarget:
         Returns:
             True if signs of an existing project are found, False otherwise.
         """
-        # [cite_start]Check for common source code or build files. [cite: 70]
+        # Check for common source code or build files.
         extensions_to_check = ('*.py', '*.kt', '*.java', '*.xml', '*.gradle', '*.yml', '*.json')
         for extension in extensions_to_check:
             if list(Path(directory_path).glob(f'**/{extension}')):
                 logging.warning(f"Brownfield check: Found existing files with extension {extension}.")
                 return True
 
-        # [cite_start]Check for a .git directory. [cite: 70]
+        # Check for a .git directory.
         if (Path(directory_path) / '.git').exists():
             logging.warning("Brownfield check: Found existing .git directory.")
             return True
 
-        # [cite_start]Condition: Directory is not empty but lacks ASDF metadata. [cite: 71]
+        # Condition: Directory is not empty but lacks ASDF metadata.
         # For now, the presence of any of the above files is our trigger.
         # A future implementation could check for a specific ASDF metadata file.
 
@@ -143,14 +143,12 @@ class EnvironmentSetupAgent_AppTarget:
                     if script_info:
                         filename, content = script_info
                         try:
-                            # Save the generated script to the project root
                             project_path = Path(st.session_state.project_root_path)
                             script_path = project_path / filename
                             script_path.write_text(content, encoding='utf-8')
 
-                            # As per CR-ASDF-005, the script should be registered in the RoWD.
-                            # This will be handled by a later process, for now we confirm generation.
                             st.success(f"Generated and saved `{filename}` to the project root.")
+                            st.session_state.is_build_automated = True # Add this line
                             st.session_state.build_script_choice_made = True
                             st.rerun()
 
@@ -161,6 +159,7 @@ class EnvironmentSetupAgent_AppTarget:
 
                 else: # Manual management
                     st.info("You have opted to manage the build script manually. The factory will not create one.")
+                    st.session_state.is_build_automated = False # Add this line
                     st.session_state.build_script_choice_made = True
                     st.rerun()
 

@@ -33,6 +33,7 @@ class FactoryPhase(Enum):
     ENV_SETUP_TARGET_APP = auto()
     SPEC_ELABORATION = auto()
     TECHNICAL_SPECIFICATION = auto()
+    CODING_STANDARD_GENERATION = auto()
     INTEGRATION_AND_VERIFICATION = auto()
     PLANNING = auto()
     GENESIS = auto()
@@ -239,20 +240,23 @@ class MasterOrchestrator:
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
         Handles the 'generate -> review -> correct' workflow for standard source code.
-        This private method is called by handle_proceed_action.
+        This version now retrieves and enforces the project-specific coding standard.
         """
         logging.info(f"Executing standard code generation for: {task.get('component_name')}")
 
-        # ... [The entire logic from the previous version of handle_proceed_action for the review loop] ...
-        # This includes instantiating agents, generating logic, code, running the review loop,
-        # generating tests, building, committing, and updating the RoWD.
-        # This refactoring keeps the main dispatcher method clean.
+        # Retrieve all necessary context, including the new coding standard
+        project_details = db.get_project_by_id(self.project_id)
+        coding_standard = project_details.get('coding_standard_text')
+        if not coding_standard:
+            logging.warning("No project-specific coding standard found in database. Using a default standard.")
+            coding_standard = "Follow standard PEP 8 conventions for Python. Ensure all code is well-commented."
 
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
         micro_spec_content = task.get("task_description")
         component_name = task.get("component_name")
 
+        # Instantiate all necessary agents
         logic_agent = LogicAgent_AppTarget(api_key=api_key)
         code_agent = CodeAgent_AppTarget(api_key=api_key)
         review_agent = CodeReviewAgent(api_key=api_key)
@@ -260,29 +264,56 @@ class MasterOrchestrator:
         build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
         doc_agent = DocUpdateAgentRoWD(db_manager=self.db_manager)
 
+        # Generate logic and initial code, now using the project's standard
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
-        source_code = code_agent.generate_code_for_component(logic_plan, "Follow PEP 8 standards.")
+        source_code = code_agent.generate_code_for_component(logic_plan, coding_standard)
 
+        # Automated review and correction loop
         MAX_REVIEW_ATTEMPTS = 2
         review_status, discrepancies = "fail", ""
         for attempt in range(MAX_REVIEW_ATTEMPTS):
-            review_status, discrepancies = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json)
+            # Pass the coding standard to the review agent for enforcement
+            review_status, discrepancies = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, coding_standard)
             if review_status == "pass":
                 break
             else:
                 if attempt < MAX_REVIEW_ATTEMPTS - 1:
-                    source_code = code_agent.generate_code_for_component(logic_plan, "Follow PEP 8 standards.", feedback=discrepancies)
+                    # Attempt correction using the standard and feedback
+                    source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, feedback=discrepancies)
 
         if review_status != "pass":
             raise Exception(f"Component '{component_name}' failed code review after all attempts. Last feedback: {discrepancies}")
 
-        unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content)
-        build_success, build_output = build_agent.build_and_commit_component(task.get("component_file_path"), source_code, task.get("test_file_path"), unit_tests)
+        # Generate unit tests for the approved code, also using the standard
+        unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard)
 
-        if not build_success:
-            raise Exception(f"Build failed for component {component_name}: {build_output}")
+        # Conditional Build Logic based on PM's choice
+        is_build_automated = bool(project_details.get('is_build_automated', 1))
+        commit_hash = None
 
-        commit_hash = build_output.split(":")[-1].strip()
+        if is_build_automated:
+            build_success, build_output = build_agent.build_and_commit_component(task.get("component_file_path"), source_code, task.get("test_file_path"), unit_tests)
+            if not build_success:
+                raise Exception(f"Build failed for component {component_name}: {build_output}")
+            commit_hash = build_output.split(":")[-1].strip()
+        else:
+            # Manual build path: write files and commit without building
+            component_path = project_root_path / task.get("component_file_path")
+            test_path = project_root_path / task.get("test_file_path")
+            component_path.parent.mkdir(parents=True, exist_ok=True)
+            test_path.parent.mkdir(parents=True, exist_ok=True)
+            component_path.write_text(source_code, encoding='utf-8')
+            test_path.write_text(unit_tests, encoding='utf-8')
+
+            files_to_commit = [task.get("component_file_path"), task.get("test_file_path")]
+            commit_message = f"feat: Add component {component_name} (manual build)"
+            commit_success, commit_result = build_agent.commit_changes(files_to_commit, commit_message)
+
+            if not commit_success:
+                raise Exception(f"Git commit failed for component {component_name}: {commit_result}")
+            commit_hash = commit_result.split(":")[-1].strip()
+
+        # Update RoWD with the details of the successfully generated and committed artifact
         doc_agent.update_artifact_record({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
             "file_path": task.get("component_file_path"), "artifact_name": component_name,
@@ -727,12 +758,70 @@ class MasterOrchestrator:
             logging.error(f"Failed to retrieve change requests for project {self.project_id}: {e}")
             return []
 
+    def get_cr_and_bug_report_data(self, project_id: str, filter_type: str) -> list[dict]:
+        """
+        Fetches and consolidates data for the 'Change Requests & Bug Fixes' report.
+
+        Args:
+            project_id (str): The ID of the project to report on.
+            filter_type (str): The filter to apply ("Pending", "Closed", or "All").
+
+        Returns:
+            A list of dictionaries, each representing a CR or a bug fix.
+        """
+        report_data = []
+
+        # Define status categories
+        cr_pending_statuses = ["RAISED", "IMPACT_ANALYZED", "PLANNING_IN_PROGRESS", "IMPLEMENTATION_IN_PROGRESS"]
+        cr_closed_statuses = ["COMPLETED", "CANCELLED"]
+        bug_pending_statuses = ["UNIT_TESTS_FAILING", "DEBUG_IN_PROGRESS", "AWAITING_PM_TRIAGE_INPUT", "DEBUG_PM_ESCALATION"]
+
+        # Determine which statuses to query based on the filter
+        cr_statuses_to_query = []
+        bug_statuses_to_query = []
+
+        if filter_type == "Pending":
+            cr_statuses_to_query = cr_pending_statuses
+            bug_statuses_to_query = bug_pending_statuses
+        elif filter_type == "Closed":
+            cr_statuses_to_query = cr_closed_statuses
+            # There isn't a "closed" state for bugs in the same way, so we fetch none.
+            bug_statuses_to_query = []
+        elif filter_type == "All":
+            cr_statuses_to_query = cr_pending_statuses + cr_closed_statuses
+            bug_statuses_to_query = bug_pending_statuses
+
+        with self.db_manager as db:
+            # Fetch Change Requests
+            if cr_statuses_to_query:
+                change_requests = db.get_change_requests_by_statuses(project_id, cr_statuses_to_query)
+                for cr in change_requests:
+                    report_data.append({
+                        "id": f"CR-{cr['cr_id']}",
+                        "type": "CR",
+                        "status": cr['status'],
+                        "description": cr['description']
+                    })
+
+            # Fetch Bug Fixes
+            if bug_statuses_to_query:
+                bug_artifacts = db.get_artifacts_by_statuses(project_id, bug_statuses_to_query)
+                for bug in bug_artifacts:
+                    report_data.append({
+                        "id": bug['artifact_id'],
+                        "type": "Bugfix",
+                        "status": bug['status'],
+                        "description": f"Failure in component: {bug['artifact_name']}"
+                    })
+
+        return sorted(report_data, key=lambda x: x['id'])
+
     def resume_project(self):
         """
         Resumes a paused project. (Placeholder)
 
         As per F-Phase 7, this will load the last saved state from the
-        [cite_start]database and resume operations from the appropriate phase and step. [cite: 316]
+        database and resume operations from the appropriate phase and step.
         """
         if not self.project_id:
             logging.warning("No active project to resume.")
@@ -744,33 +833,48 @@ class MasterOrchestrator:
 
     def escalate_for_manual_debug(self, failure_log: str):
         """
-        Initiates the full, multi-tiered triage and planning process for a bug.
-        This version contains the implementation for Tier 1 and Tier 2 analysis.
-
-        Args:
-            failure_log (str): The build or test output indicating the failure.
+        Initiates the triage and planning process for a bug, now with
+        an atomic rollback at the start of the process.
         """
-        logging.info("Initiating multi-tiered debugging process...")
+        logging.info("A failure has triggered the debugging pipeline.")
 
         try:
             with self.db_manager as db:
+                project_details = db.get_project_by_id(self.project_id)
+                project_root_path = Path(project_details['project_root_folder'])
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key:
                     raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
 
-                project_details = db.get_project_by_id(self.project_id)
-                project_root_path = Path(project_details['project_root_folder'])
-                context_package = {}
+                # --- (NEW) Atomic Rollback on Failure ---
+                # This is the implementation of the critical quality gate from the internal spec.
+                # It ensures every debug attempt starts from a clean, known baseline.
+                logging.warning(f"Performing atomic rollback on '{project_root_path}' before attempting new fix.")
+                try:
+                    repo = git.Repo(project_root_path)
+                    repo.git.reset('--hard', 'HEAD')
+                    repo.git.clean('-fdx') # Forcefully remove untracked files and directories
+                    logging.info("Rollback successful. Repository is now in a clean state.")
+                except Exception as e:
+                    # If the rollback itself fails, we have a serious environmental problem.
+                    logging.error(f"CRITICAL: Atomic rollback failed: {e}")
+                    self.set_phase("DEBUG_PM_ESCALATION") # Escalate to PM immediately
+                    return
+                # --- End of New Rollback Logic ---
 
-                # --- Tier 1: Attempt Stack Trace Analysis ---
+                context_package = {}
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
+
+                # --- Tier 1: Automated Stack Trace Analysis ---
                 logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
+                # ... (rest of the method is the same as before)
                 if "Traceback (most recent call last):" in failure_log:
                     file_path_pattern = r'File "([^"]+)"'
                     found_paths = re.findall(file_path_pattern, failure_log)
                     unique_paths = list(dict.fromkeys(found_paths))
 
                     if unique_paths:
-                        logging.info(f"Found {len(unique_paths)} unique file(s) in stack trace.")
                         for file_path_str in unique_paths:
                             try:
                                 full_path = Path(file_path_str).resolve()
@@ -785,44 +889,49 @@ class MasterOrchestrator:
                     self._plan_and_execute_fix(failure_log, context_package, api_key)
                     return
 
-                # --- Tier 2: Attempt Main Executable Trace Analysis ---
+                # --- Tier 2: Automated Apex Trace Analysis ---
                 logging.warning("Tier 1 Failed: No usable stack trace found. Proceeding to Tier 2 analysis.")
+                # ... (rest of the method is the same as before)
                 apex_file_name = project_details.get("apex_executable_name")
 
                 if apex_file_name:
-                    logging.info(f"Tier 2: Main executable '{apex_file_name}' found. Proceeding with guided trace analysis.")
+                    logging.info(f"Tier 2: Main executable '{apex_file_name}' found. Attempting guided trace analysis.")
 
-                    # Heuristic to find the failing component name from the log
-                    failing_component_match = re.search(r"component:\s*'([^']+)'", failure_log, re.IGNORECASE)
+                    failing_component_match = re.search(r"component '([^']+)'", failure_log, re.IGNORECASE)
                     if failing_component_match:
                         failing_component_name = failing_component_match.group(1)
                         logging.info(f"Identified potential failing component from log: '{failing_component_name}'")
 
-                        # Use RoWD to find the file path of the apex/main executable
-                        all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                        apex_artifact = next((art for art in all_artifacts if Path(art['file_path']).stem == apex_file_name), None)
+                        agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
+                        path_list_json = agent.perform_apex_trace_analysis(rowd_json, apex_file_name, failing_component_name)
 
-                        if apex_artifact:
-                            # Perform a search down the dependency tree from the apex file
-                            # For now, we'll simulate this by just grabbing the apex file and the failing component's file.
-                            # A full implementation would build a graph and find the path.
-                            failing_artifact = next((art for art in all_artifacts if art['artifact_name'] == failing_component_name), None)
-                            if failing_artifact:
-                                apex_file_path = Path(apex_artifact['file_path'])
-                                failing_file_path = Path(failing_artifact['file_path'])
-                                context_package[str(apex_file_path)] = (project_root_path / apex_file_path).read_text(encoding='utf-8')
-                                context_package[str(failing_file_path)] = (project_root_path / failing_file_path).read_text(encoding='utf-8')
-                                logging.info("Tier 2 Success: Context gathered from guided trace. Proceeding to plan a fix.")
-                                self._plan_and_execute_fix(failure_log, context_package, api_key)
-                                return
+                        try:
+                            file_paths_to_load = json.loads(path_list_json)
+                            if file_paths_to_load:
+                                logging.info(f"Tier 2 Trace returned {len(file_paths_to_load)} files. Gathering source code.")
+                                for file_path in file_paths_to_load:
+                                    full_path = project_root_path / file_path
+                                    if full_path.exists():
+                                        context_package[file_path] = full_path.read_text(encoding='utf-8')
+                                    else:
+                                        logging.warning(f"Tier 2: Agent suggested path '{file_path}' but it was not found.")
+                            else:
+                                logging.warning("Tier 2: Apex Trace Analysis returned no file paths.")
+                        except json.JSONDecodeError:
+                            logging.error(f"Tier 2: Failed to parse JSON response from TriageAgent: {path_list_json}")
 
-                # --- Tier 3: Initiate Interactive Triage ---
+                if context_package:
+                    logging.info("Tier 2 Success: Context gathered from guided trace. Proceeding to plan a fix.")
+                    self._plan_and_execute_fix(failure_log, context_package, api_key)
+                    return
+
+                # --- Tier 3: Interactive Triage ---
                 logging.warning("Tier 2 Failed: Could not determine context automatically. Proceeding to Tier 3 for PM interaction.")
                 self.set_phase("AWAITING_PM_TRIAGE_INPUT")
 
         except Exception as e:
             logging.error(f"A critical error occurred during the triage process: {e}")
-            self.set_phase("DEBUG_PM_ESCALATION") # Fallback to generic debug error screen
+            self.set_phase("DEBUG_PM_ESCALATION")
 
     def handle_pm_debug_choice(self, choice: str, details: dict = None):
         """

@@ -41,8 +41,8 @@ class ProjectBootstrapAgent:
         """
         Extracts text content from a list of uploaded files and checks size limits.
 
-        [cite_start]Supports .txt, .md, and .docx formats as per the PRD. [cite: 431, 433]
-        [cite_start]Implements the size guardrail from CR-ASDF-004. [cite: 38]
+        Supports .txt, .md, and .docx formats as per the PRD.
+        Implements the size guardrail from CR-ASDF-004.
 
         Args:
             uploaded_files: A list of files uploaded via st.file_uploader.
@@ -58,7 +58,7 @@ class ProjectBootstrapAgent:
         for doc in uploaded_files:
             try:
                 if doc.name.endswith('.docx'):
-                    # [cite_start]Use python-docx to read .docx files [cite: 433]
+                    # Use python-docx to read .docx files
                     document = docx.Document(doc)
                     for para in document.paragraphs:
                         all_text.append(para.text)
@@ -78,7 +78,7 @@ class ProjectBootstrapAgent:
             error_message = (
                 "The provided specification is too large for a single project. "
                 "Please divide it into smaller, more focused sub-projects."
-            [cite_start]) # [cite: 40]
+            )
             messages.append(f"Error: Specification character count ({len(concatenated_text)}) exceeds the limit of {SPEC_MAX_CHAR_LIMIT}.")
             return None, messages, error_message
 

@@ -1,3 +1,4 @@
+import logging
 import google.generativeai as genai
 
 """
@@ -7,8 +8,8 @@ This module contains the LogicAgent_AppTarget class.
 class LogicAgent_AppTarget:
     """
     Agent responsible for generating the logic and algorithms for a target
-    [cite_start]application component based on a micro-specification. [cite: 274]
-    [cite_start]Adheres to the Single Responsibility Principle as this class has one specific task. [cite: 446]
+    application component based on a micro-specification.
+    Adheres to the Single Responsibility Principle as this class has one specific task.
     """
 
     def __init__(self, api_key: str):
@@ -72,5 +73,5 @@ class LogicAgent_AppTarget:
         except Exception as e:
             # As per the programming standard, we handle foreseeable errors gracefully.
             error_message = f"An error occurred while communicating with the Gemini API: {e}"
-            print(error_message) # Or use a proper logger
+            logging.error(error_message)
             return error_message
