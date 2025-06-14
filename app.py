@@ -253,12 +253,17 @@ if page == "Project":
                         with col1:
                             if st.button("✅ Approve Specification and Proceed", use_container_width=True, type="primary"):
                                 with st.spinner("Finalizing specification..."):
+                                    # Save the finalized specification to the database.
                                     with st.session_state.orchestrator.db_manager as db:
-                                        db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.specification_text)
-                                    st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
-                                    # ... (rest of the button logic is the same)
+                                        db.save_final_specification(
+                                            st.session_state.orchestrator.project_id,
+                                            st.session_state.specification_text
+                                        )
+                                    # Set a new session state flag to indicate approval.
+                                    st.session_state.spec_approved_but_not_acknowledged = True
+                                    st.rerun()
                         with col2:
-                            # Add the download button
+                            # The download button remains for convenience.
                             report_generator = ReportGeneratorAgent()
                             spec_docx_bytes = report_generator.generate_text_document_docx(
                                 title=f"Application Specification - {st.session_state.orchestrator.project_name}",
@@ -271,14 +276,6 @@ if page == "Project":
                                 mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                                 use_container_width=True
                             )
-                            with st.spinner("Finalizing specification..."):
-                                with st.session_state.orchestrator.db_manager as db:
-                                    db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.specification_text)
-                                st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
-                                for key in ['specification_text', 'complexity_analysis', 'proceed_with_complexity', 'clarification_issues', 'clarification_chat', 'brief_desc']:
-                                    if key in st.session_state:
-                                        del st.session_state[key]
-                                st.rerun()
 
                         st.divider()
                         for message in st.session_state.clarification_chat:
@@ -303,6 +300,48 @@ if page == "Project":
                                 st.session_state.clarification_issues = issues
                                 st.session_state.clarification_chat.append({"role": "assistant", "content": issues})
                                 st.rerun()
+
+                    #
+                    # --- ADD THIS ENTIRE NEW BLOCK OF CODE ---
+                    #
+
+                    # --- UI for Acknowledging the Finalized Specification ---
+                    elif st.session_state.get('spec_approved_but_not_acknowledged'):
+                        st.subheader("Final Specification Approved")
+
+                        # Display the message to the PM as per PRD requirement.
+                        st.success(
+                            "The final specification is now agreed upon and displayed below. "
+                            "Please copy this text into a local document for your own records and future reference."
+                        )
+
+                        # Display the finalized specification text in a disabled text area.
+                        st.text_area(
+                            "Finalized Specification:",
+                            value=st.session_state.specification_text,
+                            height=300,
+                            disabled=True
+                        )
+
+                        st.divider()
+
+                        # The new button to acknowledge and move to the next phase.
+                        if st.button("Acknowledge and Proceed to Technical Specification", type="primary"):
+                            # This button now performs the actions the old 'Approve' button did.
+                            st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
+
+                            # Clean up all session state keys related to the spec elaboration phase.
+                            keys_to_clear = [
+                                'specification_text', 'complexity_analysis',
+                                'proceed_with_complexity', 'clarification_issues',
+                                'clarification_chat', 'brief_desc',
+                                'spec_approved_but_not_acknowledged'
+                            ]
+                            for key in keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+
+                            st.rerun()
 
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
             st.header("Phase 1.5: Technical Specification & Architecture")
