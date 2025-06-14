@@ -47,7 +47,7 @@ if "api_key_input" not in st.session_state:
 with st.sidebar:
     st.markdown("## 🤖 Autonomous Software Development Factory")
     st.markdown("---")
-    page = st.radio("Navigation", ["Project", "Reports", "Settings"], label_visibility="collapsed")
+    page = st.radio("Navigation", ["Project", "Documents", "Reports", "Settings"], label_visibility="collapsed")
     st.markdown("---")
 
     st.markdown("### Project Information")
@@ -472,7 +472,23 @@ if page == "Project":
                 with col1:
                     # The button to approve the plan and proceed
                     if st.button("✅ Approve Plan & Proceed to Development", type="primary"):
-                        # ... (rest of the button logic is the same)
+                        with st.spinner("Saving and loading development plan..."):
+                            plan_json = st.session_state.development_plan
+                            # Save the plan to the database
+                            with st.session_state.orchestrator.db_manager as db:
+                                db.save_development_plan(st.session_state.orchestrator.project_id, plan_json)
+
+                            # Load the plan into the orchestrator's active state
+                            st.session_state.orchestrator.load_development_plan(plan_json)
+
+                            # Transition to the Genesis phase
+                            st.session_state.orchestrator.set_phase("GENESIS")
+
+                            # Clean up session state
+                            del st.session_state.development_plan
+                            st.toast("Plan approved! Starting development...")
+                            time.sleep(1)
+                            st.rerun()
                 with col2:
                     # Add the download button
                     report_generator = ReportGeneratorAgent()
@@ -815,17 +831,41 @@ if page == "Project":
                 st.dataframe(df, use_container_width=True, hide_index=True, column_config={"ID": "Select"})
 
                 history_ids = [row['history_id'] for row in project_history]
-                selected_id = st.selectbox("Select a Project ID to load:", options=[""] + history_ids)
+                selected_id_str = st.selectbox("Select a Project ID to action:", options=[""] + [str(i) for i in history_ids])
 
-                if st.button("Load Selected Project", disabled=(not selected_id)):
-                    with st.spinner("Loading project data and running pre-flight checks..."):
-                        # This method now triggers the pre-flight checks and sets the next phase
-                        st.session_state.orchestrator.load_archived_project(selected_id)
-                        st.rerun()
+                if selected_id_str:
+                    selected_id = int(selected_id_str)
+                    selected_project_record = next((p for p in project_history if p['history_id'] == selected_id), None)
+
+                    # --- Button Logic ---
+                    is_active_project = (st.session_state.orchestrator.project_id == selected_project_record['project_id'])
+
+                    col1, col2, _ = st.columns([1, 1, 4])
+                    with col1:
+                        if st.button("📂 Load Selected Project", use_container_width=True, type="primary"):
+                            with st.spinner("Loading project data and running pre-flight checks..."):
+                                st.session_state.orchestrator.load_archived_project(selected_id)
+                                st.rerun()
+                    with col2:
+                        # Add the delete button with its popover confirmation
+                        delete_button = st.button("🗑️ Delete Selected Project", use_container_width=True, disabled=is_active_project, help="You cannot delete the currently active project.")
+
+                    if delete_button:
+                        with st.popover("Confirm Deletion", use_container_width=True):
+                            st.warning(f"**Are you sure you want to permanently delete project '{selected_project_record['project_name']}' (ID: {selected_id})?**")
+                            st.error("This action cannot be undone and will delete the project history record and its associated archive files from the disk.")
+                            if st.button("Yes, permanently delete this project", type="primary", use_container_width=True):
+                                success, message = st.session_state.orchestrator.delete_archived_project(selected_id)
+                                if success:
+                                    st.toast(f"✅ {message}")
+                                else:
+                                    st.error(message)
+                                time.sleep(2)
+                                st.rerun()
 
             st.divider()
             if st.button("⬅️ Back to Main Page"):
-                st.session_state.orchestrator.project_id = None # Clear any potential partial state
+                st.session_state.orchestrator.project_id = None
                 st.session_state.orchestrator.set_phase("IDLE")
                 st.rerun()
 
@@ -885,6 +925,91 @@ if page == "Project":
         else: # Fallback for any other phase
             st.header(f"Current Phase: {current_phase_name}")
             st.info("The UI for this phase is under construction.")
+
+elif page == "Documents":
+    st.header("Project Documents")
+    st.markdown("Select a project to view and download its core documents.")
+
+    # --- Project Selection Logic ---
+    doc_project_id = st.session_state.orchestrator.project_id
+    doc_project_name = st.session_state.orchestrator.project_name
+
+    project_history = st.session_state.orchestrator.get_project_history()
+
+    if project_history:
+        # Create a dictionary to map display names to project IDs
+        history_options = {f"{row['project_name']} (ID: {row['project_id']})": row['project_id'] for row in project_history}
+
+        # If a project is active, find its corresponding display name to set the default
+        default_index = 0
+        if doc_project_id:
+            try:
+                active_project_display_name = next(name for name, pid in history_options.items() if pid == doc_project_id)
+                default_index = list(history_options.keys()).index(active_project_display_name) + 1
+            except StopIteration:
+                pass # Active project might not be in history yet
+
+        selected_option = st.selectbox(
+            "Select a Project:",
+            options=[""] + list(history_options.keys()),
+            index=default_index,
+            help="Select any active or archived project to view its documents."
+        )
+
+        if selected_option:
+            doc_project_id = history_options[selected_option]
+            doc_project_name = selected_option.split(' (ID:')[0]
+        else:
+            # Clear the ID if the user selects the blank option
+            doc_project_id = None
+
+    elif doc_project_id:
+        st.info(f"Displaying documents for the only active project: **{doc_project_name}**")
+    else:
+        st.warning("Please start a new project to generate documents.")
+        st.stop()
+
+    # --- Document Display and Download ---
+    if doc_project_id:
+        st.subheader(f"Documents for: {doc_project_name}")
+
+        with st.session_state.orchestrator.db_manager as db:
+            project_docs = db.get_project_by_id(doc_project_id)
+
+        if project_docs:
+            report_generator = ReportGeneratorAgent()
+
+            # Application Specification
+            with st.expander("Application Specification", expanded=False):
+                spec_text = project_docs.get('final_spec_text')
+                if spec_text:
+                    st.text_area("Spec Content", spec_text, height=300, disabled=True, key=f"spec_{doc_project_id}")
+                    spec_docx_bytes = report_generator.generate_text_document_docx(f"Application Specification - {doc_project_name}", spec_text)
+                    st.download_button("📄 Print to .docx", spec_docx_bytes, f"AppSpec_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+
+            # Technical Specification
+            with st.expander("Technical Specification", expanded=False):
+                tech_spec_text = project_docs.get('tech_spec_text')
+                if tech_spec_text:
+                    st.text_area("Tech Spec Content", tech_spec_text, height=300, disabled=True, key=f"tech_spec_{doc_project_id}")
+                    tech_spec_docx_bytes = report_generator.generate_text_document_docx(f"Technical Specification - {doc_project_name}", tech_spec_text)
+                    st.download_button("📄 Print to .docx", tech_spec_docx_bytes, f"TechSpec_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+
+            # Development Plan
+            with st.expander("Development Plan", expanded=False):
+                dev_plan_text = project_docs.get('development_plan_text')
+                if dev_plan_text:
+                    st.json(dev_plan_text)
+                    dev_plan_docx_bytes = report_generator.generate_text_document_docx(f"Development Plan - {doc_project_name}", dev_plan_text, is_code=True)
+                    st.download_button("📄 Print to .docx", dev_plan_docx_bytes, f"DevPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+        else:
+            st.error(f"Could not retrieve document data for project ID: {doc_project_id}")
 
 elif page == "Settings":
     st.header("Factory Settings")

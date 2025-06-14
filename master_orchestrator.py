@@ -1126,6 +1126,55 @@ class MasterOrchestrator:
             logging.error(f"Failed to discard changes for project {project_id}: {e}")
             self.preflight_check_result = {"status": "ERROR", "message": str(e)}
 
+    def delete_archived_project(self, history_id: int) -> tuple[bool, str]:
+        """
+        Permanently deletes an archived project's history record and its
+        associated archive files from the filesystem.
+
+        Args:
+            history_id (int): The history_id of the project to delete.
+
+        Returns:
+            A tuple containing a success/failure boolean and a status message.
+        """
+        logging.info(f"Attempting to delete archived project with history_id: {history_id}.")
+        try:
+            with self.db_manager as db:
+                # 1. Fetch the record to get the archive file path
+                history_record = db.get_project_history_by_id(history_id)
+                if not history_record:
+                    error_msg = f"No project history found for ID {history_id}."
+                    logging.error(error_msg)
+                    return False, error_msg
+
+                archive_path_str = history_record['archive_file_path']
+
+                # 2. Delete the associated archive files
+                rowd_file = Path(archive_path_str)
+                cr_file = rowd_file.with_name(rowd_file.name.replace("_rowd.json", "_cr.json"))
+
+                if rowd_file.exists():
+                    rowd_file.unlink()
+                    logging.info(f"Deleted archive file: {rowd_file}")
+                else:
+                    logging.warning(f"Could not find archive file to delete at: {rowd_file}")
+
+                if cr_file.exists():
+                    cr_file.unlink()
+                    logging.info(f"Deleted CR archive file: {cr_file}")
+
+                # 3. Delete the record from the database
+                db.delete_project_from_history(history_id)
+
+                success_msg = f"Successfully deleted archived project (History ID: {history_id})."
+                logging.info(success_msg)
+                return True, success_msg
+
+        except Exception as e:
+            error_msg = f"An unexpected error occurred while deleting project history {history_id}: {e}"
+            logging.error(error_msg)
+            return False, error_msg
+
     def load_archived_project(self, history_id: int):
         """
         Loads an archived project's data, performs pre-flight checks,

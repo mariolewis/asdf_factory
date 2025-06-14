@@ -118,7 +118,8 @@ class ASDFDBManager:
             final_spec_text TEXT,
             tech_spec_text TEXT,
             is_build_automated BOOLEAN NOT NULL DEFAULT 1,
-            coding_standard_text TEXT
+            coding_standard_text TEXT,
+            development_plan_text TEXT
         );
         """
         self._execute_query(create_projects_table)
@@ -282,6 +283,19 @@ class ASDFDBManager:
         params = (standard_text, project_id)
         self._execute_query(query, params)
         logging.info(f"Saved coding standard for project ID '{project_id}'.")
+
+    def save_development_plan(self, project_id: str, plan_text: str):
+        """
+        Saves the approved Development Plan text to the project's record.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            plan_text (str): The final, approved development plan JSON string.
+        """
+        query = "UPDATE Projects SET development_plan_text = ? WHERE project_id = ?"
+        params = (plan_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved development plan for project ID '{project_id}'.")
 
     def update_project_technology(self, project_id: str, technology_stack: str):
         """
