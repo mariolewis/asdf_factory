@@ -31,35 +31,35 @@ class CodeReviewAgent:
         self.model = genai.GenerativeModel('gemini-pro')
         logging.info("CodeReviewAgent initialized.")
 
-    def review_code(self, micro_spec: str, logic_plan: str, new_source_code: str, rowd_json: str) -> Tuple[str, str]:
+    def review_code(self, micro_spec: str, logic_plan: str, new_source_code: str, rowd_json: str, coding_standard: str) -> Tuple[str, str]:
         """
         Performs a deep-dive review of the newly generated source code.
 
         Args:
             micro_spec: The original micro-specification for the component.
-            logic_plan: The intermediate logic plan generated for the component.
+            logic_plan: The intermediate logic plan for the component.
             new_source_code: The newly generated source code to be reviewed.
-            rowd_json: A JSON string representing the full, up-to-date Record-of-Work-Done.
+            rowd_json: A JSON string of the full Record-of-Work-Done.
+            coding_standard (str): The coding standard to enforce.
 
         Returns:
             A tuple containing:
             - A status string: "pass" or "fail".
-            - A detailed report of discrepancies if the status is "fail", otherwise an empty string.
+            - A detailed report of discrepancies if "fail", otherwise an empty string.
         """
-        logging.info("CodeReviewAgent: Starting code review...")
+        logging.info("CodeReviewAgent: Starting comprehensive code review...")
 
         prompt = textwrap.dedent(f"""
-            You are an expert, detail-oriented code reviewer. Your task is to perform a deep-dive analysis and answer the question: "Does this source code perfectly and completely implement the logic plan and satisfy all requirements of the micro-specification, considering the existing artifacts in the Record-of-Work-Done (RoWD)? List all discrepancies."
+            You are an expert, detail-oriented code reviewer. Your task is to perform a deep-dive analysis and answer the question: "Does this source code perfectly and completely implement the logic plan, satisfy all requirements of the micro-specification, adhere to the coding standard, and contain no unwanted text, considering the existing artifacts in the Record-of-Work-Done (RoWD)? List all discrepancies."
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze Holistically:** You MUST consider all four inputs: the micro-specification (the ultimate requirement), the logic plan (the intended implementation steps), the existing codebase context (the RoWD), and the new source code itself.
-            2.  **Strict Validation:** Check for any deviation from the logic plan or any missed requirements from the micro-specification.
-            3.  **Cross-Reference with RoWD:** You MUST cross-reference the `new_source_code` against the plan implied by the `RoWD`. Specifically, you must FAIL the review if you find:
-                - The code makes database calls (e.g., SQL queries) that rely on tables or columns that are NOT part of a planned `DB_MIGRATION_SCRIPT` task in the RoWD.
-                - The code imports libraries or modules that are NOT part of a planned `BUILD_SCRIPT_MODIFICATION` task in the RoWD.
-                - The code attempts to access configuration keys or internationalization (i18n) labels that are NOT part of a planned `CONFIG_FILE_UPDATE` task in the RoWD.
-            4.  **Output Format:**
-                -   If the source code is perfect and has no discrepancies, your ENTIRE response MUST begin with the single word "PASS:".
+            1.  **Analyze Holistically:** You MUST consider all five inputs: the micro-specification, the logic plan, the RoWD, the new source code, and the coding standard.
+            2.  **Check for Contamination:** You MUST FAIL the review if the code contains any non-code text or markers that are not part of a valid docstring or a required inline comment (e.g., citation markers like ``, ``).
+            3.  **Check Coding Standard:** You MUST verify that the `new_source_code` strictly adheres to all rules in the provided `Coding Standard`. This is a critical check.
+            4.  **Check Logic & Requirements:** You MUST validate that the code correctly implements the `Logic Plan` and fulfills all requirements of the `Micro-Specification`.
+            5.  **Check Cross-Referencing:** You MUST cross-reference the `new_source_code` against the plan implied by the `RoWD` for inconsistencies (e.g., using unplanned libraries or database columns).
+            6.  **Output Format:**
+                -   If the source code is perfect and has NO discrepancies of any kind, your ENTIRE response MUST begin with the single word "PASS:".
                 -   If there are ANY discrepancies, your ENTIRE response MUST begin with the single word "FAIL:", followed by a detailed, numbered list of every discrepancy you found.
 
             **--- INPUT 1: Micro-Specification ---**
@@ -71,7 +71,10 @@ class CodeReviewAgent:
             **--- INPUT 3: Existing Project Context (Record-of-Work-Done) ---**
             {rowd_json}
 
-            **--- INPUT 4: New Source Code to Review ---**
+            **--- INPUT 4: Coding Standard to Enforce ---**
+            {coding_standard}
+
+            **--- INPUT 5: New Source Code to Review ---**
             ```
             {new_source_code}
             ```
@@ -91,7 +94,6 @@ class CodeReviewAgent:
                 return "fail", response_text[5:].strip()
             else:
                 logging.error("Received an invalid response format from the review agent.")
-                # Treat an invalid format as a failure to be safe
                 return "fail", "The code review agent returned a response in an invalid format."
 
         except Exception as e:
