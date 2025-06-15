@@ -4,6 +4,7 @@ import time
 import pandas as pd
 from datetime import datetime
 import logging
+import docx
 
 # Imports from the project's root directory
 from master_orchestrator import MasterOrchestrator
@@ -671,6 +672,54 @@ if page == "Project":
                         st.session_state.show_export_confirmation = True
                         st.rerun()
 
+        elif current_phase_name == "MANUAL_UI_TESTING":
+            st.header("Phase 4: Manual UI Testing")
+            st.info(
+                "The automated integration and build were successful. "
+                "The UI Test Plan has been generated based on the project specification."
+            )
+            st.markdown(
+                "**Your action is required:**\n\n"
+                "1.  Navigate to the **Documents** page from the sidebar.\n"
+                "2.  Download the **UI Test Plan** document.\n"
+                "3.  Execute the tests as described and fill in the results.\n"
+                "4.  Upload the completed document below to trigger the evaluation."
+            )
+            st.divider()
+
+            uploaded_file = st.file_uploader(
+                "Upload Completed UI Test Plan Results",
+                type=['txt', 'md', 'docx']
+            )
+
+            if uploaded_file is not None:
+                if st.button("Process Test Results", type="primary"):
+                    with st.spinner("Reading and evaluating test results..."):
+                        # To handle different file types, we need a simple way to get text
+                        content = ""
+                        try:
+                            if uploaded_file.name.endswith('.docx'):
+                                import docx
+                                doc = docx.Document(uploaded_file)
+                                content = "\n".join([p.text for p in doc.paragraphs])
+                            else: # For .txt and .md files
+                                content = uploaded_file.getvalue().decode("utf-8")
+
+                            # Call the new orchestrator method to handle the logic
+                            st.session_state.orchestrator.handle_ui_test_result_upload(content)
+                            st.success("Test results submitted for evaluation. The system will now process any failures.")
+                            time.sleep(2)
+                            st.rerun()
+
+                        except Exception as e:
+                            st.error(f"Failed to process file: {e}")
+
+            st.divider()
+            st.markdown("If all tests have passed and been fixed, you can proceed.")
+            if st.button("Complete Project and Return to Idle"):
+                st.session_state.orchestrator.set_phase("IDLE")
+                st.toast("Project phase complete!")
+                st.rerun()
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
             st.header("Phase 3.5: Automated Integration & Verification")
@@ -1074,6 +1123,26 @@ elif page == "Documents":
                     st.json(dev_plan_text)
                     dev_plan_docx_bytes = report_generator.generate_text_document_docx(f"Development Plan - {doc_project_name}", dev_plan_text, is_code=True)
                     st.download_button("📄 Print to .docx", dev_plan_docx_bytes, f"DevPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+
+            # Integration Plan
+            with st.expander("Integration Plan", expanded=False):
+                integration_plan_text = project_docs.get('integration_plan_text')
+                if integration_plan_text:
+                    st.json(integration_plan_text)
+                    integration_plan_docx_bytes = report_generator.generate_text_document_docx(f"Integration Plan - {doc_project_name}", integration_plan_text, is_code=True)
+                    st.download_button("📄 Print to .docx", integration_plan_docx_bytes, f"IntegrationPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="download_integration_plan")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+
+            # UI Test Plan
+            with st.expander("UI Test Plan", expanded=False):
+                ui_test_plan_text = project_docs.get('ui_test_plan_text')
+                if ui_test_plan_text:
+                    st.markdown(ui_test_plan_text)
+                    ui_test_plan_docx_bytes = report_generator.generate_text_document_docx(f"UI Test Plan - {doc_project_name}", ui_test_plan_text)
+                    st.download_button("📄 Print to .docx", ui_test_plan_docx_bytes, f"UITestPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="download_ui_test_plan")
                 else:
                     st.info("This document has not been generated for this project yet.")
         else:

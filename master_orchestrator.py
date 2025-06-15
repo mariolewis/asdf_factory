@@ -23,6 +23,8 @@ from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 from agents.agent_triage_app_target import TriageAgent_AppTarget
 from agents.agent_code_review import CodeReviewAgent
 from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
+from agents.agent_ui_test_planner_app_target import UITestPlannerAgent_AppTarget
+from agents.agent_test_result_evaluation_app_target import TestResultEvaluationAgent_AppTarget
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -34,9 +36,9 @@ class FactoryPhase(Enum):
     SPEC_ELABORATION = auto()
     TECHNICAL_SPECIFICATION = auto()
     CODING_STANDARD_GENERATION = auto()
-    INTEGRATION_AND_VERIFICATION = auto()
     PLANNING = auto()
     GENESIS = auto()
+    MANUAL_UI_TESTING = auto()
     AWAITING_PM_DECLARATIVE_CHECKPOINT = auto()
     AWAITING_PREFLIGHT_RESOLUTION = auto()
     RAISING_CHANGE_REQUEST = auto()
@@ -230,8 +232,9 @@ class MasterOrchestrator:
                 # --- Advance Plan Cursor on Success ---
                 self.active_plan_cursor += 1
                 if self.active_plan_cursor >= len(self.active_plan):
-                    logging.info("Development plan complete. Transitioning to Integration & Verification.")
-                    self.set_phase("INTEGRATION_AND_VERIFICATION")
+                    logging.info("Development plan complete. Starting Integration and UI Testing phase.")
+                    # Directly call the method to run the entire integrated testing phase.
+                    self._run_integration_and_ui_testing_phase()
 
         except Exception as e:
             logging.error(f"Genesis Pipeline failed while executing plan for {task.get('component_name')}. Error: {e}")
@@ -391,7 +394,7 @@ class MasterOrchestrator:
             # For now, we'll just log and let the UI trigger the next "proceed"
             logging.info("Returning to Genesis phase to continue with the next task.")
 
-    def _run_integration_and_verification_phase(self):
+    def _run_integration_and_ui_testing_phase(self):
         """
         Executes the full F-Phase 3.5 workflow.
         """
@@ -433,6 +436,10 @@ class MasterOrchestrator:
 
                 if "error" in integration_plan:
                     raise Exception(f"IntegrationPlannerAgent failed: {integration_plan['error']}")
+
+                # Save the successful integration plan to the database.
+                db.save_integration_plan(self.project_id, integration_plan_str)
+                logging.info(f"Successfully saved integration plan for project {self.project_id}.")
 
                 # 3. Invoke OrchestrationCodeAgent for each file to be modified
                 logging.info("Invoking OrchestrationCodeAgent to apply integration plan...")
@@ -480,12 +487,68 @@ class MasterOrchestrator:
                 if active_cr:
                     db.update_cr_status(active_cr['cr_id'], "COMPLETED")
 
-                logging.info("Phase 3.5: Integration & Verification completed successfully.")
-                self.set_phase("GENESIS") # Return to Genesis checkpoint to show plan is complete
+                # 6. Generate and Save UI Test Plan for Manual Execution
+                logging.info("Automated verification passed. Generating UI test plan for PM review.")
+
+                # The UI Test Planner Agent needs the finalized functional spec.
+                final_spec_text = project_details.get('final_spec_text')
+                if not final_spec_text:
+                    raise Exception("Cannot generate UI test plan: Finalized specification text not found in database.")
+
+                ui_test_planner = UITestPlannerAgent_AppTarget(api_key=api_key)
+                ui_test_plan_content = ui_test_planner.generate_ui_test_plan(final_spec_text)
+
+                # Save the generated UI test plan to the database.
+                db.save_ui_test_plan(self.project_id, ui_test_plan_content)
+                logging.info(f"Successfully saved UI test plan for project {self.project_id}.")
+                logging.info("Automated integration and UI test plan generation complete.")
+                # Transition to the manual testing phase to await PM input.
+                self.set_phase("MANUAL_UI_TESTING")
 
         except Exception as e:
             logging.error(f"Integration & Verification Phase failed. Error: {e}")
             self.escalate_for_manual_debug()
+
+    def handle_ui_test_result_upload(self, test_result_content: str):
+        """
+        Orchestrates the evaluation of an uploaded UI test results file.
+
+        If failures are found, it triggers the debug pipeline (F-Phase 5).
+
+        Args:
+            test_result_content (str): The string content of the uploaded
+                                       test results file.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle test result upload; no active project.")
+            return
+
+        logging.info(f"Handling UI test result upload for project {self.project_id}.")
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("Cannot evaluate test results: LLM_API_KEY is not set.")
+
+            # 1. Evaluate the results using the dedicated agent.
+            eval_agent = TestResultEvaluationAgent_AppTarget(api_key=api_key)
+            failure_summary = eval_agent.evaluate_ui_test_results(test_result_content)
+
+            # 2. Check the agent's response for failures.
+            if "ALL_TESTS_PASSED" in failure_summary:
+                logging.info("UI test result evaluation complete: All tests passed.")
+                # In a future step, we will add a UI element to let the PM
+                # confirm completion of this phase. For now, we just log it.
+
+            else:
+                # 3. If failures are found, trigger the debug pipeline.
+                logging.warning("UI test result evaluation complete: Failures detected.")
+                self.escalate_for_manual_debug(failure_summary)
+
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during UI test result evaluation: {e}")
+            # Escalate with the error message itself if the process fails.
+            self.escalate_for_manual_debug(str(e))
 
     def handle_raise_cr_action(self):
         """

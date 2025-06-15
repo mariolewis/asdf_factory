@@ -119,7 +119,9 @@ class ASDFDBManager:
             tech_spec_text TEXT,
             is_build_automated BOOLEAN NOT NULL DEFAULT 1,
             coding_standard_text TEXT,
-            development_plan_text TEXT
+            development_plan_text TEXT,
+            integration_plan_text TEXT,
+            ui_test_plan_text TEXT
         );
         """
         self._execute_query(create_projects_table)
@@ -296,6 +298,32 @@ class ASDFDBManager:
         params = (plan_text, project_id)
         self._execute_query(query, params)
         logging.info(f"Saved development plan for project ID '{project_id}'.")
+
+    def save_integration_plan(self, project_id: str, plan_text: str):
+        """
+        Saves the generated Integration Plan text to the project's record.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            plan_text (str): The integration plan JSON string.
+        """
+        query = "UPDATE Projects SET integration_plan_text = ? WHERE project_id = ?"
+        params = (plan_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved integration plan for project ID '{project_id}'.")
+
+    def save_ui_test_plan(self, project_id: str, plan_text: str):
+        """
+        Saves the generated UI Test Plan text to the project's record.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            plan_text (str): The UI test plan markdown string.
+        """
+        query = "UPDATE Projects SET ui_test_plan_text = ? WHERE project_id = ?"
+        params = (plan_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved UI test plan for project ID '{project_id}'.")
 
     def update_project_technology(self, project_id: str, technology_stack: str):
         """
