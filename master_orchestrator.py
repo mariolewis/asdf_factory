@@ -147,14 +147,26 @@ class MasterOrchestrator:
     def start_new_project(self, project_name: str):
         """
         Initializes a new project.
+        If a project is already active, it performs a 'safety export' to
+        [cite_start]archive the current work before starting the new one. [cite: 465, 466]
         """
-        if self.project_id:
-            logging.warning(f"A project '{self.project_name}' is already active. Starting a new one will override it in this session.")
+        if self.project_id and self.project_name:
+            logging.warning(
+                f"An active project '{self.project_name}' was found. "
+                "Performing a safety export before starting the new project."
+            )
+            # Define a default location and name for the safety archive.
+            safety_archive_path = Path("data/safety_archives")
+            archive_name = f"{self.project_name.replace(' ', '_')}_safety_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
+            # Call the existing export method.
+            self.stop_and_export_project(safety_archive_path, archive_name)
+            logging.info(f"Safety export complete for '{self.project_name}'.")
+
+        # Proceed with creating the new project.
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
         self.project_name = project_name
         self.current_phase = FactoryPhase.ENV_SETUP_TARGET_APP
-        # CORRECTED: Using timezone-aware UTC time
         timestamp = datetime.now(timezone.utc).isoformat()
 
         try:
@@ -163,6 +175,7 @@ class MasterOrchestrator:
             logging.info(f"Successfully started new project: '{self.project_name}' (ID: {self.project_id})")
         except Exception as e:
             logging.error(f"Failed to start new project '{self.project_name}': {e}")
+            # Reset state on failure
             self.project_id = None
             self.project_name = None
             self.current_phase = FactoryPhase.IDLE
@@ -891,18 +904,30 @@ class MasterOrchestrator:
 
     def resume_project(self):
         """
-        Resumes a paused project. (Placeholder)
-
-        As per F-Phase 7, this will load the last saved state from the
-        database and resume operations from the appropriate phase and step.
+        Resumes a paused project by loading its last saved state from the database.
         """
         if not self.project_id:
             logging.warning("No active project to resume.")
-            return
+            return False
 
-        logging.info(f"Placeholder: Resuming project '{self.project_name}'.")
-        # Future implementation will load state from DB and set the correct phase.
-        pass
+        try:
+            with self.db_manager as db:
+                state_data = db.get_orchestration_state(self.project_id)
+
+            if state_data:
+                saved_phase_name = state_data['current_phase']
+                self.set_phase(saved_phase_name)
+                logging.info(f"Project '{self.project_name}' resumed successfully. Returning to phase: {saved_phase_name}.")
+                # In a more advanced implementation, we would also restore the
+                # 'state_details' JSON blob to recover more granular state.
+                return True
+            else:
+                logging.warning(f"No saved state found for project '{self.project_name}'. Cannot resume.")
+                return False
+
+        except Exception as e:
+            logging.error(f"An error occurred while resuming project {self.project_id}: {e}")
+            return False
 
     def escalate_for_manual_debug(self, failure_log: str):
         """

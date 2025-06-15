@@ -66,6 +66,22 @@ with st.sidebar:
         st.session_state.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
         st.rerun()
 
+    # Get the current phase to determine if we should show the Resume button.
+    # A paused project will have a saved state in the database.
+    is_paused = False
+    if st.session_state.orchestrator.project_id:
+        with st.session_state.orchestrator.db_manager as db:
+            state_data = db.get_orchestration_state(st.session_state.orchestrator.project_id)
+            if state_data:
+                is_paused = True
+
+    if is_paused:
+        if st.button("▶️ Resume Paused Project", use_container_width=True, type="primary"):
+            if st.session_state.orchestrator.resume_project():
+                st.rerun()
+            else:
+                st.error("Failed to resume project. No saved state found.")
+
     if st.session_state.orchestrator.project_id:
         if st.button("⏹️ Stop & Export Active Project", use_container_width=True):
             st.session_state.show_export_confirmation = True
@@ -107,6 +123,10 @@ if page == "Project":
 
     if not st.session_state.orchestrator.project_id:
         st.subheader("Start a New Project")
+        st.info(
+            "**Note:** If another project is currently active in the factory, "
+            "it will be automatically saved and archived before the new project begins."
+        )
         project_name_input = st.text_input("Enter a name for your new project:")
         if st.button("Start New Project"):
             if project_name_input:
