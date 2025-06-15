@@ -449,10 +449,17 @@ class MasterOrchestrator:
                 # 4. Final Build, Verification, and Commit
                 logging.info("Invoking BuildAndCommitAgent for final verification and commit...")
                 build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-                tests_passed, test_output = build_agent.build_component("pytest")
+                tests_passed, test_output = build_agent.build_and_commit_component("pytest")
 
                 if not tests_passed:
-                    raise Exception(f"Final integration verification failed.\n{test_output}")
+                    # On failure, create a detailed log and call the debug pipeline.
+                    failure_log = f"Final integration verification failed.\n{test_output}"
+                    logging.error(failure_log)
+                    self.escalate_for_manual_debug(failure_log)
+                    return # Stop further execution in this method
+
+                # If the build is successful, the 'test_output' now contains the commit hash.
+                commit_hash = test_output.split(":")[-1].strip()
 
                 # Find the CR that triggered this work and create a commit message
                 active_cr = db.get_cr_by_status(self.project_id, "PLANNING_IN_PROGRESS")
