@@ -43,6 +43,7 @@ class FactoryPhase(Enum):
     AWAITING_PM_DECLARATIVE_CHECKPOINT = auto()
     AWAITING_PREFLIGHT_RESOLUTION = auto()
     RAISING_CHANGE_REQUEST = auto()
+    AWAITING_IMPACT_ANALYSIS_CHOICE = auto()
     IMPLEMENTING_CHANGE_REQUEST = auto()
     EDITING_CHANGE_REQUEST = auto()
     DEBUG_PM_ESCALATION = auto()
@@ -588,7 +589,7 @@ class MasterOrchestrator:
                 db.add_change_request(self.project_id, description)
 
             # After successfully saving, return to the main development checkpoint.
-            self.set_phase("GENESIS")
+            self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
             logging.info("Successfully saved new change request and returned to Genesis phase.")
             return True
         except Exception as e:

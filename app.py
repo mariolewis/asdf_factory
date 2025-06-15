@@ -876,6 +876,39 @@ if page == "Project":
                     st.session_state.orchestrator.set_phase("GENESIS")
                     st.rerun()
 
+        elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
+            st.header("Phase 6: New Change Request Logged")
+            st.success("The new Change Request has been saved to the register.")
+            st.markdown("Would you like to perform a high-level impact analysis on this new CR now?")
+
+            # Get the ID of the CR we just created. The orchestrator logic ensures
+            # that getting all CRs and taking the first one (most recent) is safe here.
+            try:
+                latest_cr_id = st.session_state.orchestrator.get_all_change_requests()[0]['cr_id']
+            except (IndexError, TypeError):
+                st.error("Could not retrieve the newly created Change Request. Returning to checkpoint.")
+                if st.button("Back to Checkpoint"):
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
+                st.stop()
+
+
+            col1, col2, _ = st.columns([1, 1, 5])
+
+            with col1:
+                if st.button("Yes, Run Analysis", type="primary", use_container_width=True):
+                    with st.spinner(f"Running impact analysis for CR-{latest_cr_id}..."):
+                        st.session_state.orchestrator.handle_run_impact_analysis_action(latest_cr_id)
+                    st.toast(f"Impact analysis complete for CR-{latest_cr_id}.")
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
+
+            with col2:
+                if st.button("No, Later", use_container_width=True):
+                    st.toast("Acknowledged. You can run the analysis later from the CR Register.")
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
+
         elif current_phase_name == "IMPLEMENTING_CHANGE_REQUEST":
             st.header("Phase 6: Implement Requested Change")
             st.markdown("Select a Change Request from the register below to view available actions.")
