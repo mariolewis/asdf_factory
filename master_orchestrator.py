@@ -26,6 +26,7 @@ from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 from agents.agent_ui_test_planner_app_target import UITestPlannerAgent_AppTarget
 from agents.agent_test_result_evaluation_app_target import TestResultEvaluationAgent_AppTarget
 from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
+from agents.agent_learning_capture import LearningCaptureAgent
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -1087,6 +1088,16 @@ class MasterOrchestrator:
             if not fix_plan:
                  raise Exception("FixPlannerAgent returned an empty plan.")
 
+            # Step 3: Capture this successful interaction as a learning moment.
+            learning_agent = LearningCaptureAgent(self.db_manager)
+            tags = self._extract_tags_from_text(hypothesis)
+            learning_agent.add_learning_entry(
+                context=f"During interactive triage (Tier 3) for project: {self.project_name}",
+                problem=pm_error_description,
+                solution=fix_plan_str,
+                tags=tags
+            )
+
             # Load the new fix plan and transition to Genesis to execute it.
             self.active_plan = fix_plan
             self.active_plan_cursor = 0
@@ -1489,3 +1500,41 @@ class MasterOrchestrator:
             logging.error(f"Tier 3 interactive triage failed. Error: {e}")
             # If even the interactive triage fails, escalate to the final manual debug screen.
             self.set_phase("DEBUG_PM_ESCALATION")
+
+    def _extract_tags_from_text(self, text: str) -> list[str]:
+        """A simple helper to extract potential search tags from text."""
+        # Find capitalized words or words in quotes that might be features or nouns
+        keywords = re.findall(r'\"([^"]+)\"|\b[A-Z][a-zA-Z]{3,}\b', text)
+        # Flatten list if there are tuples from regex, lowercase, and get unique tags
+        flat_list = []
+        for item in keywords:
+            if isinstance(item, tuple):
+                flat_list.extend(filter(None, item))
+            else:
+                flat_list.append(item)
+        tags = set(kw.lower() for kw in flat_list if len(kw) > 3)
+        return list(tags)[:5] # Limit to 5 tags to keep it focused
+
+    def capture_spec_clarification_learning(self, problem_context: str, solution_text: str, spec_text: str):
+        """
+        Captures a learning moment from a successful specification clarification.
+
+        Args:
+            problem_context (str): The issues/questions the AI raised.
+            solution_text (str): The clarification provided by the PM.
+            spec_text (str): The full specification text for context and tags.
+        """
+        try:
+            agent = LearningCaptureAgent(self.db_manager)
+            tags = self._extract_tags_from_text(spec_text)
+
+            agent.add_learning_entry(
+                context=f"During specification elaboration for project: {self.project_name}",
+                problem=problem_context,
+                solution=solution_text,
+                tags=tags
+            )
+            logging.info("Successfully captured specification clarification as a learning entry.")
+        except Exception as e:
+            # We don't want to halt the main flow if learning capture fails.
+            logging.warning(f"Could not capture learning entry for spec clarification: {e}")

@@ -261,10 +261,6 @@ if page == "Project":
                         st.session_state.proceed_with_complexity = True
                         st.rerun()
 
-                #
-                # --- ADD THIS ENTIRE NEW BLOCK OF CODE ---
-                #
-
                 # --- UI for Acknowledging the Finalized Specification ---
                 elif st.session_state.get('spec_approved_but_not_acknowledged'):
                     st.subheader("Final Specification Approved")
@@ -350,6 +346,12 @@ if page == "Project":
                             with st.spinner("AI is refining the specification..."):
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                                 revised_spec = agent.refine_specification(st.session_state.specification_text, st.session_state.clarification_issues, prompt)
+                                # Call to the learning capture method
+                                st.session_state.orchestrator.capture_spec_clarification_learning(
+                                    problem_context=st.session_state.clarification_issues,
+                                    solution_text=prompt,
+                                    spec_text=revised_spec
+                                )
                                 st.session_state.specification_text = revised_spec
                                 st.session_state.clarification_issues = None
                                 st.session_state.clarification_chat = []
