@@ -240,6 +240,48 @@ if page == "Project":
                         st.session_state.proceed_with_complexity = True
                         st.rerun()
 
+                #
+                # --- ADD THIS ENTIRE NEW BLOCK OF CODE ---
+                #
+
+                # --- UI for Acknowledging the Finalized Specification ---
+                elif st.session_state.get('spec_approved_but_not_acknowledged'):
+                    st.subheader("Final Specification Approved")
+
+                    # Display the message to the PM as per PRD requirement.
+                    st.success(
+                        "The final specification is now agreed upon and displayed below. "
+                        "Please copy this text into a local document for your own records and future reference."
+                    )
+
+                    # Display the finalized specification text in a disabled text area.
+                    st.text_area(
+                        "Finalized Specification:",
+                        value=st.session_state.specification_text,
+                        height=300,
+                        disabled=True
+                    )
+
+                    st.divider()
+
+                    # The new button to acknowledge and move to the next phase.
+                    if st.button("Acknowledge and Proceed to Technical Specification", type="primary"):
+                        # This button now performs the actions the old 'Approve' button did.
+                        st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
+
+                        # Clean up all session state keys related to the spec elaboration phase.
+                        keys_to_clear = [
+                            'specification_text', 'complexity_analysis',
+                            'proceed_with_complexity', 'clarification_issues',
+                            'clarification_chat', 'brief_desc',
+                            'spec_approved_but_not_acknowledged'
+                        ]
+                        for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+
+                        st.rerun()
+
                 # --- Clarification Loop (only runs after complexity gate is passed) ---
                 else:
                     if 'clarification_issues' not in st.session_state:
@@ -300,48 +342,6 @@ if page == "Project":
                                 st.session_state.clarification_issues = issues
                                 st.session_state.clarification_chat.append({"role": "assistant", "content": issues})
                                 st.rerun()
-
-                    #
-                    # --- ADD THIS ENTIRE NEW BLOCK OF CODE ---
-                    #
-
-                    # --- UI for Acknowledging the Finalized Specification ---
-                    elif st.session_state.get('spec_approved_but_not_acknowledged'):
-                        st.subheader("Final Specification Approved")
-
-                        # Display the message to the PM as per PRD requirement.
-                        st.success(
-                            "The final specification is now agreed upon and displayed below. "
-                            "Please copy this text into a local document for your own records and future reference."
-                        )
-
-                        # Display the finalized specification text in a disabled text area.
-                        st.text_area(
-                            "Finalized Specification:",
-                            value=st.session_state.specification_text,
-                            height=300,
-                            disabled=True
-                        )
-
-                        st.divider()
-
-                        # The new button to acknowledge and move to the next phase.
-                        if st.button("Acknowledge and Proceed to Technical Specification", type="primary"):
-                            # This button now performs the actions the old 'Approve' button did.
-                            st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
-
-                            # Clean up all session state keys related to the spec elaboration phase.
-                            keys_to_clear = [
-                                'specification_text', 'complexity_analysis',
-                                'proceed_with_complexity', 'clarification_issues',
-                                'clarification_chat', 'brief_desc',
-                                'spec_approved_but_not_acknowledged'
-                            ]
-                            for key in keys_to_clear:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-
-                            st.rerun()
 
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
             st.header("Phase 1.5: Technical Specification & Architecture")
@@ -510,6 +510,7 @@ if page == "Project":
                 col1, col2, col3 = st.columns([1.5, 1, 1.5])
                 with col1:
                     # The button to approve the plan and proceed
+
                     if st.button("✅ Approve Plan & Proceed to Development", type="primary"):
                         with st.spinner("Saving and loading development plan..."):
                             plan_json = st.session_state.development_plan
@@ -520,13 +521,9 @@ if page == "Project":
                             # Load the plan into the orchestrator's active state
                             st.session_state.orchestrator.load_development_plan(plan_json)
 
-                            # Transition to the Genesis phase
-                            st.session_state.orchestrator.set_phase("GENESIS")
-
-                            # Clean up session state
-                            del st.session_state.development_plan
-                            st.toast("Plan approved! Starting development...")
-                            time.sleep(1)
+                            # Set the new session state flag to trigger the acknowledgment UI
+                            st.session_state.plan_approved_but_not_acknowledged = True
+                            st.toast("Plan approved! Awaiting acknowledgment.")
                             st.rerun()
                 with col2:
                     # Add the download button
@@ -549,6 +546,38 @@ if page == "Project":
                          st.session_state.development_plan = None
                          st.rerun()
 
+            # --- UI for Acknowledging the Approved Development Plan ---
+            elif st.session_state.get('plan_approved_but_not_acknowledged'):
+                st.subheader("Development Plan Approved")
+
+                # Display the message to the PM as per PRD F-Phase 2 requirement.
+                st.success(
+                    "The Development Plan has been approved and is displayed below. "
+                    "Please copy this text into a local document for your records."
+                )
+
+                # Display the finalized plan using st.json for readability.
+                st.json(st.session_state.development_plan)
+
+                st.divider()
+
+                # The new button to acknowledge and move to the development phase.
+                if st.button("Acknowledge and Proceed to Development", type="primary"):
+                    # This button now performs the final actions.
+                    st.session_state.orchestrator.set_phase("GENESIS")
+
+                    # Clean up all session state keys related to the planning phase.
+                    keys_to_clear = [
+                        'development_plan',
+                        'plan_approved_but_not_acknowledged'
+                    ]
+                    for key in keys_to_clear:
+                        if key in st.session_state:
+                            del st.session_state[key]
+
+                    st.toast("Plan acknowledged! Starting development...")
+                    time.sleep(1)
+                    st.rerun()
 
             # If no plan exists yet, show the button to generate one
             else:
