@@ -53,11 +53,13 @@ with st.sidebar:
 
     st.markdown("### Project Information")
     status_info = st.session_state.orchestrator.get_status()
-    labels = {"project_id": "Project ID", "project_name": "Project Name", "current_phase": "Current Phase"}
-    for key, label in labels.items():
-        value = status_info.get(key)
-        display_value = value if value is not None else "N/A"
-        st.markdown(f"**{label}:** {display_value}")
+    st.markdown(f"**Project ID:** {status_info.get('project_id', 'N/A')}")
+    st.markdown(f"**Project Name:** {status_info.get('project_name', 'N/A')}")
+
+    # Get the display name for the current phase from the orchestrator's dictionary
+    current_phase_enum = st.session_state.orchestrator.current_phase
+    display_phase_name = st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
+    st.markdown(f"**Current Phase:** {display_phase_name}")
 
     st.markdown("---")
     st.markdown("### Project Lifecycle")
@@ -138,25 +140,37 @@ if page == "Project":
         status_info = st.session_state.orchestrator.get_status()
         current_phase_name = status_info.get("current_phase")
 
-        if st.button("Complete Environment Setup & Proceed", use_container_width=True):
+#
+# --- ADD THIS ENTIRE NEW BLOCK ---
+#
+        elif current_phase_name == "ENV_SETUP_TARGET_APP":
+            # Use the human-friendly name for the header
+            st.header("New Application Setup")
+
+            # This calls the agent that renders the setup UI
+            agent = EnvironmentSetupAgent_AppTarget()
+            agent.run_setup_flow()
+
+            st.divider()
+
+            # --- This is the corrected button, now pasted in the correct location ---
+            if st.button("Confirm Setup & Proceed to Specification", use_container_width=True, type="primary"):
                 apex_file = st.session_state.get("apex_file_name_input", "").strip()
                 if not apex_file:
                     st.error("Please provide a main Executable File Name.")
                 # Also ensure the build script choice has been made
-                elif 'build_script_choice_made' not in st.session_state or not st.session_state.build_script_choice_made:
+                elif 'build_script_choice_made' not in st.session_state or not st.session_state.build_script_made:
                     st.error("Please confirm your Build Script choice before proceeding.")
                 else:
                     with st.session_state.orchestrator.db_manager as db:
                         db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.language)
                         db.update_project_apex_file(st.session_state.orchestrator.project_id, apex_file)
-                        # Add this call to the new DAO method
                         db.update_project_build_automation_status(
                             st.session_state.orchestrator.project_id,
-                            st.session_state.get('is_build_automated', True) # Defaults to True
+                            st.session_state.get('is_build_automated', True)
                         )
 
                     st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
-                    # Add the new session state keys to the cleanup list
                     keys_to_clear = [
                         'project_root_path', 'path_confirmed', 'git_initialized',
                         'language', 'language_select', 'frameworks', 'apex_file_name_input',
@@ -1219,41 +1233,45 @@ elif page == "Documents":
 
             # Application Specification
             with st.expander("Application Specification", expanded=False):
-                spec_text = project_docs.get('final_spec_text')
+                # CORRECTED: Use dictionary-style key access for sqlite3.Row
+                spec_text = project_docs['final_spec_text'] if project_docs else None
                 if spec_text:
                     st.text_area("Spec Content", spec_text, height=300, disabled=True, key=f"spec_{doc_project_id}")
                     spec_docx_bytes = report_generator.generate_text_document_docx(f"Application Specification - {doc_project_name}", spec_text)
-                    st.download_button("📄 Print to .docx", spec_docx_bytes, f"AppSpec_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    st.download_button("📄 Print to .docx", spec_docx_bytes, f"AppSpec_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_spec_{doc_project_id}")
                 else:
                     st.info("This document has not been generated for this project yet.")
 
             # Technical Specification
             with st.expander("Technical Specification", expanded=False):
-                tech_spec_text = project_docs.get('tech_spec_text')
+                # CORRECTED: Use dictionary-style key access
+                tech_spec_text = project_docs['tech_spec_text'] if project_docs else None
                 if tech_spec_text:
                     st.text_area("Tech Spec Content", tech_spec_text, height=300, disabled=True, key=f"tech_spec_{doc_project_id}")
                     tech_spec_docx_bytes = report_generator.generate_text_document_docx(f"Technical Specification - {doc_project_name}", tech_spec_text)
-                    st.download_button("📄 Print to .docx", tech_spec_docx_bytes, f"TechSpec_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    st.download_button("📄 Print to .docx", tech_spec_docx_bytes, f"TechSpec_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_tech_spec_{doc_project_id}")
                 else:
                     st.info("This document has not been generated for this project yet.")
 
             # Development Plan
             with st.expander("Development Plan", expanded=False):
-                dev_plan_text = project_docs.get('development_plan_text')
+                # CORRECTED: Use dictionary-style key access
+                dev_plan_text = project_docs['development_plan_text'] if project_docs else None
                 if dev_plan_text:
                     st.json(dev_plan_text)
                     dev_plan_docx_bytes = report_generator.generate_text_document_docx(f"Development Plan - {doc_project_name}", dev_plan_text, is_code=True)
-                    st.download_button("📄 Print to .docx", dev_plan_docx_bytes, f"DevPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+                    st.download_button("📄 Print to .docx", dev_plan_docx_bytes, f"DevPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_dev_plan_{doc_project_id}")
                 else:
                     st.info("This document has not been generated for this project yet.")
 
             # Integration Plan
             with st.expander("Integration Plan", expanded=False):
-                integration_plan_text = project_docs.get('integration_plan_text')
+                # CORRECTED: Use dictionary-style key access
+                integration_plan_text = project_docs['integration_plan_text'] if project_docs else None
                 if integration_plan_text:
                     st.json(integration_plan_text)
                     integration_plan_docx_bytes = report_generator.generate_text_document_docx(f"Integration Plan - {doc_project_name}", integration_plan_text, is_code=True)
-                    st.download_button("📄 Print to .docx", integration_plan_docx_bytes, f"IntegrationPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="download_integration_plan")
+                    st.download_button("📄 Print to .docx", integration_plan_docx_bytes, f"IntegrationPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_integration_plan_{doc_project_id}")
                 else:
                     st.info("This document has not been generated for this project yet.")
 
@@ -1266,6 +1284,7 @@ elif page == "Documents":
                     st.download_button("📄 Print to .docx", ui_test_plan_docx_bytes, f"UITestPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key="download_ui_test_plan")
                 else:
                     st.info("This document has not been generated for this project yet.")
+
         else:
             st.error(f"Could not retrieve document data for project ID: {doc_project_id}")
 

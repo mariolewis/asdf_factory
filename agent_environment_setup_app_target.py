@@ -249,10 +249,16 @@ class EnvironmentSetupAgent_AppTarget:
         st.subheader("Name the Main Executable File)")
         st.markdown("Please provide a name for the main executable file for your application, **without the file extension**.")
 
-        st.text_input(
+        # Initialize the session state key if it doesn't exist.
+        if "apex_file_name_input" not in st.session_state:
+            st.session_state.apex_file_name_input = ""
+
+        # The text_input widget now correctly reads from and writes to session_state.
+        st.session_state.apex_file_name_input = st.text_input(
             "Executable File Name:",
+            value=st.session_state.apex_file_name_input,
             placeholder="e.g., 'main' for main.py, or 'app' for app.py",
-            key="apex_file_name_input"
+            help="Provide the name of the main executable file for your application, without the file extension."
         )
 
     def run_setup_flow(self):

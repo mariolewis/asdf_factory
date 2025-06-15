@@ -106,6 +106,27 @@ class MasterOrchestrator:
         logging.info("MasterOrchestrator initialized.")
         logging.debug(f"Logging level set to '{log_level_str}' ({log_level}).")
 
+PHASE_DISPLAY_NAMES = {
+    FactoryPhase.IDLE: "Idle",
+    FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
+    FactoryPhase.SPEC_ELABORATION: "Application Specification",
+    FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
+    FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
+    FactoryPhase.PLANNING: "Development Planning",
+    FactoryPhase.GENESIS: "Iterative Development",
+    FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
+    FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
+    FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
+    FactoryPhase.RAISING_CHANGE_REQUEST: "Raise New Change Request",
+    FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis Choice",
+    FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
+    FactoryPhase.EDITING_CHANGE_REQUEST: "Edit Change Request",
+    FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
+    FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
+    FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
+    FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input"
+}
+
     def get_status(self) -> dict:
         """Returns the current status of the orchestrator."""
         return {
