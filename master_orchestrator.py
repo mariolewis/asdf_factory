@@ -25,6 +25,7 @@ from agents.agent_code_review import CodeReviewAgent
 from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 from agents.agent_ui_test_planner_app_target import UITestPlannerAgent_AppTarget
 from agents.agent_test_result_evaluation_app_target import TestResultEvaluationAgent_AppTarget
+from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -72,6 +73,7 @@ class MasterOrchestrator:
         self.active_plan_cursor = 0
         self.task_awaiting_approval = None
         self.preflight_check_result = None
+        self.debug_attempt_counter = 0
 
         # --- CONFIGURE LOGGING ---
         # Get the configured logging level from the database.
@@ -908,6 +910,19 @@ class MasterOrchestrator:
         """
         logging.info("A failure has triggered the debugging pipeline.")
 
+        # Increment and check the debug attempt counter.
+        self.debug_attempt_counter += 1
+        logging.info(f"Debug attempt counter is now: {self.debug_attempt_counter}")
+
+        with self.db_manager as db:
+            max_attempts_str = db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2"
+            max_attempts = int(max_attempts_str)
+
+        if self.debug_attempt_counter > max_attempts:
+            logging.warning(f"Automated debug attempts ({self.debug_attempt_counter -1}) have exceeded the limit of {max_attempts}. Escalating to PM.")
+            self.set_phase("DEBUG_PM_ESCALATION")
+            return # Stop further automated triage.
+
         try:
             with self.db_manager as db:
                 project_details = db.get_project_by_id(self.project_id)
@@ -1001,6 +1016,59 @@ class MasterOrchestrator:
 
         except Exception as e:
             logging.error(f"A critical error occurred during the triage process: {e}")
+            self.set_phase("DEBUG_PM_ESCALATION")
+
+    def handle_pm_triage_input(self, pm_error_description: str):
+        """
+        Handles the text input provided by the PM during interactive triage (Tier 3).
+        It uses the TriageAgent to form a hypothesis and the FixPlannerAgent to create a plan.
+
+        Args:
+            pm_error_description (str): The PM's description of the error.
+        """
+        logging.info("Tier 3: Received manual error description from PM. Attempting to generate fix plan.")
+
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("Cannot proceed with triage. LLM API Key is not set.")
+
+            # Use TriageAgent to refine the PM's description into a testable hypothesis.
+            triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
+            hypothesis = triage_agent.analyze_and_hypothesize(
+                error_logs=pm_error_description,
+                relevant_code="No specific code context available; base analysis on user description.",
+                test_report=""
+            )
+
+            if "An error occurred" in hypothesis:
+                 raise Exception(f"TriageAgent failed to form a hypothesis: {hypothesis}")
+
+            logging.info(f"TriageAgent formed hypothesis: {hypothesis}")
+
+            # Use FixPlannerAgent to create a plan from the hypothesis.
+            planner_agent = FixPlannerAgent_AppTarget(api_key=api_key)
+            fix_plan_str = planner_agent.create_fix_plan(
+                root_cause_hypothesis=hypothesis,
+                relevant_code="No specific code context was automatically identified. Base the fix on the TriageAgent's hypothesis."
+            )
+
+            if "error" in fix_plan_str.lower():
+                raise Exception(f"FixPlannerAgent failed to generate a plan: {fix_plan_str}")
+
+            fix_plan = json.loads(fix_plan_str)
+            if not fix_plan:
+                 raise Exception("FixPlannerAgent returned an empty plan.")
+
+            # Load the new fix plan and transition to Genesis to execute it.
+            self.active_plan = fix_plan
+            self.active_plan_cursor = 0
+            self.set_phase("GENESIS")
+            logging.info("Successfully generated a fix plan from PM description. Transitioning to GENESIS phase.")
+
+        except Exception as e:
+            logging.error(f"Tier 3 interactive triage failed. Error: {e}")
             self.set_phase("DEBUG_PM_ESCALATION")
 
     def handle_pm_debug_choice(self, choice: str, details: dict = None):

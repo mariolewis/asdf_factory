@@ -721,6 +721,72 @@ if page == "Project":
                 st.toast("Project phase complete!")
                 st.rerun()
 
+        elif current_phase_name == "AWAITING_PM_TRIAGE_INPUT":
+            st.header("Phase 5: Interactive Debugging Triage")
+            st.warning(
+                "**Action Required:** The automated triage system could not determine the "
+                "root cause of the last failure from the available logs."
+            )
+            st.markdown(
+                "Please describe the failure in as much detail as possible below. "
+                "Include information about what you were doing, what you expected to happen, "
+                "and what actually happened. This description will be used to generate a fix."
+            )
+            st.divider()
+
+            if 'pm_triage_input' not in st.session_state:
+                st.session_state.pm_triage_input = ""
+
+            pm_error_description = st.text_area(
+                "Manual Error Description:",
+                height=200,
+                key="pm_triage_input"
+            )
+
+            if st.button("Submit Description for Analysis", type="primary"):
+                if pm_error_description.strip():
+                    with st.spinner("Submitting your description for analysis..."):
+                        # This new orchestrator method will handle the logic
+                        st.session_state.orchestrator.handle_pm_triage_input(pm_error_description)
+
+                    st.toast("Description submitted. The factory will now attempt to plan a fix.")
+                    time.sleep(2)
+                    # The orchestrator will have changed the phase to GENESIS
+                    st.rerun()
+                else:
+                    st.error("Please provide a description of the error before submitting.")
+
+        elif current_phase_name == "DEBUG_PM_ESCALATION":
+            st.header("Phase 5: Debug Escalation")
+            st.error(
+                "**Action Required:** The factory has been unable to automatically fix a persistent bug after multiple attempts."
+            )
+            st.markdown(
+                "Please choose how you would like to proceed. Your selection will determine the next steps for the factory."
+            )
+            st.divider()
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                if st.button("🔄 Retry Automated Fix", use_container_width=True, help="This will reset the counter and run the entire triage and fix pipeline again from a clean state."):
+                    st.session_state.orchestrator.debug_attempt_counter = 0 # Reset counter
+                    # A failure log needs to be passed; we can use a generic one for a manual retry.
+                    st.session_state.orchestrator.escalate_for_manual_debug("PM-initiated retry after escalation.")
+                    st.rerun()
+
+            with col2:
+                if st.button("⏸️ Pause for Manual Fix", use_container_width=True, help="This will pause the factory, allowing you to manually investigate and fix the code in your own editor."):
+                    st.session_state.orchestrator.pause_project()
+                    st.success("Project paused. You can now manually edit the code. The factory will remain idle.")
+                    st.rerun()
+
+            with col3:
+                if st.button("🚫 Ignore Bug & Proceed", use_container_width=True, help="Acknowledge the bug but proceed with the next task in the development plan. The bug will be noted but not fixed now."):
+                    st.session_state.orchestrator.set_phase("GENESIS") # Or a more sophisticated "ignore" state
+                    st.toast("Bug ignored. Proceeding with the next development task.")
+                    st.rerun()
+
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
             st.header("Phase 3.5: Automated Integration & Verification")
             st.info("The factory is now integrating all newly developed components, performing a full system build, and running verification tests.")
