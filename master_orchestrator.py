@@ -88,6 +88,13 @@ class MasterOrchestrator:
             db.create_tables()
             # Default to 'Standard' if no value is found in the database.
             log_level_str = db.get_config_value("LOGGING_LEVEL") or "Standard"
+            # Ensure a default context window character limit is set if not present.
+            if not db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT"):
+                db.set_config_value(
+                    "CONTEXT_WINDOW_CHAR_LIMIT",
+                    "15000",
+                    "The character limit for context provided to LLM agents before it's trimmed."
+                )
 
         # Map the string from the database to a logging level constant.
         # As per PRD 5.6.5, "Detailed" and "Debug" offer higher verbosity.
@@ -756,71 +763,81 @@ class MasterOrchestrator:
     def handle_implement_cr_action(self, cr_id: int):
         """
         Handles the logic for when the PM confirms a CR for implementation.
-        This orchestrates the RefactoringPlannerAgent, providing it with
-        hybrid context (metadata + source code) and managing context size.
+        This now uses the centralized context builder to ensure context window
+        limits are respected and the PM is informed of any trimming.
         """
         logging.info(f"PM has confirmed implementation for Change Request ID: {cr_id}.")
 
         try:
             with self.db_manager as db:
-                # 1. Get standard context
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key:
                     raise Exception("CRITICAL: LLM_API_KEY is not set.")
 
                 cr_details = db.get_cr_by_id(cr_id)
                 project_details = db.get_project_by_id(self.project_id)
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
                 project_root_path = Path(project_details['project_root_folder'])
 
-                # 2. HYBRID CONTEXT GATHERING
-                source_code_context = {}
+                # 1. Gather impacted artifact IDs and source code files
+                impacted_ids = []
                 impacted_ids_json = cr_details.get('impacted_artifact_ids')
                 if impacted_ids_json:
                     impacted_ids = json.loads(impacted_ids_json)
-                    logging.info(f"Fetching source code for {len(impacted_ids)} impacted artifact(s)...")
-                    for artifact_id in impacted_ids:
-                        artifact_record = db.get_artifact_by_id(artifact_id)
-                        if artifact_record and artifact_record['file_path']:
-                            try:
-                                source_path = project_root_path / artifact_record['file_path']
-                                source_code_context[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
-                            except Exception as e:
-                                logging.warning(f"Could not read source for artifact {artifact_record['artifact_name']}: {e}")
 
-                # 3. **NEW: CONTEXT WINDOW MANAGEMENT**
-                total_chars = sum(len(code) for code in source_code_context.values())
-                if total_chars > CONTEXT_CHARACTER_LIMIT:
-                    logging.warning(
-                        f"Total source code size ({total_chars} chars) exceeds limit "
-                        f"({CONTEXT_CHARACTER_LIMIT} chars). Falling back to metadata-only analysis "
-                        f"to avoid context window errors."
+                source_code_files = {}
+                for artifact_id in impacted_ids:
+                    artifact_record = db.get_artifact_by_id(artifact_id)
+                    if artifact_record and artifact_record['file_path']:
+                        try:
+                            source_path = project_root_path / artifact_record['file_path']
+                            if source_path.exists():
+                                source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
+                        except Exception:
+                            pass # Ignore files that can't be read
+
+                # 2. Build and validate the context package using the new helper method
+                core_docs = {
+                    "final_spec_text": project_details['final_spec_text'],
+                    "tech_spec_text": project_details['tech_spec_text'],
+                }
+                context_package = self._build_and_validate_context_package(db, core_docs, source_code_files)
+
+                # Handle errors from the context builder
+                if context_package.get("error"):
+                    raise Exception(f"Context Builder Error: {context_package['error']}")
+
+                # 3. Inform the PM if the context was trimmed
+                if context_package.get("was_trimmed"):
+                    excluded_files_list = context_package.get("excluded_files", [])
+                    # Store this message in session state for the UI to display
+                    st.session_state.info_message = (
+                        "Warning: The context for this task was too large and was automatically trimmed to prevent an error. "
+                        f"The following {len(excluded_files_list)} files were excluded: {', '.join(excluded_files_list)}. "
+                        "The resulting plan may be less precise."
                     )
-                    # Clear the source code context to perform the fallback
-                    source_code_context = {}
 
-                # 4. Update CR status
+                # 4. Prepare final context for the planning agent
+                final_context_str = "\n".join(context_package["source_code"].values())
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                rowd_json = json.dumps([dict(row) for row in all_artifacts])
+
                 db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
 
                 # 5. Invoke the RefactoringPlannerAgent
                 planner_agent = RefactoringPlannerAgent_AppTarget(api_key=api_key)
                 new_plan_str = planner_agent.create_refactoring_plan(
                     change_request_desc=cr_details['description'],
-                    final_spec_text=project_details['final_spec_text'],
-                    rowd_json=rowd_json,
-                    source_code_context=source_code_context
+                    full_context_str=final_context_str, # Use the potentially trimmed context
+                    rowd_json=rowd_json
                 )
 
                 if "error" in new_plan_str:
                     raise Exception(f"RefactoringPlannerAgent failed: {new_plan_str}")
 
-                # 6. Store the plan and reset the cursor
+                # 6. Store the plan and transition to the Genesis phase
                 self.active_plan = json.loads(new_plan_str)
                 self.active_plan_cursor = 0
                 logging.info("Successfully generated new development plan from Change Request.")
-
-                # 7. Transition to the Genesis phase
                 self.set_phase("GENESIS")
 
         except Exception as e:
@@ -1631,6 +1648,60 @@ class MasterOrchestrator:
         self.active_plan_cursor = 0
         self.set_phase("GENESIS")
         logging.info("Successfully generated a fix plan. Transitioning to GENESIS phase to apply the fix.")
+
+    def _build_and_validate_context_package(self, db: ASDFDBManager, core_documents: dict, source_code_files: dict) -> dict:
+        """
+        Gathers context, checks size, trims if necessary by prioritizing core
+        documents and smaller source files, and reports on any excluded files.
+
+        Args:
+            db (ASDFDBManager): The active database manager instance.
+            core_documents (dict): A dict of essential documents (e.g., specs).
+            source_code_files (dict): A dict of file_path: content for source code.
+
+        Returns:
+            A dictionary containing the final context, status flags, and a list of any excluded files.
+        """
+        final_context = {}
+        excluded_files = []
+        context_was_trimmed = False
+
+        limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "15000"
+        char_limit = int(limit_str)
+
+        # 1. Add core documents and calculate their size.
+        core_doc_chars = 0
+        for name, content in core_documents.items():
+            final_context[name] = content
+            core_doc_chars += len(content)
+
+        # 2. Check if essential docs alone are too large.
+        if core_doc_chars > char_limit:
+            logging.error(f"Context Builder: Core documents ({core_doc_chars} chars) alone exceed the context limit of {char_limit}. Cannot proceed.")
+            return {"source_code": {}, "was_trimmed": True, "error": "Core documents are too large for the context window.", "excluded_files": list(source_code_files.keys())}
+
+        # 3. Calculate remaining budget and add source files until it's full.
+        remaining_chars = char_limit - core_doc_chars
+        sorted_source_files = sorted(source_code_files.items(), key=lambda item: len(item[1]))
+
+        for file_path, content in sorted_source_files:
+            if len(content) <= remaining_chars:
+                final_context[file_path] = content
+                remaining_chars -= len(content)
+            else:
+                # Flag that we couldn't include all files and track which one was excluded.
+                context_was_trimmed = True
+                excluded_files.append(file_path)
+
+        if context_was_trimmed:
+            logging.warning(f"Context Builder: Context trimmed. Excluded {len(excluded_files)} file(s): {', '.join(excluded_files)}")
+
+        return {
+            "source_code": final_context,
+            "was_trimmed": context_was_trimmed,
+            "error": None,
+            "excluded_files": excluded_files
+        }
 
     def _plan_fix_from_description(self, description: str):
         """
