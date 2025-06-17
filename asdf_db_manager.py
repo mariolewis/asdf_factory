@@ -353,6 +353,19 @@ class ASDFDBManager:
         self._execute_query(query, params)
         logging.info(f"Set apex file for project ID '{project_id}' to '{apex_name}'.")
 
+    def update_project_root_folder(self, project_id: str, path: str):
+        """
+        Updates the project_root_folder for a given project.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            path (str): The confirmed absolute path to the project's root folder.
+        """
+        query = "UPDATE Projects SET project_root_folder = ? WHERE project_id = ?"
+        params = (path, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set project root folder for project ID '{project_id}' to '{path}'.")
+
     def update_project_build_automation_status(self, project_id: str, is_automated: bool):
         """
         Updates the build automation status for a given project.

@@ -142,30 +142,21 @@ if page == "Project":
         if current_phase_name == "ENV_SETUP_TARGET_APP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
 
-            # Instantiate the agent and render its UI
-            agent = EnvironmentSetupAgent_AppTarget()
-            agent.render()
-
-            st.divider()
-
-            # The final confirmation button for the entire phase.
-            # It is only enabled when the agent signals its work is complete.
+            # The main confirmation button is now at the top.
+            # It is disabled until the agent signals that its internal steps are all complete.
             is_disabled = not st.session_state.get('agent_setup_complete', False)
             if st.button("Confirm Setup & Proceed to Specification", use_container_width=True, type="primary", disabled=is_disabled):
-                # On click, gather all data from session_state and save to DB
                 try:
+                    # Save the confirmed project root path to the database
                     with st.session_state.orchestrator.db_manager as db:
-                        db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.setup_language)
-                        db.update_project_apex_file(st.session_state.orchestrator.project_id, st.session_state.apex_file_name_input)
-                        db.update_project_build_automation_status(st.session_state.orchestrator.project_id, st.session_state.setup_is_build_automated)
+                        db.update_project_root_folder(st.session_state.orchestrator.project_id, st.session_state.project_root_path)
 
                     st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
 
                     # Clean up all session state keys used by the agent
                     keys_to_clear = [
-                        'setup_path_confirmed', 'setup_git_initialized', 'setup_tech_stack_confirmed',
-                        'project_path_input', 'show_brownfield_warning', 'setup_language',
-                        'setup_is_build_automated', 'apex_file_name_input', 'agent_setup_complete'
+                        'setup_path_confirmed', 'project_path_input', 'show_brownfield_warning',
+                        'agent_setup_complete', 'project_root_path', 'setup_git_initialized'
                     ]
                     for key in keys_to_clear:
                         if key in st.session_state:
@@ -173,6 +164,12 @@ if page == "Project":
                     st.rerun()
                 except Exception as e:
                     st.error(f"An error occurred while saving setup data: {e}")
+
+            st.divider()
+
+            # The agent renders its own UI below the main button.
+            agent = EnvironmentSetupAgent_AppTarget()
+            agent.render()
 
         elif current_phase_name == "SPEC_ELABORATION":
             st.header("Phase 1: Project Initialization & Specification Elaboration")
