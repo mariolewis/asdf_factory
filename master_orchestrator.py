@@ -301,7 +301,7 @@ class MasterOrchestrator:
 
         # Retrieve all necessary context, including the new coding standard
         project_details = db.get_project_by_id(self.project_id)
-        coding_standard = project_details.get('coding_standard_text')
+        coding_standard = project_details['coding_standard_text']
         if not coding_standard:
             logging.warning("No project-specific coding standard found in database. Using a default standard.")
             coding_standard = "Follow standard PEP 8 conventions for Python. Ensure all code is well-commented."
@@ -343,7 +343,7 @@ class MasterOrchestrator:
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard)
 
         # Conditional Build Logic based on PM's choice
-        is_build_automated = bool(project_details.get('is_build_automated', 1))
+        is_build_automated = bool(project_details['is_build_automated'])
         commit_hash = None
 
         if is_build_automated:
@@ -780,7 +780,7 @@ class MasterOrchestrator:
 
                 # 1. Gather impacted artifact IDs and source code files
                 impacted_ids = []
-                impacted_ids_json = cr_details.get('impacted_artifact_ids')
+                impacted_ids_json = cr_details['impacted_artifact_ids']
                 if impacted_ids_json:
                     impacted_ids = json.loads(impacted_ids_json)
 
@@ -1202,7 +1202,7 @@ class MasterOrchestrator:
 
                 # Tier 2: Automated Apex Trace Analysis
                 logging.warning("Tier 1 Failed: No usable stack trace found. Proceeding to Tier 2 analysis.")
-                apex_file_name = project_details.get("apex_executable_name")
+                apex_file_name = project_details["apex_executable_name"]
                 if apex_file_name:
                     failing_component_match = re.search(r"component '([^']+)'", failure_log, re.IGNORECASE)
                     if failing_component_match:

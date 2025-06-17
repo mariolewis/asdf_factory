@@ -539,7 +539,7 @@ if page == "Project":
                         with st.session_state.orchestrator.db_manager as db:
                             api_key = db.get_config_value("LLM_API_KEY")
                             project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                            tech_spec = project_details.get('tech_spec_text')
+                            tech_spec = project_details['tech_spec_text']
 
                         if not api_key or not tech_spec:
                             st.error("Cannot generate standard: Missing API Key or Technical Specification.")
