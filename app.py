@@ -672,7 +672,7 @@ if page == "Project":
                     st.stop() # Stop rendering the buttons below
 
                 # Create columns for the buttons for a clean layout.
-                col1, col2, col3, col4, col5 = st.columns(5)
+                col1, col2, col3, col4, col5, col6 = st.columns(6)
 
                 with col1:
                     if st.button("▶️ Proceed", use_container_width=True, type="primary"):
@@ -686,17 +686,22 @@ if page == "Project":
                         st.rerun()
 
                 with col3:
-                    if st.button("🔁 Implement CR", use_container_width=True):
-                        st.session_state.orchestrator.handle_view_cr_register_action()
+                    if st.button("🐞 Report Bug", use_container_width=True):
+                        st.session_state.orchestrator.handle_report_bug_action()
                         st.rerun()
 
                 with col4:
+                    if st.button("🔁 Implement", use_container_width=True, help="Implement a pending CR or Bug Report"):
+                        st.session_state.orchestrator.handle_view_cr_register_action()
+                        st.rerun()
+
+                with col5:
                     if st.button("⏸️ Pause", use_container_width=True):
                         st.toast("Pausing factory operations...")
                         st.session_state.orchestrator.pause_project()
                         # UI will just stay here until resumed
 
-                with col5:
+                with col6:
                     if st.button("⏹️ Stop & Export", use_container_width=True):
                         st.session_state.show_export_confirmation = True
                         st.rerun()
@@ -947,19 +952,23 @@ if page == "Project":
             if not change_requests:
                 st.warning("There are no change requests in the register for this project.")
             else:
+
                 # Prepare data for display in a pandas DataFrame
                 cr_data_for_df = []
                 for cr in change_requests:
                     cr_data_for_df.append({
                         "ID": cr['cr_id'],
+                        "Type": cr['request_type'].replace('_', ' ').title(),
                         "Status": cr['status'],
-                        "Impact": cr['impact_rating'],
+                        "Severity/Impact": cr['impact_rating'],
                         "Description": cr['description'],
                         "Analysis Summary": cr['impact_analysis_details']
                     })
 
                 df = pd.DataFrame(cr_data_for_df)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                # Define column order to ensure 'Type' is displayed prominently
+                column_order = ["ID", "Type", "Status", "Severity/Impact", "Description", "Analysis Summary"]
+                st.dataframe(df[column_order], use_container_width=True, hide_index=True)
 
                 # Allow PM to select a CR by ID
                 cr_ids = [cr['cr_id'] for cr in change_requests]
@@ -1053,6 +1062,58 @@ if page == "Project":
                         st.session_state.orchestrator.cancel_cr_edit()
                         del st.session_state.cr_edit_description # Clean up
                         st.rerun()
+
+        elif current_phase_name == "REPORTING_OPERATIONAL_BUG":
+            st.header("Report Operational Bug")
+            st.info("Use this form to report a bug found during normal operation. Provide a detailed description and assign a severity rating.")
+
+            # Use session state to hold widget values to prevent loss on reruns
+            if 'bug_description' not in st.session_state:
+                st.session_state.bug_description = ""
+            if 'bug_severity' not in st.session_state:
+                st.session_state.bug_severity = "Medium" # Default value
+
+            st.session_state.bug_description = st.text_area(
+                "Bug Description:",
+                value=st.session_state.bug_description,
+                height=250,
+                help="Provide a detailed description of the bug, including steps to reproduce if possible."
+            )
+
+            st.session_state.bug_severity = st.selectbox(
+                "Severity:",
+                options=["Minor", "Medium", "Major"],
+                index=1, # Default to 'Medium'
+                help="Major: An entire function doesn't work or the system crashes.\n\nMedium: A function is partly working or produces incorrect results.\n\nMinor: A small inconvenience or cosmetic issue; nothing is broken."
+            )
+
+            st.divider()
+            col1, col2, _ = st.columns([1, 1, 5])
+
+            with col1:
+                if st.button("Save Bug Report", use_container_width=True, type="primary"):
+                    if st.session_state.bug_description.strip():
+                        if st.session_state.orchestrator.save_bug_report(st.session_state.bug_description, st.session_state.bug_severity):
+                            st.toast("✅ Bug Report saved!")
+                            # Clean up the session state variables
+                            del st.session_state.bug_description
+                            del st.session_state.bug_severity
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("Failed to save the Bug Report.")
+                    else:
+                        st.warning("The bug description cannot be empty.")
+
+            with col2:
+                if st.button("Cancel", use_container_width=True):
+                    # Clean up and return to the Genesis phase
+                    if 'bug_description' in st.session_state:
+                        del st.session_state.bug_description
+                    if 'bug_severity' in st.session_state:
+                        del st.session_state.bug_severity
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
 
         elif current_phase_name == "VIEWING_PROJECT_HISTORY":
             st.header("Load an Archived Project")

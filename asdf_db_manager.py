@@ -126,18 +126,18 @@ class ASDFDBManager:
         """
         self._execute_query(create_projects_table)
 
-        # Find this statement and add the new column
         create_cr_register_table = """
         CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
             cr_id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT NOT NULL,
+            request_type TEXT NOT NULL DEFAULT 'CHANGE_REQUEST',
             description TEXT NOT NULL,
             creation_timestamp TEXT NOT NULL,
             last_modified_timestamp TEXT,
             status TEXT NOT NULL,
             impact_rating TEXT,
             impact_analysis_details TEXT,
-            impacted_artifact_ids TEXT, -- Add this line
+            impacted_artifact_ids TEXT,
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );
         """
@@ -751,6 +751,32 @@ class ASDFDBManager:
         new_cr_id = cursor.lastrowid
         logging.info(f"Added new change request with ID '{new_cr_id}' for project '{project_id}'.")
         return new_cr_id
+
+    def add_bug_report(self, project_id: str, description: str, severity: str) -> int:
+        """
+        Adds a new bug report to the ChangeRequestRegister table.
+
+        Args:
+            project_id (str): The ID of the project the bug belongs to.
+            description (str): The PM's description of the bug.
+            severity (str): The PM-assigned severity ('Minor', 'Medium', 'Major').
+
+        Returns:
+            int: The ID (primary key) of the newly created bug report record.
+        """
+        query = """
+        INSERT INTO ChangeRequestRegister
+        (project_id, request_type, description, creation_timestamp, status, impact_rating)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """
+        timestamp = datetime.now(timezone.utc).isoformat()
+        # Set the type to 'BUG_REPORT' and status to 'RAISED'
+        params = (project_id, 'BUG_REPORT', description, timestamp, 'RAISED', severity)
+
+        cursor = self._execute_query(query, params)
+        new_bug_id = cursor.lastrowid
+        logging.info(f"Added new bug report with ID '{new_bug_id}' for project '{project_id}'.")
+        return new_bug_id
 
     def update_change_request(self, cr_id: int, new_description: str):
         """

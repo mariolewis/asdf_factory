@@ -47,6 +47,7 @@ class FactoryPhase(Enum):
     AWAITING_IMPACT_ANALYSIS_CHOICE = auto()
     IMPLEMENTING_CHANGE_REQUEST = auto()
     EDITING_CHANGE_REQUEST = auto()
+    REPORTING_OPERATIONAL_BUG = auto()
     DEBUG_PM_ESCALATION = auto()
     VIEWING_PROJECT_HISTORY = auto()
     AWAITING_CONTEXT_REESTABLISHMENT = auto()
@@ -121,6 +122,7 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis Choice",
         FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
         FactoryPhase.EDITING_CHANGE_REQUEST: "Edit Change Request",
+        FactoryPhase.REPORTING_OPERATIONAL_BUG: "Report Operational Bug",
         FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
         FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
         FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
@@ -634,6 +636,47 @@ class MasterOrchestrator:
             return True
         except Exception as e:
             logging.error(f"Failed to save new change request: {e}")
+            return False
+
+    def handle_report_bug_action(self):
+        """
+        Transitions the factory into the state for reporting a new bug.
+        """
+        if self.current_phase == FactoryPhase.GENESIS:
+            logging.info("PM initiated 'Report Bug'. Transitioning to bug reporting screen.")
+            self.set_phase("REPORTING_OPERATIONAL_BUG")
+        else:
+            logging.warning(f"Received 'Report Bug' action in an unexpected phase: {self.current_phase.name}")
+
+    def save_bug_report(self, description: str, severity: str) -> bool:
+        """
+        Saves a new bug report to the database via the DAO.
+
+        Args:
+            description (str): The description of the bug from the PM.
+            severity (str): The severity rating from the PM.
+
+        Returns:
+            bool: True if saving was successful, False otherwise.
+        """
+        if not self.project_id:
+            logging.error("Cannot save bug report; no active project.")
+            return False
+
+        if not description or not description.strip():
+            logging.warning("Cannot save empty bug report description.")
+            return False
+
+        try:
+            with self.db_manager as db:
+                db.add_bug_report(self.project_id, description, severity)
+
+            # After successfully saving, return to the main development checkpoint.
+            self.set_phase("GENESIS")
+            logging.info("Successfully saved new bug report and returned to Genesis phase.")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to save new bug report: {e}")
             return False
 
     def handle_view_cr_register_action(self):
