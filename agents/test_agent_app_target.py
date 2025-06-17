@@ -40,7 +40,7 @@ class TestAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
             prompt = f"""
             You are an expert Software Quality Assurance (QA) Engineer specializing in automated testing.
@@ -103,7 +103,7 @@ class TestAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
             # Build the context string with all component details
             component_context = ""

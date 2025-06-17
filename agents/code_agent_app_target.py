@@ -43,7 +43,7 @@ class CodeAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
             # Dynamically build the prompt based on whether this is a first attempt or a correction
             if feedback:

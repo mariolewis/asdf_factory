@@ -30,43 +30,42 @@ class UITestPlannerAgent_AppTarget:
         # Configure the genai library with the API key upon initialization.
         genai.configure(api_key=self.api_key)
 
-    def generate_ui_test_plan(self, final_spec_text: str) -> str:
+    def generate_ui_test_plan(self, functional_spec_text: str, technical_spec_text: str) -> str:
         """
-        Generates a UI test plan in a Markdown table format.
-
-        This method prompts the Gemini API to act as a QA specialist and create
-        a detailed test plan based on the provided application specifications.
+        Generates a UI test plan based on functional and technical specs.
 
         Args:
-            final_spec_text (str): The complete, finalized specification text for
-                                   the target application.
+            functional_spec_text (str): The complete functional specification.
+            technical_spec_text (str): The complete technical specification.
 
         Returns:
-            str: A string containing the UI test plan in a Markdown table format.
+            str: A string containing the UI test plan in Markdown table format.
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-pro-latest') # Using the more powerful model as discussed
 
             prompt = f"""
             You are a meticulous Software Quality Assurance (QA) Specialist.
-            Your task is to create a detailed, human-readable UI (User Interface)
-            test plan based on the provided application specifications.
+            Your task is to create a detailed, human-readable UI test plan.
+            You MUST consider both the functional requirements and the technical architecture.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Format:** Your entire response MUST be a single Markdown table. Do not include any other text, titles, or explanations outside of the table itself.
-            2.  **Table Columns:** The Markdown table MUST have the following columns precisely: "Test Case ID", "Feature", "Test Scenario", "Steps to Reproduce", and "Expected Result".
-            3.  **Content:**
-                -   **Test Case ID:** Create a simple, unique ID for each test case (e.g., UI-001, UI-002).
-                -   **Feature:** Name the high-level feature being tested (e.g., "User Login", "Profile Creation").
-                -   **Test Scenario:** Briefly describe the specific goal of the test (e.g., "Verify successful login with valid credentials", "Verify error message on invalid email format").
-                -   **Steps to Reproduce:** Provide clear, numbered, step-by-step instructions that a non-technical user can follow to execute the test.
-                -   **Expected Result:** Clearly describe the expected outcome if the test passes (e.g., "User is redirected to the dashboard page", "An error message 'Invalid email address' is displayed below the email field").
-            4.  **Coverage:** Ensure you cover all user-facing features, interactions, and potential user flows described in the specifications.
+            1.  **Format:** Your entire response MUST be a single Markdown table. Do not include any other text.
+            2.  **Table Columns:** The table MUST have the columns: "Test Case ID", "Feature", "Test Scenario", "Steps to Reproduce", and "Expected Result".
+            3.  **Comprehensive Coverage:** Your test cases must cover:
+                - All user-facing features described in the Functional Specification.
+                - Technical constraints and components mentioned in the Technical Specification (e.g., test API error responses, database validation rules).
+            4.  **Clarity:** Provide clear, numbered steps that a non-technical user can follow.
 
-            **--- Application Specifications ---**
+            **--- INPUT 1: Functional Specification ---**
             ```
-            {final_spec_text}
+            {functional_spec_text}
+            ```
+
+            **--- INPUT 2: Technical Specification ---**
+            ```
+            {technical_spec_text}
             ```
 
             **--- Generated UI Test Plan (Markdown Table) ---**
@@ -74,13 +73,11 @@ class UITestPlannerAgent_AppTarget:
 
             response = model.generate_content(prompt)
 
-            # Basic validation to ensure we're getting something table-like
             if "|" in response.text and "---" in response.text:
                 return response.text
             else:
-                logging.warning("LLM response did not appear to be a Markdown table. Re-prompting might be needed.")
+                logging.warning("LLM response did not appear to be a Markdown table.")
                 return "Error: The AI did not return a valid Markdown table. Please try again."
-
 
         except Exception as e:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"

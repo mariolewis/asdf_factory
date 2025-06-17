@@ -13,8 +13,6 @@ from agent_project_bootstrap import ProjectBootstrapAgent
 from agent_spec_clarification import SpecClarificationAgent
 from agents.agent_planning_app_target import PlanningAgent_AppTarget
 from agents.agent_report_generator import ReportGeneratorAgent
-
-# Import the new agent from the 'agents' subfolder
 from agents.agent_project_scoping import ProjectScopingAgent
 
 # --- Page Configuration ---
@@ -140,46 +138,41 @@ if page == "Project":
         status_info = st.session_state.orchestrator.get_status()
         current_phase_name = status_info.get("current_phase")
 
-#
-# --- ADD THIS ENTIRE NEW BLOCK ---
-#
-        elif current_phase_name == "ENV_SETUP_TARGET_APP":
-            # Use the human-friendly name for the header
-            st.header("New Application Setup")
 
-            # This calls the agent that renders the setup UI
+        if current_phase_name == "ENV_SETUP_TARGET_APP":
+            st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
+
+            # Instantiate the agent and render its UI
             agent = EnvironmentSetupAgent_AppTarget()
-            agent.run_setup_flow()
+            agent.render()
 
             st.divider()
 
-            # --- This is the corrected button, now pasted in the correct location ---
-            if st.button("Confirm Setup & Proceed to Specification", use_container_width=True, type="primary"):
-                apex_file = st.session_state.get("apex_file_name_input", "").strip()
-                if not apex_file:
-                    st.error("Please provide a main Executable File Name.")
-                # Also ensure the build script choice has been made
-                elif 'build_script_choice_made' not in st.session_state or not st.session_state.build_script_made:
-                    st.error("Please confirm your Build Script choice before proceeding.")
-                else:
+            # The final confirmation button for the entire phase.
+            # It is only enabled when the agent signals its work is complete.
+            is_disabled = not st.session_state.get('agent_setup_complete', False)
+            if st.button("Confirm Setup & Proceed to Specification", use_container_width=True, type="primary", disabled=is_disabled):
+                # On click, gather all data from session_state and save to DB
+                try:
                     with st.session_state.orchestrator.db_manager as db:
-                        db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.language)
-                        db.update_project_apex_file(st.session_state.orchestrator.project_id, apex_file)
-                        db.update_project_build_automation_status(
-                            st.session_state.orchestrator.project_id,
-                            st.session_state.get('is_build_automated', True)
-                        )
+                        db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.setup_language)
+                        db.update_project_apex_file(st.session_state.orchestrator.project_id, st.session_state.apex_file_name_input)
+                        db.update_project_build_automation_status(st.session_state.orchestrator.project_id, st.session_state.setup_is_build_automated)
 
                     st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
+
+                    # Clean up all session state keys used by the agent
                     keys_to_clear = [
-                        'project_root_path', 'path_confirmed', 'git_initialized',
-                        'language', 'language_select', 'frameworks', 'apex_file_name_input',
-                        'build_script_choice_made', 'is_build_automated'
+                        'setup_path_confirmed', 'setup_git_initialized', 'setup_tech_stack_confirmed',
+                        'project_path_input', 'show_brownfield_warning', 'setup_language',
+                        'setup_is_build_automated', 'apex_file_name_input', 'agent_setup_complete'
                     ]
                     for key in keys_to_clear:
                         if key in st.session_state:
                             del st.session_state[key]
                     st.rerun()
+                except Exception as e:
+                    st.error(f"An error occurred while saving setup data: {e}")
 
         elif current_phase_name == "SPEC_ELABORATION":
             st.header("Phase 1: Project Initialization & Specification Elaboration")

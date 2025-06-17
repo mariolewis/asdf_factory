@@ -106,26 +106,26 @@ class MasterOrchestrator:
         logging.info("MasterOrchestrator initialized.")
         logging.debug(f"Logging level set to '{log_level_str}' ({log_level}).")
 
-PHASE_DISPLAY_NAMES = {
-    FactoryPhase.IDLE: "Idle",
-    FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
-    FactoryPhase.SPEC_ELABORATION: "Application Specification",
-    FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
-    FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
-    FactoryPhase.PLANNING: "Development Planning",
-    FactoryPhase.GENESIS: "Iterative Development",
-    FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
-    FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
-    FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
-    FactoryPhase.RAISING_CHANGE_REQUEST: "Raise New Change Request",
-    FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis Choice",
-    FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
-    FactoryPhase.EDITING_CHANGE_REQUEST: "Edit Change Request",
-    FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
-    FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
-    FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
-    FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input"
-}
+    PHASE_DISPLAY_NAMES = {
+        FactoryPhase.IDLE: "Idle",
+        FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
+        FactoryPhase.SPEC_ELABORATION: "Application Specification",
+        FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
+        FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
+        FactoryPhase.PLANNING: "Development Planning",
+        FactoryPhase.GENESIS: "Iterative Development",
+        FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
+        FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
+        FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
+        FactoryPhase.RAISING_CHANGE_REQUEST: "Raise New Change Request",
+        FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis Choice",
+        FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
+        FactoryPhase.EDITING_CHANGE_REQUEST: "Edit Change Request",
+        FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
+        FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
+        FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
+        FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input"
+    }
 
     def get_status(self) -> dict:
         """Returns the current status of the orchestrator."""
@@ -528,13 +528,18 @@ PHASE_DISPLAY_NAMES = {
                 # 6. Generate and Save UI Test Plan for Manual Execution
                 logging.info("Automated verification passed. Generating UI test plan for PM review.")
 
-                # The UI Test Planner Agent needs the finalized functional spec.
-                final_spec_text = project_details.get('final_spec_text')
-                if not final_spec_text:
-                    raise Exception("Cannot generate UI test plan: Finalized specification text not found in database.")
+                # The agent now needs both functional and technical specifications.
+                functional_spec_text = project_details['final_spec_text']
+                technical_spec_text = project_details['tech_spec_text']
+
+                if not functional_spec_text or not technical_spec_text:
+                    raise Exception("Cannot generate UI test plan: Missing Functional or Technical Specification in the database.")
 
                 ui_test_planner = UITestPlannerAgent_AppTarget(api_key=api_key)
-                ui_test_plan_content = ui_test_planner.generate_ui_test_plan(final_spec_text)
+                ui_test_plan_content = ui_test_planner.generate_ui_test_plan(
+                    functional_spec_text=functional_spec_text,
+                    technical_spec_text=technical_spec_text
+                )
 
                 # Save the generated UI test plan to the database.
                 db.save_ui_test_plan(self.project_id, ui_test_plan_content)
@@ -579,9 +584,9 @@ PHASE_DISPLAY_NAMES = {
                 # confirm completion of this phase. For now, we just log it.
 
             else:
-                # 3. If failures are found, trigger the debug pipeline.
+                # 3. If failures are found, trigger the debug pipeline as a functional bug.
                 logging.warning("UI test result evaluation complete: Failures detected.")
-                self.escalate_for_manual_debug(failure_summary)
+                self.escalate_for_manual_debug(failure_summary, is_functional_bug=True)
 
         except Exception as e:
             logging.error(f"An unexpected error occurred during UI test result evaluation: {e}")
@@ -951,25 +956,37 @@ PHASE_DISPLAY_NAMES = {
             logging.error(f"An error occurred while resuming project {self.project_id}: {e}")
             return False
 
-    def escalate_for_manual_debug(self, failure_log: str):
+    def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
-        Initiates the triage and planning process for a bug, now with
-        an atomic rollback at the start of the process.
+        Initiates the triage and planning process for a bug.
+        It now acts as a router: for functional bugs, it bypasses technical
+        triage. For technical errors, it proceeds with Tiers 1, 2, and 3.
+
+        Args:
+            failure_log (str): The error log or functional bug description.
+            is_functional_bug (bool): Flag to indicate if the bug is functional,
+                                      allowing a bypass of technical triage.
         """
         logging.info("A failure has triggered the debugging pipeline.")
 
-        # Increment and check the debug attempt counter.
+        # This is the new router logic.
+        if is_functional_bug:
+            logging.info("Functional bug detected. Bypassing technical triage and proceeding directly to fix planning.")
+            self._plan_fix_from_description(failure_log)
+            return # Exit early, skipping the technical triage tiers.
+
+        # --- The existing technical triage logic now only runs if it's not a functional bug ---
         self.debug_attempt_counter += 1
-        logging.info(f"Debug attempt counter is now: {self.debug_attempt_counter}")
+        logging.info(f"Technical debug attempt counter is now: {self.debug_attempt_counter}")
 
         with self.db_manager as db:
             max_attempts_str = db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2"
             max_attempts = int(max_attempts_str)
 
         if self.debug_attempt_counter > max_attempts:
-            logging.warning(f"Automated debug attempts ({self.debug_attempt_counter -1}) have exceeded the limit of {max_attempts}. Escalating to PM.")
+            logging.warning(f"Automated debug attempts ({self.debug_attempt_counter - 1}) have exceeded the limit of {max_attempts}. Escalating to PM.")
             self.set_phase("DEBUG_PM_ESCALATION")
-            return # Stop further automated triage.
+            return
 
         try:
             with self.db_manager as db:
@@ -979,34 +996,28 @@ PHASE_DISPLAY_NAMES = {
                 if not api_key:
                     raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
 
-                # --- (NEW) Atomic Rollback on Failure ---
-                # This is the implementation of the critical quality gate from the internal spec.
-                # It ensures every debug attempt starts from a clean, known baseline.
+                # Atomic Rollback on Failure
                 logging.warning(f"Performing atomic rollback on '{project_root_path}' before attempting new fix.")
                 try:
                     repo = git.Repo(project_root_path)
                     repo.git.reset('--hard', 'HEAD')
-                    repo.git.clean('-fdx') # Forcefully remove untracked files and directories
+                    repo.git.clean('-fdx')
                     logging.info("Rollback successful. Repository is now in a clean state.")
                 except Exception as e:
-                    # If the rollback itself fails, we have a serious environmental problem.
                     logging.error(f"CRITICAL: Atomic rollback failed: {e}")
-                    self.set_phase("DEBUG_PM_ESCALATION") # Escalate to PM immediately
+                    self.set_phase("DEBUG_PM_ESCALATION")
                     return
-                # --- End of New Rollback Logic ---
 
                 context_package = {}
                 all_artifacts = db.get_all_artifacts_for_project(self.project_id)
                 rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
 
-                # --- Tier 1: Automated Stack Trace Analysis ---
+                # Tier 1: Automated Stack Trace Analysis
                 logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
-                # ... (rest of the method is the same as before)
                 if "Traceback (most recent call last):" in failure_log:
                     file_path_pattern = r'File "([^"]+)"'
                     found_paths = re.findall(file_path_pattern, failure_log)
                     unique_paths = list(dict.fromkeys(found_paths))
-
                     if unique_paths:
                         for file_path_str in unique_paths:
                             try:
@@ -1022,34 +1033,22 @@ PHASE_DISPLAY_NAMES = {
                     self._plan_and_execute_fix(failure_log, context_package, api_key)
                     return
 
-                # --- Tier 2: Automated Apex Trace Analysis ---
+                # Tier 2: Automated Apex Trace Analysis
                 logging.warning("Tier 1 Failed: No usable stack trace found. Proceeding to Tier 2 analysis.")
-                # ... (rest of the method is the same as before)
                 apex_file_name = project_details.get("apex_executable_name")
-
                 if apex_file_name:
-                    logging.info(f"Tier 2: Main executable '{apex_file_name}' found. Attempting guided trace analysis.")
-
                     failing_component_match = re.search(r"component '([^']+)'", failure_log, re.IGNORECASE)
                     if failing_component_match:
                         failing_component_name = failing_component_match.group(1)
-                        logging.info(f"Identified potential failing component from log: '{failing_component_name}'")
-
                         agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
                         path_list_json = agent.perform_apex_trace_analysis(rowd_json, apex_file_name, failing_component_name)
-
                         try:
                             file_paths_to_load = json.loads(path_list_json)
                             if file_paths_to_load:
-                                logging.info(f"Tier 2 Trace returned {len(file_paths_to_load)} files. Gathering source code.")
                                 for file_path in file_paths_to_load:
                                     full_path = project_root_path / file_path
                                     if full_path.exists():
                                         context_package[file_path] = full_path.read_text(encoding='utf-8')
-                                    else:
-                                        logging.warning(f"Tier 2: Agent suggested path '{file_path}' but it was not found.")
-                            else:
-                                logging.warning("Tier 2: Apex Trace Analysis returned no file paths.")
                         except json.JSONDecodeError:
                             logging.error(f"Tier 2: Failed to parse JSON response from TriageAgent: {path_list_json}")
 
@@ -1058,7 +1057,7 @@ PHASE_DISPLAY_NAMES = {
                     self._plan_and_execute_fix(failure_log, context_package, api_key)
                     return
 
-                # --- Tier 3: Interactive Triage ---
+                # Tier 3: Interactive Triage
                 logging.warning("Tier 2 Failed: Could not determine context automatically. Proceeding to Tier 3 for PM interaction.")
                 self.set_phase("AWAITING_PM_TRIAGE_INPUT")
 
@@ -1483,44 +1482,64 @@ PHASE_DISPLAY_NAMES = {
         self.set_phase("GENESIS")
         logging.info("Successfully generated a fix plan. Transitioning to GENESIS phase to apply the fix.")
 
-    def handle_pm_triage_input(self, pm_error_description: str):
+    def _plan_fix_from_description(self, description: str):
         """
-        Handles the text input provided by the PM during interactive triage (Tier 3).
+        Takes a natural language description of a bug, forms a hypothesis,
+        and generates a fix plan. This is the core of functional bug handling.
 
         Args:
-            pm_error_description (str): The PM's description of the error.
+            description (str): The text description of the bug.
         """
-        logging.info("Tier 3: Received manual error description from PM. Attempting to generate fix plan.")
-
+        logging.info(f"Attempting to plan fix from description: '{description[:100]}...'")
         try:
             with self.db_manager as db:
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key:
                     raise Exception("Cannot proceed with triage. LLM API Key is not set.")
 
-                # In this tier, we don't have code context, so we rely on the Triage Agent
-                # to form a hypothesis from the PM's description alone.
-                triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=db)
-                hypothesis = triage_agent.analyze_and_hypothesize(
-                    error_logs=pm_error_description,
-                    relevant_code="No specific code context available; base analysis on description."
-                )
+            # Step 1: Use TriageAgent to refine the description into a testable hypothesis.
+            triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
+            hypothesis = triage_agent.analyze_and_hypothesize(
+                error_logs=description,
+                relevant_code="No specific code context available; base analysis on user description.",
+                test_report=""
+            )
+            if "An error occurred" in hypothesis:
+                raise Exception(f"TriageAgent failed to form a hypothesis: {hypothesis}")
+            logging.info(f"TriageAgent formed hypothesis: {hypothesis}")
 
-                if "An error occurred" in hypothesis:
-                    raise Exception(f"TriageAgent failed: {hypothesis}")
+            # Step 2: Use FixPlannerAgent to create a plan from the hypothesis.
+            planner_agent = FixPlannerAgent_AppTarget(api_key=api_key)
+            fix_plan_str = planner_agent.create_fix_plan(
+                root_cause_hypothesis=hypothesis,
+                relevant_code="No specific code context was automatically identified. Base the fix on the TriageAgent's hypothesis."
+            )
+            if "error" in fix_plan_str.lower():
+                raise Exception(f"FixPlannerAgent failed to generate a plan: {fix_plan_str}")
+            fix_plan = json.loads(fix_plan_str)
+            if not fix_plan:
+                raise Exception("FixPlannerAgent returned an empty plan.")
 
-                # We now have a hypothesis, but no code context yet.
-                # We will pass this to the fix planner. A future enhancement would be
-                # to use this hypothesis to find and load relevant code.
-                simulated_context_package = {"description_based_hypothesis": hypothesis}
-
-                # Use the existing fix planning method with the new context
-                self._plan_and_execute_fix(hypothesis, simulated_context_package, api_key)
+            # Step 3: Load the new fix plan and transition to Genesis to execute it.
+            self.active_plan = fix_plan
+            self.active_plan_cursor = 0
+            self.set_phase("GENESIS")
+            logging.info("Successfully generated a fix plan from description. Transitioning to GENESIS.")
 
         except Exception as e:
-            logging.error(f"Tier 3 interactive triage failed. Error: {e}")
-            # If even the interactive triage fails, escalate to the final manual debug screen.
+            logging.error(f"Failed to plan fix from description. Error: {e}")
             self.set_phase("DEBUG_PM_ESCALATION")
+
+    def handle_pm_triage_input(self, pm_error_description: str):
+        """
+        Handles the text input provided by the PM during interactive triage (Tier 3)
+        by calling the reusable fix-planning helper method.
+
+        Args:
+            pm_error_description (str): The PM's description of the error.
+        """
+        logging.info("Tier 3: Received manual error description from PM. Routing to fix-planning.")
+        self._plan_fix_from_description(pm_error_description)
 
     def _extract_tags_from_text(self, text: str) -> list[str]:
         """A simple helper to extract potential search tags from text."""

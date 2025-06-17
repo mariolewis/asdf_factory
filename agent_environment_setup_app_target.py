@@ -1,328 +1,156 @@
 # agent_environment_setup_app_target.py
 
-"""
-This module contains the EnvironmentSetupAgent_AppTarget class.
-
-The agent is responsible for guiding the PM through the process of setting up
-the development environment for the target application. This includes defining
-the project path, ensuring necessary tools are installed, and initializing a
-Git repository. (ASDF PRD v0.2, Phase 0)
-"""
-
 import streamlit as st
 import os
 import subprocess
-import textwrap
-import glob
+import logging
 from pathlib import Path
 from agents.agent_build_script_generator import BuildScriptGeneratorAgent
-
 
 class EnvironmentSetupAgent_AppTarget:
     """
     Guides the PM through target application environment setup.
-
-    This agent uses a series of interactive steps within the Streamlit GUI
-    to ensure the environment for the application to be built is ready.
-    It is designed to adhere to the Single Responsibility Principle.
-    (ASDF Dev Plan v0.2, F-Dev 2.1)
+    This agent manages the UI and state for the ENV_SETUP_TARGET_APP phase.
     """
 
     def __init__(self):
-        """Initializes the EnvironmentSetupAgent_AppTarget."""
-        pass
+        """Initializes the agent's state keys in session_state."""
+        keys_to_init = {
+            'setup_path_confirmed': False,
+            'setup_git_initialized': False,
+            'setup_tech_stack_confirmed': False,
+            'project_path_input': "",
+            'show_brownfield_warning': False,
+            'setup_language': "",
+            'setup_is_build_automated': True,
+            'apex_file_name_input': ""
+        }
+        for key, value in keys_to_init.items():
+            if key not in st.session_state:
+                st.session_state[key] = value
 
     def _check_for_brownfield_project(self, directory_path: str) -> bool:
-        """
-        Scans a directory to see if it contains signs of an existing project.
-        (ASDF Change Request CR-ASDF-007)
-
-        Args:
-            directory_path: The path to the directory to check.
-
-        Returns:
-            True if signs of an existing project are found, False otherwise.
-        """
-        # Check for common source code or build files.
+        """Scans a directory for signs of an existing project."""
         extensions_to_check = ('*.py', '*.kt', '*.java', '*.xml', '*.gradle', '*.yml', '*.json')
         for extension in extensions_to_check:
             if list(Path(directory_path).glob(f'**/{extension}')):
-                logging.warning(f"Brownfield check: Found existing files with extension {extension}.")
                 return True
-
-        # Check for a .git directory.
         if (Path(directory_path) / '.git').exists():
-            logging.warning("Brownfield check: Found existing .git directory.")
             return True
-
-        # Condition: Directory is not empty but lacks ASDF metadata.
-        # For now, the presence of any of the above files is our trigger.
-        # A future implementation could check for a specific ASDF metadata file.
-
         return False
 
-    def _run_git_initialization_step(self):
-        """
-        Handles the Git repository initialization step.
-        This is a private method intended for use by run_setup_flow.
-        """
-        st.subheader("Initialize Git Repository")
+    def _run_path_setup_step(self):
+        """Handles the UI for defining the project's root folder."""
+        st.subheader("1. Define Target Project Root Folder")
+        with st.session_state.orchestrator.db_manager as db:
+            default_path = db.get_config_value("DEFAULT_PROJECT_PATH") or ""
 
-        project_path = st.session_state.project_root_path
-        git_dir = os.path.join(project_path, '.git')
+        st.session_state.project_path_input = st.text_input(
+            "Enter the full local path for the new target application's root folder:",
+            value=st.session_state.project_path_input or default_path
+        )
 
-        if os.path.exists(git_dir):
-            st.session_state.git_initialized = True
-
-        if st.session_state.git_initialized:
-            st.success("Git repository is initialized in the project folder.")
-            st.divider()
-            self._run_tech_stack_setup_step()
-        else:
-            st.info("The project folder is not yet a Git repository. This is a required step.")
-            if st.button("Initialize Git Repository"):
+        if st.button("Confirm Project Folder"):
+            path_input = st.session_state.project_path_input
+            if path_input:
                 try:
-                    result = subprocess.run(
-                        ['git', 'init'],
-                        cwd=project_path,
-                        capture_output=True,
-                        text=True,
-                        check=True
-                    )
-                    st.session_state.git_initialized = True
-                    st.success("Successfully initialized an empty Git repository.")
-                    st.code(result.stdout)
+                    normalized_path = Path(path_input).resolve()
+                    if self._check_for_brownfield_project(str(normalized_path)):
+                        st.session_state.show_brownfield_warning = True
+                    else:
+                        normalized_path.mkdir(parents=True, exist_ok=True)
+                        st.session_state.project_root_path = str(normalized_path)
+                        st.session_state.setup_path_confirmed = True
                     st.rerun()
-                except FileNotFoundError:
-                    st.error("Error: The 'git' command was not found. Is Git installed and in your system's PATH variable?")
-                except subprocess.CalledProcessError as e:
-                    st.error(f"Failed to initialize Git repository. Error:\n{e.stderr}")
                 except Exception as e:
-                    st.error(f"An unexpected error occurred: {e}")
+                    st.error(f"An error occurred: {e}")
+            else:
+                st.warning("Please enter a path.")
+
+    def _run_git_initialization_step(self):
+        """Handles the UI for initializing the Git repository."""
+        st.subheader("2. Initialize Git Repository")
+        project_path = st.session_state.project_root_path
+
+        if st.button("Initialize Git Repository"):
+            try:
+                subprocess.run(['git', 'init'], cwd=project_path, check=True, capture_output=True, text=True)
+                st.session_state.setup_git_initialized = True
+                st.success("Successfully initialized Git repository.")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to initialize Git repository: {e}")
 
     def _run_tech_stack_setup_step(self):
-        """
-        Handles technology stack identification and build script generation.
-        """
-        st.subheader("Technology Stack & Build Script")
+        """Handles UI for Technology Stack, Build Script, and Apex File Name."""
+        st.subheader("3. Define Technology & Build Configuration")
 
-        # Initialize session state keys for this step
-        if 'language' not in st.session_state:
-            st.session_state.language = None
-        if 'build_script_choice_made' not in st.session_state:
-            st.session_state.build_script_choice_made = False
-
-        # Step 1: Select the language
-        st.write("First, please specify the primary programming language for your target application.")
-        language = st.selectbox(
-            "Primary Language:",
+        st.session_state.setup_language = st.selectbox(
+            "Primary Programming Language:",
             ["", "Python", "Kotlin"],
-            key='language_select',
-            disabled=st.session_state.build_script_choice_made # Disable after choice is made
+            key='language_select_key'
         )
-        st.session_state.language = language
 
-        if st.session_state.language and not st.session_state.build_script_choice_made:
-            st.divider()
-            st.write("**Build Script Generation (CR-ASDF-005)**")
-
-            # Step 2: Present the choice for build script generation
-            build_choice = st.radio(
-                "How should the build script be handled?",
-                options=[
-                    "Have ASDF generate a standard build script",
-                    "I will manage the build script manually"
-                ],
-                key="build_script_radio"
+        if st.session_state.setup_language:
+            build_choice_str = st.radio(
+                "Build Script Handling:",
+                ["Have ASDF generate a standard build script", "I will manage the build script manually"],
+                key="build_script_radio_key"
             )
+            st.session_state.setup_is_build_automated = (build_choice_str == "Have ASDF generate a standard build script")
 
-            if st.button("Confirm Build Script Choice"):
-                if build_choice == "Have ASDF generate a standard build script":
+        st.text_input(
+            "Main Executable File Name (without extension):",
+            placeholder="e.g., 'main' or 'app'",
+            key="apex_file_name_input"
+        )
+
+        if st.session_state.setup_language and st.session_state.apex_file_name_input:
+            if st.button("Confirm Technology & Build", type="primary"):
+                if st.session_state.setup_is_build_automated:
                     agent = BuildScriptGeneratorAgent()
-                    script_info = agent.generate_script(st.session_state.language)
+                    script_info = agent.generate_script(st.session_state.setup_language)
                     if script_info:
                         filename, content = script_info
                         try:
                             project_path = Path(st.session_state.project_root_path)
-                            script_path = project_path / filename
-                            script_path.write_text(content, encoding='utf-8')
-
-                            st.success(f"Generated and saved `{filename}` to the project root.")
-                            st.session_state.is_build_automated = True # Add this line
-                            st.session_state.build_script_choice_made = True
-                            st.rerun()
-
+                            (project_path / filename).write_text(content, encoding='utf-8')
+                            st.success(f"Generated and saved `{filename}`.")
                         except Exception as e:
                             st.error(f"Failed to save build script: {e}")
-                    else:
-                        st.warning(f"No standard build script available for '{st.session_state.language}'. Please manage it manually.")
 
-                else: # Manual management
-                    st.info("You have opted to manage the build script manually. The factory will not create one.")
-                    st.session_state.is_build_automated = False # Add this line
-                    st.session_state.build_script_choice_made = True
-                    st.rerun()
-
-        # Step 3: Show the relevant setup guide and next step only after choice is made
-        if st.session_state.build_script_choice_made:
-            if st.session_state.language == "Python":
-                with st.expander("Python Environment Setup Guide", expanded=True):
-                    # Python setup guide content remains the same
-                    st.markdown(textwrap.dedent(f"""...""")) # Truncated for brevity
-
-            elif st.session_state.language == "Kotlin":
-                 with st.expander("Kotlin Environment Setup Guide", expanded=True):
-                    # Kotlin setup guide content remains the same
-                    st.markdown(textwrap.dedent(f"""...""")) # Truncated for brevity
-
-            st.divider()
-            self._run_apex_definition_step()
-
-        elif st.session_state.language == "Kotlin":
-            with st.expander("Kotlin Environment Setup Guide", expanded=True):
-                st.markdown(textwrap.dedent("""
-                    **Prerequisites:** Kotlin development for the JVM (Java Virtual Machine) requires a JDK (Java Development Kit) and a build tool like Gradle or Maven. This guide uses Gradle.
-
-                    **Step 1: Verify JDK Installation**
-
-                    First, check if you have a JDK installed (version 8 or higher is recommended). Open your terminal and run:
-                    """))
-                st.code("java -version", language="bash")
-                st.markdown(textwrap.dedent("""
-                    If the JDK is not installed, we recommend installing it from a trusted provider like [Adoptium](https://adoptium.net/).
-
-                    **Step 2: Verify Gradle Installation**
-
-                    Next, check if Gradle is installed by running this command:
-                    """))
-                st.code("gradle -v", language="bash")
-                st.markdown(textwrap.dedent("""
-                    If it is not installed, you can find instructions on the [official Gradle website](https://gradle.org/install/).
-                    """))
-                st.markdown(textwrap.dedent(f"""
-                    **Step 3: Create `build.gradle.kts` File**
-
-                    In your project's root folder (`{st.session_state.project_root_path}`), create a file named `build.gradle.kts`. This file tells Gradle how to build your project. Paste the following basic configuration into it:
-                    """))
-                st.code(textwrap.dedent("""
-                    plugins {
-                        kotlin("jvm") version "1.9.23"
-                        application
-                    }
-
-                    group = "com.example"
-                    version = "1.0-SNAPSHOT"
-
-                    repositories {
-                        mavenCentral()
-                    }
-
-                    dependencies {
-                        testImplementation(kotlin("test"))
-                    }
-
-                    application {
-                        mainClass.set("com.example.MainKt")
-                    }
-                    """), language="kotlin")
-                st.markdown(textwrap.dedent("""
-                    You can adjust the `group`, `version`, and `mainClass` later as needed.
-
-                    **Step 4: Create Directory Structure**
-                    """))
-                st.markdown(textwrap.dedent(f"""
-                    Finally, create the standard source directory structure for a Gradle project inside your root folder (`{st.session_state.project_root_path}`):
-                    `src/main/kotlin`
-
-                    ASDF will place all new Kotlin source code files inside this `src/main/kotlin` directory.
-                    """))
-
-        # At the end of _run_tech_stack_setup_step()
-        st.divider()
-        if st.session_state.language:
-            self._run_apex_definition_step()
-
-    def _run_apex_definition_step(self):
-        """
-        Handles the definition of the project's main executable file.
-        """
-        st.subheader("Name the Main Executable File)")
-        st.markdown("Please provide a name for the main executable file for your application, **without the file extension**.")
-
-        # Initialize the session state key if it doesn't exist.
-        if "apex_file_name_input" not in st.session_state:
-            st.session_state.apex_file_name_input = ""
-
-        # The text_input widget now correctly reads from and writes to session_state.
-        st.session_state.apex_file_name_input = st.text_input(
-            "Executable File Name:",
-            value=st.session_state.apex_file_name_input,
-            placeholder="e.g., 'main' for main.py, or 'app' for app.py",
-            help="Provide the name of the main executable file for your application, without the file extension."
-        )
-
-    def run_setup_flow(self):
-        """
-        Executes the full environment setup flow, including the brownfield check.
-        """
-        st.header("Phase 0: Target Application Environment Setup")
-
-        # (CR-ASDF-007) UI for the safety lockout warning
-        if st.session_state.get('show_brownfield_warning'):
-            st.error("Unrecognized Project Detected")
-            st.warning(
-                "The selected folder contains existing source code or a git repository "
-                "that was not created by this application. The factory cannot manage or "
-                "modify unrecognized projects to avoid data loss."
-            )
-            if st.button("OK"):
-                # Reset state to allow the user to choose a different path
-                st.session_state.show_brownfield_warning = False
-                st.session_state.path_confirmed = False
-                st.session_state.project_root_path = None
+                st.session_state.setup_tech_stack_confirmed = True
                 st.rerun()
-            return # Halt further rendering
 
-        st.write(
-            "This phase will guide you through setting up the necessary environment "
-            "for the new application you want to build."
-        )
+    def render(self):
+        """Renders the setup UI in a controlled, sequential manner."""
+        if st.session_state.get('show_brownfield_warning'):
+            st.error("The selected folder contains an existing project. Please choose a different folder or click OK to cancel.")
+            if st.button("OK"):
+                st.session_state.show_brownfield_warning = False
+                st.session_state.project_path_input = ""
+                st.rerun()
+            return
 
-        st.subheader("Define Target Project Root Folder")
+        if not st.session_state.setup_path_confirmed:
+            self._run_path_setup_step()
+            return
 
-        if 'project_root_path' not in st.session_state:
-            st.session_state.project_root_path = None
-        if 'path_confirmed' not in st.session_state:
-            st.session_state.path_confirmed = False
-        if 'git_initialized' not in st.session_state:
-            st.session_state.git_initialized = False
+        st.success(f"Project root folder confirmed: `{st.session_state.project_root_path}`")
+        st.divider()
 
-        if st.session_state.path_confirmed:
-            st.success(f"Project root folder confirmed: `{st.session_state.project_root_path}`")
-            st.divider()
+        if not st.session_state.setup_git_initialized:
             self._run_git_initialization_step()
-        else:
-            path_input = st.text_input(
-                "Enter the full local path for the new target application's root folder:",
-                placeholder="e.g., E:\\ASDF_Projects\\MyNewApp"
-            )
+            return
 
-            if st.button("Confirm Project Folder"):
-                if path_input:
-                    try:
-                        normalized_path = Path(path_input).resolve()
-                        normalized_path.mkdir(parents=True, exist_ok=True)
+        st.success("Git repository initialized.")
+        st.divider()
 
-                        # (CR-ASDF-007) Perform the brownfield check here
-                        if self._check_for_brownfield_project(str(normalized_path)):
-                            st.session_state.show_brownfield_warning = True
-                            st.rerun()
-                        else:
-                            st.session_state.project_root_path = str(normalized_path)
-                            st.session_state.path_confirmed = True
-                            st.rerun()
+        if not st.session_state.setup_tech_stack_confirmed:
+            self._run_tech_stack_setup_step()
+            return
 
-                    except Exception as e:
-                        st.error(f"An error occurred: {e}")
-                else:
-                    st.warning("Please enter a path before confirming.")
+        st.success("Technology & Build configuration confirmed.")
+        st.info("All setup steps are complete. Click the main button above to proceed.")
+        # Signal to the main app that this agent's work is done.
+        st.session_state.agent_setup_complete = True
