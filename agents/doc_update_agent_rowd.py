@@ -1,6 +1,8 @@
 """
 This module contains the DocUpdateAgentRoWD class.
 """
+import logging
+import json
 
 class DocUpdateAgentRoWD:
     """
@@ -46,3 +48,57 @@ class DocUpdateAgentRoWD:
             # The programming standard requires graceful error handling.
             logging.error(f"Error updating RoWD for artifact: {artifact_data.get('artifact_id')}. Error: {e}")
             return False
+
+    def update_specification_text(self, original_spec: str, implementation_plan: str, api_key: str) -> str:
+        """
+        Updates a specification document based on a completed implementation plan.
+
+        Args:
+            original_spec (str): The original text of the specification document.
+            implementation_plan (str): The JSON string of the development plan that was executed.
+            api_key (str): The LLM API key.
+
+        Returns:
+            str: The new, updated specification text. Returns original spec on failure.
+        """
+        logging.info("Invoking LLM to update specification document post-implementation.")
+        try:
+            # This agent now needs to make an API call, so it needs the key and a model.
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+
+            prompt = f"""
+            You are an expert technical writer responsible for keeping documentation in sync with source code.
+            An existing specification document needs to be updated to reflect a series of code changes that were just implemented.
+
+            **Your Task:**
+            Review the original specification and the development plan that was just executed. Return a new, complete version of the specification that incorporates the changes and new features described in the plan.
+
+            - Do not omit any sections from the original specification that were not affected.
+            - Ensure the new document is a complete and coherent replacement for the original.
+            - Your output MUST be only the raw text of the new, updated specification document.
+
+            **--- INPUT 1: Original Specification Document ---**
+            ```
+            {original_spec}
+            ```
+
+            **--- INPUT 2: The Executed Development Plan (JSON) ---**
+            ```json
+            {implementation_plan}
+            ```
+
+            **--- OUTPUT: New, Updated Specification Document ---**
+            """
+
+            response = model.generate_content(prompt)
+            if not response.text:
+                raise ValueError("LLM returned an empty response for spec update.")
+
+            return response.text
+
+        except Exception as e:
+            logging.error(f"Failed to update specification document via LLM: {e}")
+            # On failure, return the original spec to prevent data loss.
+            return original_spec

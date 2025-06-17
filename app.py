@@ -872,43 +872,69 @@ if page == "Project":
 
         elif current_phase_name == "RAISING_CHANGE_REQUEST":
             st.header("Phase 6: Raise New Change Request")
-            st.markdown("Please provide a detailed description of the change you are requesting below. This will be logged in the Change Request Register.")
+            st.info("First, select the type of change you are requesting.")
 
-            # Use session state to hold the text area's value to prevent loss on reruns
+            # Initialize session state keys for this workflow
+            if 'cr_type' not in st.session_state:
+                st.session_state.cr_type = "Functional Enhancement"
             if 'cr_description' not in st.session_state:
                 st.session_state.cr_description = ""
+            if 'spec_correction_text' not in st.session_state:
+                st.session_state.spec_correction_text = ""
 
-            # The widget's key is separate from the session state variable
-            st.session_state.cr_description = st.text_area(
-                "Change Request Description:",
-                value=st.session_state.cr_description,
-                height=250
+
+            st.session_state.cr_type = st.radio(
+                "Select Change Request Type:",
+                ["Functional Enhancement", "Specification Correction"],
+                horizontal=True,
+                key="cr_type_radio"
             )
 
             st.divider()
-            col1, col2, _ = st.columns([1, 1, 5])
 
-            with col1:
-                if st.button("Save Change Request", use_container_width=True, type="primary"):
+            # --- UI for Functional Enhancement ---
+            if st.session_state.cr_type == "Functional Enhancement":
+                st.markdown("Please provide a detailed description of the new feature or change in functionality.")
+                st.session_state.cr_description = st.text_area(
+                    "Change Request Description:",
+                    value=st.session_state.cr_description,
+                    height=250
+                )
+                if st.button("Save Change Request", type="primary"):
                     if st.session_state.cr_description.strip():
-                        if st.session_state.orchestrator.save_new_change_request(st.session_state.cr_description):
-                            st.toast("✅ Change Request saved!")
-                            # Clean up the session state variable and rerun to go back to the Genesis phase
-                            del st.session_state.cr_description
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("Failed to save the Change Request.")
+                        # This calls the existing orchestrator method
+                        st.session_state.orchestrator.save_new_change_request(st.session_state.cr_description, "CHANGE_REQUEST")
+                        st.rerun()
                     else:
-                        st.warning("The change request description cannot be empty.")
+                        st.warning("The description cannot be empty.")
 
-            with col2:
-                if st.button("Cancel", use_container_width=True):
-                    # Clean up the session state variable and return to the Genesis phase
-                    if 'cr_description' in st.session_state:
-                        del st.session_state.cr_description
-                    st.session_state.orchestrator.set_phase("GENESIS")
-                    st.rerun()
+            # --- UI for Specification Correction ---
+            elif st.session_state.cr_type == "Specification Correction":
+                st.markdown("Paste the **full, corrected text** of the specification below. The system will analyze the differences to create a linked implementation plan.")
+
+                # Pre-fill the text area with the current spec for easier editing
+                if not st.session_state.spec_correction_text:
+                     with st.session_state.orchestrator.db_manager as db:
+                        project_docs = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                        st.session_state.spec_correction_text = project_docs['final_spec_text'] if project_docs else ""
+
+                st.session_state.spec_correction_text = st.text_area(
+                    "Full Corrected Specification Text:",
+                    value=st.session_state.spec_correction_text,
+                    height=400
+                )
+                if st.button("Save Specification Change", type="primary"):
+                    if st.session_state.spec_correction_text.strip():
+                        # This will call a new orchestrator method we will create next
+                        st.session_state.orchestrator.save_spec_correction_cr(st.session_state.spec_correction_text)
+                        st.rerun()
+                    else:
+                        st.warning("The specification text cannot be empty.")
+
+            st.divider()
+            if st.button("Cancel"):
+                st.session_state.orchestrator.set_phase("GENESIS")
+                st.rerun()
 
         elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
             st.header("Phase 6: New Change Request Logged")
@@ -1113,6 +1139,37 @@ if page == "Project":
                     if 'bug_severity' in st.session_state:
                         del st.session_state.bug_severity
                     st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
+
+        elif current_phase_name == "AWAITING_LINKED_DELETE_CONFIRMATION":
+            st.header("Confirm Linked Deletion")
+            st.error("WARNING: This is a linked item. Deleting it will also delete its corresponding dependent item and may involve rolling back a specification change. This action cannot be undone.")
+
+            linked_pair = st.session_state.orchestrator.task_awaiting_approval
+            if linked_pair:
+                primary_id = linked_pair.get('primary_cr_id')
+                linked_id = linked_pair.get('linked_cr_id')
+
+                st.markdown(f"You are attempting to delete **CR-{primary_id}**, which is linked to **CR-{linked_id}**.")
+
+                st.divider()
+
+                col1, col2, _ = st.columns([1.5, 1, 3])
+                with col1:
+                    if st.button("Yes, Delete Both Items", type="primary", use_container_width=True):
+                        with st.spinner("Processing linked deletion..."):
+                            st.session_state.orchestrator.handle_linked_delete_confirmation(primary_id, linked_id)
+                        st.toast("Linked items have been deleted.")
+                        st.rerun()
+                with col2:
+                    if st.button("No, Cancel", use_container_width=True):
+                        st.session_state.orchestrator.task_awaiting_approval = None
+                        st.session_state.orchestrator.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+                        st.rerun()
+            else:
+                st.error("Could not retrieve linked item details. Returning to the register.")
+                if st.button("Back to Register"):
+                    st.session_state.orchestrator.set_phase("IMPLEMENTING_CHANGE_REQUEST")
                     st.rerun()
 
         elif current_phase_name == "VIEWING_PROJECT_HISTORY":

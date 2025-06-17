@@ -27,6 +27,7 @@ from agents.agent_ui_test_planner_app_target import UITestPlannerAgent_AppTarget
 from agents.agent_test_result_evaluation_app_target import TestResultEvaluationAgent_AppTarget
 from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
 from agents.agent_learning_capture import LearningCaptureAgent
+from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarget
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -48,6 +49,7 @@ class FactoryPhase(Enum):
     IMPLEMENTING_CHANGE_REQUEST = auto()
     EDITING_CHANGE_REQUEST = auto()
     REPORTING_OPERATIONAL_BUG = auto()
+    AWAITING_LINKED_DELETE_CONFIRMATION = auto()
     DEBUG_PM_ESCALATION = auto()
     VIEWING_PROJECT_HISTORY = auto()
     AWAITING_CONTEXT_REESTABLISHMENT = auto()
@@ -123,6 +125,7 @@ class MasterOrchestrator:
         FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
         FactoryPhase.EDITING_CHANGE_REQUEST: "Edit Change Request",
         FactoryPhase.REPORTING_OPERATIONAL_BUG: "Report Operational Bug",
+        FactoryPhase.AWAITING_LINKED_DELETE_CONFIRMATION: "Confirm Linked Deletion",
         FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
         FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
         FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
@@ -608,35 +611,93 @@ class MasterOrchestrator:
         else:
             logging.warning(f"Received 'Raise CR' action in an unexpected phase: {self.current_phase.name}")
 
-    def save_new_change_request(self, description: str) -> bool:
+    def save_new_change_request(self, description: str, request_type: str = 'CHANGE_REQUEST'):
         """
-        Saves a new change request to the database.
+        Saves a new, standard functional enhancement CR to the database.
 
         Args:
             description (str): The description of the change from the PM.
-
-        Returns:
-            bool: True if saving was successful, False otherwise.
+            request_type (str): The type of CR being saved.
         """
         if not self.project_id:
             logging.error("Cannot save change request; no active project.")
-            return False
-
-        if not description or not description.strip():
-            logging.warning("Cannot save empty change request description.")
-            return False
+            return
 
         try:
             with self.db_manager as db:
                 db.add_change_request(self.project_id, description)
-
-            # After successfully saving, return to the main development checkpoint.
             self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
-            logging.info("Successfully saved new change request and returned to Genesis phase.")
-            return True
+            logging.info("Successfully saved new Functional Enhancement CR.")
         except Exception as e:
             logging.error(f"Failed to save new change request: {e}")
-            return False
+
+    def save_spec_correction_cr(self, new_spec_text: str):
+        """
+        Saves a 'Specification Correction' CR, runs an immediate impact analysis
+        by comparing it to the old spec, and auto-generates a linked CR for the
+        required code changes.
+        """
+        if not self.project_id:
+            logging.error("Cannot save spec correction; no active project.")
+            return
+
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                project_details = db.get_project_by_id(self.project_id)
+                original_spec_text = project_details['final_spec_text']
+
+                # 1. Save the primary "Specification Correction" CR
+                spec_cr_description = "Correction to Application Specification. See linked CR for code implementation."
+                spec_cr_id = db.add_change_request(
+                    project_id=self.project_id,
+                    description=spec_cr_description,
+                    request_type='SPEC_CORRECTION'
+                )
+                db.update_cr_status(spec_cr_id, "COMPLETED")
+
+                # 2. Update the specification text in the Projects table immediately
+                db.save_final_specification(self.project_id, new_spec_text)
+                logging.info(f"Saved new specification text for CR-{spec_cr_id}.")
+
+                # 3. Run impact analysis by comparing old and new specs
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                rowd_json = json.dumps([dict(row) for row in all_artifacts])
+
+                # Create a synthetic change request description for the agent
+                cr_desc_for_agent = (
+                    "Analyze the difference between the 'Original Specification' and the 'New Specification' "
+                    "to identify the necessary code changes. The 'New Specification' is the source of truth."
+                    f"\n\n--- Original Specification ---\n{original_spec_text}"
+                    f"\n\n--- New Specification ---\n{new_spec_text}"
+                )
+
+                impact_agent = ImpactAnalysisAgent_AppTarget(api_key=api_key)
+                _, summary, impacted_ids = impact_agent.analyze_impact(
+                    change_request_desc=cr_desc_for_agent,
+                    final_spec_text=new_spec_text, # Analyze against the new spec
+                    rowd_json=rowd_json
+                )
+
+                # 4. Auto-generate the linked "Code Implementation" CR
+                if summary:
+                    code_cr_description = (
+                        f"Auto-generated CR to implement changes for Specification Correction CR-{spec_cr_id}.\n\n"
+                        f"Analysis Summary: {summary}"
+                    )
+                    db.add_linked_change_request(
+                        project_id=self.project_id,
+                        description=code_cr_description,
+                        linked_cr_id=spec_cr_id
+                    )
+                    logging.info(f"Auto-generated linked code implementation CR for Spec CR-{spec_cr_id}.")
+
+            # 5. Return to the CR register to show the results
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+
+        except Exception as e:
+            logging.error(f"Failed to process specification correction CR: {e}")
+            self.set_phase("RAISING_CHANGE_REQUEST") # Return to the previous screen on error
 
     def handle_report_bug_action(self):
         """
@@ -800,23 +861,67 @@ class MasterOrchestrator:
             logging.error(f"Failed to run impact analysis for CR ID {cr_id}: {e}")
             # Optionally, set an error state to be displayed in the UI
 
-    def handle_delete_cr_action(self, cr_id: int):
+    #
+# --- REPLACE THE ENTIRE METHOD WITH THIS ---
+#
+    def handle_delete_cr_action(self, cr_id_to_delete: int):
         """
-        Handles the deletion of a change request from the register.
-
-        The UI layer is responsible for confirming this action with the user
-        and for ensuring it's only called on CRs with a 'RAISED' status.
-
-        Args:
-            cr_id (int): The ID of the change request to delete.
+        Handles the deletion of a CR, now with checks for linked CRs.
+        If a link is found, it pauses for PM confirmation.
         """
-        logging.info(f"PM has requested to delete Change Request ID: {cr_id}.")
+        logging.info(f"PM initiated delete for CR ID: {cr_id_to_delete}.")
         try:
             with self.db_manager as db:
-                db.delete_change_request(cr_id)
-            logging.info(f"Successfully deleted CR ID: {cr_id}.")
+                cr_to_delete = db.get_cr_by_id(cr_id_to_delete)
+                if not cr_to_delete:
+                    logging.error(f"Cannot delete CR-{cr_id_to_delete}: Not found.")
+                    return
+
+                # Check for links in either direction
+                linked_id = cr_to_delete['linked_cr_id']
+                other_cr_linking_to_this = db.get_cr_by_linked_id(cr_id_to_delete)
+
+                if linked_id or other_cr_linking_to_this:
+                    # This is part of a linked pair. Pause for confirmation.
+                    logging.warning(f"CR-{cr_id_to_delete} is part of a linked pair. Awaiting PM confirmation for deletion.")
+                    self.task_awaiting_approval = {
+                        "primary_cr_id": cr_id_to_delete,
+                        "linked_cr_id": linked_id or other_cr_linking_to_this['cr_id']
+                    }
+                    self.set_phase("AWAITING_LINKED_DELETE_CONFIRMATION")
+                else:
+                    # This is a standalone CR, delete it directly.
+                    db.delete_change_request(cr_id_to_delete)
+                    logging.info(f"Successfully deleted standalone CR ID: {cr_id_to_delete}.")
+                    # The UI will rerun and show the updated list.
+
         except Exception as e:
-            logging.error(f"Failed to delete CR ID {cr_id}: {e}")
+            logging.error(f"Failed to process delete action for CR-{cr_id_to_delete}: {e}")
+
+    def handle_linked_delete_confirmation(self, primary_cr_id: int, linked_cr_id: int):
+        """
+        Deletes a pair of linked CRs after PM confirmation.
+        """
+        logging.info(f"PM confirmed deletion of linked pair: CR-{primary_cr_id} and CR-{linked_cr_id}.")
+        try:
+            with self.db_manager as db:
+                # Add logic here to roll back the spec change if necessary
+                spec_cr = db.get_cr_by_id(linked_cr_id)
+                if spec_cr and spec_cr['request_type'] == 'SPEC_CORRECTION':
+                    # This is a placeholder for a more complex rollback logic
+                    logging.warning(f"Spec Correction CR-{linked_cr_id} is being deleted. A full implementation would roll back the spec text.")
+
+                # Delete both records
+                db.delete_change_request(primary_cr_id)
+                db.delete_change_request(linked_cr_id)
+
+            logging.info("Successfully deleted linked CR pair.")
+        except Exception as e:
+            logging.error(f"Failed to delete linked CR pair: {e}")
+        finally:
+            # Always return to the register view
+            self.task_awaiting_approval = None
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
     def handle_edit_cr_action(self, cr_id: int):
         """

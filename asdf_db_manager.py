@@ -138,7 +138,9 @@ class ASDFDBManager:
             impact_rating TEXT,
             impact_analysis_details TEXT,
             impacted_artifact_ids TEXT,
-            FOREIGN KEY (project_id) REFERENCES Projects (project_id)
+            linked_cr_id INTEGER,
+            FOREIGN KEY (project_id) REFERENCES Projects (project_id),
+            FOREIGN KEY (linked_cr_id) REFERENCES ChangeRequestRegister (cr_id)
         );
         """
         self._execute_query(create_cr_register_table)
@@ -778,6 +780,33 @@ class ASDFDBManager:
         logging.info(f"Added new bug report with ID '{new_bug_id}' for project '{project_id}'.")
         return new_bug_id
 
+    def add_linked_change_request(self, project_id: str, description: str, linked_cr_id: int) -> int:
+        """
+        Adds a new, auto-generated Change Request that is linked to a
+        parent (e.g., a Specification Correction CR).
+
+        Args:
+            project_id (str): The ID of the project.
+            description (str): The auto-generated description for the new CR.
+            linked_cr_id (int): The ID of the parent CR this new CR is linked to.
+
+        Returns:
+            int: The ID of the newly created CR.
+        """
+        query = """
+        INSERT INTO ChangeRequestRegister
+        (project_id, request_type, description, creation_timestamp, status, linked_cr_id)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """
+        timestamp = datetime.now(timezone.utc).isoformat()
+        # This auto-generated CR starts in the 'RAISED' state.
+        params = (project_id, 'CHANGE_REQUEST', description, timestamp, 'RAISED', linked_cr_id)
+
+        cursor = self._execute_query(query, params)
+        new_cr_id = cursor.lastrowid
+        logging.info(f"Added new linked change request with ID '{new_cr_id}' for project '{project_id}'.")
+        return new_cr_id
+
     def update_change_request(self, cr_id: int, new_description: str):
         """
         Updates the description of a given change request and resets its
@@ -860,6 +889,20 @@ class ASDFDBManager:
         """
         query = "SELECT * FROM ChangeRequestRegister WHERE cr_id = ?"
         cursor = self._execute_query(query, (cr_id,))
+        return cursor.fetchone()
+
+    def get_cr_by_linked_id(self, parent_cr_id: int):
+        """
+        Finds a Change Request that is linked to a specific parent CR.
+
+        Args:
+            parent_cr_id (int): The ID of the parent CR to find the child for.
+
+        Returns:
+            A row object representing the linked child CR, or None if not found.
+        """
+        query = "SELECT * FROM ChangeRequestRegister WHERE linked_cr_id = ?"
+        cursor = self._execute_query(query, (parent_cr_id,))
         return cursor.fetchone()
 
     def get_cr_by_status(self, project_id: str, status: str) -> sqlite3.Row | None:
