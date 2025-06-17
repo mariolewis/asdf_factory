@@ -430,7 +430,7 @@ if page == "Project":
                                     st.session_state.orchestrator.project_id,
                                     st.session_state.tech_spec_draft
                                 )
-                            st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
+                            st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
                             # ... (rest of the button logic is the same)
                 with col2:
                     # Add the download button
@@ -454,13 +454,75 @@ if page == "Project":
                             )
 
                         # Transition to the next phase
-                        st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
+                        st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
 
                         # Clean up session state for this phase
                         for key in ['tech_spec_choice', 'tech_spec_draft']:
                              if key in st.session_state:
                                 del st.session_state[key]
                         st.rerun()
+
+        elif current_phase_name == "BUILD_SCRIPT_SETUP":
+            st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
+            st.markdown("The technical specification is complete. Now, let's establish the build script for the project.")
+            st.info("This script (e.g., `requirements.txt`, `pom.xml`, `build.gradle.kts`) manages project dependencies and how the application is built.")
+
+            # Get the tech stack from the saved technical specification to inform the agent
+            with st.session_state.orchestrator.db_manager as db:
+                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                tech_spec_text = project_details['tech_spec_text']
+
+            # A simple way to infer the primary language for the agent
+            # A more advanced method could use an LLM call here.
+            tech_stack_language = "Python" # Default
+            if "kotlin" in tech_spec_text.lower() or "gradle" in tech_spec_text.lower():
+                tech_stack_language = "Kotlin"
+            elif "java" in tech_spec_text.lower() or "maven" in tech_spec_text.lower():
+                tech_stack_language = "Java" # Example for future extension
+
+            st.write(f"Inferred primary language from Technical Specification: **{tech_stack_language}**")
+            st.divider()
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button("🤖 Auto-Generate Build Script", use_container_width=True, type="primary"):
+                    with st.spinner(f"Generating standard build script for {tech_stack_language}..."):
+                        try:
+                            from agents.agent_build_script_generator import BuildScriptGeneratorAgent
+                            agent = BuildScriptGeneratorAgent()
+                            script_info = agent.generate_script(tech_stack_language)
+
+                            if script_info:
+                                filename, content = script_info
+                                project_root = Path(project_details['project_root_folder'])
+                                script_path = project_root / filename
+                                script_path.write_text(content, encoding='utf-8')
+
+                                # Save the choice to the database
+                                with st.session_state.orchestrator.db_manager as db:
+                                    db.update_project_build_automation_status(st.session_state.orchestrator.project_id, True)
+
+                                st.success(f"Generated and saved `{filename}` to the project root.")
+                                time.sleep(2)
+                                st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
+                                st.rerun()
+                            else:
+                                st.error(f"No standard build script available for '{tech_stack_language}'. Please proceed manually.")
+
+                        except Exception as e:
+                            st.error(f"An error occurred during build script generation: {e}")
+
+            with col2:
+                if st.button("✍️ I Will Create it Manually", use_container_width=True):
+                    # Save the choice to the database
+                    with st.session_state.orchestrator.db_manager as db:
+                        db.update_project_build_automation_status(st.session_state.orchestrator.project_id, False)
+
+                    st.info("Acknowledged. You will be responsible for creating and maintaining the project's build script.")
+                    time.sleep(2)
+                    st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
+                    st.rerun()
 
         elif current_phase_name == "CODING_STANDARD_GENERATION":
             st.header("Phase 2.A: Coding Standard Generation")
@@ -615,21 +677,36 @@ if page == "Project":
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
                                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                final_spec = project_details.get('final_spec_text')
-                                tech_spec = project_details.get('tech_spec_text')
+                                final_spec = project_details['final_spec_text']
+                                tech_spec = project_details['tech_spec_text']
 
                             if not all([api_key, final_spec, tech_spec]):
                                 st.error("Could not generate plan: Missing API Key, Final Specification, or Technical Specification.")
+
                             else:
                                 agent = PlanningAgent_AppTarget(api_key=api_key)
-                                plan_json = agent.generate_development_plan(final_spec, tech_spec)
+                                response_json_str = agent.generate_development_plan(final_spec, tech_spec)
 
-                                # Check if the agent returned an error
-                                if '"error":' in plan_json:
-                                    st.error(f"Failed to generate plan: {plan_json}")
-                                else:
-                                    st.session_state.development_plan = plan_json
-                                    st.rerun()
+                                try:
+                                    response_data = json.loads(response_json_str)
+
+                                    # Extract the development plan and the executable name
+                                    plan_data = response_data.get("development_plan")
+                                    main_executable = response_data.get("main_executable_file")
+
+                                    if not plan_data or not main_executable:
+                                        st.error("Failed to generate a valid plan and executable name from the AI.")
+                                    else:
+                                        # Save the executable name to the database
+                                        with st.session_state.orchestrator.db_manager as db:
+                                            db.update_project_apex_file(st.session_state.orchestrator.project_id, main_executable)
+
+                                        # Store the development plan in the session state
+                                        st.session_state.development_plan = json.dumps(plan_data, indent=4)
+                                        st.rerun()
+
+                                except json.JSONDecodeError:
+                                    st.error(f"Failed to parse the development plan from the AI: {response_json_str}")
                         except Exception as e:
                             st.error(f"An unexpected error occurred: {e}")
 

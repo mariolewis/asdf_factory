@@ -38,6 +38,7 @@ class FactoryPhase(Enum):
     ENV_SETUP_TARGET_APP = auto()
     SPEC_ELABORATION = auto()
     TECHNICAL_SPECIFICATION = auto()
+    BUILD_SCRIPT_SETUP = auto()
     CODING_STANDARD_GENERATION = auto()
     PLANNING = auto()
     GENESIS = auto()
@@ -114,6 +115,7 @@ class MasterOrchestrator:
         FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
         FactoryPhase.SPEC_ELABORATION: "Application Specification",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
+        FactoryPhase.BUILD_SCRIPT_SETUP: "Build Script Generation",
         FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
         FactoryPhase.PLANNING: "Development Planning",
         FactoryPhase.GENESIS: "Iterative Development",

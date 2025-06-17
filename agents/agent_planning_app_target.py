@@ -48,13 +48,15 @@ class PlanningAgent_AppTarget:
             You are an expert Lead Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format based on the provided Application Specification and Technical Specification.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Deconstruct the Project:** Break down the entire application into a logical sequence of fine-grained, independent components. The sequence should start with foundational elements (like data models or utility classes) and build up to more complex features.
-            2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element must be a JSON object `{{}}` representing one micro-specification (a single task).
-            3.  **JSON Object Schema:** Each JSON object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
-            4.  **Micro-specifications:** The `task_description` for each task must be a clear and detailed instruction for another AI agent to build that specific component.
-            5.  **Component Types:** The `component_type` key MUST be one of: `CLASS`, `FUNCTION`, `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE`.
-            6.  **File Paths:** Provide logical relative paths for `component_file_path` and `test_file_path` based on standard project structures for the chosen technology stack.
-            7.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
+            1.  **Determine Main Executable:** First, based on the specifications and chosen technology stack, determine a logical name for the main executable file (e.g., `main.py`, `app.kt`).
+            2.  **Deconstruct the Project:** Break down the entire application into a logical sequence of fine-grained, independent components.
+            3.  **JSON Object Output:** Your entire response MUST be a single, valid JSON object `{}`.
+            4.  **JSON Schema:** The JSON object MUST have two top-level keys:
+                - `"main_executable_file"`: A string containing the name of the main executable file you determined.
+                - `"development_plan"`: A JSON array `[]` where each element is a micro-specification task.
+            5.  **Micro-specification Schema:** Each task object within the `development_plan` array MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
+            6.  **Component Types:** The `component_type` key MUST be one of: `CLASS`, `FUNCTION`, `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE`.
+            7.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object itself.
 
             **--- INPUT 1: Finalized Application Specification ---**
             {final_spec_text}
@@ -69,7 +71,7 @@ class PlanningAgent_AppTarget:
             response = self.model.generate_content(prompt)
             cleaned_response = response.text.strip()
             # Validate that the response is a JSON array
-            if cleaned_response.startswith('[') and cleaned_response.endswith(']'):
+            if cleaned_response.startswith('{') and cleaned_response.endswith('}'):
                 json.loads(cleaned_response) # Final validation check
                 return cleaned_response
             else:
