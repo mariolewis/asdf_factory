@@ -490,8 +490,16 @@ if page == "Project":
                     with st.spinner(f"Generating standard build script for {tech_stack_language}..."):
                         try:
                             from agents.agent_build_script_generator import BuildScriptGeneratorAgent
-                            agent = BuildScriptGeneratorAgent()
-                            script_info = agent.generate_script(tech_stack_language)
+
+                            with st.session_state.orchestrator.db_manager as db:
+                                api_key = db.get_config_value("LLM_API_KEY")
+
+                            if not api_key:
+                                st.error("Cannot generate script: LLM API Key is not set.")
+                            else:
+                                agent = BuildScriptGeneratorAgent(api_key=api_key)
+                                # We pass the full tech_spec_text for better context
+                                script_info = agent.generate_script(tech_spec_text)
 
                             if script_info:
                                 filename, content = script_info
@@ -736,14 +744,6 @@ if page == "Project":
 
                     How would you like to proceed?
                     """)
-                else:
-                    # This state is reached if the plan was just completed
-                    st.progress(1.0, text=f"All {total_tasks} tasks complete!")
-                    st.success("Development plan execution is complete. The next step is Integration & Verification.")
-                    if st.button("▶️ Proceed to Integration & Verification"):
-                         st.session_state.orchestrator.set_phase("INTEGRATION_AND_VERIFICATION")
-                         st.rerun()
-                    st.stop() # Stop rendering the buttons below
 
                 # Create columns for the buttons for a clean layout.
                 col1, col2, col3, col4, col5, col6 = st.columns(6)
@@ -878,20 +878,18 @@ if page == "Project":
 
             with col1:
                 if st.button("🔄 Retry Automated Fix", use_container_width=True, help="This will reset the counter and run the entire triage and fix pipeline again from a clean state."):
-                    st.session_state.orchestrator.debug_attempt_counter = 0 # Reset counter
-                    # A failure log needs to be passed; we can use a generic one for a manual retry.
-                    st.session_state.orchestrator.escalate_for_manual_debug("PM-initiated retry after escalation.")
+                    st.session_state.orchestrator.handle_pm_debug_choice("RETRY")
                     st.rerun()
 
             with col2:
                 if st.button("⏸️ Pause for Manual Fix", use_container_width=True, help="This will pause the factory, allowing you to manually investigate and fix the code in your own editor."):
-                    st.session_state.orchestrator.pause_project()
+                    st.session_state.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
                     st.success("Project paused. You can now manually edit the code. The factory will remain idle.")
                     st.rerun()
 
             with col3:
                 if st.button("🚫 Ignore Bug & Proceed", use_container_width=True, help="Acknowledge the bug but proceed with the next task in the development plan. The bug will be noted but not fixed now."):
-                    st.session_state.orchestrator.set_phase("GENESIS") # Or a more sophisticated "ignore" state
+                    st.session_state.orchestrator.handle_pm_debug_choice("IGNORE")
                     st.toast("Bug ignored. Proceeding with the next development task.")
                     st.rerun()
 

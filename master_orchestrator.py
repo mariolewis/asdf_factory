@@ -1295,35 +1295,36 @@ class MasterOrchestrator:
             logging.error(f"Tier 3 interactive triage failed. Error: {e}")
             self.set_phase("DEBUG_PM_ESCALATION")
 
-    def handle_pm_debug_choice(self, choice: str, details: dict = None):
+    def handle_pm_debug_choice(self, choice: str):
         """
         Handles the decision made by the PM during a debug escalation.
+
+        Args:
+            choice (str): The PM's selected option ('RETRY', 'MANUAL_PAUSE', or 'IGNORE').
         """
-        logging.info(f"PM selected debug option: {choice}")
+        logging.info(f"PM selected debug escalation option: {choice}")
 
         if choice == "RETRY":
-            # For RETRY, we can re-trigger the escalation logic, which will
-            # attempt the automated triage and fix process again.
-            # A failure_log would need to be passed in from the UI state.
-            failure_log_from_state = "Retrying after PM request..."
+            # Reset the counter and re-trigger the entire triage process.
+            self.debug_attempt_counter = 0
+            # A failure log needs to be passed; we retrieve the last known one
+            # from the task awaiting approval, if it exists.
+            failure_log_from_state = self.task_awaiting_approval.get('failure_log', "PM-initiated retry after escalation.")
             self.escalate_for_manual_debug(failure_log_from_state)
 
         elif choice == "MANUAL_PAUSE":
-            # For MANUAL_PAUSE, we can set the project to an IDLE-like state
-            # to allow the PM to work on the code outside the factory.
-            logging.info("Pausing project for manual PM investigation.")
-            self.current_phase = FactoryPhase.IDLE # Or a new 'PAUSED' state
+            # Use the existing pause_project method.
+            self.pause_project()
+            logging.info("Project paused for manual PM investigation.")
 
         elif choice == "IGNORE":
-            # For IGNORE, we would ideally find the artifact that's failing
-            # and update its status in the RoWD to a 'KNOWN_ISSUE' state.
-            # This is a placeholder for that logic.
-            logging.warning("Acknowledging and ignoring bug. Future implementation will update RoWD.")
-            self.set_phase("GENESIS") # Move on to the next task
-
-        else:
-            # Default fallback
+            # Acknowledge the bug and move on to the next task in the plan.
+            # A more advanced implementation would update the artifact's status.
+            logging.warning("Acknowledging and ignoring bug. Proceeding with the next task.")
             self.set_phase("GENESIS")
+
+        # Clean up the task that was awaiting approval.
+        self.task_awaiting_approval = None
 
     def pause_project(self):
         """
