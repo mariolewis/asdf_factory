@@ -29,9 +29,7 @@ class BuildScriptGeneratorAgent:
         genai.configure(api_key=api_key)
         self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20') # Flash is suitable for this constrained task
 
-    #
-# --- REPLACE THE ENTIRE METHOD WITH THIS ---
-#
+
     def generate_script(self, tech_stack_description: str, target_os: str) -> Optional[Tuple[str, str]]:
         """
         Generates a filename and content for a build script via LLM,
