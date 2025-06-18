@@ -28,6 +28,7 @@ from agents.agent_test_result_evaluation_app_target import TestResultEvaluationA
 from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
 from agents.agent_learning_capture import LearningCaptureAgent
 from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarget
+from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,6 +40,7 @@ class FactoryPhase(Enum):
     SPEC_ELABORATION = auto()
     TECHNICAL_SPECIFICATION = auto()
     BUILD_SCRIPT_SETUP = auto()
+    TEST_ENVIRONMENT_SETUP = auto()
     CODING_STANDARD_GENERATION = auto()
     PLANNING = auto()
     GENESIS = auto()
@@ -123,6 +125,7 @@ class MasterOrchestrator:
         FactoryPhase.SPEC_ELABORATION: "Application Specification",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
         FactoryPhase.BUILD_SCRIPT_SETUP: "Build Script Generation",
+        FactoryPhase.TEST_ENVIRONMENT_SETUP: "Test Environment Setup",
         FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
         FactoryPhase.PLANNING: "Development Planning",
         FactoryPhase.GENESIS: "Iterative Development",
@@ -505,10 +508,18 @@ class MasterOrchestrator:
                     (project_root_path / file_path).write_text(modified_code, encoding='utf-8')
                     logging.info(f"Successfully applied integration modifications to {file_path}.")
 
-                # 4. Final Build, Verification, and Commit
-                logging.info("Invoking BuildAndCommitAgent for final verification and commit...")
-                build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-                tests_passed, test_output = build_agent.build_and_commit_component("pytest")
+                # 4. Final Build and Verification
+                logging.info("Invoking VerificationAgent for final verification...")
+
+                # Import the agent here to avoid circular dependency issues at the top level
+                from agents.agent_verification_app_target import VerificationAgent_AppTarget
+                verification_agent = VerificationAgent_AppTarget(api_key=api_key)
+
+                # The agent now intelligently determines the test command from the tech spec
+                tests_passed, test_output = verification_agent.run_verification_tests(
+                    project_root=project_root_path,
+                    tech_spec_text=project_details['tech_spec_text']
+                )
 
                 if not tests_passed:
                     # On failure, create a detailed log and call the debug pipeline.
@@ -1800,3 +1811,76 @@ class MasterOrchestrator:
         except Exception as e:
             # We don't want to halt the main flow if learning capture fails.
             logging.warning(f"Could not capture learning entry for spec clarification: {e}")
+
+    def start_test_environment_setup(self):
+        """
+        Calls the advisor agent to get a list of test environment setup tasks.
+
+        Returns:
+            A list of setup task dictionaries, or None on failure.
+        """
+        logging.info("Initiating test environment setup guidance.")
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                project_details = db.get_project_by_id(self.project_id)
+                tech_spec_text = project_details['tech_spec_text']
+
+                if not api_key or not tech_spec_text:
+                    raise Exception("Cannot get setup tasks: Missing API Key or Technical Specification.")
+
+            # TODO: In a future iteration, capture the target OS during tech spec phase
+            # and pass it here for more accurate guidance.
+            target_os = "Linux" # Using a generic default for now.
+
+            agent = TestEnvironmentAdvisorAgent(api_key=api_key)
+            tasks = agent.get_setup_tasks(tech_spec_text, target_os)
+            return tasks
+
+        except Exception as e:
+            logging.error(f"Failed to start test environment setup: {e}")
+            return None
+
+    def get_help_for_setup_task(self, task_instructions: str):
+        """
+        Calls the advisor agent to get detailed help for a specific setup task.
+
+        Returns:
+            A string containing helpful information.
+        """
+        logging.info("Getting help for a test environment setup task.")
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("Cannot get help: Missing API Key.")
+
+            # TODO: Pass the correct target_os.
+            target_os = "Linux" # Using a generic default for now.
+
+            agent = TestEnvironmentAdvisorAgent(api_key=api_key)
+            help_text = agent.get_help_for_task(task_instructions, target_os)
+            return help_text
+
+        except Exception as e:
+            logging.error(f"Failed to get help for setup task: {e}")
+            return "An error occurred while fetching help. Please check the logs."
+
+    def finalize_test_environment_setup(self, test_command: str):
+        """
+        Saves the confirmed test command and transitions to the next phase.
+
+        Returns:
+            True on success, False on failure.
+        """
+        logging.info(f"Finalizing test environment setup. Confirmed command: '{test_command}'")
+        try:
+            with self.db_manager as db:
+                db.update_project_test_command(self.project_id, test_command)
+
+            self.set_phase("CODING_STANDARD_GENERATION")
+            logging.info("Test environment setup complete. Transitioning to Coding Standard Generation.")
+            return True
+        except Exception as e:
+            logging.error(f"Failed to finalize test environment setup: {e}")
+            return False

@@ -464,73 +464,87 @@ if page == "Project":
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
-            st.markdown("The technical specification is complete. Now, let's establish the build script for the project.")
-            st.info("This script (e.g., `requirements.txt`, `pom.xml`, `build.gradle.kts`) manages project dependencies and how the application is built.")
+            st.markdown("Please follow the steps below to set up the necessary testing frameworks for your project's technology stack.")
 
-            # Get the tech stack from the saved technical specification to inform the agent
-            with st.session_state.orchestrator.db_manager as db:
-                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                tech_spec_text = project_details['tech_spec_text']
+            # Initialize the state for this interactive workflow
+            if 'setup_tasks' not in st.session_state:
+                with st.spinner("Analyzing technical spec to generate setup steps..."):
+                    st.session_state.setup_tasks = st.session_state.orchestrator.start_test_environment_setup()
+                    st.session_state.current_setup_step = 0
+                    st.session_state.setup_help_text = None
 
-            # A simple way to infer the primary language for the agent
-            # A more advanced method could use an LLM call here.
-            tech_stack_language = "Python" # Default
-            if "kotlin" in tech_spec_text.lower() or "gradle" in tech_spec_text.lower():
-                tech_stack_language = "Kotlin"
-            elif "java" in tech_spec_text.lower() or "maven" in tech_spec_text.lower():
-                tech_stack_language = "Java" # Example for future extension
+            tasks = st.session_state.setup_tasks
 
-            st.write(f"Inferred primary language from Technical Specification: **{tech_stack_language}**")
-            st.divider()
+            if tasks is None:
+                st.error("Could not generate setup tasks. Please check the logs and ensure the technical specification is complete.")
+            elif st.session_state.current_setup_step >= len(tasks):
+                # --- All steps are completed, now finalize ---
+                st.success("All setup steps have been actioned.")
+                st.markdown("Please confirm the final command that should be used to run all automated tests for this project.")
 
-            col1, col2 = st.columns(2)
+                with st.session_state.orchestrator.db_manager as db:
+                     project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                     tech_spec_text = project_details['tech_spec_text']
 
-            with col1:
-                if st.button("🤖 Auto-Generate Build Script", use_container_width=True, type="primary"):
-                    with st.spinner(f"Generating standard build script for {tech_stack_language}..."):
-                        try:
-                            from agents.agent_build_script_generator import BuildScriptGeneratorAgent
-
-                            with st.session_state.orchestrator.db_manager as db:
-                                api_key = db.get_config_value("LLM_API_KEY")
-
-                            if not api_key:
-                                st.error("Cannot generate script: LLM API Key is not set.")
-                            else:
-                                agent = BuildScriptGeneratorAgent(api_key=api_key)
-                                # We pass the full tech_spec_text for better context
-                                script_info = agent.generate_script(tech_spec_text)
-
-                            if script_info:
-                                filename, content = script_info
-                                project_root = Path(project_details['project_root_folder'])
-                                script_path = project_root / filename
-                                script_path.write_text(content, encoding='utf-8')
-
-                                # Save the choice to the database
-                                with st.session_state.orchestrator.db_manager as db:
-                                    db.update_project_build_automation_status(st.session_state.orchestrator.project_id, True)
-
-                                st.success(f"Generated and saved `{filename}` to the project root.")
-                                time.sleep(2)
-                                st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
-                                st.rerun()
-                            else:
-                                st.error(f"No standard build script available for '{tech_stack_language}'. Please proceed manually.")
-
-                        except Exception as e:
-                            st.error(f"An error occurred during build script generation: {e}")
-
-            with col2:
-                if st.button("✍️ I Will Create it Manually", use_container_width=True):
-                    # Save the choice to the database
+                # Pre-fill with a suggestion from the LLM
+                if 'suggested_test_command' not in st.session_state:
+                    from agents.agent_verification_app_target import VerificationAgent_AppTarget # Local import
                     with st.session_state.orchestrator.db_manager as db:
-                        db.update_project_build_automation_status(st.session_state.orchestrator.project_id, False)
+                        api_key = db.get_config_value("LLM_API_KEY")
+                    agent = VerificationAgent_AppTarget(api_key)
+                    st.session_state.suggested_test_command = agent._get_test_command(tech_spec_text)
 
-                    st.info("Acknowledged. You will be responsible for creating and maintaining the project's build script.")
-                    time.sleep(2)
-                    st.session_state.orchestrator.set_phase("CODING_STANDARD_GENERATION")
-                    st.rerun()
+                confirmed_command = st.text_input(
+                    "Test Execution Command:",
+                    value=st.session_state.suggested_test_command
+                )
+
+                if st.button("Finalize Test Environment Setup", type="primary"):
+                    if confirmed_command.strip():
+                        if st.session_state.orchestrator.finalize_test_environment_setup(confirmed_command):
+                            # Clean up session state for this phase
+                            keys_to_clear = ['setup_tasks', 'current_setup_step', 'setup_help_text', 'suggested_test_command']
+                            for key in keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
+                        else:
+                            st.error("Failed to finalize setup. Please check the logs.")
+                    else:
+                        st.warning("The test execution command cannot be empty.")
+
+            else:
+                # --- Display the current setup step ---
+                current_step_index = st.session_state.current_setup_step
+                task = tasks[current_step_index]
+                st.subheader(f"Step {current_step_index + 1} of {len(tasks)}: {task.get('tool_name', 'Unnamed Step')}")
+                st.markdown(task.get('instructions', 'No instructions provided.'))
+
+                # Display help text if it exists
+                if st.session_state.setup_help_text:
+                    st.info(st.session_state.setup_help_text)
+
+                st.divider()
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    if st.button("✅ Done, Next Step", use_container_width=True, type="primary"):
+                        st.session_state.current_setup_step += 1
+                        st.session_state.setup_help_text = None # Clear help text when moving on
+                        st.rerun()
+
+                with col2:
+                    if st.button("❓ I Need Help", use_container_width=True):
+                        with st.spinner("Getting more details..."):
+                            st.session_state.setup_help_text = st.session_state.orchestrator.get_help_for_setup_task(task.get('instructions', ''))
+                        st.rerun()
+
+                with col3:
+                    if st.button("⚠️ Ignore & Continue", use_container_width=True):
+                        logging.warning(f"PM skipped setup step: {task.get('tool_name')}")
+                        st.session_state.current_setup_step += 1
+                        st.session_state.setup_help_text = None
+                        st.rerun()
 
         elif current_phase_name == "CODING_STANDARD_GENERATION":
             st.header("Phase 2.A: Coding Standard Generation")

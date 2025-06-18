@@ -121,7 +121,8 @@ class ASDFDBManager:
             coding_standard_text TEXT,
             development_plan_text TEXT,
             integration_plan_text TEXT,
-            ui_test_plan_text TEXT
+            ui_test_plan_text TEXT,
+            test_execution_command TEXT
         );
         """
         self._execute_query(create_projects_table)
@@ -380,6 +381,19 @@ class ASDFDBManager:
         params = (status_as_int, project_id)
         self._execute_query(query, params)
         logging.info(f"Set build automation status for project ID '{project_id}' to {is_automated}.")
+
+    def update_project_test_command(self, project_id: str, command: str):
+        """
+        Saves the PM-confirmed test execution command for the project.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            command (str): The confirmed command to run all tests.
+        """
+        query = "UPDATE Projects SET test_execution_command = ? WHERE project_id = ?"
+        params = (command, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set test execution command for project ID '{project_id}'.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 
