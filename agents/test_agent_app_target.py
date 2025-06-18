@@ -26,31 +26,33 @@ class TestAgent_AppTarget:
         # Configure the genai library with the API key upon initialization.
         genai.configure(api_key=self.api_key)
 
-    def generate_unit_tests_for_component(self, source_code: str, component_spec: str, coding_standard: str) -> str:
+    def generate_unit_tests_for_component(self, source_code: str, component_spec: str, coding_standard: str, target_language: str) -> str:
         """
-        Generates unit test code for a given component, adhering to a standard.
+        Generates unit test code for a given component, adhering to a standard
+        and targeting a specific programming language.
 
         Args:
             source_code (str): The source code of the component to be tested.
             component_spec (str): The micro-specification describing behavior.
             coding_standard (str): The coding standard to enforce.
+            target_language (str): The programming language of the component.
 
         Returns:
             str: The generated source code for the unit tests.
-                 Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+            # Use the more capable model for test generation
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
             prompt = f"""
             You are an expert Software Quality Assurance (QA) Engineer specializing in automated testing.
             Your task is to write a comprehensive suite of unit tests for the provided source code, based on its specification and adhering to a strict coding standard.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Comprehensive Coverage:** Your tests MUST cover the "happy path," edge cases (e.g., null inputs, empty lists, boundary values), and error handling.
-            2.  **Adherence to Coding Standard:** The unit test code you generate MUST follow all rules in the provided coding standard.
-            3.  **Use Standard Testing Frameworks:** Assume the use of standard testing frameworks for the target language (e.g., pytest for Python, JUnit/Mockito for Java/Kotlin).
-            4.  **No Citations:** Your output must NOT contain any citation markers (e.g., ``, `` etc.). The generated code must be clean and immediately compilable.
+            1.  **Target Language:** The component is written in **{target_language}**. Your unit tests MUST be written for this language and its standard testing frameworks (e.g., pytest for Python, JUnit/Mockito for Java/Kotlin).
+            2.  **Comprehensive Coverage:** Your tests MUST cover the "happy path," edge cases (e.g., null inputs, empty lists, boundary values), and error handling.
+            3.  **Adherence to Coding Standard:** The unit test code you generate MUST follow all rules in the provided coding standard.
+            4.  **No Citations:** Your output must NOT contain any citation markers (e.g., `[cite]`).
             5.  **Raw Code Output:** Your entire response MUST BE ONLY the raw source code for the unit tests.
 
             **--- INPUTS ---**
@@ -60,7 +62,7 @@ class TestAgent_AppTarget:
             {component_spec}
             ```
 
-            **2. The Component's Source Code (To be tested):**
+            **2. The Component's Source Code (Language: {target_language}):**
             ```
             {source_code}
             ```
@@ -70,7 +72,7 @@ class TestAgent_AppTarget:
             {coding_standard}
             ```
 
-            **--- Generated Unit Test Source Code ---**
+            **--- Generated Unit Test Source Code (Language: {target_language}) ---**
             """
 
             response = model.generate_content(prompt)

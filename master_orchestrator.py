@@ -298,71 +298,76 @@ class MasterOrchestrator:
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
         Handles the 'generate -> review -> correct' workflow for standard source code.
-        This version now retrieves and enforces the project-specific coding standard.
+        This version is now technology-agnostic.
         """
-        logging.info(f"Executing standard code generation for: {task.get('component_name')}")
+        component_name = task.get("component_name")
+        logging.info(f"Executing language-agnostic code generation for: {component_name}")
 
-        # Retrieve all necessary context, including the new coding standard
+        # 1. Retrieve all necessary context, including coding standard and target language
         project_details = db.get_project_by_id(self.project_id)
         coding_standard = project_details['coding_standard_text']
+        target_language = project_details['technology_stack']
+
+        if not target_language:
+            raise Exception(f"Cannot generate code for '{component_name}': Target Language/Technology Stack is not set for this project.")
         if not coding_standard:
-            logging.warning("No project-specific coding standard found in database. Using a default standard.")
-            coding_standard = "Follow standard PEP 8 conventions for Python. Ensure all code is well-commented."
+            logging.warning("No project-specific coding standard found. Using a default standard.")
+            coding_standard = f"Follow standard conventions for {target_language}. Ensure all code is well-commented."
 
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
         micro_spec_content = task.get("task_description")
-        component_name = task.get("component_name")
 
-        # Instantiate all necessary agents
+        # 2. Instantiate all necessary agents
         logic_agent = LogicAgent_AppTarget(api_key=api_key)
         code_agent = CodeAgent_AppTarget(api_key=api_key)
         review_agent = CodeReviewAgent(api_key=api_key)
         test_agent = TestAgent_AppTarget(api_key=api_key)
-        build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-        doc_agent = DocUpdateAgentRoWD(db_manager=self.db_manager)
+        doc_agent = DocUpdateAgentRoWD(self.db_manager)
 
-        # Generate logic and initial code, now using the project's standard
+        # 3. Generate logic and initial code, now passing the target language
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
-        source_code = code_agent.generate_code_for_component(logic_plan, coding_standard)
+        source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language)
 
-        # Automated review and correction loop
+        # 4. Automated review and correction loop
         MAX_REVIEW_ATTEMPTS = 2
         review_status, discrepancies = "fail", ""
         for attempt in range(MAX_REVIEW_ATTEMPTS):
-            # Pass the coding standard to the review agent for enforcement
             review_status, discrepancies = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, coding_standard)
             if review_status == "pass":
                 break
             else:
+                logging.warning(f"Component '{component_name}' failed code review on attempt {attempt + 1}. Feedback: {discrepancies}")
                 if attempt < MAX_REVIEW_ATTEMPTS - 1:
-                    # Attempt correction using the standard and feedback
-                    source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, feedback=discrepancies)
+                    source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, feedback=discrepancies)
 
         if review_status != "pass":
-            raise Exception(f"Component '{component_name}' failed code review after all attempts. Last feedback: {discrepancies}")
+            raise Exception(f"Component '{component_name}' failed code review after all attempts.")
 
-        # Generate unit tests for the approved code, also using the standard
-        unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard)
+        # 5. Generate unit tests for the approved code, also passing the target language
+        unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
 
-        # Conditional Build Logic based on PM's choice
+        # 6. Build, commit, and update RoWD (logic remains the same)
+        build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
         is_build_automated = bool(project_details['is_build_automated'])
         commit_hash = None
 
         if is_build_automated:
-            build_success, build_output = build_agent.build_and_commit_component(task.get("component_file_path"), source_code, task.get("test_file_path"), unit_tests)
+            # This part now needs to be intelligent, we will address this next.
+            # For now, we assume a generic test runner can be figured out by the build tool.
+            build_success, build_output = build_agent.build_and_commit_component(
+                task.get("component_file_path"), source_code, task.get("test_file_path"), unit_tests)
             if not build_success:
                 raise Exception(f"Build failed for component {component_name}: {build_output}")
             commit_hash = build_output.split(":")[-1].strip()
         else:
-            # Manual build path: write files and commit without building
+            # Manual build path logic remains the same
             component_path = project_root_path / task.get("component_file_path")
             test_path = project_root_path / task.get("test_file_path")
             component_path.parent.mkdir(parents=True, exist_ok=True)
             test_path.parent.mkdir(parents=True, exist_ok=True)
             component_path.write_text(source_code, encoding='utf-8')
             test_path.write_text(unit_tests, encoding='utf-8')
-
             files_to_commit = [task.get("component_file_path"), task.get("test_file_path")]
             commit_message = f"feat: Add component {component_name} (manual build)"
             commit_success, commit_result = build_agent.commit_changes(files_to_commit, commit_message)
@@ -371,7 +376,6 @@ class MasterOrchestrator:
                 raise Exception(f"Git commit failed for component {component_name}: {commit_result}")
             commit_hash = commit_result.split(":")[-1].strip()
 
-        # Update RoWD with the details of the successfully generated and committed artifact
         doc_agent.update_artifact_record({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
             "file_path": task.get("component_file_path"), "artifact_name": component_name,
