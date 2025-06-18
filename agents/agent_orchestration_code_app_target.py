@@ -19,7 +19,7 @@ class OrchestrationCodeAgent:
             raise ValueError("API key cannot be empty.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
     def apply_modifications(self, original_code: str, modifications_json: str) -> str:
         """

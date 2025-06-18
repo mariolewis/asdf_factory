@@ -43,7 +43,7 @@ class LogicAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
             prompt = f"""
             You are an expert software architect. Your task is to take a detailed "micro-specification"

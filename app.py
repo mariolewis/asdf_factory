@@ -371,28 +371,37 @@ if page == "Project":
                                 st.rerun()
 
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
-            st.header("Phase 1.5: Technical Specification & Architecture")
-            st.markdown("Now we will establish the technical foundation for the project. You can either define the technology stack and architecture directly, or have the ASDF analyze the functional specification and propose one for your review.")
+            st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
+            st.markdown("First, confirm the target OS. Then, establish the technical foundation for the project by either defining the tech stack directly, or having ASDF propose one for your review.")
 
             # Initialize session state for this phase
             if 'tech_spec_choice' not in st.session_state:
                 st.session_state.tech_spec_choice = None
             if 'tech_spec_draft' not in st.session_state:
                 st.session_state.tech_spec_draft = ""
+            if 'target_os' not in st.session_state:
+                st.session_state.target_os = "Linux" # Default value
+
+            # --- NEW WIDGET to capture Target OS ---
+            st.session_state.target_os = st.selectbox(
+                "Select Target Operating System:",
+                ["Linux", "Windows", "macOS"],
+                key="os_select"
+            )
+            st.divider()
 
             # Get the finalized functional spec from the database for context
             with st.session_state.orchestrator.db_manager as db:
                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                 final_spec_text = project_details['final_spec_text']
 
-            # Let the user choose the method
+            # Let the user choose the method for tech spec creation
             st.session_state.tech_spec_choice = st.radio(
-                "Choose your method:",
+                "Choose your method for creating the Technical Specification:",
                 ["Let ASDF propose a technology stack", "I will define the technology stack directly"],
                 key="tech_spec_radio"
             )
 
-            # --- Handle AI Proposal Path ---
             if st.session_state.tech_spec_choice == "Let ASDF propose a technology stack":
                 if st.button("Generate Proposal"):
                     with st.spinner("AI is analyzing the specification and generating a proposal..."):
@@ -404,65 +413,104 @@ if page == "Project":
                             else:
                                 from agents.agent_tech_stack_proposal import TechStackProposalAgent
                                 agent = TechStackProposalAgent(api_key=api_key)
-                                proposal = agent.propose_stack(final_spec_text)
+                                # This is the corrected call with the target_os from session state
+                                proposal = agent.propose_stack(
+                                    functional_spec_text=final_spec_text,
+                                    target_os=st.session_state.target_os
+                                )
                                 st.session_state.tech_spec_draft = proposal
                         except Exception as e:
                             st.error(f"Failed to generate proposal: {e}")
 
-            # --- Text area for final review, editing, or direct input ---
             st.session_state.tech_spec_draft = st.text_area(
                 "Technical Specification Document",
                 value=st.session_state.tech_spec_draft,
-                height=400,
-                help="You can edit the AI-generated proposal here, or write/paste your own technical specification if you chose the direct input method."
+                height=400
             )
 
             st.divider()
 
             # --- Approval Step ---
             if st.session_state.tech_spec_draft:
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("Approve Technical Specification", use_container_width=True, type="primary"):
-                        with st.spinner("Saving technical specification..."):
-                            with st.session_state.orchestrator.db_manager as db:
-                                db.save_tech_specification(
-                                    st.session_state.orchestrator.project_id,
-                                    st.session_state.tech_spec_draft
-                                )
-                            st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
-                            # ... (rest of the button logic is the same)
-                with col2:
-                    # Add the download button
-                    report_generator = ReportGeneratorAgent()
-                    tech_spec_docx_bytes = report_generator.generate_text_document_docx(
-                        title=f"Technical Specification - {st.session_state.orchestrator.project_name}",
-                        content=st.session_state.tech_spec_draft
-                    )
-                    st.download_button(
-                        label="📄 Print to .docx",
-                        data=tech_spec_docx_bytes,
-                        file_name=f"Technical_Specification_{st.session_state.orchestrator.project_id}.docx",
-                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                        use_container_width=True
-                    )
-                    with st.spinner("Saving technical specification..."):
+                if st.button("Approve Technical Specification", use_container_width=True, type="primary"):
+                    with st.spinner("Saving technical specification and target OS..."):
                         with st.session_state.orchestrator.db_manager as db:
-                            db.save_tech_specification(
-                                st.session_state.orchestrator.project_id,
-                                st.session_state.tech_spec_draft
-                            )
+                            # Save the newly captured Target OS
+                            db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
+                            # Save the technical specification text
+                            db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
 
-                        # Transition to the next phase
+                        # Transition to the new build script setup phase
                         st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
 
                         # Clean up session state for this phase
-                        for key in ['tech_spec_choice', 'tech_spec_draft']:
+                        keys_to_clear = ['tech_spec_choice', 'tech_spec_draft', 'target_os']
+                        for key in keys_to_clear:
                              if key in st.session_state:
                                 del st.session_state[key]
                         st.rerun()
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
+            st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
+            st.markdown("The technical specification is complete. Now, let's establish the build script for the project.")
+            st.info("This script (e.g., `requirements.txt`, `pom.xml`) manages project dependencies and how the application is built.")
+
+            # Get necessary context from the database
+            with st.session_state.orchestrator.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                tech_spec_text = project_details['tech_spec_text']
+                target_os = project_details['target_os']
+
+            if not target_os:
+                st.error("Cannot proceed: Target OS has not been set in the previous step.")
+            else:
+                st.write(f"Generating options for Target OS: **{target_os}**")
+                st.divider()
+
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🤖 Auto-Generate Build Script", use_container_width=True, type="primary"):
+                        with st.spinner(f"Generating standard build script for the specified tech stack..."):
+                            try:
+                                if not api_key:
+                                    st.error("Cannot generate script: LLM API Key is not set.")
+                                else:
+                                    from agents.agent_build_script_generator import BuildScriptGeneratorAgent
+                                    agent = BuildScriptGeneratorAgent(api_key=api_key)
+                                    script_info = agent.generate_script(tech_spec_text, target_os)
+
+                                    if script_info:
+                                        filename, content = script_info
+                                        project_root = Path(project_details['project_root_folder'])
+                                        (project_root / filename).write_text(content, encoding='utf-8')
+
+                                        with st.session_state.orchestrator.db_manager as db:
+                                            db.update_project_build_automation_status(st.session_state.orchestrator.project_id, True)
+
+                                        st.success(f"Generated and saved `{filename}` to the project root.")
+                                        time.sleep(2)
+                                        # CORRECT TRANSITION to the new Test Environment Setup phase
+                                        st.session_state.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
+                                        st.rerun()
+                                    else:
+                                        st.error(f"The AI was unable to generate a build script. Please proceed manually.")
+
+                            except Exception as e:
+                                st.error(f"An error occurred during build script generation: {e}")
+
+                with col2:
+                    if st.button("✍️ I Will Create it Manually", use_container_width=True):
+                        with st.session_state.orchestrator.db_manager as db:
+                            db.update_project_build_automation_status(st.session_state.orchestrator.project_id, False)
+
+                        st.info("Acknowledged. You will be responsible for the project's build script.")
+                        time.sleep(2)
+                        # CORRECT TRANSITION to the new Test Environment Setup phase
+                        st.session_state.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
+                        st.rerun()
+
+        elif current_phase_name == "TEST_ENVIRONMENT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
             st.markdown("Please follow the steps below to set up the necessary testing frameworks for your project's technology stack.")
 
@@ -491,8 +539,15 @@ if page == "Project":
                     from agents.agent_verification_app_target import VerificationAgent_AppTarget # Local import
                     with st.session_state.orchestrator.db_manager as db:
                         api_key = db.get_config_value("LLM_API_KEY")
-                    agent = VerificationAgent_AppTarget(api_key)
-                    st.session_state.suggested_test_command = agent._get_test_command(tech_spec_text)
+
+                    if api_key and tech_spec_text:
+                        agent = VerificationAgent_AppTarget(api_key)
+                        # This calls the private helper, which is fine for this UI suggestion logic
+                        details = agent._get_test_execution_details(tech_spec_text)
+                        st.session_state.suggested_test_command = details.get("command") if details else "pytest"
+                    else:
+                        st.session_state.suggested_test_command = "pytest"
+
 
                 confirmed_command = st.text_input(
                     "Test Execution Command:",
@@ -522,7 +577,8 @@ if page == "Project":
 
                 # Display help text if it exists
                 if st.session_state.setup_help_text:
-                    st.info(st.session_state.setup_help_text)
+                    with st.chat_message("assistant", avatar="❓"):
+                        st.info(st.session_state.setup_help_text)
 
                 st.divider()
                 col1, col2, col3 = st.columns(3)

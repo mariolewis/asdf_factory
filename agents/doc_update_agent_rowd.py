@@ -66,7 +66,7 @@ class DocUpdateAgentRoWD:
             # This agent now needs to make an API call, so it needs the key and a model.
             import google.generativeai as genai
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
             prompt = f"""
             You are an expert technical writer responsible for keeping documentation in sync with source code.

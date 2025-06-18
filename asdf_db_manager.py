@@ -112,6 +112,7 @@ class ASDFDBManager:
             project_id TEXT PRIMARY KEY,
             project_name TEXT NOT NULL,
             creation_timestamp TEXT NOT NULL,
+            target_os TEXT,
             technology_stack TEXT,
             project_root_folder TEXT,
             apex_executable_name TEXT,
@@ -394,6 +395,19 @@ class ASDFDBManager:
         params = (command, project_id)
         self._execute_query(query, params)
         logging.info(f"Set test execution command for project ID '{project_id}'.")
+
+    def update_project_os(self, project_id: str, target_os: str):
+        """
+        Saves the selected target Operating System for the project.
+
+        Args:
+            project_id (str): The ID of the project to update.
+            target_os (str): The name of the target OS (e.g., "Windows").
+        """
+        query = "UPDATE Projects SET target_os = ? WHERE project_id = ?"
+        params = (target_os, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set target OS for project ID '{project_id}' to '{target_os}'.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 
