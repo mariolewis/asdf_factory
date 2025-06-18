@@ -4,6 +4,7 @@ This module contains the BuildAndCommitAgentAppTarget class.
 import subprocess
 import git
 from pathlib import Path
+import logging
 
 class BuildAndCommitAgentAppTarget:
     """
@@ -33,6 +34,60 @@ class BuildAndCommitAgentAppTarget:
             self.repo = git.Repo(self.repo_path)
         except git.InvalidGitRepositoryError:
             raise git.InvalidGitRepositoryError(f"The path provided is not a valid Git repository: {self.repo_path}")
+
+    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str) -> tuple[bool, str]:
+        """
+        Writes the component and its tests, runs all tests, and commits on success.
+
+        Args:
+            component_path_str (str): The relative path to the new source code file.
+            component_code (str): The content of the new source code.
+            test_path_str (str): The relative path to the new unit test file.
+            test_code (str): The content of the new unit tests.
+            test_command (str): The command to execute the entire test suite.
+
+        Returns:
+            A tuple containing a boolean for success/failure and an output string
+            (commit message on success, error on failure).
+        """
+        try:
+            # 1. Write the source code and test files to disk
+            component_path = self.repo_path / component_path_str
+            test_path = self.repo_path / test_path_str
+
+            component_path.parent.mkdir(parents=True, exist_ok=True)
+            component_path.write_text(component_code, encoding='utf-8')
+            logging.info(f"Wrote source code to {component_path}")
+
+            test_path.parent.mkdir(parents=True, exist_ok=True)
+            test_path.write_text(test_code, encoding='utf-8')
+            logging.info(f"Wrote unit tests to {test_path}")
+
+            # 2. Run the entire test suite to verify the new component and check for regressions
+            logging.info(f"Running test suite with command: '{test_command}'")
+            tests_passed, test_output = self.build_component(test_command)
+
+            if not tests_passed:
+                logging.error("Unit tests failed for new component. Aborting commit.")
+                return False, f"Unit tests failed for {component_path.name}:\n{test_output}"
+
+            # 3. If tests pass, commit both files
+            files_to_commit = [component_path_str, test_path_str]
+            component_name = component_path.name
+            commit_message = f"feat: Add component {component_name} and unit tests"
+
+            commit_success, commit_result = self.commit_changes(files_to_commit, commit_message)
+
+            if not commit_success:
+                raise Exception(f"Git commit failed after tests passed: {commit_result}")
+
+            logging.info(f"Successfully tested and committed component {component_name}.")
+            return True, commit_result
+
+        except Exception as e:
+            error_message = f"An unexpected error occurred in build_and_commit_component: {e}"
+            logging.error(error_message)
+            return False, error_message
 
     def build_component(self, build_command: str) -> tuple[bool, str]:
         """
