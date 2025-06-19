@@ -303,14 +303,14 @@ class MasterOrchestrator:
         component_name = task.get("component_name")
         logging.info(f"Executing language-agnostic code generation for: {component_name}")
 
-        # 1. Retrieve all necessary context
+        # 1. Retrieve all necessary context from the database
         project_details = db.get_project_by_id(self.project_id)
         coding_standard = project_details['coding_standard_text']
         target_language = project_details['technology_stack']
         test_command = project_details['test_execution_command']
 
         if not target_language:
-            raise Exception(f"Cannot generate code for '{component_name}': Target Language/Technology Stack is not set for this project.")
+            raise Exception(f"Cannot generate code for '{component_name}': Target Language is not set for this project.")
         if not coding_standard:
             logging.warning("No project-specific coding standard found. Using a default standard.")
             coding_standard = f"Follow standard conventions for {target_language}. Ensure all code is well-commented."
@@ -331,7 +331,19 @@ class MasterOrchestrator:
         source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language)
 
         # 4. Automated review and correction loop
-        # ... (this loop logic remains the same) ...
+        MAX_REVIEW_ATTEMPTS = 2
+        review_status, discrepancies = "fail", ""
+        for attempt in range(MAX_REVIEW_ATTEMPTS):
+            review_status, discrepancies = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, coding_standard)
+            if review_status == "pass":
+                break
+            else:
+                logging.warning(f"Component '{component_name}' failed code review on attempt {attempt + 1}. Feedback: {discrepancies}")
+                if attempt < MAX_REVIEW_ATTEMPTS - 1:
+                    source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, feedback=discrepancies)
+
+        if review_status != "pass":
+            raise Exception(f"Component '{component_name}' failed code review after all attempts.")
 
         # 5. Generate unit tests
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
@@ -345,7 +357,7 @@ class MasterOrchestrator:
             if not test_command:
                 raise Exception(f"Cannot build component '{component_name}': Test Execution Command is not set for this project.")
 
-            # This now calls the new method with all required arguments
+            # This now correctly calls the method you implemented in the agent
             build_success, build_output = build_agent.build_and_commit_component(
                 component_path_str=task.get("component_file_path"),
                 component_code=source_code,
@@ -1076,7 +1088,7 @@ class MasterOrchestrator:
         # Define status categories
         cr_pending_statuses = ["RAISED", "IMPACT_ANALYZED", "PLANNING_IN_PROGRESS", "IMPLEMENTATION_IN_PROGRESS"]
         cr_closed_statuses = ["COMPLETED", "CANCELLED"]
-        bug_pending_statuses = ["UNIT_TESTS_FAILING", "DEBUG_IN_PROGRESS", "AWAITING_PM_TRIAGE_INPUT", "DEBUG_PM_ESCALATION"]
+        bug_pending_statuses = ["UNIT_TESTS_FAILING", "DEBUG_IN_PROGRESS", "AWAITING_PM_TRIAGE_INPUT", "DEBUG_PM_ESCALATION", "KNOWN_ISSUE"]
 
         # Determine which statuses to query based on the filter
         cr_statuses_to_query = []
@@ -1120,7 +1132,8 @@ class MasterOrchestrator:
 
     def resume_project(self):
         """
-        Resumes a paused project by loading its last saved state from the database.
+        Resumes a paused project by loading its last saved detailed state from
+        the database, including the active development plan and cursor position.
         """
         if not self.project_id:
             logging.warning("No active project to resume.")
@@ -1131,11 +1144,29 @@ class MasterOrchestrator:
                 state_data = db.get_orchestration_state(self.project_id)
 
             if state_data:
+                # Restore the phase
                 saved_phase_name = state_data['current_phase']
-                self.set_phase(saved_phase_name)
-                logging.info(f"Project '{self.project_name}' resumed successfully. Returning to phase: {saved_phase_name}.")
-                # In a more advanced implementation, we would also restore the
-                # 'state_details' JSON blob to recover more granular state.
+                self.current_phase = FactoryPhase[saved_phase_name]
+
+                # Restore the detailed state from the JSON blob
+                state_details_json = state_data['state_details']
+                if state_details_json:
+                    try:
+                        details = json.loads(state_details_json)
+                        self.active_plan = details.get("active_plan")
+                        self.active_plan_cursor = details.get("active_plan_cursor", 0)
+                        self.debug_attempt_counter = details.get("debug_attempt_counter", 0)
+                        self.task_awaiting_approval = details.get("task_awaiting_approval")
+                        logging.info(f"Successfully restored detailed state. Cursor at step {self.active_plan_cursor}.")
+                    except json.JSONDecodeError:
+                        logging.error("Failed to parse state_details JSON. Resuming phase without detailed state.")
+
+                logging.info(f"Project '{self.project_name}' resumed successfully. Returning to phase: {self.current_phase.name}.")
+
+                # After resuming, clear the saved state from the DB to indicate the project is no longer "paused".
+                with self.db_manager as db:
+                    db.delete_orchestration_state_for_project(self.project_id)
+
                 return True
             else:
                 logging.warning(f"No saved state found for project '{self.project_name}'. Cannot resume.")
@@ -1147,24 +1178,15 @@ class MasterOrchestrator:
 
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
-        Initiates the triage and planning process for a bug.
-        It now acts as a router: for functional bugs, it bypasses technical
-        triage. For technical errors, it proceeds with Tiers 1, 2, and 3.
-
-        Args:
-            failure_log (str): The error log or functional bug description.
-            is_functional_bug (bool): Flag to indicate if the bug is functional,
-                                      allowing a bypass of technical triage.
+        Initiates the triage process, now with logic to identify and store
+        the failing artifact ID before escalating to the PM for a decision.
         """
         logging.info("A failure has triggered the debugging pipeline.")
 
-        # This is the new router logic.
         if is_functional_bug:
-            logging.info("Functional bug detected. Bypassing technical triage and proceeding directly to fix planning.")
             self._plan_fix_from_description(failure_log)
-            return # Exit early, skipping the technical triage tiers.
+            return
 
-        # --- The existing technical triage logic now only runs if it's not a functional bug ---
         self.debug_attempt_counter += 1
         logging.info(f"Technical debug attempt counter is now: {self.debug_attempt_counter}")
 
@@ -1173,7 +1195,25 @@ class MasterOrchestrator:
             max_attempts = int(max_attempts_str)
 
         if self.debug_attempt_counter > max_attempts:
-            logging.warning(f"Automated debug attempts ({self.debug_attempt_counter - 1}) have exceeded the limit of {max_attempts}. Escalating to PM.")
+            logging.warning(f"Automated debug attempts have exceeded the limit of {max_attempts}. Escalating to PM.")
+
+            failing_artifact_id = None
+            try:
+                with self.db_manager as db:
+                    # Try to parse component name from a common failure log format
+                    failing_component_match = re.search(r"component '([^']+)'", failure_log, re.IGNORECASE)
+                    if failing_component_match:
+                        failing_component_name = failing_component_match.group(1)
+                        artifact_record = db.get_artifact_by_name(self.project_id, failing_component_name)
+                        if artifact_record:
+                            failing_artifact_id = artifact_record['artifact_id']
+            except Exception as e:
+                logging.error(f"Could not parse artifact ID during escalation: {e}")
+
+            self.task_awaiting_approval = {
+                'failure_log': failure_log,
+                'failing_artifact_id': failing_artifact_id
+            }
             self.set_phase("DEBUG_PM_ESCALATION")
             return
 
@@ -1320,54 +1360,73 @@ class MasterOrchestrator:
     def handle_pm_debug_choice(self, choice: str):
         """
         Handles the decision made by the PM during a debug escalation.
-
-        Args:
-            choice (str): The PM's selected option ('RETRY', 'MANUAL_PAUSE', or 'IGNORE').
         """
         logging.info(f"PM selected debug escalation option: {choice}")
 
         if choice == "RETRY":
-            # Reset the counter and re-trigger the entire triage process.
             self.debug_attempt_counter = 0
-            # A failure log needs to be passed; we retrieve the last known one
-            # from the task awaiting approval, if it exists.
             failure_log_from_state = self.task_awaiting_approval.get('failure_log', "PM-initiated retry after escalation.")
             self.escalate_for_manual_debug(failure_log_from_state)
 
         elif choice == "MANUAL_PAUSE":
-            # Use the existing pause_project method.
             self.pause_project()
             logging.info("Project paused for manual PM investigation.")
 
         elif choice == "IGNORE":
-            # Acknowledge the bug and move on to the next task in the plan.
-            # A more advanced implementation would update the artifact's status.
-            logging.warning("Acknowledging and ignoring bug. Proceeding with the next task.")
-            self.set_phase("GENESIS")
+            logging.warning("Acknowledging and ignoring bug. Updating artifact status to 'KNOWN_ISSUE'.")
+            try:
+                failing_artifact_id = self.task_awaiting_approval.get('failing_artifact_id')
+                if failing_artifact_id:
+                    with self.db_manager as db:
+                        timestamp = datetime.now(timezone.utc).isoformat()
+                        # This requires a more specific DAO method
+                        # For now, let's assume we need to update the status of an artifact
+                        # We need to find the artifact first.
+                        # This part of the logic is complex as we don't have the artifact ID
+                        # Let's assume we can pass it or find it.
+                        db.update_artifact_status(failing_artifact_id, "KNOWN_ISSUE", timestamp)
+                    logging.info(f"Status of artifact {failing_artifact_id} set to KNOWN_ISSUE.")
+                else:
+                    logging.error("Could not identify the specific failing artifact to mark as 'KNOWN_ISSUE'.")
+
+                self.set_phase("GENESIS")
+
+            except Exception as e:
+                logging.error(f"Failed to update artifact status to 'KNOWN_ISSUE': {e}")
+                self.set_phase("GENESIS")
 
         # Clean up the task that was awaiting approval.
         self.task_awaiting_approval = None
 
     def pause_project(self):
         """
-        Pauses the currently active project by saving its state to the DB.
-        The project remains the active project.
+        Pauses the currently active project by saving its detailed operational
+        state to the database.
         """
         if not self.project_id:
             logging.warning("No active project to pause.")
             return
 
         try:
+            # 1. Prepare the detailed state to be saved as a JSON string
+            state_details_dict = {
+                "active_plan": self.active_plan,
+                "active_plan_cursor": self.active_plan_cursor,
+                "debug_attempt_counter": self.debug_attempt_counter,
+                "task_awaiting_approval": self.task_awaiting_approval
+            }
+            state_details_json = json.dumps(state_details_dict)
+
+            # 2. Save the state to the database via the DAO
             with self.db_manager as db:
                 db.save_orchestration_state(
                     project_id=self.project_id,
                     current_phase=self.current_phase.name,
-                    current_step="paused_at_checkpoint",
-                    state_details='{"details": "State saved on pause"}',
-                    # CORRECTED: Using timezone-aware UTC time
+                    current_step="paused_by_user",
+                    state_details=state_details_json,
                     timestamp=datetime.now(timezone.utc).isoformat()
                 )
-            logging.info(f"Project '{self.project_name}' paused and state saved.")
+            logging.info(f"Project '{self.project_name}' paused and detailed state saved.")
         except Exception as e:
             logging.error(f"Failed to save state while pausing project {self.project_id}: {e}")
 

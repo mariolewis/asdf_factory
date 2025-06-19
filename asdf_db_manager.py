@@ -440,6 +440,12 @@ class ASDFDBManager:
         cursor = self._execute_query(query, (artifact_id,))
         return cursor.fetchone()
 
+def get_artifact_by_name(self, project_id: str, artifact_name: str) -> Optional[sqlite3.Row]:
+    """Retrieves a single artifact by its name for a given project."""
+    query = "SELECT * FROM Artifacts WHERE project_id = ? AND artifact_name = ?"
+    cursor = self._execute_query(query, (project_id, artifact_name))
+    return cursor.fetchone()
+
     def update_artifact_status(self, artifact_id: str, status: str, timestamp: str):
         """
         Updates the status and timestamp of a specific artifact.

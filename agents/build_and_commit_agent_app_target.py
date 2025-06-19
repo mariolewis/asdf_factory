@@ -65,7 +65,7 @@ class BuildAndCommitAgentAppTarget:
 
             # 2. Run the entire test suite to verify the new component and check for regressions
             logging.info(f"Running test suite with command: '{test_command}'")
-            tests_passed, test_output = self.build_component(test_command)
+            tests_passed, test_output = self.run_command(test_command)
 
             if not tests_passed:
                 logging.error("Unit tests failed for new component. Aborting commit.")
@@ -89,7 +89,7 @@ class BuildAndCommitAgentAppTarget:
             logging.error(error_message)
             return False, error_message
 
-    def build_component(self, build_command: str) -> tuple[bool, str]:
+    def run_command(self, command_to_run: str) -> tuple[bool, str]:
         """
         Runs the specified build command in the root of the project repository.
 
