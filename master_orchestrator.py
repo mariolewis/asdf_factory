@@ -143,6 +143,27 @@ class MasterOrchestrator:
             "current_phase": self.current_phase.name
         }
 
+    @property
+    def is_genesis_complete(self) -> bool:
+        """
+        A helper property that returns True if the main development plan is finished.
+        """
+        # Main development is complete if we are at the GENESIS checkpoint with no tasks left,
+        # or if we have already moved on to a later phase.
+        if self.current_phase == FactoryPhase.GENESIS and (not self.active_plan or self.active_plan_cursor >= len(self.active_plan)):
+            return True
+
+        # List of phases that occur after Genesis is complete
+        post_genesis_phases = [
+            FactoryPhase.AWAITING_INTEGRATION_CONFIRMATION,
+            FactoryPhase.INTEGRATION_AND_VERIFICATION,
+            FactoryPhase.MANUAL_UI_TESTING
+        ]
+        if self.current_phase in post_genesis_phases:
+            return True
+
+        return False
+
     def load_development_plan(self, plan_json_string: str):
         """
         Loads a JSON plan into the orchestrator's active state.
@@ -767,27 +788,38 @@ class MasterOrchestrator:
     def handle_implement_cr_action(self, cr_id: int):
         """
         Handles the logic for when the PM confirms a CR for implementation.
-        This now uses the centralized context builder to ensure context window
-        limits are respected and the PM is informed of any trimming.
+        This now includes a staleness check for the impact analysis.
         """
         logging.info(f"PM has confirmed implementation for Change Request ID: {cr_id}.")
 
         try:
             with self.db_manager as db:
+                cr_details = db.get_cr_by_id(cr_id)
+                if not cr_details:
+                    raise Exception(f"CR-{cr_id} not found in the database.")
+
+                # --- NEW: Impact Analysis Staleness Check ---
+                analysis_timestamp_str = cr_details['last_modified_timestamp']
+                last_commit_timestamp = self.get_latest_commit_timestamp()
+
+                if analysis_timestamp_str and last_commit_timestamp:
+                    analysis_time = datetime.fromisoformat(analysis_timestamp_str)
+                    if last_commit_timestamp > analysis_time:
+                        logging.warning(f"Impact analysis for CR-{cr_id} is stale. Awaiting PM confirmation.")
+                        self.task_awaiting_approval = {"cr_id_for_reanalysis": cr_id}
+                        self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE") # Reuse this phase for the re-analysis choice
+                        return # Stop here and wait for PM input
+
+                # --- Proceed if analysis is fresh or not present ---
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key:
                     raise Exception("CRITICAL: LLM_API_KEY is not set.")
 
-                cr_details = db.get_cr_by_id(cr_id)
+                # The rest of the original logic proceeds from here
                 project_details = db.get_project_by_id(self.project_id)
                 project_root_path = Path(project_details['project_root_folder'])
 
-                # 1. Gather impacted artifact IDs and source code files
-                impacted_ids = []
-                impacted_ids_json = cr_details['impacted_artifact_ids']
-                if impacted_ids_json:
-                    impacted_ids = json.loads(impacted_ids_json)
-
+                impacted_ids = json.loads(cr_details['impacted_artifact_ids'] or '[]')
                 source_code_files = {}
                 for artifact_id in impacted_ids:
                     artifact_record = db.get_artifact_by_id(artifact_id)
@@ -797,48 +829,31 @@ class MasterOrchestrator:
                             if source_path.exists():
                                 source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
                         except Exception:
-                            pass # Ignore files that can't be read
+                            pass
 
-                # 2. Build and validate the context package using the new helper method
-                core_docs = {
-                    "final_spec_text": project_details['final_spec_text'],
-                    "tech_spec_text": project_details['tech_spec_text'],
-                }
+                core_docs = {"final_spec_text": project_details['final_spec_text']}
                 context_package = self._build_and_validate_context_package(db, core_docs, source_code_files)
 
-                # Handle errors from the context builder
                 if context_package.get("error"):
                     raise Exception(f"Context Builder Error: {context_package['error']}")
 
-                # 3. Inform the PM if the context was trimmed
+                # This part will be enhanced later to display the message in the UI
                 if context_package.get("was_trimmed"):
-                    excluded_files_list = context_package.get("excluded_files", [])
-                    # Store this message in session state for the UI to display
-                    st.session_state.info_message = (
-                        "Warning: The context for this task was too large and was automatically trimmed to prevent an error. "
-                        f"The following {len(excluded_files_list)} files were excluded: {', '.join(excluded_files_list)}. "
-                        "The resulting plan may be less precise."
-                    )
+                    logging.warning(f"Context for CR-{cr_id} was trimmed.")
 
-                # 4. Prepare final context for the planning agent
                 final_context_str = "\n".join(context_package["source_code"].values())
                 all_artifacts = db.get_all_artifacts_for_project(self.project_id)
                 rowd_json = json.dumps([dict(row) for row in all_artifacts])
-
                 db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
 
-                # 5. Invoke the RefactoringPlannerAgent
                 planner_agent = RefactoringPlannerAgent_AppTarget(api_key=api_key)
                 new_plan_str = planner_agent.create_refactoring_plan(
-                    change_request_desc=cr_details['description'],
-                    full_context_str=final_context_str, # Use the potentially trimmed context
-                    rowd_json=rowd_json
+                    cr_details['description'], project_details['final_spec_text'], rowd_json, context_package["source_code"]
                 )
 
                 if "error" in new_plan_str:
                     raise Exception(f"RefactoringPlannerAgent failed: {new_plan_str}")
 
-                # 6. Store the plan and transition to the Genesis phase
                 self.active_plan = json.loads(new_plan_str)
                 self.active_plan_cursor = 0
                 logging.info("Successfully generated new development plan from Change Request.")
@@ -846,6 +861,24 @@ class MasterOrchestrator:
 
         except Exception as e:
             logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+
+    def handle_stale_analysis_choice(self, choice: str, cr_id: int):
+        """
+        Handles the PM's choice on how to proceed with a stale impact analysis.
+        """
+        self.task_awaiting_approval = None # Always clear the approval task
+
+        if choice == "RE-RUN":
+            logging.info(f"PM chose to re-run stale impact analysis for CR-{cr_id}.")
+            # Trigger the analysis and then immediately try to implement again.
+            self.handle_run_impact_analysis_action(cr_id)
+            self.handle_implement_cr_action(cr_id)
+
+        elif choice == "PROCEED":
+            logging.warning(f"PM chose to proceed with a stale impact analysis for CR-{cr_id}. Returning to CR Register.")
+            # This is the pragmatic choice: return the user to the register,
+            # where they can re-trigger the implementation.
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
     def handle_run_impact_analysis_action(self, cr_id: int):
@@ -884,9 +917,6 @@ class MasterOrchestrator:
             logging.error(f"Failed to run impact analysis for CR ID {cr_id}: {e}")
             # Optionally, set an error state to be displayed in the UI
 
-    #
-# --- REPLACE THE ENTIRE METHOD WITH THIS ---
-#
     def handle_delete_cr_action(self, cr_id_to_delete: int):
         """
         Handles the deletion of a CR, now with checks for linked CRs.
@@ -1883,3 +1913,22 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to finalize test environment setup: {e}")
             return False
+
+    def get_latest_commit_timestamp(self) -> datetime | None:
+        """
+        Retrieves the timestamp of the most recent commit in the project's repo.
+        """
+        try:
+            with self.db_manager as db:
+                project_details = db.get_project_by_id(self.project_id)
+                project_root_path = str(project_details['project_root_folder'])
+
+            repo = git.Repo(project_root_path)
+            if not repo.heads: # Check if there are any commits
+                return None
+
+            latest_commit = repo.head.commit
+            return latest_commit.committed_datetime
+        except Exception as e:
+            logging.error(f"Could not retrieve latest commit timestamp: {e}")
+            return None

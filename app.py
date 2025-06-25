@@ -1113,6 +1113,27 @@ if page == "Project":
                 st.rerun()
 
         elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
+            st.header("Impact Analysis May Be Outdated")
+            st.warning("A code change has occurred since the Impact Analysis for this Change Request was last run. The analysis may be inaccurate.")
+            st.markdown("Would you like to re-run the analysis to get the most up-to-date assessment before generating a plan?")
+
+            cr_id = st.session_state.orchestrator.task_awaiting_approval.get("cr_id_for_reanalysis")
+
+            if cr_id:
+                col1, col2, _ = st.columns([1.5, 2, 3])
+                with col1:
+                    if st.button("Yes, Re-run Analysis", type="primary"):
+                        st.session_state.orchestrator.handle_stale_analysis_choice("RE-RUN", cr_id)
+                        st.rerun()
+                with col2:
+                    if st.button("No, Proceed with Old Analysis"):
+                        st.session_state.orchestrator.handle_stale_analysis_choice("PROCEED", cr_id)
+                        st.rerun()
+            else:
+                st.error("Could not determine which CR to re-analyze. Returning to register.")
+                st.session_state.orchestrator.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+
+        elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
             st.header("Phase 6: New Change Request Logged")
             st.success("The new Change Request has been saved to the register.")
             st.markdown("Would you like to perform a high-level impact analysis on this new CR now?")
@@ -1154,7 +1175,6 @@ if page == "Project":
             if not change_requests:
                 st.warning("There are no change requests in the register for this project.")
             else:
-
                 # Prepare data for display in a pandas DataFrame
                 cr_data_for_df = []
                 for cr in change_requests:
@@ -1168,11 +1188,9 @@ if page == "Project":
                     })
 
                 df = pd.DataFrame(cr_data_for_df)
-                # Define column order to ensure 'Type' is displayed prominently
                 column_order = ["ID", "Type", "Status", "Severity/Impact", "Description", "Analysis Summary"]
                 st.dataframe(df[column_order], use_container_width=True, hide_index=True)
 
-                # Allow PM to select a CR by ID
                 cr_ids = [cr['cr_id'] for cr in change_requests]
                 selected_cr_id_str = st.selectbox("Select a Change Request ID to action:", options=[""] + [str(i) for i in cr_ids])
 
@@ -1182,9 +1200,10 @@ if page == "Project":
 
                     st.subheader(f"Actions for CR-{selected_cr_id}")
 
-                    # Business Logic for enabling/disabling buttons based on CR status
                     is_raised_status = selected_cr['status'] == 'RAISED'
                     is_impact_analyzed = selected_cr['status'] == 'IMPACT_ANALYZED'
+                    # --- NEW LOGIC: Check if main development is complete ---
+                    genesis_is_complete = st.session_state.orchestrator.is_genesis_complete
 
                     col1, col2, col3, col4 = st.columns(4)
 
@@ -1192,29 +1211,30 @@ if page == "Project":
                         if st.button("✏️ Edit CR", use_container_width=True, disabled=not is_raised_status, help="You can only edit a CR before its impact has been analyzed."):
                             st.session_state.orchestrator.handle_edit_cr_action(selected_cr_id)
                             st.rerun()
-
                     with col2:
                         if st.button("🗑️ Delete CR", use_container_width=True, disabled=not is_raised_status, help="You can only delete a CR before its impact has been analyzed."):
-                            # Use a popover for a confirmation dialog to prevent accidental deletion
                             with st.popover("Confirm Deletion"):
                                 st.write(f"Are you sure you want to permanently delete CR-{selected_cr_id}?")
                                 if st.button("Yes, Confirm Delete", type="primary"):
                                     st.session_state.orchestrator.handle_delete_cr_action(selected_cr_id)
                                     st.toast(f"Change Request {selected_cr_id} deleted.")
                                     st.rerun()
-
                     with col3:
                         if st.button("🔬 Run Impact Analysis", use_container_width=True, disabled=not is_raised_status, help="Run analysis to determine the scope and impact of the change."):
                             with st.spinner(f"Running impact analysis for CR-{selected_cr_id}..."):
                                 st.session_state.orchestrator.handle_run_impact_analysis_action(selected_cr_id)
                             st.toast(f"Impact analysis complete for CR-{selected_cr_id}.")
                             st.rerun()
-
                     with col4:
-                        if st.button("▶️ Implement CR", use_container_width=True, type="primary", disabled=not is_impact_analyzed, help="Generate a development plan and begin implementation."):
+                        # --- CORRECTED: Button is now gated ---
+                        if st.button("▶️ Implement CR", use_container_width=True, type="primary", disabled=not (is_impact_analyzed and genesis_is_complete), help="Implementation is enabled only after impact analysis is run and main development is complete."):
                             with st.spinner(f"Generating refactoring plan for CR-{selected_cr_id}..."):
                                 st.session_state.orchestrator.handle_implement_cr_action(selected_cr_id)
                             st.rerun()
+
+                # Add an informational message if the button is disabled
+                if not st.session_state.orchestrator.is_genesis_complete:
+                    st.info("Note: CR implementation is enabled after the main development plan from Phase 2 is fully completed.")
 
             st.divider()
             if st.button("⬅️ Back to Main Checkpoint"):
