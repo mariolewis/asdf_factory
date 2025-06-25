@@ -24,7 +24,7 @@ class VerificationAgent_AppTarget:
         if not api_key:
             raise ValueError("API key is required for the VerificationAgent_AppTarget.")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         logging.info("VerificationAgent initialized.")
 
     def _get_test_execution_details(self, tech_spec_text: str) -> Optional[Dict[str, any]]:

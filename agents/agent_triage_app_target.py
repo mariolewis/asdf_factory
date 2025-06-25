@@ -4,6 +4,7 @@ import google.generativeai as genai
 import logging
 import re
 from asdf_db_manager import ASDFDBManager
+import textwrap
 
 """
 This module contains the TriageAgent_AppTarget class.
@@ -38,7 +39,7 @@ class TriageAgent_AppTarget:
         self.api_key = api_key
         self.db_manager = db_manager
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
     def _extract_tags_from_error(self, error_logs: str) -> list[str]:
         """A simple helper to extract potential search tags from error logs."""

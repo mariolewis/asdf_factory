@@ -38,44 +38,41 @@ class BuildAndCommitAgentAppTarget:
     def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str) -> tuple[bool, str]:
         """
         Writes the component and its tests, runs all tests, and commits on success.
-
-        Args:
-            component_path_str (str): The relative path to the new source code file.
-            component_code (str): The content of the new source code.
-            test_path_str (str): The relative path to the new unit test file.
-            test_code (str): The content of the new unit tests.
-            test_command (str): The command to execute the entire test suite.
-
-        Returns:
-            A tuple containing a boolean for success/failure and an output string
-            (commit message on success, error on failure).
+        This version now correctly handles null/placeholder file paths.
         """
         try:
-            # 1. Write the source code and test files to disk
-            component_path = self.repo_path / component_path_str
-            test_path = self.repo_path / test_path_str
+            files_to_commit = []
 
-            component_path.parent.mkdir(parents=True, exist_ok=True)
-            component_path.write_text(component_code, encoding='utf-8')
-            logging.info(f"Wrote source code to {component_path}")
+            # --- CORRECTED: Only write files if a valid path is provided ---
+            if component_path_str and component_path_str.lower() not in ["n/a", "none"]:
+                component_path = self.repo_path / component_path_str
+                component_path.parent.mkdir(parents=True, exist_ok=True)
+                component_path.write_text(component_code, encoding='utf-8')
+                files_to_commit.append(component_path_str)
+                logging.info(f"Wrote source code to {component_path}")
 
-            test_path.parent.mkdir(parents=True, exist_ok=True)
-            test_path.write_text(test_code, encoding='utf-8')
-            logging.info(f"Wrote unit tests to {test_path}")
+            if test_path_str and test_path_str.lower() not in ["n/a", "none"]:
+                test_path = self.repo_path / test_path_str
+                test_path.parent.mkdir(parents=True, exist_ok=True)
+                test_path.write_text(test_code, encoding='utf-8')
+                files_to_commit.append(test_path_str)
+                logging.info(f"Wrote unit tests to {test_path}")
 
-            # 2. Run the entire test suite to verify the new component and check for regressions
             logging.info(f"Running test suite with command: '{test_command}'")
             tests_passed, test_output = self.run_command(test_command)
 
             if not tests_passed:
                 logging.error("Unit tests failed for new component. Aborting commit.")
-                return False, f"Unit tests failed for {component_path.name}:\n{test_output}"
+                # Return the detailed test output for better debugging
+                return False, f"Unit tests failed:\n{test_output}"
 
-            # 3. If tests pass, commit both files
-            files_to_commit = [component_path_str, test_path_str]
-            component_name = component_path.name
+            # Only commit if there are files to commit and tests passed
+            if not files_to_commit:
+                logging.warning("No files were written to disk for this component, but tests passed. Skipping commit.")
+                return True, "Tests passed, but no files were generated to commit."
+
+            component_name = Path(files_to_commit[0]).name
             commit_message = f"feat: Add component {component_name} and unit tests"
-
             commit_success, commit_result = self.commit_changes(files_to_commit, commit_message)
 
             if not commit_success:
@@ -91,41 +88,28 @@ class BuildAndCommitAgentAppTarget:
 
     def run_command(self, command_to_run: str) -> tuple[bool, str]:
         """
-        Runs the specified build command in the root of the project repository.
-
-        Args:
-            build_command (str): The build command to execute (e.g., "mvn clean install").
-
-        Returns:
-            tuple[bool, str]: A tuple containing:
-                              - A boolean indicating build success (True) or failure (False).
-                              - A string containing the combined stdout and stderr from the build process.
+        Runs the specified command in the root of the project repository.
         """
         try:
-            # Using subprocess.run to execute the external build command.
-            # We capture the output to return it for logging and debugging.
-            # shell=True is used for simplicity in executing complex commands.
+            # CORRECTED: Changed 'build_command' to the correct parameter name 'command_to_run'
             result = subprocess.run(
-                build_command,
+                command_to_run,
                 shell=True,
                 capture_output=True,
                 text=True,
-                cwd=self.repo_path,  # Execute the command in the project's root directory
-                check=False  # We manually check the return code instead of auto-raising an exception
+                cwd=self.repo_path,
+                check=False
             )
 
             combined_output = f"--- STDOUT ---\n{result.stdout}\n--- STDERR ---\n{result.stderr}"
 
             if result.returncode == 0:
-                # A return code of 0 indicates success.
                 return True, combined_output
             else:
-                # Any other return code indicates a build failure.
                 return False, combined_output
 
         except Exception as e:
-            # Handle unexpected errors during subprocess execution.
-            error_message = f"An unexpected error occurred while running the build command: {e}"
+            error_message = f"An unexpected error occurred while running the command: {e}"
             return False, error_message
 
     def commit_changes(self, files_to_add: list[str], commit_message: str) -> tuple[bool, str]:

@@ -40,7 +40,7 @@ class ImpactAnalysisAgent_AppTarget:
             Returns (None, None, None) on failure.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
             prompt = f"""
             You are a seasoned Software Architect. Your task is to perform a high-level impact analysis of a proposed change request.

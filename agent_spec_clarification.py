@@ -36,7 +36,7 @@ class SpecClarificationAgent:
             raise ValueError("Database manager is required for the SpecClarificationAgent.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         self.db_manager = db_manager
 
         # As per the PRD, the clarification loop must handle DB table specs.
@@ -125,19 +125,25 @@ class SpecClarificationAgent:
 
         # --- Step 2: Proceed with LLM analysis ---
         logging.info("SpecClarificationAgent: Calling Gemini API to identify potential spec issues...")
+
+        # --- CORRECTED & ENHANCED PROMPT ---
         prompt = textwrap.dedent(f"""
-            As an expert requirements analyst, please review the following software specification draft.
-            Your task is to identify and list any ambiguities, contradictions, underspecified features, or missing information that would prevent a developer from building the application without making assumptions.
-            Pay close attention to:
-            - Vague requirements (e.g., "fast", "user-friendly").
-            - Undefined user flows.
-            - Incomplete or conflicting business logic.
-            - Missing details in the database schema (e.g., missing columns, unclear relationships, unspecified data types).
-            - Unclear error handling conditions.
+            You are an expert requirements analyst. Your task is to review the following software specification draft.
+            Your goal is to identify ambiguities and guide the Product Manager to a clear, actionable resolution.
 
-            Present your findings as a numbered list of issues. For each issue, briefly explain the problem. If you find no issues, please state that the specification appears to be clear and complete.
+            **MANDATORY INSTRUCTIONS:**
+            1.  Identify any ambiguities, contradictions, underspecified features, or missing information.
+            2.  For each issue you identify, you MUST propose 1-2 concrete potential solutions or clarifying options for the Product Manager to consider.
+            3.  Structure your response as a numbered list. For each item, clearly state the "Issue" and then provide the "Proposed Solutions".
+            4.  If you find no issues, please state that the specification appears to be clear and complete.
 
-            The specification draft is:
+            **EXAMPLE OUTPUT FORMAT:**
+            1.  **Issue:** The specification mentions "fast" performance, which is a vague requirement.
+                **Proposed Solutions:**
+                a) Define "fast" as "API response time under 500ms for 95% of requests."
+                b) Specify the expected number of concurrent users the system should handle.
+
+            **The specification draft is:**
             ---
             {spec_text}
             ---

@@ -5,6 +5,7 @@ import pandas as pd
 from datetime import datetime
 import logging
 import docx
+import json
 
 # Imports from the project's root directory
 from master_orchestrator import MasterOrchestrator
@@ -54,7 +55,6 @@ with st.sidebar:
     st.markdown(f"**Project ID:** {status_info.get('project_id', 'N/A')}")
     st.markdown(f"**Project Name:** {status_info.get('project_name', 'N/A')}")
 
-    # Get the display name for the current phase from the orchestrator's dictionary
     current_phase_enum = st.session_state.orchestrator.current_phase
     display_phase_name = st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
     st.markdown(f"**Current Phase:** {display_phase_name}")
@@ -62,57 +62,55 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### Project Lifecycle")
 
-    if st.button("📂 Load Archived Project", use_container_width=True):
-        st.session_state.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
-        st.rerun()
-
-    # Get the current phase to determine if we should show the Resume button.
-    # A paused project will have a saved state in the database.
-    is_paused = False
-    if st.session_state.orchestrator.project_id:
-        with st.session_state.orchestrator.db_manager as db:
-            state_data = db.get_orchestration_state(st.session_state.orchestrator.project_id)
-            if state_data:
-                is_paused = True
-
-    if is_paused:
+    # --- CORRECTED & SIMPLIFIED RESUME LOGIC ---
+    # The orchestrator now knows its own state on initialization. We just ask it.
+    if st.session_state.orchestrator.resumable_state:
         if st.button("▶️ Resume Paused Project", use_container_width=True, type="primary"):
             if st.session_state.orchestrator.resume_project():
                 st.rerun()
             else:
-                st.error("Failed to resume project. No saved state found.")
+                st.error("Failed to resume project. Check logs for details.")
 
-    if st.session_state.orchestrator.project_id:
+    # Show Pause and Stop buttons ONLY if a project is active and NOT in a resumable state.
+    if st.session_state.orchestrator.project_id and not st.session_state.orchestrator.resumable_state:
+        if st.button("⏸️ Pause Active Project", use_container_width=True):
+            st.session_state.orchestrator.pause_project()
+            st.toast("Project paused and state saved.")
+            st.rerun()
+
         if st.button("⏹️ Stop & Export Active Project", use_container_width=True):
             st.session_state.show_export_confirmation = True
 
-        if st.session_state.get("show_export_confirmation"):
-            with st.form("export_form"):
-                st.warning(
-                    "**Archive Project Confirmation**\n\n"
-                    "This will save all project data to an external archive file and clear the active session. "
-                    "This action is for permanently archiving your work, unlike the temporary 'Pause' function."
-                )
-                archive_name_input = st.text_input(
-                    "Enter a name for the archive file:",
-                    value=f"{st.session_state.orchestrator.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}"
-                )
-                with st.session_state.orchestrator.db_manager as db:
-                    archive_path = db.get_config_value("DEFAULT_ARCHIVE_PATH") or "data/archives"
+    if st.button("📂 Load Archived Project", use_container_width=True):
+        st.session_state.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
+        st.rerun()
 
-                submitted = st.form_submit_button("Confirm and Export")
-                if submitted:
-                    if archive_name_input:
-                        archive_file_path = st.session_state.orchestrator.stop_and_export_project(archive_path, archive_name_input)
-                        if archive_file_path:
-                            st.session_state.last_action_success_message = f"Project archived to: `{archive_file_path}`"
-                        else:
-                            st.error("Failed to export project.")
-                        st.session_state.show_export_confirmation = False
-                        st.rerun()
+    # The 'show_export_confirmation' logic remains the same as before
+    if st.session_state.get("show_export_confirmation"):
+        with st.form("export_form"):
+            st.warning(
+                "**Archive Project Confirmation**\n\n"
+                "This will save all project data to an external archive file and clear the active session."
+            )
+            archive_name_input = st.text_input(
+                "Enter a name for the archive file:",
+                value=f"{st.session_state.orchestrator.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}"
+            )
+            with st.session_state.orchestrator.db_manager as db:
+                archive_path = db.get_config_value("DEFAULT_ARCHIVE_PATH") or "data/archives"
+
+            submitted = st.form_submit_button("Confirm and Export")
+            if submitted:
+                if archive_name_input:
+                    archive_file_path = st.session_state.orchestrator.stop_and_export_project(archive_path, archive_name_input)
+                    if archive_file_path:
+                        st.session_state.last_action_success_message = f"Project archived to: `{archive_file_path}`"
                     else:
-                        st.error("Archive name cannot be empty.")
-
+                        st.error("Failed to export project.")
+                    st.session_state.show_export_confirmation = False
+                    st.rerun()
+                else:
+                    st.error("Archive name cannot be empty.")
 
 # --- Main Application UI ---
 
@@ -348,107 +346,121 @@ if page == "Project":
                         if prompt := st.chat_input("Provide clarifications..."):
                             st.session_state.clarification_chat.append({"role": "user", "content": prompt})
                             with st.spinner("AI is refining the specification..."):
-                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                revised_spec = agent.refine_specification(st.session_state.specification_text, st.session_state.clarification_issues, prompt)
-                                # Call to the learning capture method
-                                st.session_state.orchestrator.capture_spec_clarification_learning(
-                                    problem_context=st.session_state.clarification_issues,
-                                    solution_text=prompt,
-                                    spec_text=revised_spec
-                                )
-                                st.session_state.specification_text = revised_spec
-                                st.session_state.clarification_issues = None
-                                st.session_state.clarification_chat = []
-                                st.rerun()
+                                # CORRECTED: Fetch the api_key before using it in this block.
+                                try:
+                                    with st.session_state.orchestrator.db_manager as db:
+                                        api_key = db.get_config_value("LLM_API_KEY")
+                                    if not api_key:
+                                        st.error("Cannot refine specification: LLM API Key is not set in Settings.")
+                                    else:
+                                        agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                                        revised_spec = agent.refine_specification(st.session_state.specification_text, st.session_state.clarification_issues, prompt)
+                                        # Call to the learning capture method
+                                        st.session_state.orchestrator.capture_spec_clarification_learning(
+                                            problem_context=st.session_state.clarification_issues,
+                                            solution_text=prompt,
+                                            spec_text=revised_spec
+                                        )
+                                        st.session_state.specification_text = revised_spec
+                                        st.session_state.clarification_issues = None
+                                        st.session_state.clarification_chat = []
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to refine specification: {e}")
 
                     else: # If clarification issues are not yet identified
-                        if st.button("Analyze Specification & Begin Clarification", use_container_width=True):
+                        # CORRECTED: Rename button for clarity
+                        if st.button("Check Draft for Ambiguities", use_container_width=True):
                             with st.spinner("AI is analyzing the specification for issues..."):
-                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                issues = agent.identify_potential_issues(st.session_state.specification_text)
-                                st.session_state.clarification_issues = issues
-                                st.session_state.clarification_chat.append({"role": "assistant", "content": issues})
-                                st.rerun()
+                                # CORRECTED: Fetch the api_key before using it.
+                                try:
+                                    with st.session_state.orchestrator.db_manager as db:
+                                        api_key = db.get_config_value("LLM_API_KEY")
+                                    if not api_key:
+                                        st.error("Cannot analyze specification: LLM API Key is not set in Settings.")
+                                    else:
+                                        agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                                        issues = agent.identify_potential_issues(st.session_state.specification_text)
+                                        st.session_state.clarification_issues = issues
+                                        st.session_state.clarification_chat.append({"role": "assistant", "content": issues})
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to analyze specification: {e}")
 
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
-            st.markdown("First, confirm the target OS. Then, establish the technical foundation for the project by either defining the tech stack directly, or having ASDF propose one for your review.")
+            st.markdown("Establish the technical foundation for the project by selecting the target OS and defining the technology stack.")
 
-            # Initialize session state for this phase
-            if 'tech_spec_choice' not in st.session_state:
-                st.session_state.tech_spec_choice = None
             if 'tech_spec_draft' not in st.session_state:
                 st.session_state.tech_spec_draft = ""
             if 'target_os' not in st.session_state:
-                st.session_state.target_os = "Linux" # Default value
+                st.session_state.target_os = "Linux"
+            # Add state for the new input field
+            if 'primary_language' not in st.session_state:
+                st.session_state.primary_language = "Python" # Default to Python
 
-            # --- NEW WIDGET to capture Target OS ---
             st.session_state.target_os = st.selectbox(
                 "Select Target Operating System:",
                 ["Linux", "Windows", "macOS"],
+                index=["Linux", "Windows", "macOS"].index(st.session_state.target_os),
                 key="os_select"
+            )
+
+            # --- NEW WIDGET to explicitly capture the language ---
+            st.session_state.primary_language = st.text_input(
+                "Confirm Primary Programming Language (e.g., Python, Kotlin, Java):",
+                value=st.session_state.primary_language
             )
             st.divider()
 
-            # Get the finalized functional spec from the database for context
-            with st.session_state.orchestrator.db_manager as db:
-                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                final_spec_text = project_details['final_spec_text']
-
-            # Let the user choose the method for tech spec creation
-            st.session_state.tech_spec_choice = st.radio(
-                "Choose your method for creating the Technical Specification:",
+            tech_spec_choice = st.radio(
+                "Choose your method for creating the Technical Specification Document:",
                 ["Let ASDF propose a technology stack", "I will define the technology stack directly"],
                 key="tech_spec_radio"
             )
 
-            if st.session_state.tech_spec_choice == "Let ASDF propose a technology stack":
+            if tech_spec_choice == "Let ASDF propose a technology stack":
                 if st.button("Generate Proposal"):
+                    # This logic remains the same...
                     with st.spinner("AI is analyzing the specification and generating a proposal..."):
                         try:
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
-                            if not api_key:
-                                st.error("Cannot generate proposal. LLM API Key is not set.")
+                                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                final_spec_text = project_details['final_spec_text']
+
+                            if not api_key: st.error("Cannot generate proposal. LLM API Key is not set.")
                             else:
                                 from agents.agent_tech_stack_proposal import TechStackProposalAgent
                                 agent = TechStackProposalAgent(api_key=api_key)
-                                # This is the corrected call with the target_os from session state
-                                proposal = agent.propose_stack(
-                                    functional_spec_text=final_spec_text,
-                                    target_os=st.session_state.target_os
-                                )
+                                proposal = agent.propose_stack(final_spec_text, st.session_state.target_os)
                                 st.session_state.tech_spec_draft = proposal
                         except Exception as e:
                             st.error(f"Failed to generate proposal: {e}")
 
             st.session_state.tech_spec_draft = st.text_area(
-                "Technical Specification Document",
-                value=st.session_state.tech_spec_draft,
-                height=400
+                "Technical Specification Document", value=st.session_state.tech_spec_draft, height=400
             )
-
             st.divider()
 
-            # --- Approval Step ---
             if st.session_state.tech_spec_draft:
                 if st.button("Approve Technical Specification", use_container_width=True, type="primary"):
-                    with st.spinner("Saving technical specification and target OS..."):
-                        with st.session_state.orchestrator.db_manager as db:
-                            # Save the newly captured Target OS
-                            db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
-                            # Save the technical specification text
-                            db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
+                    if not st.session_state.primary_language.strip():
+                        st.error("Primary Programming Language cannot be empty.")
+                    else:
+                        with st.spinner("Saving technical specification, OS, and language..."):
+                            with st.session_state.orchestrator.db_manager as db:
+                                # Save all three pieces of information
+                                db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
+                                db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.primary_language)
+                                db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
 
-                        # Transition to the new build script setup phase
-                        st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
-
-                        # Clean up session state for this phase
-                        keys_to_clear = ['tech_spec_choice', 'tech_spec_draft', 'target_os']
-                        for key in keys_to_clear:
-                             if key in st.session_state:
-                                del st.session_state[key]
-                        st.rerun()
+                            st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
+                            keys_to_clear = ['tech_spec_draft', 'target_os', 'primary_language']
+                            for key in keys_to_clear:
+                                 if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
@@ -609,9 +621,12 @@ if page == "Project":
             # Initialize session state
             if 'coding_standard_draft' not in st.session_state:
                 st.session_state.coding_standard_draft = ""
+            # CORRECTED: Add a flag to disable the button after first use
+            if 'coding_standard_generated' not in st.session_state:
+                st.session_state.coding_standard_generated = False
 
             # Button to trigger the agent
-            if st.button("Generate Coding Standard Draft"):
+            if st.button("Generate Coding Standard Draft", disabled=st.session_state.coding_standard_generated):
                 with st.spinner("AI is generating the coding standard..."):
                     try:
                         with st.session_state.orchestrator.db_manager as db:
@@ -626,6 +641,8 @@ if page == "Project":
                             agent = CodingStandardAgent_AppTarget(api_key=api_key)
                             standard = agent.generate_standard(tech_spec)
                             st.session_state.coding_standard_draft = standard
+                            st.session_state.coding_standard_generated = True # Set the flag
+                            st.rerun() # Rerun to show the disabled state
                     except Exception as e:
                         st.error(f"Failed to generate coding standard: {e}")
 
@@ -653,8 +670,10 @@ if page == "Project":
                         st.session_state.orchestrator.set_phase("PLANNING")
 
                         # Clean up session state for this phase
-                        if 'coding_standard_draft' in st.session_state:
-                            del st.session_state['coding_standard_draft']
+                        keys_to_clear = ['coding_standard_draft', 'coding_standard_generated']
+                        for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
                         st.rerun()
 
 
@@ -668,37 +687,53 @@ if page == "Project":
             # If a plan has been generated, display it for review
             if st.session_state.development_plan:
                 st.subheader("Generated Development Plan")
-                st.markdown("Please review the generated plan. If it is acceptable, approve it to begin the development phase. To generate a new version, click the 'Generate' button again.")
-
-                # Display the plan as a JSON object for clear structure
+                st.markdown("Please review the generated plan. To proceed, approve it below. To generate a new version, click the 'Re-generate' button.")
                 st.json(st.session_state.development_plan)
-
                 st.divider()
+
                 col1, col2, col3 = st.columns([1.5, 1, 1.5])
                 with col1:
-                    # The button to approve the plan and proceed
-
+                    # CORRECTED: This button now performs all actions in one step.
                     if st.button("✅ Approve Plan & Proceed to Development", type="primary"):
-                        with st.spinner("Saving and loading development plan..."):
-                            plan_json = st.session_state.development_plan
-                            # Save the plan to the database
+                        with st.spinner("Saving plan and transitioning to development phase..."):
+                            full_plan_object_str = st.session_state.development_plan
+
+                            # 1. Save the full plan object to the database for persistence
                             with st.session_state.orchestrator.db_manager as db:
-                                db.save_development_plan(st.session_state.orchestrator.project_id, plan_json)
+                                db.save_development_plan(st.session_state.orchestrator.project_id, full_plan_object_str)
 
-                            # Load the plan into the orchestrator's active state
-                            st.session_state.orchestrator.load_development_plan(plan_json)
+                            # --- CORRECTED LOGIC ---
+                            # 2. Parse the object and extract JUST the development plan array
+                            try:
+                                full_plan_data = json.loads(full_plan_object_str)
+                                dev_plan_list = full_plan_data.get("development_plan")
 
-                            # Set the new session state flag to trigger the acknowledgment UI
-                            st.session_state.plan_approved_but_not_acknowledged = True
-                            st.toast("Plan approved! Awaiting acknowledgment.")
-                            st.rerun()
+                                if dev_plan_list is not None:
+                                    # 3. Load ONLY the list of tasks into the orchestrator
+                                    st.session_state.orchestrator.load_development_plan(json.dumps(dev_plan_list))
+
+                                    # 4. Immediately set the phase to GENESIS
+                                    st.session_state.orchestrator.set_phase("GENESIS")
+
+                                    # 5. Clean up session state
+                                    keys_to_clear = ['development_plan']
+                                    for key in keys_to_clear:
+                                        if key in st.session_state:
+                                            del st.session_state[key]
+
+                                    st.toast("Plan approved! Starting development...")
+                                    st.rerun()
+                                else:
+                                    st.error("The generated plan is missing the 'development_plan' key.")
+
+                            except json.JSONDecodeError:
+                                st.error("Failed to parse the development plan. The format is invalid.")
                 with col2:
-                    # Add the download button
                     report_generator = ReportGeneratorAgent()
                     dev_plan_docx_bytes = report_generator.generate_text_document_docx(
                         title=f"Sequential Development Plan - {st.session_state.orchestrator.project_name}",
                         content=st.session_state.development_plan,
-                        is_code=True # Format this content as code
+                        is_code=True
                     )
                     st.download_button(
                         label="📄 Print to .docx",
@@ -708,43 +743,9 @@ if page == "Project":
                         use_container_width=True
                     )
                 with col3:
-                    # The button to re-generate the plan
                     if st.button("🔄 Re-generate Development Plan"):
                          st.session_state.development_plan = None
                          st.rerun()
-
-            # --- UI for Acknowledging the Approved Development Plan ---
-            elif st.session_state.get('plan_approved_but_not_acknowledged'):
-                st.subheader("Development Plan Approved")
-
-                # Display the message to the PM as per PRD F-Phase 2 requirement.
-                st.success(
-                    "The Development Plan has been approved and is displayed below. "
-                    "Please copy this text into a local document for your records."
-                )
-
-                # Display the finalized plan using st.json for readability.
-                st.json(st.session_state.development_plan)
-
-                st.divider()
-
-                # The new button to acknowledge and move to the development phase.
-                if st.button("Acknowledge and Proceed to Development", type="primary"):
-                    # This button now performs the final actions.
-                    st.session_state.orchestrator.set_phase("GENESIS")
-
-                    # Clean up all session state keys related to the planning phase.
-                    keys_to_clear = [
-                        'development_plan',
-                        'plan_approved_but_not_acknowledged'
-                    ]
-                    for key in keys_to_clear:
-                        if key in st.session_state:
-                            del st.session_state[key]
-
-                    st.toast("Plan acknowledged! Starting development...")
-                    time.sleep(1)
-                    st.rerun()
 
             # If no plan exists yet, show the button to generate one
             else:
@@ -760,38 +761,31 @@ if page == "Project":
 
                             if not all([api_key, final_spec, tech_spec]):
                                 st.error("Could not generate plan: Missing API Key, Final Specification, or Technical Specification.")
-
                             else:
                                 agent = PlanningAgent_AppTarget(api_key=api_key)
                                 response_json_str = agent.generate_development_plan(final_spec, tech_spec)
+                                response_data = json.loads(response_json_str)
 
-                                try:
-                                    response_data = json.loads(response_json_str)
-
-                                    # Extract the development plan and the executable name
+                                if "error" in response_data:
+                                    st.error(f"Failed to generate plan: {response_data['error']}")
+                                else:
                                     plan_data = response_data.get("development_plan")
                                     main_executable = response_data.get("main_executable_file")
 
                                     if not plan_data or not main_executable:
                                         st.error("Failed to generate a valid plan and executable name from the AI.")
                                     else:
-                                        # Save the executable name to the database
                                         with st.session_state.orchestrator.db_manager as db:
                                             db.update_project_apex_file(st.session_state.orchestrator.project_id, main_executable)
-
-                                        # Store the development plan in the session state
-                                        st.session_state.development_plan = json.dumps(plan_data, indent=4)
+                                        st.session_state.development_plan = json.dumps(response_data, indent=4)
                                         st.rerun()
-
-                                except json.JSONDecodeError:
-                                    st.error(f"Failed to parse the development plan from the AI: {response_json_str}")
                         except Exception as e:
                             st.error(f"An unexpected error occurred: {e}")
 
         elif current_phase_name == "GENESIS":
             st.header("Phase 3: Iterative Component Development")
 
-            # First, check if a plan is loaded. If not, guide the user back to planning.
+            # First, check if a plan is loaded.
             if not st.session_state.orchestrator.active_plan:
                 st.warning("No active development plan is loaded.")
                 st.info("Please go to the 'Planning' phase to generate a development plan.")
@@ -799,56 +793,90 @@ if page == "Project":
                     st.session_state.orchestrator.set_phase("PLANNING")
                     st.rerun()
             else:
-                # If a plan is active, display the PM Checkpoint.
                 st.subheader("PM Checkpoint")
-
-                # Get dynamic details of the current task from the orchestrator
                 task = st.session_state.orchestrator.get_current_task_details()
                 total_tasks = len(st.session_state.orchestrator.active_plan)
+                # The cursor shows how many are DONE. So we show cursor/total.
                 cursor = st.session_state.orchestrator.active_plan_cursor
 
                 if task:
-                    st.progress((cursor) / total_tasks, text=f"Executing Task {cursor + 1} of {total_tasks}")
+                    st.progress(cursor / total_tasks, text=f"Executing Task {cursor + 1} of {total_tasks}")
                     st.info(f"""
                     Next component in the plan is: **'{task.get('component_name')}'** (based on micro-spec `{task.get('micro_spec_id')}`).
-
                     How would you like to proceed?
                     """)
+                else:
+                    # This message is shown when all tasks are complete
+                    st.success(f"All {total_tasks} development tasks are complete.")
+                    st.info("Click 'Proceed' to finalize development and begin the Integration & Validation phase.")
 
-                # Create columns for the buttons for a clean layout.
                 col1, col2, col3, col4, col5, col6 = st.columns(6)
 
                 with col1:
                     if st.button("▶️ Proceed", use_container_width=True, type="primary"):
-                        with st.spinner(f"Executing task for '{task.get('component_name')}'... This may take a moment."):
+                        # --- CORRECTED LOGIC ---
+                        # Determine the spinner message based on whether a task is pending.
+                        if task:
+                            spinner_message = f"Executing task for '{task.get('component_name')}'... This may take a moment."
+                        else:
+                            spinner_message = "Finalizing development and starting integration phase..."
+
+                        with st.spinner(spinner_message):
                             st.session_state.orchestrator.handle_proceed_action()
                         st.rerun()
 
+                # ... (the rest of the buttons in the other columns remain the same) ...
                 with col2:
                     if st.button("✍️ Raise CR", use_container_width=True):
                         st.session_state.orchestrator.handle_raise_cr_action()
                         st.rerun()
-
                 with col3:
                     if st.button("🐞 Report Bug", use_container_width=True):
                         st.session_state.orchestrator.handle_report_bug_action()
                         st.rerun()
-
                 with col4:
                     if st.button("🔁 Implement", use_container_width=True, help="Implement a pending CR or Bug Report"):
                         st.session_state.orchestrator.handle_view_cr_register_action()
                         st.rerun()
-
                 with col5:
                     if st.button("⏸️ Pause", use_container_width=True):
-                        st.toast("Pausing factory operations...")
                         st.session_state.orchestrator.pause_project()
-                        # UI will just stay here until resumed
-
+                        st.toast("Project paused and state saved.")
+                        st.rerun()
                 with col6:
                     if st.button("⏹️ Stop & Export", use_container_width=True):
                         st.session_state.show_export_confirmation = True
                         st.rerun()
+
+        elif current_phase_name == "AWAITING_INTEGRATION_CONFIRMATION":
+            st.header("Integration Warning")
+            st.warning(
+                "**The development phase is complete, but one or more components have known issues or failed their unit tests.**"
+            )
+            st.markdown(
+                "Proceeding with integration may result in an unstable or non-functional build. It is recommended to fix these issues before continuing."
+            )
+
+            issues = st.session_state.orchestrator.task_awaiting_approval.get("known_issues", [])
+            if issues:
+                st.subheader("Components with Known Issues:")
+                for issue in issues:
+                    st.error(f"- **{issue.get('artifact_name')}** (Status: {issue.get('status')})")
+
+            st.divider()
+            st.markdown("Do you want to proceed with integration anyway?")
+
+            col1, col2, _ = st.columns([1.5, 2, 3])
+            with col1:
+                if st.button("✅ Yes, Proceed to Integration", type="primary"):
+                    st.session_state.orchestrator.task_awaiting_approval = None
+                    st.session_state.orchestrator._run_integration_and_ui_testing_phase()
+                    st.rerun()
+            with col2:
+                if st.button("❌ No, Return to Development"):
+                    st.session_state.orchestrator.task_awaiting_approval = None
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
 
         elif current_phase_name == "MANUAL_UI_TESTING":
             st.header("Phase 4: Manual UI Testing")
@@ -907,8 +935,7 @@ if page == "Project":
             )
             st.markdown(
                 "Please describe the failure in as much detail as possible below. "
-                "Include information about what you were doing, what you expected to happen, "
-                "and what actually happened. This description will be used to generate a fix."
+                "This description will be used to generate a fix."
             )
             st.divider()
 
@@ -921,18 +948,25 @@ if page == "Project":
                 key="pm_triage_input"
             )
 
-            if st.button("Submit Description for Analysis", type="primary"):
-                if pm_error_description.strip():
-                    with st.spinner("Submitting your description for analysis..."):
-                        # This new orchestrator method will handle the logic
-                        st.session_state.orchestrator.handle_pm_triage_input(pm_error_description)
+            col1, col2, _ = st.columns([1.5, 2, 3])
+            with col1:
+                if st.button("Submit Description for Analysis", type="primary"):
+                    if pm_error_description.strip():
+                        with st.spinner("Submitting your description for analysis..."):
+                            st.session_state.orchestrator.handle_pm_triage_input(pm_error_description)
 
-                    st.toast("Description submitted. The factory will now attempt to plan a fix.")
-                    time.sleep(2)
-                    # The orchestrator will have changed the phase to GENESIS
+                        st.toast("Description submitted. The factory will now attempt to plan a fix.")
+                        time.sleep(2)
+                        st.rerun()
+                    else:
+                        st.error("Please provide a description of the error before submitting.")
+
+            # --- ADDED THIS BUTTON AS AN ESCAPE HATCH ---
+            with col2:
+                if st.button("Cancel and Return to Checkpoint"):
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.toast("Returning to the main development checkpoint.")
                     st.rerun()
-                else:
-                    st.error("Please provide a description of the error before submitting.")
 
         elif current_phase_name == "DEBUG_PM_ESCALATION":
             st.header("Phase 5: Debug Escalation")

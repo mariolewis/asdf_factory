@@ -32,50 +32,47 @@ class FixPlannerAgent_AppTarget:
 
     def create_fix_plan(self, root_cause_hypothesis: str, relevant_code: str) -> str:
         """
-        Generates a step-by-step plan to fix a diagnosed bug.
-
-        Args:
-            root_cause_hypothesis (str): The diagnosis of the bug from the TriageAgent.
-            relevant_code (str): The source code of the component(s) that need to be fixed.
-
-        Returns:
-            str: A detailed, step-by-step plan (micro-specification) for fixing the code.
-                 Returns an error message string if an API call fails.
+        Generates a detailed, sequential JSON plan to fix a diagnosed bug.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
             prompt = f"""
-            You are a Principal Software Architect specializing in code remediation and refactoring.
-            Your task is to take a root cause analysis of a bug and create a precise, step-by-step
-            technical plan to fix it. This plan will be executed by other AI code-generation agents.
+            You are a Principal Software Architect specializing in code remediation. Your task is to take a root cause analysis of a bug and the relevant faulty code, and create a precise, sequential development plan in JSON format to fix the bug.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Actionable Steps:** The plan must consist of clear, unambiguous, and actionable steps.
-            2.  **Be Specific:** Explicitly state which file, class, and function/method to modify. If code needs to be added, specify exactly where. If code needs to be removed or replaced, show the exact code to be changed.
-            3.  **Logical Flow:** The steps should be in a logical order for implementation.
-            4.  **Clarity over Brevity:** The plan must be detailed enough for another developer (or an AI) to execute without having to make its own assumptions. Explain the 'why' behind the proposed changes.
-            5.  **Format:** Use a numbered list for the steps.
+            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element in the array must be a JSON object `{{}}` representing one micro-task.
+            2.  **One File Per Task:** Each task must modify ONLY ONE file. If the fix requires changing two files, you must create two separate task objects in the JSON array.
+            3.  **JSON Object Schema:** Each task object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
+            4.  **Be Specific:** The `task_description` must be extremely specific, stating exactly what lines to add, remove, or change in the specified `component_file_path`.
+            5.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
-            **--- INPUTS ---**
-
-            **1. Root Cause Hypothesis (The problem to solve):**
+            **--- INPUT 1: Root Cause Hypothesis (The problem to solve) ---**
             ```
             {root_cause_hypothesis}
             ```
 
-            **2. Current Source Code (The code to be fixed):**
-            ```python
+            **--- INPUT 2: Current Faulty Source Code (The code to be fixed) ---**
+            ```
             {relevant_code}
             ```
 
-            **--- Detailed Fix Plan (Micro-Specification for Change) ---**
+            **--- Detailed Fix Plan (JSON Array Output) ---**
             """
 
             response = model.generate_content(prompt)
-            return response.text.strip()
+            # Clean the response to remove potential markdown fences
+            cleaned_response = response.text.strip().removeprefix("```json").removesuffix("```").strip()
+
+            # Validate that the response is a JSON array
+            if cleaned_response.startswith('[') and cleaned_response.endswith(']'):
+                json.loads(cleaned_response) # Final validation check
+                return cleaned_response
+            else:
+                logging.error(f"FixPlannerAgent received non-JSON-array response: {cleaned_response}")
+                raise ValueError("The AI response was not in the expected JSON array format.")
 
         except Exception as e:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"
             logging.error(error_message)
-            return error_message
+            return json.dumps([{"error": error_message}]) # Return a valid JSON array with an error message

@@ -34,7 +34,7 @@ class RefactoringPlannerAgent_AppTarget:
         optionally using the full source code of impacted components for higher accuracy.
         """
         try:
-            model = genai.GenerativeModel('gemini-pro')
+            model = genai.GenerativeModel('gemini-2.5-pro-preview-06-05')
 
             # --- Prepare the source code context for the prompt ---
             source_code_context_str = "# No specific source code provided for review.\n"

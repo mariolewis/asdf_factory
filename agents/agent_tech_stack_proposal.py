@@ -27,7 +27,7 @@ class TechStackProposalAgent:
             raise ValueError("API key is required for the TechStackProposalAgent.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         logging.info("TechStackProposalAgent initialized.")
 
     def propose_stack(self, functional_spec_text: str, target_os: str) -> str:

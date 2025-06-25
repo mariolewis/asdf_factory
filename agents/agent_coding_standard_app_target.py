@@ -26,7 +26,7 @@ class CodingStandardAgent_AppTarget:
             raise ValueError("API key is required for the CodingStandardAgent_AppTarget.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         logging.info("CodingStandardAgent_AppTarget initialized.")
 
     def generate_standard(self, tech_spec_text: str) -> str:

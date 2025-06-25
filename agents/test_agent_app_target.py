@@ -42,7 +42,7 @@ class TestAgent_AppTarget:
         """
         try:
             # Use the more capable model for test generation
-            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
             prompt = f"""
             You are an expert Software Quality Assurance (QA) Engineer specializing in automated testing.

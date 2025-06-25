@@ -22,7 +22,7 @@ class TestEnvironmentAdvisorAgent:
         if not api_key:
             raise ValueError("API key is required for the TestEnvironmentAdvisorAgent.")
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
     def get_setup_tasks(self, tech_spec_text: str, target_os: str) -> Optional[List[Dict]]:
         """

@@ -22,7 +22,7 @@ class IntegrationPlannerAgent:
             raise ValueError("API key cannot be empty.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
 
     def create_integration_plan(self, new_artifacts_json: str, existing_code_files: dict[str, str]) -> str:

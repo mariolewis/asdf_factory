@@ -28,67 +28,63 @@ class CodeReviewAgent:
             raise ValueError("API key is required for the CodeReviewAgent.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
         logging.info("CodeReviewAgent initialized.")
 
     def review_code(self, micro_spec: str, logic_plan: str, new_source_code: str, rowd_json: str, coding_standard: str) -> Tuple[str, str]:
         """
-        Performs a deep-dive review of the newly generated source code.
-
-        Args:
-            micro_spec: The original micro-specification for the component.
-            logic_plan: The intermediate logic plan for the component.
-            new_source_code: The newly generated source code to be reviewed.
-            rowd_json: A JSON string of the full Record-of-Work-Done.
-            coding_standard (str): The coding standard to enforce.
-
-        Returns:
-            A tuple containing:
-            - A status string: "pass" or "fail".
-            - A detailed report of discrepancies if "fail", otherwise an empty string.
+        Performs a deep-dive review of new source code. It now has three possible outcomes
+        and uses a technology-agnostic prompt.
         """
-        logging.info("CodeReviewAgent: Starting comprehensive code review...")
+        logging.info("CodeReviewAgent: Starting comprehensive code review and auto-fixing...")
 
         prompt = textwrap.dedent(f"""
-            You are an expert, detail-oriented code reviewer. Your task is to perform a deep-dive analysis and answer the question: "Does this source code perfectly and completely implement the logic plan, satisfy all requirements of the micro-specification, adhere to the coding standard, and contain no unwanted text, considering the existing artifacts in the Record-of-Work-Done (RoWD)? List all discrepancies."
+            You are an expert, detail-oriented code reviewer and auto-formatter. Your primary objective is to analyze the provided source code and ensure it perfectly adheres to its requirements and a given Coding Standard.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze Holistically:** You MUST consider all five inputs: the micro-specification, the logic plan, the RoWD, the new source code, and the coding standard.
-            2.  **Check for Contamination:** You MUST FAIL the review if the code contains any non-code text or markers that are not part of a valid docstring or a required inline comment (e.g., citation markers like ``, ``).
-            3.  **Check Coding Standard:** You MUST verify that the `new_source_code` strictly adheres to all rules in the provided `Coding Standard`. This is a critical check.
-            4.  **Check Logic & Requirements:** You MUST validate that the code correctly implements the `Logic Plan` and fulfills all requirements of the `Micro-Specification`.
-            5.  **Check Cross-Referencing:** You MUST cross-reference the `new_source_code` against the plan implied by the `RoWD` for inconsistencies (e.g., using unplanned libraries or database columns).
-            6.  **Output Format:**
-                -   If the source code is perfect and has NO discrepancies of any kind, your ENTIRE response MUST begin with the single word "PASS:".
-                -   If there are ANY discrepancies, your ENTIRE response MUST begin with the single word "FAIL:", followed by a detailed, numbered list of every discrepancy you found.
 
-            **--- INPUT 1: Micro-Specification ---**
+            1.  **Check for MAJOR Issues First:** Analyze the code for logical errors, security vulnerabilities, or significant deviations from the Micro-Specification or Logic Plan.
+                -   If you find any MAJOR issues, your response MUST begin with the single word "FAIL:", followed by a detailed list of only the major discrepancies.
+
+            2.  **Check for MINOR Stylistic Issues Second:** If there are no major issues, you must meticulously check the code against all rules in the provided "Coding Standard" document.
+                -   If you find ONLY minor stylistic/formatting issues (e.g., incorrect line length, improper blank lines, missing documentation), you MUST automatically FIX them. Your response must then begin with the phrase "PASS_WITH_FIXES:", followed immediately by the complete, corrected, and clean source code.
+
+            3.  **Check for Perfection:** If the code has no major or minor issues and perfectly adheres to all rules, your ENTIRE response MUST be the single word "PASS:".
+
+            4.  **Enforcement:** Your analysis must be strict. Your entire response must start with one of three phrases: "FAIL:", "PASS_WITH_FIXES:", or "PASS:". Do not include any other conversational text or markdown fences.
+
+            **--- INPUTS ---**
+            **1. Micro-Specification (What to build):**
             {micro_spec}
 
-            **--- INPUT 2: Logic Plan ---**
+            **2. Logic Plan (How to build it):**
             {logic_plan}
 
-            **--- INPUT 3: Existing Project Context (Record-of-Work-Done) ---**
-            {rowd_json}
-
-            **--- INPUT 4: Coding Standard to Enforce ---**
+            **3. Coding Standard to Enforce (The rules):**
+            ```
             {coding_standard}
+            ```
 
-            **--- INPUT 5: New Source Code to Review ---**
+            **4. New Source Code to Review:**
             ```
             {new_source_code}
             ```
 
-            **--- Review Assessment (Must start with "PASS:" or "FAIL:") ---**
+            **--- Review Assessment (Must start with "FAIL:", "PASS_WITH_FIXES:", or "PASS:") ---**
         """)
 
         try:
-            response = self.model.generate_content(prompt)
+            # Using the Pro model as this is a highly complex reasoning and generation task.
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            response = model.generate_content(prompt)
             response_text = response.text.strip()
 
             if response_text.startswith("PASS:"):
                 logging.info("Code review status: PASS")
                 return "pass", response_text[5:].strip()
+            elif response_text.startswith("PASS_WITH_FIXES:"):
+                logging.info("Code review status: PASS_WITH_FIXES")
+                return "pass_with_fixes", response_text[18:].strip()
             elif response_text.startswith("FAIL:"):
                 logging.warning("Code review status: FAIL")
                 return "fail", response_text[5:].strip()

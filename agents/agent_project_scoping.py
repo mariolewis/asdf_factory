@@ -31,7 +31,7 @@ class ProjectScopingAgent:
             raise ValueError("API key is required for the ProjectScopingAgent.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-pro')
+        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
     def analyze_complexity(self, spec_text: str) -> dict:
         """
