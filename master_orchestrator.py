@@ -29,6 +29,7 @@ from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
 from agents.agent_learning_capture import LearningCaptureAgent
 from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarget
 from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
+from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
 
 # Configure basic logging
@@ -318,98 +319,111 @@ class MasterOrchestrator:
 
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
-        Handles the 'generate -> review -> correct' workflow for standard source code.
-        This version now handles the 'pass_with_fixes' status from the review agent.
+        Handles the 'generate -> review -> correct -> verify -> commit' workflow.
+        This version now explicitly uses the VerificationAgent after code generation
+        and before committing, adhering to the PRD specification for the debug loop.
         """
         component_name = task.get("component_name")
-        logging.info(f"Executing language-agnostic code generation for: {component_name}")
+        logging.info(f"Executing source code generation for: {component_name}")
 
         project_details = db.get_project_by_id(self.project_id)
         coding_standard = project_details['coding_standard_text']
         target_language = project_details['technology_stack']
         test_command = project_details['test_execution_command']
+        is_build_automated = bool(project_details['is_build_automated'])
 
         if not target_language:
             raise Exception(f"Cannot generate code for '{component_name}': Target Language is not set for this project.")
+        if is_build_automated and not test_command:
+            raise Exception(f"Cannot verify component '{component_name}': Test Execution Command is not set for this project.")
 
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
         micro_spec_content = task.get("task_description")
 
+        # --- Code Generation and Review Loop ---
         logic_agent = LogicAgent_AppTarget(api_key=api_key)
         code_agent = CodeAgent_AppTarget(api_key=api_key)
         review_agent = CodeReviewAgent(api_key=api_key)
         test_agent = TestAgent_AppTarget(api_key=api_key)
-        doc_agent = DocUpdateAgentRoWD(self.db_manager)
 
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
         source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language)
 
         MAX_REVIEW_ATTEMPTS = 2
-        review_status = "fail" # Default to fail
+        review_status = "fail"
         for attempt in range(MAX_REVIEW_ATTEMPTS):
-            # The review_output will be feedback if it fails, or the fixed code if it passes with fixes.
             review_status, review_output = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, coding_standard)
-
             if review_status == "pass":
                 logging.info(f"Component '{component_name}' passed code review on attempt {attempt + 1}.")
                 break
-
             elif review_status == "pass_with_fixes":
                 logging.info(f"Component '{component_name}' passed code review on attempt {attempt + 1} with automated fixes.")
-                source_code = review_output # IMPORTANT: Update the source code with the fixed version
-                break # Exit the loop successfully
-
+                source_code = review_output
+                break
             elif review_status == "fail":
                 logging.warning(f"Component '{component_name}' failed code review on attempt {attempt + 1}. Feedback: {review_output}")
                 if attempt < MAX_REVIEW_ATTEMPTS - 1:
                     logging.info("Attempting to rewrite the code based on feedback...")
                     source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, feedback=review_output)
                 else:
-                    # This is the final failed attempt in the loop
                     raise Exception(f"Component '{component_name}' failed code review after all attempts.")
 
-        # This check is redundant if the loop handles the exception, but it's a safe guard.
         if review_status == "fail":
-             raise Exception(f"Component '{component_name}' failed code review after all attempts.")
+            raise Exception(f"Component '{component_name}' failed code review after all attempts.")
 
-        # --- The rest of the pipeline proceeds only on success ---
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
 
-        build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-        is_build_automated = bool(project_details['is_build_automated'])
+        # --- Step 1: Write Files to Disk ---
+        component_path_str = task.get("component_file_path")
+        test_path_str = task.get("test_file_path")
+        files_to_commit = []
 
-        if is_build_automated:
-            if not test_command:
-                raise Exception(f"Cannot build component '{component_name}': Test Execution Command is not set for this project.")
-
-            build_success, build_output = build_agent.build_and_commit_component(
-                component_path_str=task.get("component_file_path"),
-                component_code=source_code,
-                test_path_str=task.get("test_file_path"),
-                test_code=unit_tests,
-                test_command=test_command
-            )
-            if not build_success:
-                raise Exception(f"Build or unit tests failed for component {component_name}: {build_output}")
-            commit_hash = build_output.split(":")[-1].strip()
-        else:
-            # Manual build path remains the same...
-            component_path = project_root_path / task.get("component_file_path")
-            test_path = project_root_path / task.get("test_file_path")
+        if component_path_str and component_path_str.lower() not in ["n/a", "none"]:
+            component_path = project_root_path / component_path_str
             component_path.parent.mkdir(parents=True, exist_ok=True)
-            if task.get("test_file_path"):
-                test_path.parent.mkdir(parents=True, exist_ok=True)
-                test_path.write_text(unit_tests, encoding='utf-8')
             component_path.write_text(source_code, encoding='utf-8')
+            files_to_commit.append(component_path_str)
+            logging.info(f"Wrote source code to {component_path}")
 
-            files_to_commit = [p for p in [task.get("component_file_path"), task.get("test_file_path")] if p]
-            commit_message = f"feat: Add component {component_name} (manual build)"
+        if test_path_str and test_path_str.lower() not in ["n/a", "none"]:
+            test_path = project_root_path / test_path_str
+            test_path.parent.mkdir(parents=True, exist_ok=True)
+            test_path.write_text(unit_tests, encoding='utf-8')
+            files_to_commit.append(test_path_str)
+            logging.info(f"Wrote unit tests to {test_path}")
+
+        # --- Step 2: Explicitly Verify using VerificationAgent (as per PRD) ---
+        if is_build_automated:
+            verification_agent = VerificationAgent_AppTarget(api_key=api_key)
+            tests_passed, test_output = verification_agent.run_all_tests(project_root_path, test_command)
+            if not tests_passed:
+                raise Exception(f"Verification failed for component {component_name}: {test_output}")
+            logging.info(f"Component '{component_name}' passed verification.")
+
+        # --- Step 3: Commit Changes ---
+        if not files_to_commit:
+             logging.warning("No files were written to disk for this component. Skipping commit.")
+             commit_hash = "N/A"
+        else:
+            build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+            commit_message = f"feat: Add component {component_name}"
             commit_success, commit_result = build_agent.commit_changes(files_to_commit, commit_message)
-
             if not commit_success:
                 raise Exception(f"Git commit failed for component {component_name}: {commit_result}")
             commit_hash = commit_result.split(":")[-1].strip()
+
+        # --- Step 4: Update RoWD ---
+        doc_agent = DocUpdateAgentRoWD(self.db_manager)
+        doc_agent.add_or_update_artifact({
+            "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
+            "file_path": component_path_str, "artifact_name": component_name,
+            "artifact_type": task.get("component_type"), "short_description": micro_spec_content,
+            "status": "UNIT_TESTS_PASSING", "unit_test_status": "TESTS_PASSING",
+            "commit_hash": commit_hash, "version": 1,
+            "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+            "micro_spec_id": task.get("micro_spec_id")
+        })
 
         doc_agent.add_or_update_artifact({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,

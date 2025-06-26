@@ -59,13 +59,13 @@ class VerificationAgent_AppTarget:
             logging.error(f"LLM call failed to determine test command details: {e}.")
             return None
 
-    def run_all_tests(self, project_root: str | Path, tech_spec_text: str) -> tuple[bool, str]:
+    def run_all_tests(self, project_root: str | Path, test_command_str: str) -> tuple[bool, str]:
         """
-        Executes the entire test suite for the project, providing clear dependency info.
+        Executes the entire test suite for the project using a provided command.
 
         Args:
             project_root (str | Path): The root directory of the target project.
-            tech_spec_text (str): The technical specification for the project.
+            test_command_str (str): The specific command to execute to run all tests.
 
         Returns:
             A tuple containing a boolean for success/failure and the test runner output.
@@ -76,36 +76,32 @@ class VerificationAgent_AppTarget:
         if not project_root.is_dir():
             return False, f"Verification failed: Project root '{project_root}' is not a valid directory."
 
-        # 1. Determine test command and dependencies
-        exec_details = self._get_test_execution_details(tech_spec_text)
-        if not exec_details:
-            return False, "Failed to determine test execution command from the Technical Specification."
+        if not test_command_str:
+            return False, "Verification failed: Test execution command was not provided."
 
-        test_command_str = exec_details["command"]
-        required_tools = exec_details["required_tools"]
-        logging.info(f"Determined test command: '{test_command_str}'. Required tools: {required_tools}")
+        logging.info(f"Executing verification command: '{test_command_str}'")
 
         try:
-            # 2. Execute the command from the project's root directory
+            # Execute the command from the project's root directory
             result = subprocess.run(
                 test_command_str,
                 shell=True,
                 cwd=project_root,
                 capture_output=True,
-                text=True
+                text=True,
+                check=False # check=False to capture output even on failure
             )
             output = result.stdout + "\n" + result.stderr
-            logging.info(f"Test suite execution finished with exit code: {result.returncode}")
+            logging.info(f"Verification execution finished with exit code: {result.returncode}")
 
-            # 3. Return the result
+            # Return the result
             return result.returncode == 0, output
 
         except FileNotFoundError:
-            # 4. Provide a helpful error message if the command's tool is not found
             tool_name = test_command_str.split()[0]
             error_msg = (
                 f"Test execution failed: The command '{tool_name}' could not be found.\n"
-                f"Please ensure the required tool(s) ({', '.join(required_tools)}) are installed and accessible in your system's PATH."
+                f"Please ensure the required testing tools are installed and accessible in your system's PATH."
             )
             logging.error(error_msg)
             return False, error_msg
