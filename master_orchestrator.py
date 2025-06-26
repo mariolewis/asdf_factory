@@ -29,6 +29,7 @@ from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
 from agents.agent_learning_capture import LearningCaptureAgent
 from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarget
 from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
+from agents.agent_rollback_app_target import RollbackAgent
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -1514,11 +1515,16 @@ class MasterOrchestrator:
                     raise Exception(f"Could not find history record for project ID {project_id} to get path.")
 
                 project_root = Path(history_record['project_root_folder'])
-                repo = git.Repo(project_root)
 
-                # Reset the repository to the last commit
-                repo.git.reset('--hard', 'HEAD')
-                logging.info(f"Successfully reset repository at {project_root}")
+                # Instantiate and use the dedicated agent for rollback
+                agent = RollbackAgent()
+                success, message = agent.discard_local_changes(project_root)
+
+                if not success:
+                    # If the agent fails, log the error and update the UI
+                    raise Exception(f"RollbackAgent failed: {message}")
+
+                logging.info(f"Successfully discarded changes at {project_root}")
 
                 # Re-run pre-flight checks to confirm the environment is now clean
                 check_result = self._perform_preflight_checks(str(project_root))
