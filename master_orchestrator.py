@@ -413,7 +413,7 @@ class MasterOrchestrator:
 
         # --- Step 4: Update RoWD ---
         doc_agent = DocUpdateAgentRoWD(db)
-        doc_agent.add_or_update_artifact({
+        doc_agent.update_artifact_record({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
             "file_path": component_path_str, "artifact_name": component_name,
             "artifact_type": task.get("component_type"), "short_description": micro_spec_content,
