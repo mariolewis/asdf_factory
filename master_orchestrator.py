@@ -319,9 +319,9 @@ class MasterOrchestrator:
 
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
-        Handles the 'generate -> review -> correct -> verify -> commit' workflow.
-        This version now explicitly uses the VerificationAgent after code generation
-        and before committing, adhering to the PRD specification for the debug loop.
+        Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
+        This version now calls the DocUpdateAgent to update both the application and technical
+        specifications for any post-Genesis changes.
         """
         component_name = task.get("component_name")
         logging.info(f"Executing source code generation for: {component_name}")
@@ -384,16 +384,14 @@ class MasterOrchestrator:
             component_path.parent.mkdir(parents=True, exist_ok=True)
             component_path.write_text(source_code, encoding='utf-8')
             files_to_commit.append(component_path_str)
-            logging.info(f"Wrote source code to {component_path}")
 
         if test_path_str and test_path_str.lower() not in ["n/a", "none"]:
             test_path = project_root_path / test_path_str
             test_path.parent.mkdir(parents=True, exist_ok=True)
             test_path.write_text(unit_tests, encoding='utf-8')
             files_to_commit.append(test_path_str)
-            logging.info(f"Wrote unit tests to {test_path}")
 
-        # --- Step 2: Explicitly Verify using VerificationAgent (as per PRD) ---
+        # --- Step 2: Explicitly Verify using VerificationAgent ---
         if is_build_automated:
             verification_agent = VerificationAgent_AppTarget(api_key=api_key)
             tests_passed, test_output = verification_agent.run_all_tests(project_root_path, test_command)
@@ -403,8 +401,8 @@ class MasterOrchestrator:
 
         # --- Step 3: Commit Changes ---
         if not files_to_commit:
-             logging.warning("No files were written to disk for this component. Skipping commit.")
-             commit_hash = "N/A"
+            logging.warning("No files were written to disk for this component. Skipping commit.")
+            commit_hash = "N/A"
         else:
             build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
             commit_message = f"feat: Add component {component_name}"
@@ -414,7 +412,7 @@ class MasterOrchestrator:
             commit_hash = commit_result.split(":")[-1].strip()
 
         # --- Step 4: Update RoWD ---
-        doc_agent = DocUpdateAgentRoWD(self.db_manager)
+        doc_agent = DocUpdateAgentRoWD(db)
         doc_agent.add_or_update_artifact({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
             "file_path": component_path_str, "artifact_name": component_name,
@@ -424,6 +422,37 @@ class MasterOrchestrator:
             "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
             "micro_spec_id": task.get("micro_spec_id")
         })
+
+        # --- Step 5: Update Specifications if this is a post-Genesis change ---
+        if self.is_genesis_complete:
+            logging.info(f"Post-Genesis change detected. Checking specifications for updates for task: {component_name}.")
+            implementation_plan_for_update = json.dumps([task])
+
+            # Part A: Update Application Specification
+            original_app_spec = project_details['final_spec_text']
+            if original_app_spec:
+                logging.info("Checking for Application Specification updates...")
+                updated_app_spec = doc_agent.update_specification_text(
+                    original_spec=original_app_spec,
+                    implementation_plan=implementation_plan_for_update,
+                    api_key=api_key
+                )
+                if updated_app_spec != original_app_spec:
+                    db.save_final_specification(self.project_id, updated_app_spec)
+                    logging.info("Successfully updated and saved the Application Specification.")
+
+            # Part B: Update Technical Specification
+            original_tech_spec = project_details['tech_spec_text']
+            if original_tech_spec:
+                logging.info("Checking for Technical Specification updates...")
+                updated_tech_spec = doc_agent.update_specification_text(
+                    original_spec=original_tech_spec,
+                    implementation_plan=implementation_plan_for_update,
+                    api_key=api_key
+                )
+                if updated_tech_spec != original_tech_spec:
+                    db.save_tech_specification(self.project_id, updated_tech_spec)
+                    logging.info("Successfully updated and saved the Technical Specification.")
 
         doc_agent.add_or_update_artifact({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
