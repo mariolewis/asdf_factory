@@ -1962,6 +1962,46 @@ class MasterOrchestrator:
             logging.error(f"Failed to finalize test environment setup: {e}")
             return False
 
+    def handle_ignore_setup_task(self, task: dict):
+        """
+        Creates a 'KNOWN_ISSUE' artifact to record a skipped setup task.
+        This makes the decision persistent and trackable as per the PRD.
+
+        Args:
+            task (dict): A dictionary containing the details of the skipped task.
+        """
+        if not self.project_id:
+            logging.error("Cannot log ignored setup task; no active project.")
+            return
+
+        logging.warning(f"PM chose to ignore setup task: {task.get('tool_name')}. Logging as KNOWN_ISSUE.")
+        try:
+            with self.db_manager as db:
+                # Use the DocUpdateAgent to create the new artifact record
+                doc_agent = DocUpdateAgentRoWD(db)
+                artifact_name = f"Skipped Setup Task: {task.get('tool_name', 'Unnamed Step')}"
+                description = f"The PM chose to ignore the setup/installation for the following tool or step: {task.get('instructions', 'No instructions provided.')}"
+
+                doc_agent.add_or_update_artifact({
+                    "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                    "project_id": self.project_id,
+                    "file_path": "N/A",
+                    "artifact_name": artifact_name,
+                    "artifact_type": "ENVIRONMENT_SETUP",
+                    "signature": "N/A",
+                    "short_description": description,
+                    "version": 1,
+                    "status": "KNOWN_ISSUE",
+                    "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+                    "commit_hash": None,
+                    "micro_spec_id": None,
+                    "dependencies": None,
+                    "unit_test_status": "NOT_APPLICABLE"
+                })
+            logging.info(f"Successfully created KNOWN_ISSUE artifact for '{artifact_name}'.")
+        except Exception as e:
+            logging.error(f"Failed to create KNOWN_ISSUE artifact for skipped setup task. Error: {e}")
+
     def get_latest_commit_timestamp(self) -> datetime | None:
         """
         Retrieves the timestamp of the most recent commit in the project's repo.

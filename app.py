@@ -608,11 +608,15 @@ if page == "Project":
                         st.rerun()
 
                 with col3:
-                    if st.button("⚠️ Ignore & Continue", use_container_width=True):
-                        logging.warning(f"PM skipped setup step: {task.get('tool_name')}")
-                        st.session_state.current_setup_step += 1
-                        st.session_state.setup_help_text = None
-                        st.rerun()
+                if st.button("⚠️ Ignore & Continue", use_container_width=True):
+                    # Call the new orchestrator method to log the known issue
+                    task = st.session_state.setup_tasks[st.session_state.current_setup_step]
+                    st.session_state.orchestrator.handle_ignore_setup_task(task)
+
+                    # Proceed with the UI update
+                    st.session_state.current_setup_step += 1
+                    st.session_state.setup_help_text = None
+                    st.rerun()
 
         elif current_phase_name == "CODING_STANDARD_GENERATION":
             st.header("Phase 2.A: Coding Standard Generation")
