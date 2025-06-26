@@ -259,63 +259,62 @@ class MasterOrchestrator:
             logging.error(f"Attempted to set an invalid phase: {phase_name}")
 
     def handle_proceed_action(self):
-        #self.active_plan_cursor = 19 # Temporary fix to bypass the plan cursor for testing purposes
         """
         Handles the logic for the Genesis Pipeline.
-        This version now includes a pre-integration check for known issues.
+        This version now includes a check for the PM_CHECKPOINT_BEHAVIOR setting
+        to enable an auto-proceed loop.
         """
         if self.current_phase != FactoryPhase.GENESIS:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
             return
 
-        # Check if the plan is complete
-        if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
-            logging.info("Development plan is complete. Performing pre-integration check for known issues.")
-            with self.db_manager as db:
-                # Check for any artifacts that are not in a clean, passed state.
-                non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
-                known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
+        with self.db_manager as db:
+            pm_behavior = db.get_config_value("PM_CHECKPOINT_BEHAVIOR") or "ALWAYS_ASK"
+            is_auto_proceed = (pm_behavior == "AUTO_PROCEED")
+            api_key = db.get_config_value("LLM_API_KEY")
 
-            if known_issues:
-                # If issues exist, pause and wait for PM confirmation.
-                logging.warning(f"Found {len(known_issues)} component(s) with known issues. Awaiting PM confirmation to proceed.")
-                self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
-                self.set_phase("AWAITING_INTEGRATION_CONFIRMATION")
-            else:
-                # If no issues, proceed directly to integration.
-                logging.info("No known issues found. Proceeding directly to integration.")
-                self._run_integration_and_ui_testing_phase()
-            return
+        while True: # This loop will run once for "ALWAYS_ASK", or continuously for "AUTO_PROCEED"
+            if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
+                logging.info("Development plan is complete. Performing pre-integration check for known issues.")
+                with self.db_manager as db:
+                    non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
+                    known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
 
-        # If we are here, it means there are still tasks to process.
-        task = self.active_plan[self.active_plan_cursor]
-        component_type = task.get("component_type", "CLASS")
-        logging.info(f"PM chose 'Proceed'. Executing task {self.active_plan_cursor + 1} for component: {task.get('component_name')}")
-
-        try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
-                project_details = db.get_project_by_id(self.project_id)
-                project_root_path = Path(project_details['project_root_folder'])
-
-                if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
-                    self._execute_declarative_modification_task(task, project_root_path, db, api_key)
+                if known_issues:
+                    logging.warning(f"Found {len(known_issues)} component(s) with known issues. Awaiting PM confirmation to proceed.")
+                    self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
+                    self.set_phase("AWAITING_INTEGRATION_CONFIRMATION")
                 else:
-                    if component_type not in ["FUNCTION", "CLASS"]:
-                        logging.warning(f"Unknown component_type '{component_type}' found. Defaulting to source code generation pipeline.")
-                    self._execute_source_code_generation_task(task, project_root_path, db, api_key)
+                    logging.info("No known issues found. Proceeding directly to integration.")
+                    self._run_integration_and_ui_testing_phase()
+                return # Exit the method completely once the plan is done
 
-            # --- Advance Plan Cursor ONLY on Success ---
-            self.active_plan_cursor += 1
+            task = self.active_plan[self.active_plan_cursor]
+            component_type = task.get("component_type", "CLASS")
+            logging.info(f"Executing task {self.active_plan_cursor + 1} for component: {task.get('component_name')}")
 
-            # Now, check AGAIN if the plan is complete after advancing.
-            if self.active_plan_cursor >= len(self.active_plan):
-                logging.info("Last development task complete. Triggering Integration and UI Testing phase.")
-                self._run_integration_and_ui_testing_phase()
+            try:
+                with self.db_manager as db:
+                    project_details = db.get_project_by_id(self.project_id)
+                    project_root_path = Path(project_details['project_root_folder'])
 
-        except Exception as e:
-            logging.error(f"Genesis Pipeline failed while executing plan for {task.get('component_name')}. Error: {e}")
-            self.escalate_for_manual_debug(str(e))
+                    if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
+                        self._execute_declarative_modification_task(task, project_root_path, db, api_key)
+                    else:
+                        if component_type not in ["FUNCTION", "CLASS"]:
+                            logging.warning(f"Unknown component_type '{component_type}' found. Defaulting to source code generation pipeline.")
+                        self._execute_source_code_generation_task(task, project_root_path, db, api_key)
+
+                self.active_plan_cursor += 1
+
+                # If in "ALWAYS_ASK" mode, break the loop after one successful task.
+                if not is_auto_proceed:
+                    break
+
+            except Exception as e:
+                logging.error(f"Genesis Pipeline failed while executing plan for {task.get('component_name')}. Error: {e}")
+                self.escalate_for_manual_debug(str(e))
+                return # Stop the loop and the method on failure
 
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
