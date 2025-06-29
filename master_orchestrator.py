@@ -633,10 +633,10 @@ class MasterOrchestrator:
                 self.set_phase("MANUAL_UI_TESTING")
 
         except Exception as e:
-        logging.error(f"Integration & Verification Phase failed. Awaiting PM resolution. Error: {e}")
-        # Store the failure reason for the UI to display
-        self.task_awaiting_approval = {"failure_reason": str(e)}
-        self.set_phase("AWAITING_INTEGRATION_RESOLUTION")
+            logging.error(f"Integration & Verification Phase failed. Awaiting PM resolution. Error: {e}")
+            # Store the failure reason for the UI to display
+            self.task_awaiting_approval = {"failure_reason": str(e)}
+            self.set_phase("AWAITING_INTEGRATION_RESOLUTION")
 
     def handle_ui_test_result_upload(self, test_result_content: str):
         """
