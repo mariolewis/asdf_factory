@@ -48,6 +48,7 @@ class FactoryPhase(Enum):
     GENESIS = auto()
     AWAITING_INTEGRATION_CONFIRMATION = auto()
     INTEGRATION_AND_VERIFICATION = auto()
+    AWAITING_INTEGRATION_RESOLUTION = auto()
     MANUAL_UI_TESTING = auto()
     AWAITING_PM_DECLARATIVE_CHECKPOINT = auto()
     AWAITING_PREFLIGHT_RESOLUTION = auto()
@@ -122,6 +123,7 @@ class MasterOrchestrator:
         FactoryPhase.GENESIS: "Iterative Development",
         FactoryPhase.AWAITING_INTEGRATION_CONFIRMATION: "Awaiting Integration Confirmation",
         FactoryPhase.INTEGRATION_AND_VERIFICATION: "Integration & Verification",
+        FactoryPhase.AWAITING_INTEGRATION_RESOLUTION: "Awaiting Integration Resolution",
         FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
         FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
         FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
@@ -631,8 +633,10 @@ class MasterOrchestrator:
                 self.set_phase("MANUAL_UI_TESTING")
 
         except Exception as e:
-            logging.error(f"Integration & Verification Phase failed. Error: {e}")
-            self.escalate_for_manual_debug(str(e))
+        logging.error(f"Integration & Verification Phase failed. Awaiting PM resolution. Error: {e}")
+        # Store the failure reason for the UI to display
+        self.task_awaiting_approval = {"failure_reason": str(e)}
+        self.set_phase("AWAITING_INTEGRATION_RESOLUTION")
 
     def handle_ui_test_result_upload(self, test_result_content: str):
         """
@@ -2001,6 +2005,38 @@ class MasterOrchestrator:
             logging.info(f"Successfully created KNOWN_ISSUE artifact for '{artifact_name}'.")
         except Exception as e:
             logging.error(f"Failed to create KNOWN_ISSUE artifact for skipped setup task. Error: {e}")
+
+    def handle_acknowledge_integration_failure(self):
+        """
+        Handles the PM's acknowledgment of a system-level integration failure.
+
+        This method generates the UI test plan and transitions the state to
+        MANUAL_UI_TESTING, allowing the workflow to proceed.
+        """
+        logging.warning("PM acknowledged a system-level integration failure. Proceeding to manual testing.")
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                project_details = db.get_project_by_id(self.project_id)
+
+                if not api_key or not project_details:
+                    raise Exception("Cannot generate UI test plan: Missing API Key or Project Details.")
+
+                # Generate the UI Test Plan, as this step was previously skipped.
+                functional_spec_text = project_details['final_spec_text']
+                technical_spec_text = project_details['tech_spec_text']
+                ui_test_planner = UITestPlannerAgent_AppTarget(api_key=api_key)
+                ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
+
+                db.save_ui_test_plan(self.project_id, ui_test_plan_content)
+
+            self.task_awaiting_approval = None
+            self.set_phase("MANUAL_UI_TESTING")
+
+        except Exception as e:
+            logging.error(f"Failed to handle integration failure acknowledgment. Error: {e}")
+            # If even this fails, escalate to prevent getting stuck
+            self.set_phase("DEBUG_PM_ESCALATION")
 
     def get_latest_commit_timestamp(self) -> datetime | None:
         """

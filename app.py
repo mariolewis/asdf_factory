@@ -931,6 +931,22 @@ if page == "Project":
                 st.toast("Project phase complete!")
                 st.rerun()
 
+        elif current_phase_name == "AWAITING_INTEGRATION_RESOLUTION":
+            st.header("Phase 5: Integration & Verification Failed")
+            st.error("The automated integration and verification process could not be completed due to a system-level or environment error.")
+
+            if st.session_state.orchestrator.task_awaiting_approval:
+                failure_reason = st.session_state.orchestrator.task_awaiting_approval.get("failure_reason", "No specific reason was provided.")
+                st.markdown("**Failure Details:**")
+                st.code(failure_reason, language='text')
+
+            st.warning("This is often caused by a missing testing framework (like 'pytest') in your environment or a configuration issue. You cannot re-run the automated test, but you can acknowledge the failure and proceed to manual UI testing.")
+
+            if st.button("Acknowledge Failure & Proceed to Manual UI Testing", type="primary", use_container_width=True):
+                # This new handler will bypass the failed tests and move to the next phase
+                st.session_state.orchestrator.handle_acknowledge_integration_failure()
+                st.rerun()
+
         elif current_phase_name == "AWAITING_PM_TRIAGE_INPUT":
             st.header("Phase 5: Interactive Debugging Triage")
             st.warning(
