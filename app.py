@@ -1604,7 +1604,7 @@ elif page == "Documents":
 
             # UI Test Plan
             with st.expander("UI Test Plan", expanded=False):
-                ui_test_plan_text = project_docs.get('ui_test_plan_text')
+                ui_test_plan_text = project_docs['ui_test_plan_text']
                 if ui_test_plan_text:
                     st.markdown(ui_test_plan_text)
                     ui_test_plan_docx_bytes = report_generator.generate_text_document_docx(f"UI Test Plan - {doc_project_name}", ui_test_plan_text)
