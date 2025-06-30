@@ -35,27 +35,57 @@ class BuildAndCommitAgentAppTarget:
         except git.InvalidGitRepositoryError:
             raise git.InvalidGitRepositoryError(f"The path provided is not a valid Git repository: {self.repo_path}")
 
+    def _sanitize_path(self, raw_path: str | None) -> str | None:
+        """
+        Cleans and validates a file path string received from an LLM.
+        """
+        if not raw_path or raw_path.lower().strip() in ["n/a", "none"]:
+            return None
+
+        # Take the first part if there are commas
+        path = raw_path.split(',')[0].strip()
+
+        # Remove characters invalid in most filesystems
+        invalid_chars = '<>:"|?*'
+        for char in invalid_chars:
+            path = path.replace(char, '')
+
+        # Replace backslashes with forward slashes for consistency
+        path = path.replace('\\', '/')
+
+        # Ensure it's a relative path to prevent absolute path injections
+        if Path(path).is_absolute():
+            logging.warning(f"Sanitizer received an absolute path, which is not allowed: {path}. Ignoring.")
+            return None
+
+        return path
+
     def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str) -> tuple[bool, str]:
         """
         Writes the component and its tests, runs all tests, and commits on success.
         This version now correctly handles null/placeholder file paths.
         """
         try:
+            # Sanitize the file paths before use
+            sanitized_component_path = self._sanitize_path(component_path_str)
+            sanitized_test_path = self._sanitize_path(test_path_str)
+
             files_to_commit = []
 
-            # --- CORRECTED: Only write files if a valid path is provided ---
-            if component_path_str and component_path_str.lower() not in ["n/a", "none"]:
-                component_path = self.repo_path / component_path_str
+            # Write component file if the sanitized path is valid
+            if sanitized_component_path:
+                component_path = self.repo_path / sanitized_component_path
                 component_path.parent.mkdir(parents=True, exist_ok=True)
                 component_path.write_text(component_code, encoding='utf-8')
-                files_to_commit.append(component_path_str)
+                files_to_commit.append(sanitized_component_path)
                 logging.info(f"Wrote source code to {component_path}")
 
-            if test_path_str and test_path_str.lower() not in ["n/a", "none"]:
-                test_path = self.repo_path / test_path_str
+            # Write test file if the sanitized path is valid
+            if sanitized_test_path:
+                test_path = self.repo_path / sanitized_test_path
                 test_path.parent.mkdir(parents=True, exist_ok=True)
                 test_path.write_text(test_code, encoding='utf-8')
-                files_to_commit.append(test_path_str)
+                files_to_commit.append(sanitized_test_path)
                 logging.info(f"Wrote unit tests to {test_path}")
 
             logging.info(f"Running test suite with command: '{test_command}'")

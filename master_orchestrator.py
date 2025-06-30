@@ -322,8 +322,7 @@ class MasterOrchestrator:
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
         Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
-        This version now calls the DocUpdateAgent to update both the application and technical
-        specifications for any post-Genesis changes.
+        This version now sanitizes file paths before use to prevent file system errors.
         """
         component_name = task.get("component_name")
         logging.info(f"Executing source code generation for: {component_name}")
@@ -376,18 +375,18 @@ class MasterOrchestrator:
 
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
 
-        # --- Step 1: Write Files to Disk ---
-        component_path_str = task.get("component_file_path")
-        test_path_str = task.get("test_file_path")
+        # --- Step 1: Sanitize Paths and Write Files to Disk ---
+        component_path_str = self._sanitize_path(task.get("component_file_path"))
+        test_path_str = self._sanitize_path(task.get("test_file_path"))
         files_to_commit = []
 
-        if component_path_str and component_path_str.lower() not in ["n/a", "none"]:
+        if component_path_str:
             component_path = project_root_path / component_path_str
             component_path.parent.mkdir(parents=True, exist_ok=True)
             component_path.write_text(source_code, encoding='utf-8')
             files_to_commit.append(component_path_str)
 
-        if test_path_str and test_path_str.lower() not in ["n/a", "none"]:
+        if test_path_str:
             test_path = project_root_path / test_path_str
             test_path.parent.mkdir(parents=True, exist_ok=True)
             test_path.write_text(unit_tests, encoding='utf-8')
@@ -455,16 +454,6 @@ class MasterOrchestrator:
                 if updated_tech_spec != original_tech_spec:
                     db.save_tech_specification(self.project_id, updated_tech_spec)
                     logging.info("Successfully updated and saved the Technical Specification.")
-
-        doc_agent.add_or_update_artifact({
-            "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
-            "file_path": task.get("component_file_path"), "artifact_name": component_name,
-            "artifact_type": task.get("component_type"), "short_description": micro_spec_content,
-            "status": "UNIT_TESTS_PASSING", "unit_test_status": "TESTS_PASSING",
-            "commit_hash": commit_hash, "version": 1,
-            "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
-            "micro_spec_id": task.get("micro_spec_id")
-        })
 
     def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
@@ -2056,3 +2045,32 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Could not retrieve latest commit timestamp: {e}")
             return None
+
+    def _sanitize_path(self, raw_path: str | None) -> str | None:
+        """
+        Cleans and validates a file path string received from an LLM.
+
+        - Returns None if the path is empty or 'N/A'.
+        - Removes invalid characters for file names.
+        - Handles cases where multiple files might be in one string.
+        """
+        if not raw_path or raw_path.lower().strip() in ["n/a", "none"]:
+            return None
+
+        # Take the first part if there are commas
+        path = raw_path.split(',')[0].strip()
+
+        # Remove characters invalid in most filesystems
+        invalid_chars = '<>:"|?*'
+        for char in invalid_chars:
+            path = path.replace(char, '')
+
+        # Replace backslashes with forward slashes for consistency
+        path = path.replace('\\', '/')
+
+        # Ensure it's a relative path to prevent absolute path injections
+        if Path(path).is_absolute():
+            logging.warning(f"Sanitizer received an absolute path, which is not allowed: {path}. Ignoring.")
+            return None
+
+        return path
