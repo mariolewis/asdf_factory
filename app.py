@@ -1580,6 +1580,16 @@ elif page == "Documents":
                 else:
                     st.info("This document has not been generated for this project yet.")
 
+            # Coding Standard
+            with st.expander("Coding Standard", expanded=False):
+                coding_standard_text = project_docs['coding_standard_text'] if project_docs else None
+                if coding_standard_text:
+                    st.text_area("Coding Standard Content", coding_standard_text, height=300, disabled=True, key=f"cs_{doc_project_id}")
+                    cs_docx_bytes = report_generator.generate_text_document_docx(f"Coding Standard - {doc_project_name}", coding_standard_text)
+                    st.download_button("📄 Print to .docx", cs_docx_bytes, f"CodingStandard_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_cs_{doc_project_id}")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+
             # Development Plan
             with st.expander("Development Plan", expanded=False):
                 # CORRECTED: Use dictionary-style key access

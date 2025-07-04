@@ -47,21 +47,16 @@ class CodeAgent_AppTarget:
                 {feedback}
                 """
 
-            # --- RE-ENGINEERED PROMPT ---
+            # --- RE-ENGINEERED AND HARDENED PROMPT ---
             prompt = f"""
-            You are an expert software developer with an extreme attention to detail. Your primary objective is to write production-ready source code that perfectly adheres to a strict set of rules. Functional correctness and rule adherence are equally important.
+            You are an expert software developer. Your only function is to write raw source code.
+            Your output is being saved directly to a file and executed. Any non-code text, including conversational text, explanations, or markdown fences like ```python, will cause a critical system failure.
 
-            **NON-NEGOTIABLE RULES OF ENGAGEMENT:**
-            1.  **Output Format:** Your entire response MUST BE ONLY the raw source code for the component. Do not include any conversational text, explanations, or markdown fences like ```python.
-            2.  **Coding Standard Adherence:** You MUST treat the provided Coding Standard as a set of absolute, mandatory requirements. Before providing your response, double-check your generated code against this checklist:
-                - Does the file start with a module-level docstring?
-                - Are there exactly two blank lines before all top-level class and function definitions?
-                - Do all public classes, methods, and functions have complete docstrings?
-                - Does any line in a docstring or comment exceed 72 characters?
-                - Does any line of code exceed 88 characters?
-                - Are all inline comments explaining the 'why', not the 'what'?
-            3.  **Target Language:** The code MUST be written in **{target_language}**.
-            4.  **Logic Implementation:** The code MUST implement ONLY the logic described in the provided Logical Plan.
+            **MANDATORY INSTRUCTIONS:**
+            1.  **RAW CODE ONLY:** Your entire response MUST BE ONLY the raw source code for the component. The first character of your response must be the first character of the code.
+            2.  **CODING STANDARD:** You MUST strictly follow all rules in the provided Coding Standard.
+            3.  **TARGET LANGUAGE:** The code MUST be written in **{target_language}**.
+            4.  **LOGIC:** The code MUST implement ONLY the logic described in the provided Logical Plan.
 
             {correction_context}
 
