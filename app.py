@@ -113,6 +113,7 @@ with st.sidebar:
                     st.error("Archive name cannot be empty.")
 
 # --- Main Application UI ---
+st.components.v1.html("<script>window.scrollTo(0, 0);</script>", height=0)
 
 if page == "Project":
     if "last_action_success_message" in st.session_state:
@@ -172,7 +173,7 @@ if page == "Project":
         elif current_phase_name == "SPEC_ELABORATION":
             st.header("Phase 1: Application Specification")
 
-            # --- State Management for the corrected multi-step workflow ---
+            # --- State Management for the multi-step workflow ---
             if 'spec_draft' not in st.session_state:
                 st.session_state.spec_draft = None
             if 'spec_step' not in st.session_state:
@@ -229,19 +230,19 @@ if page == "Project":
 
                             refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text)
                             st.session_state.spec_draft = refined_draft
-                            st.session_state.spec_step = 'pm_review_refined' # Move to the new review step
+                            st.session_state.spec_step = 'pm_review_refined'
                             st.rerun()
                     else:
                         st.warning("Please provide feedback to refine the draft.")
 
-            # --- NEW STEP 3: PM Reviews the AI-Refined Draft ---
+            # --- STEP 3: PM Reviews the AI-Refined Draft ---
             elif st.session_state.spec_step == 'pm_review_refined':
                 st.subheader("Refined Draft - Your Review")
                 st.markdown("The draft has been updated with your feedback. Please review the changes below.")
                 st.text_area("Refined Draft:", value=st.session_state.spec_draft, height=300, key="spec_draft_display_refined", disabled=True)
                 st.info("You can now either run the AI's ambiguity analysis on this version or provide another round of feedback.")
 
-                col1, col2, _ = st.columns([1, 1, 3])
+                col1, col2, _ = st.columns([1.5, 1.5, 3])
                 with col1:
                     if st.button("✅ Looks Good, Run AI Analysis", type="primary", use_container_width=True):
                         with st.spinner("AI is checking the refined draft for ambiguities..."):
@@ -250,14 +251,14 @@ if page == "Project":
                             agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                             issues = agent.identify_potential_issues(st.session_state.spec_draft)
                             st.session_state.ai_issues = issues
-                            st.session_state.spec_step = 'ai_clarification' # Move to the final clarification loop
+                            st.session_state.spec_step = 'ai_clarification'
                             st.rerun()
                 with col2:
                     if st.button("✍️ I Have More Feedback", use_container_width=True):
-                        st.session_state.spec_step = 'pm_feedback' # Loop back to the feedback step
+                        st.session_state.spec_step = 'pm_feedback'
                         st.rerun()
 
-            # --- STEP 4 & 5: AI Clarification Loop & Final Approval ---
+            # --- STEP 4: AI Clarification Loop & Final Approval ---
             elif st.session_state.spec_step == 'ai_clarification':
                 st.subheader("Specification Refinement - AI Analysis")
                 st.text_area("Current Draft:", value=st.session_state.spec_draft, height=300, key="spec_draft_display_2", disabled=True)
@@ -266,12 +267,11 @@ if page == "Project":
                 st.markdown("**AI Analysis Results:**")
                 st.info(st.session_state.ai_issues)
 
-                # --- Corrected UI with multi-line input and explicit buttons ---
                 st.markdown("You can now provide clarifications to the AI's points below, or approve the specification if you are satisfied.")
 
                 clarification_text = st.text_area("Your Clarifications:", height=150, key="pm_clarification_text")
 
-                col1, col2, _ = st.columns([1, 1.5, 3])
+                col1, col2, _ = st.columns([1.5, 2, 3])
 
                 with col1:
                     if st.button("Submit Clarifications", use_container_width=True):
@@ -280,6 +280,13 @@ if page == "Project":
                                 with st.session_state.orchestrator.db_manager as db:
                                     api_key = db.get_config_value("LLM_API_KEY")
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+
+                                # Capture learning before refining
+                                st.session_state.orchestrator.capture_spec_clarification_learning(
+                                    problem_context=st.session_state.ai_issues,
+                                    solution_text=clarification_text,
+                                    spec_text=st.session_state.spec_draft
+                                )
 
                                 refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_text)
                                 st.session_state.spec_draft = refined_draft
@@ -292,26 +299,17 @@ if page == "Project":
 
                 with col2:
                     if st.button("✅ Approve Specification and Proceed", type="primary", use_container_width=True):
-                        st.session_state.spec_step = 'final_approval'
-                        st.rerun()
+                        with st.spinner("Finalizing and saving specification..."):
+                            with st.session_state.orchestrator.db_manager as db:
+                                db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.spec_draft)
 
-            # --- FINAL STEP: PM Acknowledgment ---
-            elif st.session_state.spec_step == 'final_approval':
-                st.subheader("Final Specification Approved")
-                st.success("The final specification is now agreed upon. Please copy the text below for your records before proceeding.")
-                st.text_area("Finalized Specification:", value=st.session_state.spec_draft, height=300, disabled=True)
+                            st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
 
-                if st.button("Acknowledge and Proceed to Technical Specification", type="primary"):
-                    with st.session_state.orchestrator.db_manager as db:
-                        db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.spec_draft)
-
-                    st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
-
-                    keys_to_clear = ['spec_draft', 'spec_step', 'ai_issues', 'brief_desc']
-                    for key in keys_to_clear:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
+                            keys_to_clear = ['spec_draft', 'spec_step', 'ai_issues', 'brief_desc', 'pm_clarification_text']
+                            for key in keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
 
 
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
@@ -354,29 +352,32 @@ if page == "Project":
                                 st.session_state.tech_spec_draft = proposal
                         except Exception as e:
                             st.error(f"Failed to generate proposal: {e}")
+            else:
+                # Add instructional text for the manual option
+                st.markdown("Please enter your full technical specification in the text area below.")
+
 
             st.session_state.tech_spec_draft = st.text_area(
                 "Technical Specification Document", value=st.session_state.tech_spec_draft, height=400
             )
             st.divider()
 
-            if st.session_state.tech_spec_draft:
-                if st.button("Approve Technical Specification", use_container_width=True, type="primary"):
-                    with st.spinner("Saving technical specification and extracting primary technology..."):
-                        with st.session_state.orchestrator.db_manager as db:
-                            # Save the Target OS and the full technical specification document
-                            db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
-                            db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
+            # The approve button is now always visible, but disabled if the text area is empty.
+            is_disabled = not st.session_state.tech_spec_draft.strip()
+            if st.button("Approve Technical Specification", use_container_width=True, type="primary", disabled=is_disabled):
+                with st.spinner("Saving technical specification and extracting primary technology..."):
+                    with st.session_state.orchestrator.db_manager as db:
+                        db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
+                        db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
 
-                        # Call the new orchestrator method to extract and save the primary language
-                        st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
+                    st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
 
-                    st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
-                    keys_to_clear = ['tech_spec_draft', 'target_os']
-                    for key in keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                    st.rerun()
+                st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
+                keys_to_clear = ['tech_spec_draft', 'target_os']
+                for key in keys_to_clear:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                st.rerun()
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
