@@ -1,4 +1,5 @@
 import logging
+import re
 import google.generativeai as genai
 from typing import Optional
 
@@ -33,8 +34,7 @@ class CodeAgent_AppTarget:
         explicitly targeting a specific programming language.
         """
         try:
-            # Re-instating the Pro model as it is required for this level of instruction following.
-            model = genai.GenerativeModel('gemini-2.5-pro-preview-06-05')
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
             correction_context = ""
             if feedback:
@@ -47,7 +47,6 @@ class CodeAgent_AppTarget:
                 {feedback}
                 """
 
-            # --- RE-ENGINEERED AND HARDENED PROMPT ---
             prompt = f"""
             You are an expert software developer. Your only function is to write raw source code.
             Your output is being saved directly to a file and executed. Any non-code text, including conversational text, explanations, or markdown fences like ```python, will cause a critical system failure.
@@ -74,9 +73,21 @@ class CodeAgent_AppTarget:
             """
 
             response = model.generate_content(prompt)
-            # We still clean the response as a fallback, but the new prompt should prevent this.
-            cleaned_code = response.text.strip().removeprefix("```python").removesuffix("```").strip()
-            return cleaned_code
+
+            # --- Robust Cleanup Logic using Regular Expressions ---
+            # 1. Strip leading/trailing whitespace
+            code_text = response.text.strip()
+            # 2. Remove the starting markdown fence (e.g., ```python or ```) and any text on that line
+            code_text = re.sub(r"^\s*`{3}.*?\n", "", code_text)
+            # 3. Remove the ending markdown fence (```)
+            code_text = re.sub(r"\n\s*`{3}\s*$", "", code_text)
+
+            return code_text.strip()
+
+        except Exception as e:
+            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            logging.error(error_message)
+            return error_message
 
         except Exception as e:
             error_message = f"An error occurred while communicating with the Gemini API: {e}"
