@@ -265,26 +265,35 @@ if page == "Project":
 
                 st.markdown("**AI Analysis Results:**")
                 st.info(st.session_state.ai_issues)
-                st.markdown("You can now provide clarifications to the AI's points. When you are satisfied, approve the draft.")
 
-                clarification_prompt = st.chat_input("Provide clarifications...")
+                # --- Corrected UI with multi-line input and explicit buttons ---
+                st.markdown("You can now provide clarifications to the AI's points below, or approve the specification if you are satisfied.")
 
-                if clarification_prompt:
-                    with st.spinner("AI is refining the draft and re-analyzing..."):
-                        with st.session_state.orchestrator.db_manager as db:
-                            api_key = db.get_config_value("LLM_API_KEY")
-                        agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                clarification_text = st.text_area("Your Clarifications:", height=150, key="pm_clarification_text")
 
-                        refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_prompt)
-                        st.session_state.spec_draft = refined_draft
+                col1, col2, _ = st.columns([1, 1.5, 3])
 
-                        issues = agent.identify_potential_issues(st.session_state.spec_draft)
-                        st.session_state.ai_issues = issues
+                with col1:
+                    if st.button("Submit Clarifications", use_container_width=True):
+                        if clarification_text.strip():
+                            with st.spinner("AI is refining the draft and re-analyzing..."):
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+
+                                refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_text)
+                                st.session_state.spec_draft = refined_draft
+
+                                issues = agent.identify_potential_issues(st.session_state.spec_draft)
+                                st.session_state.ai_issues = issues
+                                st.rerun()
+                        else:
+                            st.warning("Please enter your clarifications before submitting.")
+
+                with col2:
+                    if st.button("✅ Approve Specification and Proceed", type="primary", use_container_width=True):
+                        st.session_state.spec_step = 'final_approval'
                         st.rerun()
-
-                if st.button("✅ Approve Specification and Proceed", type="primary"):
-                    st.session_state.spec_step = 'final_approval'
-                    st.rerun()
 
             # --- FINAL STEP: PM Acknowledgment ---
             elif st.session_state.spec_step == 'final_approval':
