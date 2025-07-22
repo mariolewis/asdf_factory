@@ -242,22 +242,24 @@ class MasterOrchestrator:
 
         This provides a controlled way for the GUI or other components to
         signal a transition in the factory's workflow.
-
-        Args:
-            phase_name (str): The name of the phase to transition to
-                              (e.g., "SPEC_ELABORATION").
         """
-        if not self.project_id:
-            logging.error("Cannot set phase; no active project.")
-            return
-
         try:
-            # Find the corresponding Enum member from the string name
             new_phase = FactoryPhase[phase_name]
+
+            # Allow transitioning to the history view even with no active project.
+            if new_phase == FactoryPhase.VIEWING_PROJECT_HISTORY:
+                self.current_phase = new_phase
+                logging.info(f"Transitioning to phase: {self.current_phase.name}")
+                return
+
+            # For all other phases, an active project is required.
+            if not self.project_id:
+                logging.error("Cannot set phase; no active project.")
+                return
+
             self.current_phase = new_phase
             logging.info(f"Project '{self.project_name}' phase changed to: {self.current_phase.name}")
-            # In a future implementation, this would also save the state
-            # to the OrchestrationState table in the database.
+
         except KeyError:
             logging.error(f"Attempted to set an invalid phase: {phase_name}")
 
