@@ -170,18 +170,21 @@ if page == "Project":
             agent.render()
 
         elif current_phase_name == "SPEC_ELABORATION":
-            st.header("Phase 1: Project Initialization & Specification Elaboration")
+            st.header("Phase 1: Application Specification")
 
-            # Initialize session state keys for this phase
-            if 'specification_text' not in st.session_state:
-                st.session_state.specification_text = None
-            if 'complexity_analysis' not in st.session_state:
-                st.session_state.complexity_analysis = None
-            if 'proceed_with_complexity' not in st.session_state:
-                st.session_state.proceed_with_complexity = False
+            # --- State Management for the new multi-step workflow ---
+            # spec_draft: Holds the current version of the specification text.
+            # spec_step: Tracks our location in the workflow ('pm_feedback', 'ai_clarification', 'final_approval').
+            # ai_issues: Stores the list of ambiguities found by the AI.
+            if 'spec_draft' not in st.session_state:
+                st.session_state.spec_draft = None
+            if 'spec_step' not in st.session_state:
+                st.session_state.spec_step = 'initial_input'
+            if 'ai_issues' not in st.session_state:
+                st.session_state.ai_issues = None
 
-            # --- UI for providing the specification ---
-            if st.session_state.specification_text is None:
+            # --- STEP 1: Initial Draft Generation ---
+            if st.session_state.spec_draft is None:
                 st.markdown("Please provide the initial specification for your target application.")
                 tab1, tab2 = st.tabs(["Upload Specification Documents", "Enter Brief Description"])
                 with tab1:
@@ -189,203 +192,106 @@ if page == "Project":
                     if st.button("Process Uploaded Documents"):
                         if uploaded_files:
                             bootstrap_agent = ProjectBootstrapAgent()
-                            # MODIFIED: Handle new return signature from bootstrap agent
                             extracted_text, messages, size_error = bootstrap_agent.extract_text_from_files(uploaded_files)
                             for msg in messages:
                                 st.warning(msg)
-
-                            # (CR-ASDF-004) Stage 1: Handle Size Guardrail Error
                             if size_error:
-                                st.error(size_error) # Display the specific error message
+                                st.error(size_error)
                             elif extracted_text:
-                                st.session_state.specification_text = extracted_text
+                                st.session_state.spec_draft = extracted_text
+                                st.session_state.spec_step = 'pm_feedback' # Move to next step
                                 st.rerun()
-                        else:
-                            st.warning("Please upload at least one document.")
 
                 with tab2:
                     brief_desc_input = st.text_area("Brief Description", height=150, key="brief_desc")
                     if st.button("Process Brief Description"):
                         if brief_desc_input:
-                            with st.spinner("AI is expanding the description..."):
-                                try:
-                                    with st.session_state.orchestrator.db_manager as db:
-                                        api_key = db.get_config_value("LLM_API_KEY")
-                                    if not api_key:
-                                        st.error("LLM API Key is not set in Settings.")
-                                    else:
-                                        clarification_agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                        expanded_text = clarification_agent.expand_brief_description(brief_desc_input)
-                                        st.session_state.specification_text = expanded_text
-                                        st.rerun()
-                                except Exception as e:
-                                    st.error(f"Spec Expansion Error: {e}")
+                            with st.spinner("AI is expanding the description into a draft specification..."):
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                                expanded_text = agent.expand_brief_description(brief_desc_input)
+                                st.session_state.spec_draft = expanded_text
+                                st.session_state.spec_step = 'pm_feedback' # Move to next step
+                                st.rerun()
 
-            # --- Main workflow after getting specification text ---
-            if st.session_state.specification_text is not None:
-                st.subheader("Processed Specification Draft")
-                st.text_area("", value=st.session_state.specification_text, height=250, disabled=True)
-                st.divider()
+            # --- STEP 2: PM Review and Initial Feedback ---
+            elif st.session_state.spec_step == 'pm_feedback':
+                st.subheader("Draft Specification - Your Review")
+                st.markdown("Please review the initial draft below. Provide any corrections, additions, or feedback in the text area. The AI will then refine the draft based on your input.")
+                st.text_area("Current Draft:", value=st.session_state.spec_draft, height=300, key="spec_draft_display", disabled=True)
 
-                # (CR-ASDF-004) Stage 2: Perform Complexity Analysis
-                if st.session_state.complexity_analysis is None:
-                    with st.spinner("Performing high-level complexity analysis..."):
-                        try:
+                pm_feedback_text = st.text_area("Your Feedback and Corrections:", height=200)
+
+                if st.button("Submit Feedback & Refine Draft", type="primary"):
+                    if pm_feedback_text.strip():
+                        with st.spinner("AI is refining the draft with your feedback and checking for new ambiguities..."):
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
-                            if not api_key:
-                                st.error("Cannot perform complexity analysis. LLM API Key is not set.")
-                            else:
-                                scoping_agent = ProjectScopingAgent(api_key=api_key)
-                                result = scoping_agent.analyze_complexity(st.session_state.specification_text)
-                                st.session_state.complexity_analysis = result
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"Complexity Analysis Failed: {e}")
+                            agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
 
-                # (CR-ASDF-004) Stage 2: Display Complexity Warning if needed
-                elif not st.session_state.proceed_with_complexity:
-                    rating = st.session_state.complexity_analysis.get("rating")
-                    justification = st.session_state.complexity_analysis.get("justification")
-                    st.subheader("Complexity Analysis Result")
-                    st.write(f"**Rating:** {rating}")
-                    st.write(f"**Justification:** *{justification}*")
+                            # Refine the draft based on PM feedback
+                            refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text)
+                            st.session_state.spec_draft = refined_draft
 
-                    if rating in ["High", "Very Large"]:
-                        st.warning(
-                            "**Warning: The scope of this project is very large, which may impact performance. "
-                            "It is recommended to divide it into smaller projects. Do you wish to proceed?**"
-                        ) #
-                        if st.button("Yes, I wish to proceed"):
-                            st.session_state.proceed_with_complexity = True
+                            # Automatically perform ambiguity check on the new draft
+                            issues = agent.identify_potential_issues(st.session_state.spec_draft)
+                            st.session_state.ai_issues = issues
+                            st.session_state.spec_step = 'ai_clarification' # Move to the clarification loop
                             st.rerun()
-                    else: # Low or Medium complexity
-                        st.session_state.proceed_with_complexity = True
-                        st.rerun()
+                    else:
+                        st.warning("Please provide feedback or approve the document to proceed.")
 
-                # --- UI for Acknowledging the Finalized Specification ---
-                elif st.session_state.get('spec_approved_but_not_acknowledged'):
-                    st.subheader("Final Specification Approved")
+            # --- STEP 3 & 4: AI Ambiguity Check & Iterative Clarification Loop ---
+            elif st.session_state.spec_step == 'ai_clarification':
+                st.subheader("Specification Refinement")
+                st.text_area("Current Draft:", value=st.session_state.spec_draft, height=300, key="spec_draft_display_2", disabled=True)
+                st.divider()
 
-                    # Display the message to the PM as per PRD requirement.
-                    st.success(
-                        "The final specification is now agreed upon and displayed below. "
-                        "Please copy this text into a local document for your own records and future reference."
-                    )
+                st.markdown("**AI Analysis Results:**")
+                st.info(st.session_state.ai_issues)
 
-                    # Display the finalized specification text in a disabled text area.
-                    st.text_area(
-                        "Finalized Specification:",
-                        value=st.session_state.specification_text,
-                        height=300,
-                        disabled=True
-                    )
+                st.markdown("You can now provide clarifications to the AI's points or make final adjustments. When you are satisfied with the draft, approve it.")
 
-                    st.divider()
+                clarification_prompt = st.chat_input("Provide clarifications or further feedback...")
 
-                    # The new button to acknowledge and move to the next phase.
-                    if st.button("Acknowledge and Proceed to Technical Specification", type="primary"):
-                        # This button now performs the actions the old 'Approve' button did.
-                        st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
+                if clarification_prompt:
+                    with st.spinner("AI is refining the draft with your latest input and re-analyzing..."):
+                        with st.session_state.orchestrator.db_manager as db:
+                            api_key = db.get_config_value("LLM_API_KEY")
+                        agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
 
-                        # Clean up all session state keys related to the spec elaboration phase.
-                        keys_to_clear = [
-                            'specification_text', 'complexity_analysis',
-                            'proceed_with_complexity', 'clarification_issues',
-                            'clarification_chat', 'brief_desc',
-                            'spec_approved_but_not_acknowledged'
-                        ]
-                        for key in keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
+                        # Refine spec with new input
+                        refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_prompt)
+                        st.session_state.spec_draft = refined_draft
 
-                        st.rerun()
+                        # Automatically re-analyze the new draft
+                        issues = agent.identify_potential_issues(st.session_state.spec_draft)
+                        st.session_state.ai_issues = issues
+                        st.rerun() # Rerun to display the latest draft and new AI issues
 
-                # --- Clarification Loop (only runs after complexity gate is passed) ---
-                else:
-                    if 'clarification_issues' not in st.session_state:
-                        st.session_state.clarification_issues = None
-                    if 'clarification_chat' not in st.session_state:
-                        st.session_state.clarification_chat = []
+                if st.button("✅ Approve Specification and Proceed", type="primary"):
+                    st.session_state.spec_step = 'final_approval'
+                    st.rerun()
 
-                    if st.session_state.clarification_issues:
-                        st.subheader("Clarification Required")
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("✅ Approve Specification and Proceed", use_container_width=True, type="primary"):
-                                with st.spinner("Finalizing specification..."):
-                                    # Save the finalized specification to the database.
-                                    with st.session_state.orchestrator.db_manager as db:
-                                        db.save_final_specification(
-                                            st.session_state.orchestrator.project_id,
-                                            st.session_state.specification_text
-                                        )
-                                    # Set a new session state flag to indicate approval.
-                                    st.session_state.spec_approved_but_not_acknowledged = True
-                                    st.rerun()
-                        with col2:
-                            # The download button remains for convenience.
-                            report_generator = ReportGeneratorAgent()
-                            spec_docx_bytes = report_generator.generate_text_document_docx(
-                                title=f"Application Specification - {st.session_state.orchestrator.project_name}",
-                                content=st.session_state.specification_text
-                            )
-                            st.download_button(
-                                label="📄 Print to .docx",
-                                data=spec_docx_bytes,
-                                file_name=f"Application_Specification_{st.session_state.orchestrator.project_id}.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                use_container_width=True
-                            )
+            # --- STEP 5: Finalization and PM Acknowledgment ---
+            elif st.session_state.spec_step == 'final_approval':
+                st.subheader("Final Specification Approved")
+                st.success("The final specification is now agreed upon. Please copy the text below for your records before proceeding.")
+                st.text_area("Finalized Specification:", value=st.session_state.spec_draft, height=300, disabled=True)
 
-                        st.divider()
-                        for message in st.session_state.clarification_chat:
-                            with st.chat_message(message["role"]):
-                                st.markdown(message["content"])
+                if st.button("Acknowledge and Proceed to Technical Specification", type="primary"):
+                    with st.session_state.orchestrator.db_manager as db:
+                        db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.spec_draft)
 
-                        if prompt := st.chat_input("Provide clarifications..."):
-                            st.session_state.clarification_chat.append({"role": "user", "content": prompt})
-                            with st.spinner("AI is refining the specification..."):
-                                # CORRECTED: Fetch the api_key before using it in this block.
-                                try:
-                                    with st.session_state.orchestrator.db_manager as db:
-                                        api_key = db.get_config_value("LLM_API_KEY")
-                                    if not api_key:
-                                        st.error("Cannot refine specification: LLM API Key is not set in Settings.")
-                                    else:
-                                        agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                        revised_spec = agent.refine_specification(st.session_state.specification_text, st.session_state.clarification_issues, prompt)
-                                        # Call to the learning capture method
-                                        st.session_state.orchestrator.capture_spec_clarification_learning(
-                                            problem_context=st.session_state.clarification_issues,
-                                            solution_text=prompt,
-                                            spec_text=revised_spec
-                                        )
-                                        st.session_state.specification_text = revised_spec
-                                        st.session_state.clarification_issues = None
-                                        st.session_state.clarification_chat = []
-                                        st.rerun()
-                                except Exception as e:
-                                    st.error(f"Failed to refine specification: {e}")
+                    st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
 
-                    else: # If clarification issues are not yet identified
-                        # CORRECTED: Rename button for clarity
-                        if st.button("Check Draft for Ambiguities", use_container_width=True):
-                            with st.spinner("AI is analyzing the specification for issues..."):
-                                # CORRECTED: Fetch the api_key before using it.
-                                try:
-                                    with st.session_state.orchestrator.db_manager as db:
-                                        api_key = db.get_config_value("LLM_API_KEY")
-                                    if not api_key:
-                                        st.error("Cannot analyze specification: LLM API Key is not set in Settings.")
-                                    else:
-                                        agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                        issues = agent.identify_potential_issues(st.session_state.specification_text)
-                                        st.session_state.clarification_issues = issues
-                                        st.session_state.clarification_chat.append({"role": "assistant", "content": issues})
-                                        st.rerun()
-                                except Exception as e:
-                                    st.error(f"Failed to analyze specification: {e}")
+                    # Clean up all session state keys for this phase
+                    keys_to_clear = ['spec_draft', 'spec_step', 'ai_issues', 'brief_desc']
+                    for key in keys_to_clear:
+                        if key in st.session_state:
+                            del st.session_state[key]
+                    st.rerun()
 
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
