@@ -2029,6 +2029,48 @@ class MasterOrchestrator:
             # If even this fails, escalate to prevent getting stuck
             self.set_phase("DEBUG_PM_ESCALATION")
 
+    def _extract_and_save_primary_technology(self, tech_spec_text: str):
+        """
+        Uses an LLM to extract the primary programming language from the
+        technical specification text and saves it to the database.
+
+        Args:
+            tech_spec_text (str): The full text of the approved technical spec.
+        """
+        logging.info("Extracting primary technology from technical specification...")
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("Cannot extract technology: LLM API Key is not set.")
+
+                model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                prompt = f"""
+                Analyze the following technical specification document. Your single task is to identify the primary, top-level programming language or technology stack.
+
+                Your response MUST be only the name of the language (e.g., "Python", "Java", "C#", "Go"). Do not include any other words, explanations, or punctuation.
+
+                --- Technical Specification ---
+                {tech_spec_text}
+                --- End Specification ---
+
+                Primary Language:
+                """
+
+                response = model.generate_content(prompt)
+                primary_technology = response.text.strip()
+
+                if primary_technology:
+                    db.update_project_technology(self.project_id, primary_technology)
+                    logging.info(f"Successfully extracted and saved primary technology: {primary_technology}")
+                else:
+                    raise ValueError("LLM returned an empty response for technology extraction.")
+
+        except Exception as e:
+            # Log the error but don't halt the entire process.
+            # A potential manual correction might be needed if this fails.
+            logging.error(f"Failed to extract and save primary technology: {e}")
+
     def get_latest_commit_timestamp(self) -> datetime | None:
         """
         Retrieves the timestamp of the most recent commit in the project's repo.

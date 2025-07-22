@@ -395,21 +395,12 @@ if page == "Project":
                 st.session_state.tech_spec_draft = ""
             if 'target_os' not in st.session_state:
                 st.session_state.target_os = "Linux"
-            # Add state for the new input field
-            if 'primary_language' not in st.session_state:
-                st.session_state.primary_language = "Python" # Default to Python
 
             st.session_state.target_os = st.selectbox(
                 "Select Target Operating System:",
                 ["Linux", "Windows", "macOS"],
                 index=["Linux", "Windows", "macOS"].index(st.session_state.target_os),
                 key="os_select"
-            )
-
-            # --- NEW WIDGET to explicitly capture the language ---
-            st.session_state.primary_language = st.text_input(
-                "Confirm Primary Programming Language (e.g., Python, Kotlin, Java):",
-                value=st.session_state.primary_language
             )
             st.divider()
 
@@ -421,7 +412,6 @@ if page == "Project":
 
             if tech_spec_choice == "Let ASDF propose a technology stack":
                 if st.button("Generate Proposal"):
-                    # This logic remains the same...
                     with st.spinner("AI is analyzing the specification and generating a proposal..."):
                         try:
                             with st.session_state.orchestrator.db_manager as db:
@@ -445,22 +435,21 @@ if page == "Project":
 
             if st.session_state.tech_spec_draft:
                 if st.button("Approve Technical Specification", use_container_width=True, type="primary"):
-                    if not st.session_state.primary_language.strip():
-                        st.error("Primary Programming Language cannot be empty.")
-                    else:
-                        with st.spinner("Saving technical specification, OS, and language..."):
-                            with st.session_state.orchestrator.db_manager as db:
-                                # Save all three pieces of information
-                                db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
-                                db.update_project_technology(st.session_state.orchestrator.project_id, st.session_state.primary_language)
-                                db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
+                    with st.spinner("Saving technical specification and extracting primary technology..."):
+                        with st.session_state.orchestrator.db_manager as db:
+                            # Save the Target OS and the full technical specification document
+                            db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
+                            db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
 
-                            st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
-                            keys_to_clear = ['tech_spec_draft', 'target_os', 'primary_language']
-                            for key in keys_to_clear:
-                                 if key in st.session_state:
-                                    del st.session_state[key]
-                            st.rerun()
+                        # Call the new orchestrator method to extract and save the primary language
+                        st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
+
+                    st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
+                    keys_to_clear = ['tech_spec_draft', 'target_os']
+                    for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                    st.rerun()
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
