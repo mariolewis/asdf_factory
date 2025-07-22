@@ -335,14 +335,33 @@ if page == "Project":
                 key="tech_spec_radio"
             )
 
+            # Display the correct instructional text based on the radio button choice
             if tech_spec_choice == "Let ASDF propose a technology stack":
-                if st.button("Generate Proposal"):
+                st.markdown("You can provide initial thoughts or constraints in the text area below before clicking 'Generate Proposal'.")
+            else:
+                st.markdown("Please enter your full technical specification in the text area below. You can also ask the AI to generate a proposal to refine your draft.")
+
+            st.session_state.tech_spec_draft = st.text_area(
+                "Technical Specification Document", value=st.session_state.tech_spec_draft, height=400
+            )
+            st.divider()
+
+            # --- Action Buttons ---
+            col1, col2, _ = st.columns([1, 1.5, 3])
+
+            with col1:
+                # The "Generate Proposal" button is now always visible
+                if st.button("🤖 Generate Proposal", use_container_width=True):
                     with st.spinner("AI is analyzing the specification and generating a proposal..."):
                         try:
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
                                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+
+                                # Combine the original spec with any text the user has manually entered
                                 final_spec_text = project_details['final_spec_text']
+                                if st.session_state.tech_spec_draft.strip():
+                                    final_spec_text += "\n\n--- Additional PM Directives ---\n" + st.session_state.tech_spec_draft
 
                             if not api_key: st.error("Cannot generate proposal. LLM API Key is not set.")
                             else:
@@ -350,34 +369,27 @@ if page == "Project":
                                 agent = TechStackProposalAgent(api_key=api_key)
                                 proposal = agent.propose_stack(final_spec_text, st.session_state.target_os)
                                 st.session_state.tech_spec_draft = proposal
+                                st.rerun()
                         except Exception as e:
                             st.error(f"Failed to generate proposal: {e}")
-            else:
-                # Add instructional text for the manual option
-                st.markdown("Please enter your full technical specification in the text area below.")
 
+            with col2:
+                # The "Approve" button is also always visible, but disabled if the text area is empty.
+                is_disabled = not st.session_state.tech_spec_draft.strip()
+                if st.button("✅ Approve Specification", use_container_width=True, type="primary", disabled=is_disabled):
+                    with st.spinner("Saving technical specification and extracting primary technology..."):
+                        with st.session_state.orchestrator.db_manager as db:
+                            db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
+                            db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
 
-            st.session_state.tech_spec_draft = st.text_area(
-                "Technical Specification Document", value=st.session_state.tech_spec_draft, height=400
-            )
-            st.divider()
+                        st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
 
-            # The approve button is now always visible, but disabled if the text area is empty.
-            is_disabled = not st.session_state.tech_spec_draft.strip()
-            if st.button("Approve Technical Specification", use_container_width=True, type="primary", disabled=is_disabled):
-                with st.spinner("Saving technical specification and extracting primary technology..."):
-                    with st.session_state.orchestrator.db_manager as db:
-                        db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
-                        db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
-
-                    st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
-
-                st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
-                keys_to_clear = ['tech_spec_draft', 'target_os']
-                for key in keys_to_clear:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                st.rerun()
+                    st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
+                    keys_to_clear = ['tech_spec_draft', 'target_os']
+                    for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                    st.rerun()
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
