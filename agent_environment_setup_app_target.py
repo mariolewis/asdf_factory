@@ -100,5 +100,27 @@ class EnvironmentSetupAgent_AppTarget:
             self._run_git_initialization_step()
             return
 
+        # --- Step 3: Final Confirmation (New Button Location) ---
         st.success("Git repository initialized.")
-        st.info("All initial setup steps are complete. Click the main button above to proceed.")
+        st.info("All initial setup steps are complete.")
+
+        # The "Proceed" button is now part of the agent's own UI.
+        if st.button("Confirm Setup & Proceed to Specification", use_container_width=True, type="primary"):
+            try:
+                # Save the confirmed project root path to the database
+                with st.session_state.orchestrator.db_manager as db:
+                    db.update_project_root_folder(st.session_state.orchestrator.project_id, st.session_state.project_root_path)
+
+                st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
+
+                # Clean up all session state keys used by this agent
+                keys_to_clear = [
+                    'setup_path_confirmed', 'project_path_input', 'show_brownfield_warning',
+                    'agent_setup_complete', 'project_root_path'
+                ]
+                for key in keys_to_clear:
+                    if key in st.session_state:
+                        del st.session_state[key]
+                st.rerun()
+            except Exception as e:
+                st.error(f"An error occurred while saving setup data: {e}")

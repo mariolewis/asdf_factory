@@ -171,33 +171,9 @@ if page == "Project":
 
         if current_phase_name == "ENV_SETUP_TARGET_APP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
-
-            # The main confirmation button is now at the top.
-            # It is disabled until the agent signals that its internal steps are all complete.
-            is_disabled = not st.session_state.get('agent_setup_complete', False)
-            if st.button("Confirm Setup & Proceed to Specification", use_container_width=True, type="primary", disabled=is_disabled):
-                try:
-                    # Save the confirmed project root path to the database
-                    with st.session_state.orchestrator.db_manager as db:
-                        db.update_project_root_folder(st.session_state.orchestrator.project_id, st.session_state.project_root_path)
-
-                    st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
-
-                    # Clean up all session state keys used by the agent
-                    keys_to_clear = [
-                        'setup_path_confirmed', 'project_path_input', 'show_brownfield_warning',
-                        'agent_setup_complete', 'project_root_path', 'setup_git_initialized'
-                    ]
-                    for key in keys_to_clear:
-                        if key in st.session_state:
-                            del st.session_state[key]
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"An error occurred while saving setup data: {e}")
-
             st.divider()
 
-            # The agent renders its own UI below the main button.
+            # The agent now renders its own complete UI, including the final proceed button.
             agent = EnvironmentSetupAgent_AppTarget()
             agent.render()
 
