@@ -378,42 +378,30 @@ class MasterOrchestrator:
 
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
 
-        # --- Step 1: Sanitize Paths and Write Files to Disk ---
-        component_path_str = self._sanitize_path(task.get("component_file_path"))
-        test_path_str = self._sanitize_path(task.get("test_file_path"))
-        files_to_commit = []
+        # --- Refactored: Delegate build, test, and commit to the specialist agent ---
+        build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+        component_path_str = task.get("component_file_path")
+        test_path_str = task.get("test_file_path")
 
-        if component_path_str:
-            component_path = project_root_path / component_path_str
-            component_path.parent.mkdir(parents=True, exist_ok=True)
-            component_path.write_text(source_code, encoding='utf-8')
-            files_to_commit.append(component_path_str)
+        # The agent now handles file writing, testing, and committing in one step.
+        success, result_message = build_agent.build_and_commit_component(
+            component_path_str=component_path_str,
+            component_code=source_code,
+            test_path_str=test_path_str,
+            test_code=unit_tests,
+            test_command=test_command,
+            api_key=api_key
+        )
 
-        if test_path_str:
-            test_path = project_root_path / test_path_str
-            test_path.parent.mkdir(parents=True, exist_ok=True)
-            test_path.write_text(unit_tests, encoding='utf-8')
-            files_to_commit.append(test_path_str)
+        if not success:
+            # If the agent reports failure, raise an exception to trigger the debug pipeline.
+            raise Exception(f"BuildAndCommitAgent failed for component {component_name}: {result_message}")
 
-        # --- Step 2: Explicitly Verify using VerificationAgent ---
-        if is_build_automated:
-            verification_agent = VerificationAgent_AppTarget(api_key=api_key)
-            tests_passed, test_output = verification_agent.run_all_tests(project_root_path, test_command)
-            if not tests_passed:
-                raise Exception(f"Verification failed for component {component_name}: {test_output}")
-            logging.info(f"Component '{component_name}' passed verification.")
-
-        # --- Step 3: Commit Changes ---
-        if not files_to_commit:
-            logging.warning("No files were written to disk for this component. Skipping commit.")
-            commit_hash = "N/A"
+        # Extract the commit hash from the success message for the RoWD update.
+        if "New commit hash:" in result_message:
+            commit_hash = result_message.split(":")[-1].strip()
         else:
-            build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-            commit_message = f"feat: Add component {component_name}"
-            commit_success, commit_result = build_agent.commit_changes(files_to_commit, commit_message)
-            if not commit_success:
-                raise Exception(f"Git commit failed for component {component_name}: {commit_result}")
-            commit_hash = commit_result.split(":")[-1].strip()
+            commit_hash = "N/A" # Handle cases where no commit was made (e.g., no files generated)
 
         # --- Step 4: Update RoWD ---
         doc_agent = DocUpdateAgentRoWD(db)

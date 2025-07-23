@@ -5,6 +5,7 @@ import subprocess
 import git
 from pathlib import Path
 import logging
+from agents.agent_verification_app_target import VerificationAgent_AppTarget
 
 class BuildAndCommitAgentAppTarget:
     """
@@ -60,10 +61,10 @@ class BuildAndCommitAgentAppTarget:
 
         return path
 
-    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str) -> tuple[bool, str]:
+    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, api_key: str) -> tuple[bool, str]:
         """
-        Writes the component and its tests, runs all tests, and commits on success.
-        This version now correctly handles null/placeholder file paths.
+        Writes the component and its tests, runs all tests using the
+        VerificationAgent, and commits on success.
         """
         try:
             # Sanitize the file paths before use
@@ -88,8 +89,10 @@ class BuildAndCommitAgentAppTarget:
                 files_to_commit.append(sanitized_test_path)
                 logging.info(f"Wrote unit tests to {test_path}")
 
+            # Use the dedicated VerificationAgent to run the test suite
             logging.info(f"Running test suite with command: '{test_command}'")
-            tests_passed, test_output = self.run_command(test_command)
+            verification_agent = VerificationAgent_AppTarget(api_key=api_key)
+            tests_passed, test_output = verification_agent.run_all_tests(self.repo_path, test_command)
 
             if not tests_passed:
                 logging.error("Unit tests failed for new component. Aborting commit.")
