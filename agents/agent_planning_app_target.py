@@ -63,7 +63,7 @@ class PlanningAgent_AppTarget:
                 You are an expert Lead Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format based on the provided summaries of the project's specifications.
 
                 **MANDATORY INSTRUCTIONS:**
-                1.  **Determine Main Executable:** Based on the summaries, determine a logical name for the main executable file with file name extensions that are appropriate for the technology stack. (e.g., `main.py`, `app.kt` for Python).
+                1.  **Determine Main Executable:** Based on the summaries, determine a logical name for the main executable file with a file name extension that is appropriate for the implementation technology. (e.g., `main.py`, `app.kt` for Python).
                 2.  **Deconstruct the Project:** Break down the entire application into a logical sequence of fine-grained, independent components based on the summarized requirements.
                 3.  **JSON Object Output:** Your entire response MUST be a single, valid JSON object `{{}}`.
                 4.  **JSON Schema:** The JSON object MUST have two top-level keys:
