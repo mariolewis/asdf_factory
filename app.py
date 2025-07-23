@@ -958,6 +958,13 @@ if page == "Project":
             st.error(
                 "**Action Required:** The factory has been unable to automatically fix a persistent bug after multiple attempts."
             )
+
+            # *** Display the specific failure log ***
+            if st.session_state.orchestrator.task_awaiting_approval:
+                failure_context = st.session_state.orchestrator.task_awaiting_approval.get("failure_log", "No specific failure log was captured.")
+                with st.expander("Click to view failure details"):
+                    st.code(failure_context, language='text')
+
             st.markdown(
                 "Please choose how you would like to proceed. Your selection will determine the next steps for the factory."
             )

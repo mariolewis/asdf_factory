@@ -1222,6 +1222,7 @@ class MasterOrchestrator:
 
                 if self.debug_attempt_counter > max_attempts:
                     logging.warning(f"Automated debug attempts have exceeded the limit of {max_attempts}. Escalating to PM.")
+                    self.task_awaiting_approval = {"failure_log": failure_log}
                     self.set_phase("DEBUG_PM_ESCALATION")
                     return
 
