@@ -54,6 +54,7 @@ class FactoryPhase(Enum):
     AWAITING_PREFLIGHT_RESOLUTION = auto()
     RAISING_CHANGE_REQUEST = auto()
     AWAITING_IMPACT_ANALYSIS_CHOICE = auto()
+    AWAITING_INITIAL_IMPACT_ANALYSIS = auto()
     IMPLEMENTING_CHANGE_REQUEST = auto()
     EDITING_CHANGE_REQUEST = auto()
     REPORTING_OPERATIONAL_BUG = auto()
@@ -129,6 +130,7 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
         FactoryPhase.RAISING_CHANGE_REQUEST: "Raise New Change Request",
         FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis Choice",
+        FactoryPhase.AWAITING_INITIAL_IMPACT_ANALYSIS: "Initial Impact Analysis",
         FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
         FactoryPhase.EDITING_CHANGE_REQUEST: "Edit Change Request",
         FactoryPhase.REPORTING_OPERATIONAL_BUG: "Report Operational Bug",
@@ -238,27 +240,26 @@ class MasterOrchestrator:
 
     def set_phase(self, phase_name: str):
         """
-        Sets the current project phase.
-
-        This provides a controlled way for the GUI or other components to
-        signal a transition in the factory's workflow.
+        Sets the current project phase and automatically saves the new state.
         """
         try:
             new_phase = FactoryPhase[phase_name]
 
-            # Allow transitioning to the history view even with no active project.
             if new_phase == FactoryPhase.VIEWING_PROJECT_HISTORY:
                 self.current_phase = new_phase
                 logging.info(f"Transitioning to phase: {self.current_phase.name}")
+                # We don't save state when just viewing history
                 return
 
-            # For all other phases, an active project is required.
             if not self.project_id:
                 logging.error("Cannot set phase; no active project.")
                 return
 
             self.current_phase = new_phase
             logging.info(f"Project '{self.project_name}' phase changed to: {self.current_phase.name}")
+
+            # Automatically save the state on every phase transition
+            self._save_current_state()
 
         except KeyError:
             logging.error(f"Attempted to set an invalid phase: {phase_name}")
@@ -698,7 +699,7 @@ class MasterOrchestrator:
         try:
             with self.db_manager as db:
                 db.add_change_request(self.project_id, description)
-            self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
+            self.set_phase("AWAITING_INITIAL_IMPACT_ANALYSIS")
             logging.info("Successfully saved new Functional Enhancement CR.")
         except Exception as e:
             logging.error(f"Failed to save new change request: {e}")
@@ -1170,15 +1171,14 @@ class MasterOrchestrator:
 
     def resume_project(self):
         """
-        Resumes a paused project by loading its last saved detailed state.
-        This version is now non-destructive and does not delete the state upon resume.
+        Resumes a paused project by loading its last saved detailed state and
+        then clearing the saved state from the database.
         """
         if not self.resumable_state:
             logging.warning("Resume called but no resumable state was found on initialization.")
             return False
 
         try:
-            # The state data is already in self.resumable_state from __init__
             state_details_json = self.resumable_state['state_details']
             if state_details_json:
                 details = json.loads(state_details_json)
@@ -1189,9 +1189,12 @@ class MasterOrchestrator:
 
             logging.info(f"Project '{self.project_name}' resumed successfully.")
 
-            # --- The self-destructing line that caused the error is now removed. ---
-            # The resumable_state will be cleared by the next Pause or Stop action.
-            self.resumable_state = None # Clear the in-memory flag only
+            # CRITICAL: Delete the state from the DB after successfully resuming
+            # to prevent being stuck in a "resume loop".
+            with self.db_manager as db:
+                db.delete_orchestration_state_for_project(self.project_id)
+
+            self.resumable_state = None # Clear the in-memory flag
             return True
 
         except Exception as e:
@@ -1357,9 +1360,10 @@ class MasterOrchestrator:
                 self.set_phase("GENESIS")
 
         elif choice == "MANUAL_PAUSE":
-            # When pausing, we do NOT clear the context. It gets saved.
-            self.pause_project()
-            logging.info("Project paused for manual PM investigation.")
+            # The orchestrator now saves its state automatically when the phase is set.
+            # We just need to log the action and set the phase to idle for the user.
+            self.set_phase("IDLE")
+            logging.info("Project paused for manual PM investigation. State has been saved.")
 
         elif choice == "IGNORE":
             logging.warning("Acknowledging and ignoring bug. Updating artifact status to 'KNOWN_ISSUE'.")
@@ -1383,13 +1387,13 @@ class MasterOrchestrator:
                 self.set_phase("GENESIS")
                 self.task_awaiting_approval = None # Clean up context
 
-    def pause_project(self):
+    def _save_current_state(self):
         """
-        Pauses the currently active project by saving its detailed operational
-        state to the database and IMMEDIATELY updating its own in-memory state.
+        Saves the currently active project's detailed operational state to the
+        database. This is called automatically on phase transitions.
         """
         if not self.project_id:
-            logging.warning("No active project to pause.")
+            # This can happen during initial phase transitions, which is normal.
             return
 
         try:
@@ -1410,22 +1414,14 @@ class MasterOrchestrator:
                 db.save_orchestration_state(
                     project_id=self.project_id,
                     current_phase=self.current_phase.name,
-                    current_step="paused_by_user",
+                    current_step="auto_saved_state",
                     state_details=state_details_json,
                     timestamp=datetime.now(timezone.utc).isoformat()
                 )
-
-            # --- CORRECTED: Manually update the in-memory state immediately ---
-            # This ensures the UI will correctly reflect the paused state on the next rerun.
-            self.resumable_state = {
-                "project_id": self.project_id,
-                "current_phase": self.current_phase.name,
-                "state_details": state_details_json
-            }
-            logging.info(f"Project '{self.project_name}' paused and in-memory state updated.")
+            logging.info(f"Project '{self.project_name}' state automatically saved.")
 
         except Exception as e:
-            logging.error(f"Failed to save state while pausing project {self.project_id}: {e}")
+            logging.error(f"Failed to auto-save state for project {self.project_id}: {e}")
 
 
     def _clear_active_project_data(self, db):

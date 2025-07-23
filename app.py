@@ -60,6 +60,25 @@ with st.sidebar:
     st.markdown(f"**Current Phase:** {display_phase_name}")
 
     st.markdown("---")
+    st.markdown("### Actions")
+
+    # Only show these buttons if a project is active
+    if st.session_state.orchestrator.project_id:
+        if st.button("✍️ Raise CR", use_container_width=True):
+            st.session_state.orchestrator.handle_raise_cr_action()
+            st.rerun()
+
+        if st.button("🐞 Report Bug", use_container_width=True):
+            st.session_state.orchestrator.handle_report_bug_action()
+            st.rerun()
+
+        # Disable the Implement button if Genesis is not complete
+        genesis_complete = st.session_state.orchestrator.is_genesis_complete
+        if st.button("🔁 Implement CR/Bug", use_container_width=True, disabled=not genesis_complete, help="Enabled after initial development is complete."):
+            st.session_state.orchestrator.handle_view_cr_register_action()
+            st.rerun()
+
+    st.markdown("---")
     st.markdown("### Project Lifecycle")
 
     # --- CORRECTED & SIMPLIFIED RESUME LOGIC ---
@@ -743,40 +762,14 @@ if page == "Project":
                     st.success(f"All {total_tasks} development tasks are complete.")
                     st.info("Click 'Proceed' to finalize development and begin the Integration & Validation phase.")
 
-                col1, col2, col3, col4, col5, col6 = st.columns(6)
+                col1, col2, _ = st.columns([1.5, 1.5, 3])
 
                 with col1:
                     if st.button("▶️ Proceed", use_container_width=True, type="primary"):
-                        # --- CORRECTED LOGIC ---
-                        # Determine the spinner message based on whether a task is pending.
-                        if task:
-                            spinner_message = f"Executing task for '{task.get('component_name')}'... This may take a moment."
-                        else:
-                            spinner_message = "Finalizing development and starting integration phase..."
-
-                        with st.spinner(spinner_message):
+                        with st.spinner("Executing next step..."):
                             st.session_state.orchestrator.handle_proceed_action()
                         st.rerun()
-
-                # ... (the rest of the buttons in the other columns remain the same) ...
                 with col2:
-                    if st.button("✍️ Raise CR", use_container_width=True):
-                        st.session_state.orchestrator.handle_raise_cr_action()
-                        st.rerun()
-                with col3:
-                    if st.button("🐞 Report Bug", use_container_width=True):
-                        st.session_state.orchestrator.handle_report_bug_action()
-                        st.rerun()
-                with col4:
-                    if st.button("🔁 Implement", use_container_width=True, help="Implement a pending CR or Bug Report"):
-                        st.session_state.orchestrator.handle_view_cr_register_action()
-                        st.rerun()
-                with col5:
-                    if st.button("⏸️ Pause", use_container_width=True):
-                        st.session_state.orchestrator.pause_project()
-                        st.toast("Project paused and state saved.")
-                        st.rerun()
-                with col6:
                     if st.button("⏹️ Stop & Export", use_container_width=True):
                         st.session_state.show_export_confirmation = True
                         st.rerun()
@@ -1061,34 +1054,11 @@ if page == "Project":
                 st.session_state.orchestrator.set_phase("GENESIS")
                 st.rerun()
 
-        elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
-            st.header("Impact Analysis May Be Outdated")
-            st.warning("A code change has occurred since the Impact Analysis for this Change Request was last run. The analysis may be inaccurate.")
-            st.markdown("Would you like to re-run the analysis to get the most up-to-date assessment before generating a plan?")
-
-            cr_id = st.session_state.orchestrator.task_awaiting_approval.get("cr_id_for_reanalysis")
-
-            if cr_id:
-                col1, col2, _ = st.columns([1.5, 2, 3])
-                with col1:
-                    if st.button("Yes, Re-run Analysis", type="primary"):
-                        st.session_state.orchestrator.handle_stale_analysis_choice("RE-RUN", cr_id)
-                        st.rerun()
-                with col2:
-                    if st.button("No, Proceed with Old Analysis"):
-                        st.session_state.orchestrator.handle_stale_analysis_choice("PROCEED", cr_id)
-                        st.rerun()
-            else:
-                st.error("Could not determine which CR to re-analyze. Returning to register.")
-                st.session_state.orchestrator.set_phase("IMPLEMENTING_CHANGE_REQUEST")
-
-        elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
+        elif current_phase_name == "AWAITING_INITIAL_IMPACT_ANALYSIS":
             st.header("Phase 6: New Change Request Logged")
             st.success("The new Change Request has been saved to the register.")
             st.markdown("Would you like to perform a high-level impact analysis on this new CR now?")
 
-            # Get the ID of the CR we just created. The orchestrator logic ensures
-            # that getting all CRs and taking the first one (most recent) is safe here.
             try:
                 latest_cr_id = st.session_state.orchestrator.get_all_change_requests()[0]['cr_id']
             except (IndexError, TypeError):
@@ -1098,9 +1068,7 @@ if page == "Project":
                     st.rerun()
                 st.stop()
 
-
             col1, col2, _ = st.columns([1, 1, 5])
-
             with col1:
                 if st.button("Yes, Run Analysis", type="primary", use_container_width=True):
                     with st.spinner(f"Running impact analysis for CR-{latest_cr_id}..."):
