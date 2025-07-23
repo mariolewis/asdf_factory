@@ -132,7 +132,19 @@ with st.sidebar:
                     st.error("Archive name cannot be empty.")
 
 # --- Main Application UI ---
-st.components.v1.html("<script>window.scrollTo(0, 0);</script>", height=0)
+st.markdown("""
+    <script>
+        const streamlitDoc = window.parent.document;
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.type === 'childList' && mutation.addedNodes.length) {
+                    streamlitDoc.querySelector('.main').scrollTo(0, 0);
+                }
+            });
+        });
+        observer.observe(streamlitDoc.body, { childList: true, subtree: true });
+    </script>
+    """, unsafe_allow_html=True)
 
 if page == "Project":
     if "last_action_success_message" in st.session_state:
@@ -333,82 +345,126 @@ if page == "Project":
 
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
-            st.markdown("Establish the technical foundation for the project by selecting the target OS and defining the technology stack.")
 
+            # --- State Management for the new multi-step workflow ---
+            if 'tech_spec_step' not in st.session_state:
+                st.session_state.tech_spec_step = 'initial_choice'
             if 'tech_spec_draft' not in st.session_state:
                 st.session_state.tech_spec_draft = ""
             if 'target_os' not in st.session_state:
                 st.session_state.target_os = "Linux"
 
-            st.session_state.target_os = st.selectbox(
-                "Select Target Operating System:",
-                ["Linux", "Windows", "macOS"],
-                index=["Linux", "Windows", "macOS"].index(st.session_state.target_os),
-                key="os_select"
-            )
-            st.divider()
+            # --- STEP 1: Initial User Choice ---
+            if st.session_state.tech_spec_step == 'initial_choice':
+                st.markdown("First, select the target Operating System for the application.")
+                st.session_state.target_os = st.selectbox(
+                    "Select Target Operating System:",
+                    ["Linux", "Windows", "macOS"],
+                    index=["Linux", "Windows", "macOS"].index(st.session_state.target_os)
+                )
+                st.divider()
+                st.markdown("Next, choose how you would like to create the Technical Specification document.")
 
-            tech_spec_choice = st.radio(
-                "Choose your method for creating the Technical Specification Document:",
-                ["Let ASDF propose a technology stack", "I will define the technology stack directly"],
-                key="tech_spec_radio"
-            )
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("🤖 Let ASDF Propose a Tech Stack", use_container_width=True, type="primary"):
+                        with st.spinner("AI is analyzing the specification and generating a proposal..."):
+                            try:
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                    final_spec_text = project_details['final_spec_text']
+                                if not api_key: st.error("Cannot generate proposal. LLM API Key is not set.")
+                                else:
+                                    from agents.agent_tech_stack_proposal import TechStackProposalAgent
+                                    agent = TechStackProposalAgent(api_key=api_key)
+                                    proposal = agent.propose_stack(final_spec_text, st.session_state.target_os)
+                                    st.session_state.tech_spec_draft = proposal
+                                    st.session_state.tech_spec_step = 'pm_review' # Transition to review step
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to generate proposal: {e}")
 
-            # Display the correct instructional text based on the radio button choice
-            if tech_spec_choice == "Let ASDF propose a technology stack":
-                st.markdown("You can provide initial thoughts or constraints in the text area below before clicking 'Generate Proposal'.")
-            else:
-                st.markdown("Please enter your full technical specification in the text area below. You can also ask the AI to generate a proposal to refine your draft.")
+                with col2:
+                    if st.button("✍️ I Will Define the Tech Stack Directly", use_container_width=True):
+                        st.session_state.tech_spec_step = 'pm_define'
+                        st.rerun()
 
-            st.session_state.tech_spec_draft = st.text_area(
-                "Technical Specification Document", value=st.session_state.tech_spec_draft, height=400
-            )
-            st.divider()
+            # --- STEP 2, Path B: PM Defines the Specification Manually ---
+            elif st.session_state.tech_spec_step == 'pm_define':
+                st.subheader("Define Technical Specification")
+                st.markdown("Please enter your full technical specification in the text area below.")
+                st.session_state.tech_spec_draft = st.text_area(
+                    "Technical Specification Document",
+                    value=st.session_state.tech_spec_draft,
+                    height=400
+                )
 
-            # --- Action Buttons ---
-            col1, col2, _ = st.columns([1, 1.5, 3])
+                if st.button("Submit for Final Approval", type="primary"):
+                    if st.session_state.tech_spec_draft.strip():
+                        st.session_state.tech_spec_step = 'pm_review' # Transition to the unified review step
+                        st.rerun()
+                    else:
+                        st.warning("Please enter a specification before submitting.")
 
-            with col1:
-                # The "Generate Proposal" button is now always visible
-                if st.button("🤖 Generate Proposal", use_container_width=True):
-                    with st.spinner("AI is analyzing the specification and generating a proposal..."):
-                        try:
+            # --- STEP 3, Unified: PM Reviews the Draft (from AI or manual input) ---
+            elif st.session_state.tech_spec_step == 'pm_review':
+                st.subheader("Review Technical Specification")
+                st.markdown("Please review the draft below. You can either approve it or provide feedback for refinement.")
+
+                st.text_area(
+                    "Technical Specification Draft",
+                    value=st.session_state.tech_spec_draft,
+                    height=400,
+                    key="tech_spec_draft_display",
+                    disabled=True
+                )
+
+                feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
+
+                col1, col2, _ = st.columns([1.5, 2, 3])
+                with col1:
+                    if st.button("Submit Feedback & Refine", use_container_width=True):
+                        if feedback_text.strip():
+                            with st.spinner("AI is refining the proposal based on your feedback..."):
+                                try:
+                                    with st.session_state.orchestrator.db_manager as db:
+                                        api_key = db.get_config_value("LLM_API_KEY")
+                                        project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                        # Combine original spec with the current draft and new feedback for context
+                                        context = (
+                                            f"{project_details['final_spec_text']}\n\n"
+                                            f"--- Current Draft to Refine ---\n{st.session_state.tech_spec_draft}\n\n"
+                                            f"--- PM Feedback for Refinement ---\n{feedback_text}"
+                                        )
+                                    if not api_key: st.error("Cannot generate proposal. LLM API Key is not set.")
+                                    else:
+                                        from agents.agent_tech_stack_proposal import TechStackProposalAgent
+                                        agent = TechStackProposalAgent(api_key=api_key)
+                                        proposal = agent.propose_stack(context, st.session_state.target_os)
+                                        st.session_state.tech_spec_draft = proposal
+                                        st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to generate proposal: {e}")
+                        else:
+                            st.warning("Please enter feedback before submitting for refinement.")
+
+                with col2:
+                    is_disabled = not st.session_state.tech_spec_draft.strip()
+                    if st.button("✅ Approve Specification", use_container_width=True, type="primary", disabled=is_disabled):
+                        with st.spinner("Saving technical specification and extracting primary technology..."):
                             with st.session_state.orchestrator.db_manager as db:
-                                api_key = db.get_config_value("LLM_API_KEY")
-                                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
+                                db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
 
-                                # Combine the original spec with any text the user has manually entered
-                                final_spec_text = project_details['final_spec_text']
-                                if st.session_state.tech_spec_draft.strip():
-                                    final_spec_text += "\n\n--- Additional PM Directives ---\n" + st.session_state.tech_spec_draft
+                            st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
 
-                            if not api_key: st.error("Cannot generate proposal. LLM API Key is not set.")
-                            else:
-                                from agents.agent_tech_stack_proposal import TechStackProposalAgent
-                                agent = TechStackProposalAgent(api_key=api_key)
-                                proposal = agent.propose_stack(final_spec_text, st.session_state.target_os)
-                                st.session_state.tech_spec_draft = proposal
-                                st.rerun()
-                        except Exception as e:
-                            st.error(f"Failed to generate proposal: {e}")
-
-            with col2:
-                # The "Approve" button is also always visible, but disabled if the text area is empty.
-                is_disabled = not st.session_state.tech_spec_draft.strip()
-                if st.button("✅ Approve Specification", use_container_width=True, type="primary", disabled=is_disabled):
-                    with st.spinner("Saving technical specification and extracting primary technology..."):
-                        with st.session_state.orchestrator.db_manager as db:
-                            db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
-                            db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
-
-                        st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
-
-                    st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
-                    keys_to_clear = ['tech_spec_draft', 'target_os']
-                    for key in keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                    st.rerun()
+                        st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
+                        keys_to_clear = ['tech_spec_draft', 'target_os', 'tech_spec_step']
+                        for key in keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                        st.rerun()
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
@@ -568,65 +624,76 @@ if page == "Project":
 
         elif current_phase_name == "CODING_STANDARD_GENERATION":
             st.header("Phase 2.A: Coding Standard Generation")
-            st.markdown("Here you can generate a project-specific coding standard based on the technical specification. This standard will be enforced by all code-generating agents.")
 
-            # Initialize session state
+            # --- State Management for the new multi-step workflow ---
+            if 'coding_standard_step' not in st.session_state:
+                st.session_state.coding_standard_step = 'initial'
             if 'coding_standard_draft' not in st.session_state:
                 st.session_state.coding_standard_draft = ""
-            # CORRECTED: Add a flag to disable the button after first use
-            if 'coding_standard_generated' not in st.session_state:
-                st.session_state.coding_standard_generated = False
 
-            # Button to trigger the agent
-            if st.button("Generate Coding Standard Draft", disabled=st.session_state.coding_standard_generated):
-                with st.spinner("AI is generating the coding standard..."):
-                    try:
-                        with st.session_state.orchestrator.db_manager as db:
-                            api_key = db.get_config_value("LLM_API_KEY")
-                            project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                            tech_spec = project_details['tech_spec_text']
+            # --- STEP 1: Initial Generation ---
+            if st.session_state.coding_standard_step == 'initial':
+                st.markdown("Generate a project-specific coding standard based on the technical specification. This standard will be enforced by all code-generating agents.")
+                if st.button("Generate Coding Standard Draft", type="primary"):
+                    with st.spinner("AI is generating the coding standard..."):
+                        try:
+                            with st.session_state.orchestrator.db_manager as db:
+                                api_key = db.get_config_value("LLM_API_KEY")
+                                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                tech_spec = project_details['tech_spec_text']
 
-                        if not api_key or not tech_spec:
-                            st.error("Cannot generate standard: Missing API Key or Technical Specification.")
+                            if not api_key or not tech_spec:
+                                st.error("Cannot generate standard: Missing API Key or Technical Specification.")
+                            else:
+                                from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
+                                agent = CodingStandardAgent_AppTarget(api_key=api_key)
+                                standard = agent.generate_standard(tech_spec)
+                                st.session_state.coding_standard_draft = standard
+                                st.session_state.coding_standard_step = 'pm_review' # Move to review step
+                                st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to generate coding standard: {e}")
+
+            # --- STEP 2: PM Review and Feedback Loop ---
+            elif st.session_state.coding_standard_step == 'pm_review':
+                st.subheader("Review Coding Standard")
+                st.markdown("Please review the draft below. You can either approve it or provide feedback for refinement.")
+
+                st.text_area(
+                    "Coding Standard Draft",
+                    value=st.session_state.coding_standard_draft,
+                    height=400,
+                    key="coding_standard_display",
+                    disabled=True
+                )
+
+                feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
+
+                col1, col2, _ = st.columns([1.5, 2, 3])
+                with col1:
+                    if st.button("Submit Feedback & Refine", use_container_width=True):
+                        if feedback_text.strip():
+                            st.warning("Feedback refinement for the Coding Standard is not yet implemented.")
+                            # Placeholder for future logic to refine the standard based on feedback
                         else:
-                            from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
-                            agent = CodingStandardAgent_AppTarget(api_key=api_key)
-                            standard = agent.generate_standard(tech_spec)
-                            st.session_state.coding_standard_draft = standard
-                            st.session_state.coding_standard_generated = True # Set the flag
-                            st.rerun() # Rerun to show the disabled state
-                    except Exception as e:
-                        st.error(f"Failed to generate coding standard: {e}")
+                            st.warning("Please enter feedback before submitting for refinement.")
 
-            # Text area for review and editing
-            st.session_state.coding_standard_draft = st.text_area(
-                "Coding Standard Document",
-                value=st.session_state.coding_standard_draft,
-                height=400,
-                help="You can edit the AI-generated coding standard here before approving."
-            )
+                with col2:
+                    is_disabled = not st.session_state.coding_standard_draft.strip()
+                    if st.button("✅ Approve Coding Standard", use_container_width=True, type="primary", disabled=is_disabled):
+                        with st.spinner("Saving coding standard..."):
+                            with st.session_state.orchestrator.db_manager as db:
+                                db.save_coding_standard(
+                                    st.session_state.orchestrator.project_id,
+                                    st.session_state.coding_standard_draft
+                                )
 
-            st.divider()
-
-            # Approval Step
-            if st.session_state.coding_standard_draft:
-                if st.button("Approve Coding Standard and Proceed to Planning", type="primary"):
-                    with st.spinner("Saving coding standard..."):
-                        with st.session_state.orchestrator.db_manager as db:
-                            db.save_coding_standard(
-                                st.session_state.orchestrator.project_id,
-                                st.session_state.coding_standard_draft
-                            )
-
-                        # Transition to the next phase
-                        st.session_state.orchestrator.set_phase("PLANNING")
-
-                        # Clean up session state for this phase
-                        keys_to_clear = ['coding_standard_draft', 'coding_standard_generated']
-                        for key in keys_to_clear:
-                            if key in st.session_state:
-                                del st.session_state[key]
-                        st.rerun()
+                            st.session_state.orchestrator.set_phase("PLANNING")
+                            keys_to_clear = ['coding_standard_draft', 'coding_standard_step']
+                            for key in keys_to_clear:
+                                if key in st.session_state:
+                                    del st.session_state[key]
+                            st.rerun()
 
 
         elif current_phase_name == "PLANNING":
