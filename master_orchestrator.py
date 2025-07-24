@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from enum import Enum, auto
 from pathlib import Path
 import git
+import google.generativeai as genai
 
 from asdf_db_manager import ASDFDBManager
 from agents.logic_agent_app_target import LogicAgent_AppTarget
@@ -1324,7 +1325,7 @@ class MasterOrchestrator:
                     return
 
                 logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis.")
-                apex_file_name = project_details.get("apex_executable_name")
+                apex_file_name = project_details["apex_executable_name"]
                 if apex_file_name:
                     # ... (apex trace logic) ...
                     pass
