@@ -1,6 +1,3 @@
-# A conservative character limit to prevent exceeding the LLM's context window.
-# This serves as a proxy for token count.
-CONTEXT_CHARACTER_LIMIT = 15000
 
 import logging
 import uuid
@@ -105,7 +102,7 @@ class MasterOrchestrator:
             # Configure logging based on DB settings
             log_level_str = db.get_config_value("LOGGING_LEVEL") or "Standard"
             if not db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT"):
-                db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", "15000")
+                db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", "200000")
 
         log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
         log_level = log_level_map.get(log_level_str, logging.INFO)
@@ -311,7 +308,12 @@ class MasterOrchestrator:
                             logging.warning(f"Unknown component_type '{component_type}' found. Defaulting to source code generation pipeline.")
                         self._execute_source_code_generation_task(task, project_root_path, db, api_key)
 
-                self.active_plan_cursor += 1
+                    # CORRECTED: Increment the cursor only after all DB and file operations succeed.
+                    self.active_plan_cursor += 1
+
+                    # If the last task of a post-genesis plan was just completed, run the doc update.
+                    if self.active_plan_cursor >= len(self.active_plan) and self.is_genesis_complete:
+                        self._run_post_implementation_doc_update(db, api_key)
 
                 # If in "ALWAYS_ASK" mode, break the loop after one successful task.
                 if not is_auto_proceed:
@@ -415,37 +417,6 @@ class MasterOrchestrator:
             "micro_spec_id": task.get("micro_spec_id")
         })
 
-        # --- Step 5: Update Specifications if this is a post-Genesis change ---
-        if self.is_genesis_complete:
-            logging.info(f"Post-Genesis change detected. Checking specifications for updates for task: {component_name}.")
-            implementation_plan_for_update = json.dumps([task])
-
-            # Part A: Update Application Specification
-            original_app_spec = project_details['final_spec_text']
-            if original_app_spec:
-                logging.info("Checking for Application Specification updates...")
-                updated_app_spec = doc_agent.update_specification_text(
-                    original_spec=original_app_spec,
-                    implementation_plan=implementation_plan_for_update,
-                    api_key=api_key
-                )
-                if updated_app_spec != original_app_spec:
-                    db.save_final_specification(self.project_id, updated_app_spec)
-                    logging.info("Successfully updated and saved the Application Specification.")
-
-            # Part B: Update Technical Specification
-            original_tech_spec = project_details['tech_spec_text']
-            if original_tech_spec:
-                logging.info("Checking for Technical Specification updates...")
-                updated_tech_spec = doc_agent.update_specification_text(
-                    original_spec=original_tech_spec,
-                    implementation_plan=implementation_plan_for_update,
-                    api_key=api_key
-                )
-                if updated_tech_spec != original_tech_spec:
-                    db.save_tech_specification(self.project_id, updated_tech_spec)
-                    logging.info("Successfully updated and saved the Technical Specification.")
-
     def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
         """
         Pauses the workflow to await PM confirmation for a declarative change.
@@ -526,6 +497,60 @@ class MasterOrchestrator:
         self.active_plan_cursor += 1
         self.set_phase("GENESIS")
         logging.info("Declarative task handled. Returning to Genesis phase.")
+
+    def _run_post_implementation_doc_update(self, db: ASDFDBManager, api_key: str):
+        """
+        After a CR/bug fix plan is fully implemented, this method updates all
+        relevant project documents to reflect the changes.
+        """
+        logging.info("Change implementation complete. Running post-implementation documentation update...")
+        project_details = db.get_project_by_id(self.project_id)
+        if not project_details:
+            logging.error("Could not run doc update; project details not found.")
+            return
+
+        # Use the entire completed plan as context for the update.
+        implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
+        doc_agent = DocUpdateAgentRoWD(db)
+
+        # Part A: Update Application Specification
+        original_app_spec = project_details['final_spec_text']
+        if original_app_spec:
+            logging.info("Checking for Application Specification updates...")
+            updated_app_spec = doc_agent.update_specification_text(
+                original_spec=original_app_spec,
+                implementation_plan=implementation_plan_for_update,
+                api_key=api_key
+            )
+            if updated_app_spec != original_app_spec:
+                db.save_final_specification(self.project_id, updated_app_spec)
+                logging.info("Successfully updated and saved the Application Specification.")
+
+        # Part B: Update Technical Specification
+        original_tech_spec = project_details['tech_spec_text']
+        if original_tech_spec:
+            logging.info("Checking for Technical Specification updates...")
+            updated_tech_spec = doc_agent.update_specification_text(
+                original_spec=original_tech_spec,
+                implementation_plan=implementation_plan_for_update,
+                api_key=api_key
+            )
+            if updated_tech_spec != original_tech_spec:
+                db.save_tech_specification(self.project_id, updated_tech_spec)
+                logging.info("Successfully updated and saved the Technical Specification.")
+
+        # Part C: Update UI Test Plan
+        original_ui_test_plan = project_details['ui_test_plan_text']
+        if original_ui_test_plan:
+            logging.info("Checking for UI Test Plan updates...")
+            updated_ui_test_plan = doc_agent.update_specification_text(
+                original_spec=original_ui_test_plan,
+                implementation_plan=implementation_plan_for_update,
+                api_key=api_key
+            )
+            if updated_ui_test_plan != original_ui_test_plan:
+                db.save_ui_test_plan(self.project_id, updated_ui_test_plan)
+                logging.info("Successfully updated and saved the UI Test Plan.")
 
     def _run_integration_and_ui_testing_phase(self):
         """
@@ -1735,7 +1760,7 @@ class MasterOrchestrator:
         excluded_files = []
         context_was_trimmed = False
 
-        limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "15000"
+        limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "200000"
         char_limit = int(limit_str)
 
         # 1. Add core documents and calculate their size.
