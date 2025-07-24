@@ -552,6 +552,53 @@ class MasterOrchestrator:
                 db.save_ui_test_plan(self.project_id, updated_ui_test_plan)
                 logging.info("Successfully updated and saved the UI Test Plan.")
 
+    def _get_integration_context_files(self, db: ASDFDBManager, api_key: str, new_artifacts: List[dict]) -> List[str]:
+        """
+        Uses an AI agent to analyze the RoWD and new artifacts to determine which
+        existing files are the most likely integration points.
+        """
+        logging.info("AI is analyzing the project to identify relevant integration files...")
+        all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
+        if not all_artifacts_rows:
+            return []
+
+        rowd_json = json.dumps([dict(row) for row in all_artifacts_rows], indent=2)
+        new_artifacts_json = json.dumps(new_artifacts, indent=2)
+
+        prompt = textwrap.dedent(f"""
+            You are an expert software architect. Your task is to identify which existing files in a project need to be modified to integrate a set of new components.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Analyze Context:** Review the full Record-of-Work-Done (RoWD) which describes all existing components, and the JSON for the new components to be integrated.
+            2.  **Identify Integration Points:** Determine which existing files are the most logical places to "wire in" the new components. These are typically higher-level files like a main application, a service registry, a router, or a central module.
+            3.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of strings. Each string in the array must be the exact `file_path` of an existing file that needs to be modified.
+            4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
+
+            **--- INPUT 1: All Existing Components (RoWD) ---**
+            ```json
+            {rowd_json}
+            ```
+
+            **--- INPUT 2: New Components to Integrate ---**
+            ```json
+            {new_artifacts_json}
+            ```
+
+            **--- REQUIRED OUTPUT: JSON Array of File Paths ---**
+        """)
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            response = model.generate_content(prompt)
+            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            integration_files = json.loads(cleaned_response)
+            if isinstance(integration_files, list):
+                logging.info(f"AI identified the following integration files: {integration_files}")
+                return integration_files
+            return []
+        except Exception as e:
+            logging.error(f"Failed to identify integration context files via AI: {e}")
+            return [] # Return empty list on failure
+
     def _run_integration_and_ui_testing_phase(self):
         """
         Executes the full Integration and UI Testing workflow.
@@ -568,22 +615,26 @@ class MasterOrchestrator:
                     raise Exception(f"Could not retrieve project details for project ID: {self.project_id}")
 
                 project_root_path = Path(project_details['project_root_folder'])
-                main_executable_name = project_details['apex_executable_name']
-                if not main_executable_name:
-                    raise Exception("Cannot run integration: Main executable file name is not set for this project.")
+                statuses_to_integrate = ["UNIT_TESTS_PASSING", "UNIT_TESTS_FAILING", "KNOWN_ISSUE"]
+                new_artifacts_rows = db.get_artifacts_by_statuses(self.project_id, statuses_to_integrate)
+                if not new_artifacts_rows:
+                    logging.warning("Integration phase started, but no new artifacts found to integrate. Skipping to UI Test Plan generation.")
+                else:
+                    new_artifacts = [dict(row) for row in new_artifacts_rows]
+                    # Use the new helper method to dynamically identify all relevant files for integration.
+                    integration_file_paths = self._get_integration_context_files(db, api_key, new_artifacts)
 
-                integration_target_file = main_executable_name
-                logging.info(f"Integration target file identified as: {integration_target_file}")
+                    if not integration_file_paths:
+                        raise Exception("AI could not identify any files for integration. Cannot proceed.")
 
-                target_file_path = project_root_path / integration_target_file
-                if not target_file_path.exists():
-                    target_file_path.parent.mkdir(parents=True, exist_ok=True)
-                    target_file_path.write_text(f"# Main entry point for {self.project_name}\n\nif __name__ == '__main__':\n    pass\n", encoding='utf-8')
-                    logging.warning(f"Main executable '{integration_target_file}' did not exist. Created a placeholder file.")
-
-                existing_files_context = {
-                    integration_target_file: target_file_path.read_text(encoding='utf-8')
-                }
+                    # Read the content of all identified files to create a rich context.
+                    existing_files_context = {}
+                    for file_path_str in integration_file_paths:
+                        full_path = project_root_path / file_path_str
+                        if full_path.exists():
+                            existing_files_context[file_path_str] = full_path.read_text(encoding='utf-8')
+                        else:
+                            logging.warning(f"AI identified integration file '{file_path_str}' but it was not found on disk. Skipping.")
 
                 statuses_to_integrate = ["UNIT_TESTS_PASSING", "UNIT_TESTS_FAILING", "KNOWN_ISSUE"]
                 new_artifacts = db.get_artifacts_by_statuses(self.project_id, statuses_to_integrate)
