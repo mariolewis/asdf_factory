@@ -731,22 +731,23 @@ if page == "Project":
                             # --- CORRECTED LOGIC ---
                             # 2. Parse the object and extract JUST the development plan array
                             try:
+                                # --- ADDED: Pre-Genesis Validation Step ---
+                                with st.session_state.orchestrator.db_manager as db:
+                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                    if not project_details or not project_details['technology_stack']:
+                                        st.error("Validation Failed: A target technology stack has not been set for this project. Please reload the project and complete the Technical Specification phase.")
+                                        st.stop() # Halt execution
+
                                 full_plan_data = json.loads(full_plan_object_str)
                                 dev_plan_list = full_plan_data.get("development_plan")
 
                                 if dev_plan_list is not None:
-                                    # 3. Load ONLY the list of tasks into the orchestrator
                                     st.session_state.orchestrator.load_development_plan(json.dumps(dev_plan_list))
-
-                                    # 4. Immediately set the phase to GENESIS
                                     st.session_state.orchestrator.set_phase("GENESIS")
-
-                                    # 5. Clean up session state
                                     keys_to_clear = ['development_plan']
                                     for key in keys_to_clear:
                                         if key in st.session_state:
                                             del st.session_state[key]
-
                                     st.toast("Plan approved! Starting development...")
                                     st.rerun()
                                 else:
