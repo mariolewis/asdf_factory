@@ -841,8 +841,9 @@ if page == "Project":
 
                 with col1:
                     if st.button("▶️ Proceed", use_container_width=True, type="primary"):
-                        with st.spinner("Executing next step..."):
-                            st.session_state.orchestrator.handle_proceed_action()
+                        with st.status("Executing next development step...", expanded=True) as status:
+                            st.session_state.orchestrator.handle_proceed_action(status_ui_object=status)
+                            status.update(label="Step completed successfully!", state="complete", expanded=False)
                         st.rerun()
                 with col2:
                     if st.button("⏹️ Stop & Export", use_container_width=True):

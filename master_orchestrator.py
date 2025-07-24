@@ -262,7 +262,7 @@ class MasterOrchestrator:
         except KeyError:
             logging.error(f"Attempted to set an invalid phase: {phase_name}")
 
-    def handle_proceed_action(self):
+    def handle_proceed_action(self, status_ui_object=None):
         """
         Handles the logic for the Genesis Pipeline.
         This version now includes a check for the PM_CHECKPOINT_BEHAVIOR setting
@@ -307,7 +307,7 @@ class MasterOrchestrator:
                     else:
                         if component_type not in ["FUNCTION", "CLASS", "Model"]:
                             logging.warning(f"Unknown component_type '{component_type}' found. Defaulting to source code generation pipeline.")
-                        self._execute_source_code_generation_task(task, project_root_path, db, api_key)
+                        self._execute_source_code_generation_task(task, project_root_path, db, api_key, status_ui_object)
 
                     # CORRECTED: Increment the cursor only after all DB and file operations succeed.
                     self.active_plan_cursor += 1
@@ -325,12 +325,13 @@ class MasterOrchestrator:
                 self.escalate_for_manual_debug(str(e))
                 return # Stop the loop and the method on failure
 
-    def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
+    def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str, status_ui_object=None):
         """
         Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
         This version now sanitizes file paths before use to prevent file system errors.
         """
         component_name = task.get("component_name")
+        if status_ui_object: status_ui_object.update(label=f"Executing source code generation for: {component_name}")
         logging.info(f"Executing source code generation for: {component_name}")
 
         project_details = db.get_project_by_id(self.project_id)
@@ -349,17 +350,20 @@ class MasterOrchestrator:
         micro_spec_content = task.get("task_description")
 
         # --- Code Generation and Review Loop ---
+        if status_ui_object: status_ui_object.update(label=f"Generating logic plan for {component_name}...")
         logic_agent = LogicAgent_AppTarget(api_key=api_key)
         code_agent = CodeAgent_AppTarget(api_key=api_key)
         review_agent = CodeReviewAgent(api_key=api_key)
         test_agent = TestAgent_AppTarget(api_key=api_key)
 
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
+        if status_ui_object: status_ui_object.update(label=f"Generating source code for {component_name}...")
         source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language)
 
         MAX_REVIEW_ATTEMPTS = 2
         review_status = "fail"
         for attempt in range(MAX_REVIEW_ATTEMPTS):
+            if status_ui_object: status_ui_object.update(label=f"Reviewing code for {component_name} (Attempt {attempt + 1})...")
             review_status, review_output = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, coding_standard)
             if review_status == "pass":
                 logging.info(f"Component '{component_name}' passed code review on attempt {attempt + 1}.")
@@ -371,6 +375,7 @@ class MasterOrchestrator:
             elif review_status == "fail":
                 logging.warning(f"Component '{component_name}' failed code review on attempt {attempt + 1}. Feedback: {review_output}")
                 if attempt < MAX_REVIEW_ATTEMPTS - 1:
+                    if status_ui_object: status_ui_object.update(label=f"Re-writing code for {component_name} based on feedback...")
                     logging.info("Attempting to rewrite the code based on feedback...")
                     source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, feedback=review_output)
                 else:
@@ -379,9 +384,11 @@ class MasterOrchestrator:
         if review_status == "fail":
             raise Exception(f"Component '{component_name}' failed code review after all attempts.")
 
+        if status_ui_object: status_ui_object.update(label=f"Generating unit tests for {component_name}...")
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
 
         # --- Refactored: Delegate build, test, and commit to the specialist agent ---
+        if status_ui_object: status_ui_object.update(label=f"Writing files, testing, and committing {component_name}...")
         build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
         component_path_str = task.get("component_file_path")
         test_path_str = task.get("test_file_path")
@@ -407,6 +414,7 @@ class MasterOrchestrator:
             commit_hash = "N/A" # Handle cases where no commit was made (e.g., no files generated)
 
         # --- Step 4: Update RoWD ---
+        if status_ui_object: status_ui_object.update(label=f"Updating project records for {component_name}...")
         doc_agent = DocUpdateAgentRoWD(db)
         doc_agent.update_artifact_record({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
