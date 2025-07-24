@@ -228,19 +228,31 @@ if page == "Project":
 
                 pm_feedback_text = st.text_area("Your Feedback and Corrections:", height=200)
 
-                if st.button("Submit Feedback & Refine Draft", type="primary"):
-                    if pm_feedback_text.strip():
-                        with st.spinner("AI is refining the draft with your feedback..."):
+                col1, col2, _ = st.columns([1.5, 2.5, 3])
+                with col1:
+                    if st.button("Submit Feedback & Refine Draft", use_container_width=True):
+                        if pm_feedback_text.strip():
+                            with st.spinner("AI is refining the draft with your feedback..."):
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+
+                                refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text)
+                                st.session_state.spec_draft = refined_draft
+                                st.session_state.spec_step = 'pm_review_refined'
+                                st.rerun()
+                        else:
+                            st.warning("Please provide feedback to refine the draft.")
+                with col2:
+                    if st.button("✅ Approve & Proceed to your Review", use_container_width=True, type="primary"):
+                        with st.spinner("AI is checking the draft for ambiguities..."):
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
                             agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-
-                            refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text)
-                            st.session_state.spec_draft = refined_draft
-                            st.session_state.spec_step = 'pm_review_refined'
+                            issues = agent.identify_potential_issues(st.session_state.spec_draft)
+                            st.session_state.ai_issues = issues
+                            st.session_state.spec_step = 'ai_clarification'
                             st.rerun()
-                    else:
-                        st.warning("Please provide feedback to refine the draft.")
 
             # --- STEP 3: PM Reviews the AI-Refined Draft ---
             elif st.session_state.spec_step == 'pm_review_refined':
@@ -366,22 +378,41 @@ if page == "Project":
                         st.session_state.tech_spec_step = 'pm_define'
                         st.rerun()
 
-            # --- STEP 2, Path B: PM Defines the Specification Manually ---
+            # --- STEP 2, Path B: PM Provides Input for the Specification ---
             elif st.session_state.tech_spec_step == 'pm_define':
                 st.subheader("Define Technical Specification")
-                st.markdown("Please enter your full technical specification in the text area below.")
+                st.markdown("Please provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). The ASDF will use your input to generate the full technical specification document.")
                 st.session_state.tech_spec_draft = st.text_area(
-                    "Technical Specification Document",
+                    "Your Technology Guidelines:",
                     value=st.session_state.tech_spec_draft,
-                    height=400
+                    height=200
                 )
 
-                if st.button("Submit for Final Approval", type="primary"):
+                if st.button("Generate Full Specification from My Input", type="primary"):
                     if st.session_state.tech_spec_draft.strip():
-                        st.session_state.tech_spec_step = 'pm_review' # Transition to the unified review step
-                        st.rerun()
+                        with st.spinner("AI is expanding your input into a full technical specification..."):
+                            try:
+                                with st.session_state.orchestrator.db_manager as db:
+                                    api_key = db.get_config_value("LLM_API_KEY")
+                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                    # Combine the original spec with the PM's new directive for full context
+                                    context = (
+                                        f"{project_details['final_spec_text']}\n\n"
+                                        f"--- PM Directive for Technology Stack ---\n{st.session_state.tech_spec_draft}"
+                                    )
+                                if not api_key:
+                                    st.error("Cannot generate proposal. LLM API Key is not set.")
+                                else:
+                                    from agents.agent_tech_stack_proposal import TechStackProposalAgent
+                                    agent = TechStackProposalAgent(api_key=api_key)
+                                    proposal = agent.propose_stack(context, st.session_state.target_os)
+                                    st.session_state.tech_spec_draft = proposal
+                                    st.session_state.tech_spec_step = 'pm_review' # Transition to the unified review step
+                                    st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to generate specification from your input: {e}")
                     else:
-                        st.warning("Please enter a specification before submitting.")
+                        st.warning("Please provide your technology guidelines before generating the specification.")
 
             # --- STEP 3, Unified: PM Reviews the Draft (from AI or manual input) ---
             elif st.session_state.tech_spec_step == 'pm_review':
@@ -393,7 +424,7 @@ if page == "Project":
                     value=st.session_state.tech_spec_draft,
                     height=400,
                     key="tech_spec_draft_display",
-                    disabled=True
+                    disabled=False  # Allow scrolling
                 )
 
                 feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
