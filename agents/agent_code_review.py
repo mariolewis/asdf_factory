@@ -28,7 +28,7 @@ class CodeReviewAgent:
             raise ValueError("API key is required for the CodeReviewAgent.")
 
         genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        self.model = genai.GenerativeModel('gemini-2.5-pro')
         logging.info("CodeReviewAgent initialized.")
 
     def review_code(self, micro_spec: str, logic_plan: str, new_source_code: str, rowd_json: str, coding_standard: str) -> Tuple[str, str]:
@@ -75,7 +75,7 @@ class CodeReviewAgent:
 
         try:
             # Using the Pro model as this is a highly complex reasoning and generation task.
-            model = genai.GenerativeModel('gemini-2.5-pro-preview-05-20')
+            model = genai.GenerativeModel('gemini-2.5-pro')
             response = model.generate_content(prompt)
             response_text = response.text.strip()
 

@@ -34,7 +34,7 @@ class CodeAgent_AppTarget:
         explicitly targeting a specific programming language.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-pro-preview-05-20')
+            model = genai.GenerativeModel('gemini-2.5-pro')
 
             correction_context = ""
             if feedback:

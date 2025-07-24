@@ -35,7 +35,7 @@ class FixPlannerAgent_AppTarget:
         Generates a detailed, sequential JSON plan to fix a diagnosed bug.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-pro-preview-05-20')
+            model = genai.GenerativeModel('gemini-2.5-pro')
 
             prompt = f"""
             You are a Principal Software Architect specializing in code remediation. Your task is to take a root cause analysis of a bug and the relevant faulty code, and create a precise, sequential development plan in JSON format to fix the bug.
