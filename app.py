@@ -1623,6 +1623,15 @@ elif page == "Settings":
         help="Defines the number of automated fix attempts the Debug Pipeline will perform before escalating to the PM."
     )
 
+    st.number_input(
+        "Context Window Character Limit",
+        min_value=10000,
+        step=5000,
+        key="context_window_limit",
+        value=int(all_config.get("CONTEXT_WINDOW_CHAR_LIMIT", 200000)),
+        help="Defines the maximum number of characters to send to the LLM for complex analysis. A larger value may provide more context but increase processing time."
+    )
+
     pm_checkpoint_options = {"ALWAYS_ASK": "Always ask before proceeding", "AUTO_PROCEED": "Automatically proceed if successful"}
     current_pm_behavior = all_config.get("PM_CHECKPOINT_BEHAVIOR", "ALWAYS_ASK")
     pm_checkpoint_index = list(pm_checkpoint_options.keys()).index(current_pm_behavior)
@@ -1656,6 +1665,7 @@ elif page == "Settings":
         """Callback function to save all settings to the database."""
         settings_to_save = {
             "MAX_DEBUG_ATTEMPTS": st.session_state.max_debug_attempts,
+            "CONTEXT_WINDOW_CHAR_LIMIT": st.session_state.context_window_limit,
             "LOGGING_LEVEL": st.session_state.logging_level,
             "DEFAULT_PROJECT_PATH": st.session_state.default_project_path,
             "DEFAULT_ARCHIVE_PATH": st.session_state.default_archive_path

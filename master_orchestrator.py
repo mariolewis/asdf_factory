@@ -587,7 +587,7 @@ class MasterOrchestrator:
             **--- REQUIRED OUTPUT: JSON Array of File Paths ---**
         """)
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
             response = model.generate_content(prompt)
             cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
             integration_files = json.loads(cleaned_response)
@@ -2105,7 +2105,7 @@ class MasterOrchestrator:
                 if not api_key:
                     raise Exception("Cannot extract technology: LLM API Key is not set.")
 
-                model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
                 prompt = f"""
                 Analyze the following technical specification document. Your single task is to identify the primary, top-level programming language or technology stack.
 

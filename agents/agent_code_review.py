@@ -75,7 +75,7 @@ class CodeReviewAgent:
 
         try:
             # Using the Pro model as this is a highly complex reasoning and generation task.
-            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            model = genai.GenerativeModel('gemini-2.5-pro-preview-05-20')
             response = model.generate_content(prompt)
             response_text = response.text.strip()
 
