@@ -68,9 +68,12 @@ class SpecClarificationAgent:
         # The prompt instructs the AI on its role and the required output format,
         # including the critical requirement for database table specs.
         prompt = textwrap.dedent(f"""
-            As an expert software architect, expand the following brief application description into a detailed, structured draft specification.
-            The draft should be comprehensive and well-organized, suitable for a development team to begin work.
-            Crucially, if the description implies the need for data storage, include a dedicated 'Database Schema' section with detailed specifications for the necessary database tables, including column names, data types (e.g., TEXT, INTEGER, REAL, BLOB), and descriptions for each column.
+            You are an expert Business Analyst. Your task is to expand the following brief description into a detailed, structured Application Specification.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Technology Agnostic:** Your response MUST be purely functional and non-functional. You MUST NOT include any recommendations for specific programming languages, frameworks, databases, or technology stacks.
+            2.  **User-Specified Tech:** The only exception is if the user's brief explicitly commands the use of a specific technology. In that case, you must include it.
+            3.  **Logical Data Schema:** If the description implies data storage, include a 'Data Schema' section. Describe the tables and columns using logical data types (e.g., Text, Number, Date), not physical SQL types (e.g., VARCHAR, INT).
 
             The user's brief description is:
             ---

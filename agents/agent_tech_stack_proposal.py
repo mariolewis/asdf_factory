@@ -45,18 +45,20 @@ class TechStackProposalAgent:
         logging.info(f"TechStackProposalAgent: Proposing technology stack for OS: {target_os}...")
 
         prompt = textwrap.dedent(f"""
-            You are an expert Solutions Architect. Your task is to analyze the following functional software specification and propose the most appropriate high-level architecture and a complete technology stack for its implementation, specifically tailored for the target **Operating System: {target_os}**.
+            You are an expert Solutions Architect. Your task is to create a formal Technical Specification, including a high-level architecture and a complete technology stack, based on the provided functional specification for a **{target_os}** environment.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **OS-Specific Recommendations:** All of your recommendations for programming languages, frameworks, databases, and key libraries MUST be compatible and well-suited for a "{target_os}" environment.
-            2.  **Justifications:** For each technology choice, you MUST provide a brief justification explaining WHY it is a good fit for this specific project on the specified OS.
-            3.  **Format:** Structure your response clearly using Markdown. Use a top-level heading for the Architecture Pattern and then sub-headings for each component of the stack.
+            1.  **Analyze for Existing Tech:** First, review the specification to see if a technology stack is already mentioned.
+            2.  **If Tech IS Specified:** Your primary task is to accept and expand upon the user's choice. Validate that it fits the requirements and then detail the architecture and any missing libraries or components needed to complete the stack.
+            3.  **If Tech IS NOT Specified:** Your task is to propose the most appropriate technology stack from scratch, providing a brief justification for each choice.
+            4.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
+            5.  **Format:** Structure your response clearly using Markdown.
 
             **--- Functional Specification ---**
             {functional_spec_text}
             **--- End of Specification ---**
 
-            Based on the specification provided, here is my recommended architecture and technology stack for a **{target_os}** deployment:
+            Based on the specification provided, here is the recommended Technical Specification for a **{target_os}** deployment:
         """)
 
         try:
