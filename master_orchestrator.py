@@ -552,7 +552,7 @@ class MasterOrchestrator:
                 db.save_ui_test_plan(self.project_id, updated_ui_test_plan)
                 logging.info("Successfully updated and saved the UI Test Plan.")
 
-    def _get_integration_context_files(self, db: ASDFDBManager, api_key: str, new_artifacts: List[dict]) -> List[str]:
+    def _get_integration_context_files(self, db: ASDFDBManager, api_key: str, new_artifacts: list[dict]) -> list[str]:
         """
         Uses an AI agent to analyze the RoWD and new artifacts to determine which
         existing files are the most likely integration points.
@@ -587,7 +587,7 @@ class MasterOrchestrator:
             **--- REQUIRED OUTPUT: JSON Array of File Paths ---**
         """)
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
             response = model.generate_content(prompt)
             cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
             integration_files = json.loads(cleaned_response)
