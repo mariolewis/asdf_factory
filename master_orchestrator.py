@@ -305,7 +305,7 @@ class MasterOrchestrator:
                     if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
                         self._execute_declarative_modification_task(task, project_root_path, db, api_key)
                     else:
-                        if component_type not in ["FUNCTION", "CLASS"]:
+                        if component_type not in ["FUNCTION", "CLASS", "Model"]:
                             logging.warning(f"Unknown component_type '{component_type}' found. Defaulting to source code generation pipeline.")
                         self._execute_source_code_generation_task(task, project_root_path, db, api_key)
 
@@ -1296,51 +1296,38 @@ class MasterOrchestrator:
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key: raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
 
-                # --- ATOMIC ROLLBACK IS NOW CORRECTLY DISABLED ---
                 logging.warning("Atomic rollback is currently disabled for manual inspection.")
-                # try:
-                #     repo = git.Repo(project_root_path)
-                #     if repo.heads:
-                #         repo.git.reset('--hard', 'HEAD')
-                #     repo.git.clean('-fdx')
-                # except Exception as e:
-                #     logging.error(f"CRITICAL: Atomic rollback/clean failed: {e}")
-                #     self.set_phase("DEBUG_PM_ESCALATION")
-                #     return
-                # --- END OF DISABLED BLOCK ---
 
                 context_package = {}
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
-
-                # Tier 1 and Tier 2 Triage logic remains the same...
+                # Tier 1 Analysis (Stack Trace)
                 logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
+                # ... (Future parsing logic would go here) ...
                 if "Traceback (most recent call last):" in failure_log:
-                    # ... (parsing logic) ...
-                    pass
+                    pass # Placeholder for future implementation
 
+                # Tier 2 Analysis (Apex Trace)
+                if not context_package:
+                    logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis.")
+                    apex_file_name = project_details["apex_executable_name"]
+                    if apex_file_name:
+                        pass # Placeholder for future implementation
+
+                # If automated triage (Tiers 1 & 2) succeeds, plan a fix.
                 if context_package:
-                    logging.info("Tier 1 Success: Context gathered. Proceeding to plan a fix.")
+                    logging.info("Automated Triage Success: Context gathered. Proceeding to plan a fix.")
                     self._plan_and_execute_fix(failure_log, context_package, api_key)
                     return
 
-                logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis.")
-                apex_file_name = project_details["apex_executable_name"]
-                if apex_file_name:
-                    # ... (apex trace logic) ...
-                    pass
-
-                if context_package:
-                    logging.info("Tier 2 Success: Context gathered. Proceeding to plan a fix.")
-                    self._plan_and_execute_fix(failure_log, context_package, api_key)
-                    return
-
-                # Tier 3: Interactive Triage
-                logging.warning("Tier 2 Failed. Proceeding to Tier 3 for PM interaction.")
-                self.set_phase("AWAITING_PM_TRIAGE_INPUT")
+                # --- CORRECTED LOGIC ---
+                # If automated triage fails, escalate to the PM with the collected error log.
+                logging.warning("Automated Triage (Tiers 1 & 2) failed. Escalating to PM with full error log.")
+                self.task_awaiting_approval = {"failure_log": failure_log}
+                self.set_phase("DEBUG_PM_ESCALATION")
 
         except Exception as e:
             logging.error(f"A critical error occurred during the triage process: {e}")
+            # Final fallback: Escalate with the new error message
+            self.task_awaiting_approval = {"failure_log": str(e)}
             self.set_phase("DEBUG_PM_ESCALATION")
 
     def handle_pm_triage_input(self, pm_error_description: str):
