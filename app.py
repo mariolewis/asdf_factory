@@ -188,6 +188,8 @@ if page == "Project":
                 with col1:
                     if st.button("📂 Load Selected Project", use_container_width=True, type="primary"):
                         with st.spinner("Loading project data and running pre-flight checks..."):
+                            # Save the selected ID to session state so it's available on the next screen
+                            st.session_state.selected_history_id_for_action = selected_id
                             st.session_state.orchestrator.load_archived_project(selected_id)
                             st.rerun()
                 with col2:
@@ -252,7 +254,7 @@ if page == "Project":
                         if st.button("Confirm & Discard All Changes", type="primary"):
                             with st.spinner("Resetting repository and re-checking..."):
                                 project_id_to_reset = st.session_state.orchestrator.project_id
-                                st.session_state.orchestrator.handle_discard_changes(history_id=selected_id)
+                                st.session_state.orchestrator.handle_discard_changes(history_id=st.session_state.selected_history_id_for_action)
                             st.rerun()
 
     elif not st.session_state.orchestrator.project_id:
