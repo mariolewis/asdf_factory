@@ -243,7 +243,7 @@ class MasterOrchestrator:
         try:
             new_phase = FactoryPhase[phase_name]
 
-            if new_phase == FactoryPhase.VIEWING_PROJECT_HISTORY:
+            if new_phase in [FactoryPhase.VIEWING_PROJECT_HISTORY, FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION]:
                 self.current_phase = new_phase
                 logging.info(f"Transitioning to phase: {self.current_phase.name}")
                 # We don't save state when just viewing history
