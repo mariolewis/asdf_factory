@@ -365,7 +365,7 @@ if page == "Project":
                         else:
                             st.warning("Please provide feedback to refine the draft.")
                 with col2:
-                    if st.button("✅ Approve & Proceed to AI Analysis", use_container_width=True, type="primary"):
+                    if st.button("✅ Approve & Proceed with Review", use_container_width=True, type="primary"):
                         with st.spinner("AI is checking the draft for ambiguities..."):
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
