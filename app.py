@@ -436,7 +436,7 @@ if page == "Project":
                             except Exception as e:
                                 st.error(f"Failed to generate proposal: {e}")
                 with col2:
-                    if st.button("✍️ I Will Define the Tech Stack Directly", use_container_width=True):
+                    if st.button("✍️ Set Technology Choices/Guidelines", use_container_width=True):
                         st.session_state.tech_spec_step = 'pm_define'
                         st.rerun()
 
