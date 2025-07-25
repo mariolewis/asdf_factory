@@ -44,6 +44,10 @@ class TestEnvironmentAdvisorAgent:
             - "tool_name": A string with the human-readable name of the tool (e.g., "pytest and pytest-mock", "JUnit 5").
             - "instructions": A string containing the clear, step-by-step installation and setup instructions for that specific tool, tailored for the "{target_os}" environment.
 
+            **ADDITIONAL MANDATORY INSTRUCTIONS:**
+            1.  **Grouping:** You MUST group all actions for a single tool (e.g., "install pytest," "install pytest-cov") into a single JSON object. Do not create separate top-level steps for sub-components of the same tool.
+            2.  **Formatting:** You MUST NOT use Markdown headings (e.g., '#', '##') inside the "instructions" string. Use bolding with asterisks or simple numbered lists for clarity.
+
             Do not include any other text or explanations outside of the raw JSON array itself.
 
             **--- Technical Specification ---**
