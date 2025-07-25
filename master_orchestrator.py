@@ -1697,22 +1697,12 @@ class MasterOrchestrator:
                     self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
                     return
 
-                rowd_file_path = Path(history_record['archive_file_path'])
-                cr_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_cr.json"))
-
-                if not rowd_file_path.exists():
-                    error_msg = f"Archive file not found at path: {rowd_file_path}"
-                    self.preflight_check_result = {"status": "ERROR", "message": error_msg}
-                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
-                    return
-
                 # Perform the checks BEFORE loading data
                 project_root_str = history_record['project_root_folder']
                 check_result = self._perform_preflight_checks(project_root_str)
                 self.preflight_check_result = check_result
 
                 # If checks fail fatally, we don't bother loading the data yet.
-                # The user must resolve the issue first.
                 if check_result['status'] in ["PATH_NOT_FOUND", "GIT_MISSING", "STATE_DRIFT"]:
                     self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
                     logging.info(f"Pre-flight checks failed ({check_result['status']}). Pausing for user resolution.")
@@ -1720,6 +1710,12 @@ class MasterOrchestrator:
 
                 # --- If checks pass, proceed to load data ---
                 self._clear_active_project_data(db)
+
+                rowd_file_path = Path(history_record['archive_file_path'])
+                cr_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_cr.json"))
+
+                if not rowd_file_path.exists():
+                    raise FileNotFoundError(f"Archive file not found at path: {rowd_file_path}")
 
                 with open(rowd_file_path, 'r', encoding='utf-8') as f:
                     artifacts_to_load = json.load(f)
