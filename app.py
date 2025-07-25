@@ -229,20 +229,28 @@ if page == "Project":
                 st.success(message)
                 st.info("The project environment is valid and clean. You can now proceed with the project.")
 
-                # Get the dynamically determined resume phase from the orchestrator
                 resume_phase = st.session_state.orchestrator.resume_phase_after_load
                 if resume_phase:
-                    # Get the display-friendly name for the button
                     phase_display_name = st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(resume_phase, resume_phase.name.replace("_", " ").title())
 
                     col1, col2, _ = st.columns([1.5, 2, 3])
                     with col1:
                         if st.button(f"▶️ Proceed to {phase_display_name}", type="primary", use_container_width=True):
+                            # If resuming to GENESIS, we must load the dev plan into active memory.
+                            if resume_phase.name == "GENESIS":
+                                with st.spinner("Loading development plan..."):
+                                    with st.session_state.orchestrator.db_manager as db:
+                                        project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                        if project_details and project_details['development_plan_text']:
+                                            full_plan_data = json.loads(project_details['development_plan_text'])
+                                            dev_plan_list = full_plan_data.get("development_plan")
+                                            if dev_plan_list:
+                                                st.session_state.orchestrator.load_development_plan(json.dumps(dev_plan_list))
+
                             st.session_state.orchestrator.set_phase(resume_phase.name)
                             st.session_state.orchestrator.resume_phase_after_load = None # Clean up
                             st.rerun()
                     with col2:
-                        # ADDED: A "Back" button to prevent getting stuck.
                         if st.button("⬅️ Back to Project List", use_container_width=True):
                             st.session_state.orchestrator = MasterOrchestrator(db_path=str(db_path))
                             st.session_state.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
