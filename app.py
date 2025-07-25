@@ -90,13 +90,8 @@ with st.sidebar:
             else:
                 st.error("Failed to resume project. Check logs for details.")
 
-    # Show Pause and Stop buttons ONLY if a project is active and NOT in a resumable state.
+    # Show Stop button ONLY if a project is active and NOT in a resumable state.
     if st.session_state.orchestrator.project_id and not st.session_state.orchestrator.resumable_state:
-        if st.button("⏸️ Pause Active Project", use_container_width=True):
-            st.session_state.orchestrator.pause_project()
-            st.toast("Project paused and state saved.")
-            st.rerun()
-
         if st.button("⏹️ Stop & Export Active Project", use_container_width=True):
             st.session_state.show_export_confirmation = True
 
@@ -154,7 +149,110 @@ if page == "Project":
         st.success(st.session_state.last_action_success_message)
         del st.session_state.last_action_success_message
 
-    if not st.session_state.orchestrator.project_id:
+    # Get the current phase name once at the top
+    status_info = st.session_state.orchestrator.get_status()
+    current_phase_name = status_info.get("current_phase")
+
+    # --- CORRECTED LOGIC: Check for specific phases before checking for an active project ---
+    if current_phase_name == "VIEWING_PROJECT_HISTORY":
+        st.header("Load an Archived Project")
+
+        project_history = st.session_state.orchestrator.get_project_history()
+
+        if not project_history:
+            st.warning("There are no archived projects in the history.")
+        else:
+            history_data = [
+                {
+                    "ID": row['history_id'],
+                    "Project Name": row['project_name'],
+                    "Project ID": row['project_id'],
+                    "Archived On": row['last_stop_timestamp'],
+                    "Archive Path": row['archive_file_path']
+                }
+                for row in project_history
+            ]
+            df = pd.DataFrame(history_data)
+            st.dataframe(df, use_container_width=True, hide_index=True, column_config={"ID": "Select"})
+
+            history_ids = [row['history_id'] for row in project_history]
+            selected_id_str = st.selectbox("Select a Project ID to action:", options=[""] + [str(i) for i in history_ids])
+
+            if selected_id_str:
+                selected_id = int(selected_id_str)
+                selected_project_record = next((p for p in project_history if p['history_id'] == selected_id), None)
+
+                is_active_project = (st.session_state.orchestrator.project_id == selected_project_record['project_id'])
+
+                col1, col2, _ = st.columns([1, 1, 4])
+                with col1:
+                    if st.button("📂 Load Selected Project", use_container_width=True, type="primary"):
+                        with st.spinner("Loading project data and running pre-flight checks..."):
+                            st.session_state.orchestrator.load_archived_project(selected_id)
+                            st.rerun()
+                with col2:
+                    delete_button = st.button("🗑️ Delete Selected Project", use_container_width=True, disabled=is_active_project, help="You cannot delete the currently active project.")
+
+                if delete_button:
+                    with st.popover("Confirm Deletion", use_container_width=True):
+                        st.warning(f"**Are you sure you want to permanently delete project '{selected_project_record['project_name']}' (ID: {selected_id})?**")
+                        st.error("This action cannot be undone and will delete the project history record and its associated archive files from the disk.")
+                        if st.button("Yes, permanently delete this project", type="primary", use_container_width=True):
+                            success, message = st.session_state.orchestrator.delete_archived_project(selected_id)
+                            if success:
+                                st.toast(f"✅ {message}")
+                            else:
+                                st.error(message)
+                            time.sleep(2)
+                            st.rerun()
+
+        st.divider()
+        if st.button("⬅️ Back to Main Page"):
+            # Perform a hard reset to ensure a clean return to the idle state
+            st.session_state.orchestrator = MasterOrchestrator(db_path=str(db_path))
+            st.rerun()
+
+    elif current_phase_name == "AWAITING_PREFLIGHT_RESOLUTION":
+        st.header("Pre-flight Check Resolution")
+        result = st.session_state.orchestrator.preflight_check_result
+        if not result:
+            st.error("Error: Pre-flight check result not found.")
+            if st.button("Go Back"):
+                st.session_state.orchestrator.set_phase("IDLE")
+                st.rerun()
+        else:
+            status = result.get("status")
+            message = result.get("message")
+            if status == "ALL_PASS":
+                st.success(message)
+                st.info("The project environment is valid and clean. You can proceed directly to the main workflow, bypassing the setup phase.")
+                if st.button("▶️ Proceed to Specification Elaboration"):
+                    st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
+                    st.rerun()
+            elif status in ["PATH_NOT_FOUND", "GIT_MISSING", "ERROR"]:
+                st.error(message)
+                st.warning("The factory cannot proceed until this environmental issue is resolved.")
+                if st.button("Go to Environment Setup to Resolve"):
+                    st.session_state.orchestrator.set_phase("ENV_SETUP_TARGET_APP")
+                    st.rerun()
+            elif status == "STATE_DRIFT":
+                st.warning(message)
+                col1, col2, _ = st.columns([1.5, 1.5, 3])
+                with col1:
+                    if st.button("I will resolve this manually", help="Use your own tools (e.g., git commit, git stash) to clean the repository, then load the project again from the main menu."):
+                        st.session_state.orchestrator.project_id = None
+                        st.session_state.orchestrator.set_phase("IDLE")
+                        st.rerun()
+                with col2:
+                    with st.popover("Expert Option: Discard"):
+                        st.markdown("⚠️ **This will permanently delete all uncommitted changes in your local repository. This cannot be undone.**")
+                        if st.button("Confirm & Discard All Changes", type="primary"):
+                            with st.spinner("Resetting repository and re-checking..."):
+                                project_id_to_reset = st.session_state.orchestrator.project_id
+                                st.session_state.orchestrator.handle_discard_changes(project_id_to_reset)
+                            st.rerun()
+
+    elif not st.session_state.orchestrator.project_id:
         st.subheader("Start a New Project")
         st.info(
             "**Note:** If another project is currently active in the factory, "
@@ -168,30 +266,21 @@ if page == "Project":
             else:
                 st.error("Please enter a project name.")
     else:
-        status_info = st.session_state.orchestrator.get_status()
-        current_phase_name = status_info.get("current_phase")
-
-
+        # This 'else' block now correctly handles all other phases for an active project.
         if current_phase_name == "ENV_SETUP_TARGET_APP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
             st.divider()
-
-            # The agent now renders its own complete UI, including the final proceed button.
             agent = EnvironmentSetupAgent_AppTarget()
             agent.render()
 
         elif current_phase_name == "SPEC_ELABORATION":
             st.header("Phase 1: Application Specification")
-
-            # --- State Management for the multi-step workflow ---
             if 'spec_draft' not in st.session_state:
                 st.session_state.spec_draft = None
             if 'spec_step' not in st.session_state:
                 st.session_state.spec_step = 'initial_input'
             if 'ai_issues' not in st.session_state:
                 st.session_state.ai_issues = None
-
-            # --- STEP 1: Initial Draft Generation ---
             if st.session_state.spec_draft is None:
                 st.markdown("Please provide the initial specification for your target application.")
                 tab1, tab2 = st.tabs(["Upload Specification Documents", "Enter Brief Description"])
@@ -209,7 +298,6 @@ if page == "Project":
                                 st.session_state.spec_draft = extracted_text
                                 st.session_state.spec_step = 'pm_feedback'
                                 st.rerun()
-
                 with tab2:
                     brief_desc_input = st.text_area("Brief Description", height=150, key="brief_desc")
                     if st.button("Process Brief Description"):
@@ -222,15 +310,11 @@ if page == "Project":
                                 st.session_state.spec_draft = expanded_text
                                 st.session_state.spec_step = 'pm_feedback'
                                 st.rerun()
-
-            # --- STEP 2: PM Review and Initial Feedback ---
             elif st.session_state.spec_step == 'pm_feedback':
                 st.subheader("Draft Specification - Your Review")
                 st.markdown("Please review the initial draft. Provide any corrections, additions, or feedback in the text area below.")
                 st.text_area("Current Draft:", value=st.session_state.spec_draft, height=300, key="spec_draft_display", disabled=True)
-
                 pm_feedback_text = st.text_area("Your Feedback and Corrections:", height=200)
-
                 col1, col2, _ = st.columns([1.5, 2.5, 3])
                 with col1:
                     if st.button("Submit Feedback & Refine Draft", use_container_width=True):
@@ -239,7 +323,6 @@ if page == "Project":
                                 with st.session_state.orchestrator.db_manager as db:
                                     api_key = db.get_config_value("LLM_API_KEY")
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-
                                 refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text)
                                 st.session_state.spec_draft = refined_draft
                                 st.session_state.spec_step = 'pm_review_refined'
@@ -247,7 +330,7 @@ if page == "Project":
                         else:
                             st.warning("Please provide feedback to refine the draft.")
                 with col2:
-                    if st.button("✅ I approve. Proceed to the next step.", use_container_width=True, type="primary"):
+                    if st.button("✅ Approve & Proceed to AI Analysis", use_container_width=True, type="primary"):
                         with st.spinner("AI is checking the draft for ambiguities..."):
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
@@ -256,17 +339,14 @@ if page == "Project":
                             st.session_state.ai_issues = issues
                             st.session_state.spec_step = 'ai_clarification'
                             st.rerun()
-
-            # --- STEP 3: PM Reviews the AI-Refined Draft ---
             elif st.session_state.spec_step == 'pm_review_refined':
                 st.subheader("Refined Draft - Your Review")
                 st.markdown("The draft has been updated with your feedback. Please review the changes below.")
                 st.text_area("Refined Draft:", value=st.session_state.spec_draft, height=300, key="spec_draft_display_refined", disabled=True)
                 st.info("You can now either run the AI's ambiguity analysis on this version or provide another round of feedback.")
-
                 col1, col2, _ = st.columns([1.5, 1.5, 3])
                 with col1:
-                    if st.button("✅ Looks Good, Run AI Analysis", type="primary", use_container_width=True):
+                    if st.button("✅ Approve & Proceed to your Review", type="primary", use_container_width=True):
                         with st.spinner("AI is checking the refined draft for ambiguities..."):
                             with st.session_state.orchestrator.db_manager as db:
                                 api_key = db.get_config_value("LLM_API_KEY")
@@ -279,22 +359,15 @@ if page == "Project":
                     if st.button("✍️ I Have More Feedback", use_container_width=True):
                         st.session_state.spec_step = 'pm_feedback'
                         st.rerun()
-
-            # --- STEP 4: AI Clarification Loop & Final Approval ---
             elif st.session_state.spec_step == 'ai_clarification':
                 st.subheader("Specification Refinement - AI Analysis")
                 st.text_area("Current Draft:", value=st.session_state.spec_draft, height=300, key="spec_draft_display_2", disabled=True)
                 st.divider()
-
                 st.markdown("**AI Analysis Results:**")
                 st.info(st.session_state.ai_issues)
-
                 st.markdown("You can now provide clarifications to the AI's points below, or approve the specification if you are satisfied.")
-
                 clarification_text = st.text_area("Your Clarifications:", height=150, key="pm_clarification_text")
-
                 col1, col2, _ = st.columns([1.5, 2, 3])
-
                 with col1:
                     if st.button("Submit Clarifications", use_container_width=True):
                         if clarification_text.strip():
@@ -302,50 +375,38 @@ if page == "Project":
                                 with st.session_state.orchestrator.db_manager as db:
                                     api_key = db.get_config_value("LLM_API_KEY")
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-
-                                # Capture learning before refining
                                 st.session_state.orchestrator.capture_spec_clarification_learning(
                                     problem_context=st.session_state.ai_issues,
                                     solution_text=clarification_text,
                                     spec_text=st.session_state.spec_draft
                                 )
-
                                 refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_text)
                                 st.session_state.spec_draft = refined_draft
-
                                 issues = agent.identify_potential_issues(st.session_state.spec_draft)
                                 st.session_state.ai_issues = issues
                                 st.rerun()
                         else:
                             st.warning("Please enter your clarifications before submitting.")
-
                 with col2:
                     if st.button("✅ Approve Specification and Proceed", type="primary", use_container_width=True):
                         with st.spinner("Finalizing and saving specification..."):
                             with st.session_state.orchestrator.db_manager as db:
                                 db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.spec_draft)
-
                             st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
-
                             keys_to_clear = ['spec_draft', 'spec_step', 'ai_issues', 'brief_desc', 'pm_clarification_text']
                             for key in keys_to_clear:
                                 if key in st.session_state:
                                     del st.session_state[key]
                             st.rerun()
 
-
         elif current_phase_name == "TECHNICAL_SPECIFICATION":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
-
-            # --- State Management for the new multi-step workflow ---
             if 'tech_spec_step' not in st.session_state:
                 st.session_state.tech_spec_step = 'initial_choice'
             if 'tech_spec_draft' not in st.session_state:
                 st.session_state.tech_spec_draft = ""
             if 'target_os' not in st.session_state:
                 st.session_state.target_os = "Linux"
-
-            # --- STEP 1: Initial User Choice ---
             if st.session_state.tech_spec_step == 'initial_choice':
                 st.markdown("First, select the target Operating System for the application.")
                 st.session_state.target_os = st.selectbox(
@@ -355,7 +416,6 @@ if page == "Project":
                 )
                 st.divider()
                 st.markdown("Next, choose how you would like to create the Technical Specification document.")
-
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("🤖 Let ASDF Propose a Tech Stack", use_container_width=True, type="primary"):
@@ -371,17 +431,15 @@ if page == "Project":
                                     agent = TechStackProposalAgent(api_key=api_key)
                                     proposal = agent.propose_stack(final_spec_text, st.session_state.target_os)
                                     st.session_state.tech_spec_draft = proposal
-                                    st.session_state.tech_spec_step = 'pm_review' # Transition to review step
+                                    st.session_state.tech_spec_step = 'pm_review'
                                     st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to generate proposal: {e}")
-
                 with col2:
-                    if st.button("✍️ I want to provide key tech stack inputs", use_container_width=True):
+                    if st.button("✍️ I Will Define the Tech Stack Directly", use_container_width=True):
                         st.session_state.tech_spec_step = 'pm_define'
                         st.rerun()
 
-            # --- STEP 2, Path B: PM Provides Input for the Specification ---
             elif st.session_state.tech_spec_step == 'pm_define':
                 st.subheader("Define Technical Specification")
                 st.markdown("Please provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). The ASDF will use your input to generate the full technical specification document.")
@@ -390,7 +448,6 @@ if page == "Project":
                     value=st.session_state.tech_spec_draft,
                     height=200
                 )
-
                 if st.button("Generate Full Specification from My Input", type="primary"):
                     if st.session_state.tech_spec_draft.strip():
                         with st.spinner("AI is expanding your input into a full technical specification..."):
@@ -398,7 +455,6 @@ if page == "Project":
                                 with st.session_state.orchestrator.db_manager as db:
                                     api_key = db.get_config_value("LLM_API_KEY")
                                     project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    # Combine the original spec with the PM's new directive for full context
                                     context = (
                                         f"{project_details['final_spec_text']}\n\n"
                                         f"--- PM Directive for Technology Stack ---\n{st.session_state.tech_spec_draft}"
@@ -410,28 +466,24 @@ if page == "Project":
                                     agent = TechStackProposalAgent(api_key=api_key)
                                     proposal = agent.propose_stack(context, st.session_state.target_os)
                                     st.session_state.tech_spec_draft = proposal
-                                    st.session_state.tech_spec_step = 'pm_review' # Transition to the unified review step
+                                    st.session_state.tech_spec_step = 'pm_review'
                                     st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to generate specification from your input: {e}")
                     else:
                         st.warning("Please provide your technology guidelines before generating the specification.")
 
-            # --- STEP 3, Unified: PM Reviews the Draft (from AI or manual input) ---
             elif st.session_state.tech_spec_step == 'pm_review':
                 st.subheader("Review Technical Specification")
                 st.markdown("Please review the draft below. You can either approve it or provide feedback for refinement.")
-
                 st.text_area(
                     "Technical Specification Draft",
                     value=st.session_state.tech_spec_draft,
                     height=400,
                     key="tech_spec_draft_display",
-                    disabled=False  # Allow scrolling
+                    disabled=False
                 )
-
                 feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
-
                 col1, col2, _ = st.columns([1.5, 2, 3])
                 with col1:
                     if st.button("Submit Feedback & Refine", use_container_width=True):
@@ -441,7 +493,6 @@ if page == "Project":
                                     with st.session_state.orchestrator.db_manager as db:
                                         api_key = db.get_config_value("LLM_API_KEY")
                                         project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                        # Combine original spec with the current draft and new feedback for context
                                         context = (
                                             f"{project_details['final_spec_text']}\n\n"
                                             f"--- Current Draft to Refine ---\n{st.session_state.tech_spec_draft}\n\n"
@@ -458,7 +509,6 @@ if page == "Project":
                                     st.error(f"Failed to generate proposal: {e}")
                         else:
                             st.warning("Please enter feedback before submitting for refinement.")
-
                 with col2:
                     is_disabled = not st.session_state.tech_spec_draft.strip()
                     if st.button("✅ Approve Specification", use_container_width=True, type="primary", disabled=is_disabled):
@@ -466,9 +516,7 @@ if page == "Project":
                             with st.session_state.orchestrator.db_manager as db:
                                 db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
                                 db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
-
                             st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
-
                         st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
                         keys_to_clear = ['tech_spec_draft', 'target_os', 'tech_spec_step']
                         for key in keys_to_clear:
@@ -480,20 +528,16 @@ if page == "Project":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
             st.markdown("The technical specification is complete. Now, let's establish the build script for the project.")
             st.info("This script (e.g., `requirements.txt`, `pom.xml`) manages project dependencies and how the application is built.")
-
-            # Get necessary context from the database
             with st.session_state.orchestrator.db_manager as db:
                 api_key = db.get_config_value("LLM_API_KEY")
                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                 tech_spec_text = project_details['tech_spec_text']
                 target_os = project_details['target_os']
-
             if not target_os:
                 st.error("Cannot proceed: Target OS has not been set in the previous step.")
             else:
                 st.write(f"Generating options for Target OS: **{target_os}**")
                 st.divider()
-
                 col1, col2 = st.columns(2)
                 with col1:
                     if st.button("🤖 Auto-Generate Build Script", use_container_width=True, type="primary"):
@@ -505,85 +549,63 @@ if page == "Project":
                                     from agents.agent_build_script_generator import BuildScriptGeneratorAgent
                                     agent = BuildScriptGeneratorAgent(api_key=api_key)
                                     script_info = agent.generate_script(tech_spec_text, target_os)
-
                                     if script_info:
                                         filename, content = script_info
                                         project_root = Path(project_details['project_root_folder'])
                                         (project_root / filename).write_text(content, encoding='utf-8')
-
                                         with st.session_state.orchestrator.db_manager as db:
                                             db.update_project_build_automation_status(st.session_state.orchestrator.project_id, True)
-
                                         st.success(f"Generated and saved `{filename}` to the project root.")
                                         time.sleep(2)
-                                        # CORRECT TRANSITION to the new Test Environment Setup phase
                                         st.session_state.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
                                         st.rerun()
                                     else:
                                         st.error(f"The AI was unable to generate a build script. Please proceed manually.")
-
                             except Exception as e:
                                 st.error(f"An error occurred during build script generation: {e}")
-
                 with col2:
                     if st.button("✍️ I Will Create it Manually", use_container_width=True):
                         with st.session_state.orchestrator.db_manager as db:
                             db.update_project_build_automation_status(st.session_state.orchestrator.project_id, False)
-
                         st.info("Acknowledged. You will be responsible for the project's build script.")
                         time.sleep(2)
-                        # CORRECT TRANSITION to the new Test Environment Setup phase
                         st.session_state.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
                         st.rerun()
 
         elif current_phase_name == "TEST_ENVIRONMENT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
             st.markdown("Please follow the steps below to set up the necessary testing frameworks for your project's technology stack.")
-
-            # Initialize the state for this interactive workflow
             if 'setup_tasks' not in st.session_state:
                 with st.spinner("Analyzing technical spec to generate setup steps..."):
                     st.session_state.setup_tasks = st.session_state.orchestrator.start_test_environment_setup()
                     st.session_state.current_setup_step = 0
                     st.session_state.setup_help_text = None
-
             tasks = st.session_state.setup_tasks
-
             if tasks is None:
                 st.error("Could not generate setup tasks. Please check the logs and ensure the technical specification is complete.")
             elif st.session_state.current_setup_step >= len(tasks):
-                # --- All steps are completed, now finalize ---
                 st.success("All setup steps have been actioned.")
                 st.markdown("Please confirm the final command that should be used to run all automated tests for this project.")
-
                 with st.session_state.orchestrator.db_manager as db:
                      project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                      tech_spec_text = project_details['tech_spec_text']
-
-                # Pre-fill with a suggestion from the LLM
                 if 'suggested_test_command' not in st.session_state:
                     from agents.agent_verification_app_target import VerificationAgent_AppTarget # Local import
                     with st.session_state.orchestrator.db_manager as db:
                         api_key = db.get_config_value("LLM_API_KEY")
-
                     if api_key and tech_spec_text:
                         agent = VerificationAgent_AppTarget(api_key)
-                        # This calls the private helper, which is fine for this UI suggestion logic
                         details = agent._get_test_execution_details(tech_spec_text)
                         st.session_state.suggested_test_command = details.get("command") if details else "pytest"
                     else:
                         st.session_state.suggested_test_command = "pytest"
-
-
                 confirmed_command = st.text_input(
                     "Test Execution Command:",
                     value=st.session_state.suggested_test_command
                 )
-
                 if st.button("Finalize Test Environment Setup", type="primary"):
                     if confirmed_command.strip():
                         if st.session_state.orchestrator.finalize_test_environment_setup(confirmed_command):
-                            # Clean up session state for this phase
                             keys_to_clear = ['setup_tasks', 'current_setup_step', 'setup_help_text', 'suggested_test_command']
                             for key in keys_to_clear:
                                 if key in st.session_state:
@@ -593,55 +615,40 @@ if page == "Project":
                             st.error("Failed to finalize setup. Please check the logs.")
                     else:
                         st.warning("The test execution command cannot be empty.")
-
             else:
-                # --- Display the current setup step ---
                 current_step_index = st.session_state.current_setup_step
                 task = tasks[current_step_index]
                 st.subheader(f"Step {current_step_index + 1} of {len(tasks)}: {task.get('tool_name', 'Unnamed Step')}")
                 st.markdown(task.get('instructions', 'No instructions provided.'))
-
-                # Display help text if it exists
                 if st.session_state.setup_help_text:
                     with st.chat_message("assistant", avatar="❓"):
                         st.info(st.session_state.setup_help_text)
-
                 st.divider()
                 col1, col2, col3 = st.columns(3)
-
                 with col1:
                     if st.button("✅ Done, Next Step", use_container_width=True, type="primary"):
                         st.session_state.current_setup_step += 1
                         st.session_state.setup_help_text = None # Clear help text when moving on
                         st.rerun()
-
                 with col2:
                     if st.button("❓ I Need Help", use_container_width=True):
                         with st.spinner("Getting more details..."):
                             st.session_state.setup_help_text = st.session_state.orchestrator.get_help_for_setup_task(task.get('instructions', ''))
                         st.rerun()
-
                 with col3:
                     if st.button("⚠️ Ignore & Continue", use_container_width=True):
-                        # Call the new orchestrator method to log the known issue
                         task = st.session_state.setup_tasks[st.session_state.current_setup_step]
                         st.session_state.orchestrator.handle_ignore_setup_task(task)
-
-                        # Proceed with the UI update
                         st.session_state.current_setup_step += 1
                         st.session_state.setup_help_text = None
                         st.rerun()
 
         elif current_phase_name == "CODING_STANDARD_GENERATION":
             st.header("Phase 2.A: Coding Standard Generation")
-
-            # --- State Management for the new multi-step workflow ---
             if 'coding_standard_step' not in st.session_state:
                 st.session_state.coding_standard_step = 'initial'
             if 'coding_standard_draft' not in st.session_state:
                 st.session_state.coding_standard_draft = ""
-
-            # --- STEP 1: Initial Generation ---
             if st.session_state.coding_standard_step == 'initial':
                 st.markdown("Generate a project-specific coding standard based on the technical specification. This standard will be enforced by all code-generating agents.")
                 if st.button("Generate Coding Standard Draft", type="primary"):
@@ -651,7 +658,6 @@ if page == "Project":
                                 api_key = db.get_config_value("LLM_API_KEY")
                                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                                 tech_spec = project_details['tech_spec_text']
-
                             if not api_key or not tech_spec:
                                 st.error("Cannot generate standard: Missing API Key or Technical Specification.")
                             else:
@@ -663,12 +669,9 @@ if page == "Project":
                                 st.rerun()
                         except Exception as e:
                             st.error(f"Failed to generate coding standard: {e}")
-
-            # --- STEP 2: PM Review and Feedback Loop ---
             elif st.session_state.coding_standard_step == 'pm_review':
                 st.subheader("Review Coding Standard")
                 st.markdown("Please review the draft below. You can either approve it or provide feedback for refinement.")
-
                 st.text_area(
                     "Coding Standard Draft",
                     value=st.session_state.coding_standard_draft,
@@ -676,18 +679,14 @@ if page == "Project":
                     key="coding_standard_display",
                     disabled=True
                 )
-
                 feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
-
                 col1, col2, _ = st.columns([1.5, 2, 3])
                 with col1:
                     if st.button("Submit Feedback & Refine", use_container_width=True):
                         if feedback_text.strip():
                             st.warning("Feedback refinement for the Coding Standard is not yet implemented.")
-                            # Placeholder for future logic to refine the standard based on feedback
                         else:
                             st.warning("Please enter feedback before submitting for refinement.")
-
                 with col2:
                     is_disabled = not st.session_state.coding_standard_draft.strip()
                     if st.button("✅ Approve Coding Standard", use_container_width=True, type="primary", disabled=is_disabled):
@@ -697,7 +696,6 @@ if page == "Project":
                                     st.session_state.orchestrator.project_id,
                                     st.session_state.coding_standard_draft
                                 )
-
                             st.session_state.orchestrator.set_phase("PLANNING")
                             keys_to_clear = ['coding_standard_draft', 'coding_standard_step']
                             for key in keys_to_clear:
@@ -705,45 +703,30 @@ if page == "Project":
                                     del st.session_state[key]
                             st.rerun()
 
-
         elif current_phase_name == "PLANNING":
             st.header("Phase 2: Strategic Development Planning")
-
-            # Initialize session state for this phase
             if 'development_plan' not in st.session_state:
                 st.session_state.development_plan = None
-
-            # If a plan has been generated, display it for review
             if st.session_state.development_plan:
                 st.subheader("Generated Development Plan")
                 st.markdown("Please review the generated plan. To proceed, approve it below. To generate a new version, click the 'Re-generate' button.")
                 st.json(st.session_state.development_plan)
                 st.divider()
-
                 col1, col2, col3 = st.columns([1.5, 1, 1.5])
                 with col1:
-                    # CORRECTED: This button now performs all actions in one step.
                     if st.button("✅ Approve Plan & Proceed to Development", type="primary"):
                         with st.spinner("Saving plan and transitioning to development phase..."):
                             full_plan_object_str = st.session_state.development_plan
-
-                            # 1. Save the full plan object to the database for persistence
                             with st.session_state.orchestrator.db_manager as db:
                                 db.save_development_plan(st.session_state.orchestrator.project_id, full_plan_object_str)
-
-                            # --- CORRECTED LOGIC ---
-                            # 2. Parse the object and extract JUST the development plan array
                             try:
-                                # --- ADDED: Pre-Genesis Validation Step ---
                                 with st.session_state.orchestrator.db_manager as db:
                                     project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                                     if not project_details or not project_details['technology_stack']:
                                         st.error("Validation Failed: A target technology stack has not been set for this project. Please reload the project and complete the Technical Specification phase.")
                                         st.stop() # Halt execution
-
                                 full_plan_data = json.loads(full_plan_object_str)
                                 dev_plan_list = full_plan_data.get("development_plan")
-
                                 if dev_plan_list is not None:
                                     st.session_state.orchestrator.load_development_plan(json.dumps(dev_plan_list))
                                     st.session_state.orchestrator.set_phase("GENESIS")
@@ -755,7 +738,6 @@ if page == "Project":
                                     st.rerun()
                                 else:
                                     st.error("The generated plan is missing the 'development_plan' key.")
-
                             except json.JSONDecodeError:
                                 st.error("Failed to parse the development plan. The format is invalid.")
                 with col2:
@@ -776,8 +758,6 @@ if page == "Project":
                     if st.button("🔄 Re-generate Development Plan"):
                          st.session_state.development_plan = None
                          st.rerun()
-
-            # If no plan exists yet, show the button to generate one
             else:
                 st.info("Click the button below to generate a detailed, sequential development plan based on the finalized specifications.")
                 if st.button("Generate Development Plan", type="primary"):
@@ -788,20 +768,17 @@ if page == "Project":
                                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                                 final_spec = project_details['final_spec_text']
                                 tech_spec = project_details['tech_spec_text']
-
                             if not all([api_key, final_spec, tech_spec]):
                                 st.error("Could not generate plan: Missing API Key, Final Specification, or Technical Specification.")
                             else:
                                 agent = PlanningAgent_AppTarget(api_key=api_key)
                                 response_json_str = agent.generate_development_plan(final_spec, tech_spec)
                                 response_data = json.loads(response_json_str)
-
                                 if "error" in response_data:
                                     st.error(f"Failed to generate plan: {response_data['error']}")
                                 else:
                                     plan_data = response_data.get("development_plan")
                                     main_executable = response_data.get("main_executable_file")
-
                                     if not plan_data or not main_executable:
                                         st.error("Failed to generate a valid plan and executable name from the AI.")
                                     else:
@@ -814,8 +791,6 @@ if page == "Project":
 
         elif current_phase_name == "GENESIS":
             st.header("Phase 3: Iterative Component Development")
-
-            # First, check if a plan is loaded.
             if not st.session_state.orchestrator.active_plan:
                 st.warning("No active development plan is loaded.")
                 st.info("Please go to the 'Planning' phase to generate a development plan.")
@@ -826,9 +801,7 @@ if page == "Project":
                 st.subheader("PM Checkpoint")
                 task = st.session_state.orchestrator.get_current_task_details()
                 total_tasks = len(st.session_state.orchestrator.active_plan)
-                # The cursor shows how many are DONE. So we show cursor/total.
                 cursor = st.session_state.orchestrator.active_plan_cursor
-
                 if task:
                     st.progress(cursor / total_tasks, text=f"Executing Task {cursor + 1} of {total_tasks}")
                     st.info(f"""
@@ -836,12 +809,9 @@ if page == "Project":
                     How would you like to proceed?
                     """)
                 else:
-                    # This message is shown when all tasks are complete
                     st.success(f"All {total_tasks} development tasks are complete.")
                     st.info("Click 'Proceed' to finalize development and begin the Integration & Validation phase.")
-
                 col1, col2, _ = st.columns([1.5, 1.5, 3])
-
                 with col1:
                     if st.button("▶️ Proceed", use_container_width=True, type="primary"):
                         with st.status("Executing next development step...", expanded=True) as status:
@@ -861,16 +831,13 @@ if page == "Project":
             st.markdown(
                 "Proceeding with integration may result in an unstable or non-functional build. It is recommended to fix these issues before continuing."
             )
-
             issues = st.session_state.orchestrator.task_awaiting_approval.get("known_issues", [])
             if issues:
                 st.subheader("Components with Known Issues:")
                 for issue in issues:
                     st.error(f"- **{issue.get('artifact_name')}** (Status: {issue.get('status')})")
-
             st.divider()
             st.markdown("Do you want to proceed with integration anyway?")
-
             col1, col2, _ = st.columns([1.5, 2, 3])
             with col1:
                 if st.button("✅ Yes, Proceed to Integration", type="primary"):
@@ -897,16 +864,13 @@ if page == "Project":
                 "4.  Upload the completed document below to trigger the evaluation."
             )
             st.divider()
-
             uploaded_file = st.file_uploader(
                 "Upload Completed UI Test Plan Results",
                 type=['txt', 'md', 'docx']
             )
-
             if uploaded_file is not None:
                 if st.button("Process Test Results", type="primary"):
                     with st.spinner("Reading and evaluating test results..."):
-                        # To handle different file types, we need a simple way to get text
                         content = ""
                         try:
                             if uploaded_file.name.endswith('.docx'):
@@ -915,16 +879,12 @@ if page == "Project":
                                 content = "\n".join([p.text for p in doc.paragraphs])
                             else: # For .txt and .md files
                                 content = uploaded_file.getvalue().decode("utf-8")
-
-                            # Call the new orchestrator method to handle the logic
                             st.session_state.orchestrator.handle_ui_test_result_upload(content)
                             st.success("Test results submitted for evaluation. The system will now process any failures.")
                             time.sleep(2)
                             st.rerun()
-
                         except Exception as e:
                             st.error(f"Failed to process file: {e}")
-
             st.divider()
             st.markdown("If all tests have passed and been fixed, you can proceed.")
             if st.button("Complete Project and Return to Idle"):
@@ -935,16 +895,12 @@ if page == "Project":
         elif current_phase_name == "AWAITING_INTEGRATION_RESOLUTION":
             st.header("Phase 5: Integration & Verification Failed")
             st.error("The automated integration and verification process could not be completed due to a system-level or environment error.")
-
             if st.session_state.orchestrator.task_awaiting_approval:
                 failure_reason = st.session_state.orchestrator.task_awaiting_approval.get("failure_reason", "No specific reason was provided.")
                 st.markdown("**Failure Details:**")
                 st.code(failure_reason, language='text')
-
             st.warning("This is often caused by a missing testing framework (like 'pytest') in your environment or a configuration issue. You cannot re-run the automated test, but you can acknowledge the failure and proceed to manual UI testing.")
-
             if st.button("Acknowledge Failure & Proceed to Manual UI Testing", type="primary", use_container_width=True):
-                # This new handler will bypass the failed tests and move to the next phase
                 st.session_state.orchestrator.handle_acknowledge_integration_failure()
                 st.rerun()
 
@@ -959,30 +915,24 @@ if page == "Project":
                 "This description will be used to generate a fix."
             )
             st.divider()
-
             if 'pm_triage_input' not in st.session_state:
                 st.session_state.pm_triage_input = ""
-
             pm_error_description = st.text_area(
                 "Manual Error Description:",
                 height=200,
                 key="pm_triage_input"
             )
-
             col1, col2, _ = st.columns([1.5, 2, 3])
             with col1:
                 if st.button("Submit Description for Analysis", type="primary"):
                     if pm_error_description.strip():
                         with st.spinner("Submitting your description for analysis..."):
                             st.session_state.orchestrator.handle_pm_triage_input(pm_error_description)
-
                         st.toast("Description submitted. The factory will now attempt to plan a fix.")
                         time.sleep(2)
                         st.rerun()
                     else:
                         st.error("Please provide a description of the error before submitting.")
-
-            # --- ADDED THIS BUTTON AS AN ESCAPE HATCH ---
             with col2:
                 if st.button("Cancel and Return to Checkpoint"):
                     st.session_state.orchestrator.set_phase("GENESIS")
@@ -994,31 +944,24 @@ if page == "Project":
             st.error(
                 "**Action Required:** The factory has been unable to automatically fix a persistent bug after multiple attempts."
             )
-
-            # *** Display the specific failure log ***
             if st.session_state.orchestrator.task_awaiting_approval:
                 failure_context = st.session_state.orchestrator.task_awaiting_approval.get("failure_log", "No specific failure log was captured.")
                 with st.expander("Click to view failure details"):
                     st.code(failure_context, language='text')
-
             st.markdown(
                 "Please choose how you would like to proceed. Your selection will determine the next steps for the factory."
             )
             st.divider()
-
             col1, col2, col3 = st.columns(3)
-
             with col1:
                 if st.button("🔄 Retry Automated Fix", use_container_width=True, help="This will reset the counter and run the entire triage and fix pipeline again from a clean state."):
                     st.session_state.orchestrator.handle_pm_debug_choice("RETRY")
                     st.rerun()
-
             with col2:
                 if st.button("⏸️ Pause for Manual Fix", use_container_width=True, help="This will pause the factory, allowing you to manually investigate and fix the code in your own editor."):
                     st.session_state.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
                     st.success("Project paused. You can now manually edit the code. The factory will remain idle.")
                     st.rerun()
-
             with col3:
                 if st.button("🚫 Ignore Bug & Proceed", use_container_width=True, help="Acknowledge the bug but proceed with the next task in the development plan. The bug will be noted but not fixed now."):
                     st.session_state.orchestrator.handle_pm_debug_choice("IGNORE")
@@ -1028,41 +971,29 @@ if page == "Project":
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
             st.header("Phase 3.5: Automated Integration & Verification")
             st.info("The factory is now integrating all newly developed components, performing a full system build, and running verification tests.")
-
             with st.spinner("Running automated integration... This may take a moment."):
-                # This backend method runs the entire phase 3.5 logic
                 st.session_state.orchestrator._run_integration_and_verification_phase()
-
             st.success("Integration and verification process complete.")
             time.sleep(2) # Pause for 2 seconds to allow the user to read the message
             st.rerun()
 
-        # (CR-ASDF-003) UI for the new PM Checkpoint on declarative changes
         elif current_phase_name == "AWAITING_PM_DECLARATIVE_CHECKPOINT":
             st.header("PM Checkpoint: High-Risk Change Detected")
             st.warning("The development plan requires a modification to a declarative file (e.g., build script, database schema, config file). Please review the proposed change below.")
-
             task = st.session_state.orchestrator.task_awaiting_approval
-
             if task:
                 st.markdown(f"**File to Modify:** `{task.get('component_file_path')}`")
                 st.markdown(f"**Component:** `{task.get('component_name')}`")
-
                 st.subheader("Proposed Change Snippet")
-                # The 'task_description' for these types holds the change snippet
                 st.code(task.get('task_description'), language='diff')
-
                 st.divider()
                 st.markdown("How would you like to proceed with this change?")
-
                 col1, col2, _ = st.columns([1, 1, 3])
-
                 with col1:
                     if st.button("✅ Execute Automatically", use_container_width=True, type="primary"):
                         st.session_state.orchestrator.handle_declarative_checkpoint_decision("EXECUTE_AUTOMATICALLY")
                         st.toast(f"Executing change for {task.get('component_name')}...")
                         st.rerun()
-
                 with col2:
                     if st.button("✍️ I will Execute Manually", use_container_width=True):
                         st.session_state.orchestrator.handle_declarative_checkpoint_decision("WILL_EXECUTE_MANUALLY")
@@ -1077,26 +1008,19 @@ if page == "Project":
         elif current_phase_name == "RAISING_CHANGE_REQUEST":
             st.header("Phase 6: Raise New Change Request")
             st.info("First, select the type of change you are requesting.")
-
-            # Initialize session state keys for this workflow
             if 'cr_type' not in st.session_state:
                 st.session_state.cr_type = "Functional Enhancement"
             if 'cr_description' not in st.session_state:
                 st.session_state.cr_description = ""
             if 'spec_correction_text' not in st.session_state:
                 st.session_state.spec_correction_text = ""
-
-
             st.session_state.cr_type = st.radio(
                 "Select Change Request Type:",
                 ["Functional Enhancement", "Specification Correction"],
                 horizontal=True,
                 key="cr_type_radio"
             )
-
             st.divider()
-
-            # --- UI for Functional Enhancement ---
             if st.session_state.cr_type == "Functional Enhancement":
                 st.markdown("Please provide a detailed description of the new feature or change in functionality.")
                 st.session_state.cr_description = st.text_area(
@@ -1106,22 +1030,16 @@ if page == "Project":
                 )
                 if st.button("Save Change Request", type="primary"):
                     if st.session_state.cr_description.strip():
-                        # This calls the existing orchestrator method
                         st.session_state.orchestrator.save_new_change_request(st.session_state.cr_description, "CHANGE_REQUEST")
                         st.rerun()
                     else:
                         st.warning("The description cannot be empty.")
-
-            # --- UI for Specification Correction ---
             elif st.session_state.cr_type == "Specification Correction":
                 st.markdown("Paste the **full, corrected text** of the specification below. The system will analyze the differences to create a linked implementation plan.")
-
-                # Pre-fill the text area with the current spec for easier editing
                 if not st.session_state.spec_correction_text:
                      with st.session_state.orchestrator.db_manager as db:
                         project_docs = db.get_project_by_id(st.session_state.orchestrator.project_id)
                         st.session_state.spec_correction_text = project_docs['final_spec_text'] if project_docs else ""
-
                 st.session_state.spec_correction_text = st.text_area(
                     "Full Corrected Specification Text:",
                     value=st.session_state.spec_correction_text,
@@ -1129,12 +1047,10 @@ if page == "Project":
                 )
                 if st.button("Save Specification Change", type="primary"):
                     if st.session_state.spec_correction_text.strip():
-                        # This will call a new orchestrator method we will create next
                         st.session_state.orchestrator.save_spec_correction_cr(st.session_state.spec_correction_text)
                         st.rerun()
                     else:
                         st.warning("The specification text cannot be empty.")
-
             st.divider()
             if st.button("Cancel"):
                 st.session_state.orchestrator.set_phase("GENESIS")
@@ -1144,7 +1060,6 @@ if page == "Project":
             st.header("Phase 6: New Change Request Logged")
             st.success("The new Change Request has been saved to the register.")
             st.markdown("Would you like to perform a high-level impact analysis on this new CR now?")
-
             try:
                 latest_cr_id = st.session_state.orchestrator.get_all_change_requests()[0]['cr_id']
             except (IndexError, TypeError):
@@ -1153,7 +1068,6 @@ if page == "Project":
                     st.session_state.orchestrator.set_phase("GENESIS")
                     st.rerun()
                 st.stop()
-
             col1, col2, _ = st.columns([1, 1, 5])
             with col1:
                 if st.button("Yes, Run Analysis", type="primary", use_container_width=True):
@@ -1162,7 +1076,6 @@ if page == "Project":
                     st.toast(f"Impact analysis complete for CR-{latest_cr_id}.")
                     st.session_state.orchestrator.set_phase("GENESIS")
                     st.rerun()
-
             with col2:
                 if st.button("No, Later", use_container_width=True):
                     st.toast("Acknowledged. You can run the analysis later from the CR Register.")
@@ -1172,13 +1085,10 @@ if page == "Project":
         elif current_phase_name == "IMPLEMENTING_CHANGE_REQUEST":
             st.header("Phase 6: Implement Requested Change")
             st.markdown("Select a Change Request from the register below to view available actions.")
-
             change_requests = st.session_state.orchestrator.get_all_change_requests()
-
             if not change_requests:
                 st.warning("There are no change requests in the register for this project.")
             else:
-                # Prepare data for display in a pandas DataFrame
                 cr_data_for_df = []
                 for cr in change_requests:
                     cr_data_for_df.append({
@@ -1189,27 +1099,19 @@ if page == "Project":
                         "Description": cr['description'],
                         "Analysis Summary": cr['impact_analysis_details']
                     })
-
                 df = pd.DataFrame(cr_data_for_df)
                 column_order = ["ID", "Type", "Status", "Severity/Impact", "Description", "Analysis Summary"]
                 st.dataframe(df[column_order], use_container_width=True, hide_index=True)
-
                 cr_ids = [cr['cr_id'] for cr in change_requests]
                 selected_cr_id_str = st.selectbox("Select a Change Request ID to action:", options=[""] + [str(i) for i in cr_ids])
-
                 if selected_cr_id_str:
                     selected_cr_id = int(selected_cr_id_str)
                     selected_cr = next((cr for cr in change_requests if cr['cr_id'] == selected_cr_id), None)
-
                     st.subheader(f"Actions for CR-{selected_cr_id}")
-
                     is_raised_status = selected_cr['status'] == 'RAISED'
                     is_impact_analyzed = selected_cr['status'] == 'IMPACT_ANALYZED'
-                    # --- NEW LOGIC: Check if main development is complete ---
                     genesis_is_complete = st.session_state.orchestrator.is_genesis_complete
-
                     col1, col2, col3, col4 = st.columns(4)
-
                     with col1:
                         if st.button("✏️ Edit CR", use_container_width=True, disabled=not is_raised_status, help="You can only edit a CR before its impact has been analyzed."):
                             st.session_state.orchestrator.handle_edit_cr_action(selected_cr_id)
@@ -1229,16 +1131,12 @@ if page == "Project":
                             st.toast(f"Impact analysis complete for CR-{selected_cr_id}.")
                             st.rerun()
                     with col4:
-                        # --- CORRECTED: Button is now gated ---
                         if st.button("▶️ Implement CR", use_container_width=True, type="primary", disabled=not (is_impact_analyzed and genesis_is_complete), help="Implementation is enabled only after impact analysis is run and main development is complete."):
                             with st.spinner(f"Generating refactoring plan for CR-{selected_cr_id}..."):
                                 st.session_state.orchestrator.handle_implement_cr_action(selected_cr_id)
                             st.rerun()
-
-                # Add an informational message if the button is disabled
                 if not st.session_state.orchestrator.is_genesis_complete:
                     st.info("Note: CR implementation is enabled after the main development plan from Phase 2 is fully completed.")
-
             st.divider()
             if st.button("⬅️ Back to Main Checkpoint"):
                 st.session_state.orchestrator.set_phase("GENESIS")
@@ -1246,32 +1144,23 @@ if page == "Project":
 
         elif current_phase_name == "EDITING_CHANGE_REQUEST":
             st.header("Phase 6: Edit Change Request")
-
-            # Get the details of the CR to be edited from the orchestrator
             cr_details = st.session_state.orchestrator.get_active_cr_details_for_edit()
-
             if not cr_details:
                 st.error("Error: Could not load Change Request details for editing.")
                 if st.button("⬅️ Back to Register"):
                     st.session_state.orchestrator.cancel_cr_edit()
                     st.rerun()
             else:
-                # Use session state to hold the text area's value.
-                # Initialize it with the existing description only once.
                 if 'cr_edit_description' not in st.session_state:
                     st.session_state.cr_edit_description = cr_details.get('description', '')
-
                 st.markdown(f"You are editing **CR-{cr_details['cr_id']}**.")
-
                 st.session_state.cr_edit_description = st.text_area(
                     "Change Request Description:",
                     value=st.session_state.cr_edit_description,
                     height=250
                 )
-
                 st.divider()
                 col1, col2, _ = st.columns([1, 1, 5])
-
                 with col1:
                     if st.button("Save Changes", use_container_width=True, type="primary"):
                         if st.session_state.orchestrator.save_edited_change_request(st.session_state.cr_edit_description):
@@ -1281,7 +1170,6 @@ if page == "Project":
                             st.rerun()
                         else:
                             st.error("Failed to save changes.")
-
                 with col2:
                     if st.button("Cancel Edit", use_container_width=True):
                         st.session_state.orchestrator.cancel_cr_edit()
@@ -1291,36 +1179,29 @@ if page == "Project":
         elif current_phase_name == "REPORTING_OPERATIONAL_BUG":
             st.header("Report Operational Bug")
             st.info("Use this form to report a bug found during normal operation. Provide a detailed description and assign a severity rating.")
-
-            # Use session state to hold widget values to prevent loss on reruns
             if 'bug_description' not in st.session_state:
                 st.session_state.bug_description = ""
             if 'bug_severity' not in st.session_state:
                 st.session_state.bug_severity = "Medium" # Default value
-
             st.session_state.bug_description = st.text_area(
                 "Bug Description:",
                 value=st.session_state.bug_description,
                 height=250,
                 help="Provide a detailed description of the bug, including steps to reproduce if possible."
             )
-
             st.session_state.bug_severity = st.selectbox(
                 "Severity:",
                 options=["Minor", "Medium", "Major"],
                 index=1, # Default to 'Medium'
                 help="Major: An entire function doesn't work or the system crashes.\n\nMedium: A function is partly working or produces incorrect results.\n\nMinor: A small inconvenience or cosmetic issue; nothing is broken."
             )
-
             st.divider()
             col1, col2, _ = st.columns([1, 1, 5])
-
             with col1:
                 if st.button("Save Bug Report", use_container_width=True, type="primary"):
                     if st.session_state.bug_description.strip():
                         if st.session_state.orchestrator.save_bug_report(st.session_state.bug_description, st.session_state.bug_severity):
                             st.toast("✅ Bug Report saved!")
-                            # Clean up the session state variables
                             del st.session_state.bug_description
                             del st.session_state.bug_severity
                             time.sleep(1)
@@ -1329,10 +1210,8 @@ if page == "Project":
                             st.error("Failed to save the Bug Report.")
                     else:
                         st.warning("The bug description cannot be empty.")
-
             with col2:
                 if st.button("Cancel", use_container_width=True):
-                    # Clean up and return to the Genesis phase
                     if 'bug_description' in st.session_state:
                         del st.session_state.bug_description
                     if 'bug_severity' in st.session_state:
@@ -1343,16 +1222,12 @@ if page == "Project":
         elif current_phase_name == "AWAITING_LINKED_DELETE_CONFIRMATION":
             st.header("Confirm Linked Deletion")
             st.error("WARNING: This is a linked item. Deleting it will also delete its corresponding dependent item and may involve rolling back a specification change. This action cannot be undone.")
-
             linked_pair = st.session_state.orchestrator.task_awaiting_approval
             if linked_pair:
                 primary_id = linked_pair.get('primary_cr_id')
                 linked_id = linked_pair.get('linked_cr_id')
-
                 st.markdown(f"You are attempting to delete **CR-{primary_id}**, which is linked to **CR-{linked_id}**.")
-
                 st.divider()
-
                 col1, col2, _ = st.columns([1.5, 1, 3])
                 with col1:
                     if st.button("Yes, Delete Both Items", type="primary", use_container_width=True):
@@ -1370,119 +1245,6 @@ if page == "Project":
                 if st.button("Back to Register"):
                     st.session_state.orchestrator.set_phase("IMPLEMENTING_CHANGE_REQUEST")
                     st.rerun()
-
-        elif current_phase_name == "VIEWING_PROJECT_HISTORY":
-            st.header("Load an Archived Project")
-
-            project_history = st.session_state.orchestrator.get_project_history()
-
-            if not project_history:
-                st.warning("There are no archived projects in the history.")
-            else:
-                history_data = [
-                    {
-                        "ID": row['history_id'],
-                        "Project Name": row['project_name'],
-                        "Project ID": row['project_id'],
-                        "Archived On": row['last_stop_timestamp'],
-                        "Archive Path": row['archive_file_path']
-                    }
-                    for row in project_history
-                ]
-                df = pd.DataFrame(history_data)
-                st.dataframe(df, use_container_width=True, hide_index=True, column_config={"ID": "Select"})
-
-                history_ids = [row['history_id'] for row in project_history]
-                selected_id_str = st.selectbox("Select a Project ID to action:", options=[""] + [str(i) for i in history_ids])
-
-                if selected_id_str:
-                    selected_id = int(selected_id_str)
-                    selected_project_record = next((p for p in project_history if p['history_id'] == selected_id), None)
-
-                    # --- Button Logic ---
-                    is_active_project = (st.session_state.orchestrator.project_id == selected_project_record['project_id'])
-
-                    col1, col2, _ = st.columns([1, 1, 4])
-                    with col1:
-                        if st.button("📂 Load Selected Project", use_container_width=True, type="primary"):
-                            with st.spinner("Loading project data and running pre-flight checks..."):
-                                st.session_state.orchestrator.load_archived_project(selected_id)
-                                st.rerun()
-                    with col2:
-                        # Add the delete button with its popover confirmation
-                        delete_button = st.button("🗑️ Delete Selected Project", use_container_width=True, disabled=is_active_project, help="You cannot delete the currently active project.")
-
-                    if delete_button:
-                        with st.popover("Confirm Deletion", use_container_width=True):
-                            st.warning(f"**Are you sure you want to permanently delete project '{selected_project_record['project_name']}' (ID: {selected_id})?**")
-                            st.error("This action cannot be undone and will delete the project history record and its associated archive files from the disk.")
-                            if st.button("Yes, permanently delete this project", type="primary", use_container_width=True):
-                                success, message = st.session_state.orchestrator.delete_archived_project(selected_id)
-                                if success:
-                                    st.toast(f"✅ {message}")
-                                else:
-                                    st.error(message)
-                                time.sleep(2)
-                                st.rerun()
-
-            st.divider()
-            if st.button("⬅️ Back to Main Page"):
-                st.session_state.orchestrator.project_id = None
-                st.session_state.orchestrator.set_phase("IDLE")
-                st.rerun()
-
-        # (CR-ASDF-006) UI for Pre-flight Check Resolution
-        elif current_phase_name == "AWAITING_PREFLIGHT_RESOLUTION":
-            st.header("Pre-flight Check Resolution")
-
-            result = st.session_state.orchestrator.preflight_check_result
-            if not result:
-                st.error("Error: Pre-flight check result not found.")
-                if st.button("Go Back"):
-                    st.session_state.orchestrator.set_phase("IDLE")
-                    st.rerun()
-
-            else:
-                status = result.get("status")
-                message = result.get("message")
-
-                # Outcome A: All Checks Pass ("Fast Path")
-                if status == "ALL_PASS":
-                    st.success(message)
-                    st.info("The project environment is valid and clean. You can proceed directly to the main workflow, bypassing the setup phase.")
-                    if st.button("▶️ Proceed to Specification Elaboration"):
-                        st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
-                        st.rerun()
-
-                # Outcome B & C: Fatal or Partial Failure
-                elif status in ["PATH_NOT_FOUND", "GIT_MISSING", "ERROR"]:
-                    st.error(message)
-                    st.warning("The factory cannot proceed until this environmental issue is resolved.")
-                    if st.button("Go to Environment Setup to Resolve"):
-                        st.session_state.orchestrator.set_phase("ENV_SETUP_TARGET_APP")
-                        st.rerun()
-
-                # Outcome D: State Drift Detected
-                elif status == "STATE_DRIFT":
-                    st.warning(message)
-
-                    col1, col2, _ = st.columns([1.5, 1.5, 3])
-                    with col1:
-                        if st.button("I will resolve this manually", help="Use your own tools (e.g., git commit, git stash) to clean the repository, then load the project again from the main menu."):
-                            st.session_state.orchestrator.project_id = None
-                            st.session_state.orchestrator.set_phase("IDLE")
-                            st.rerun()
-
-                    with col2:
-                        # Using a popover for the confirmation dialog
-                        with st.popover("Expert Option: Discard"):
-                            st.markdown("⚠️ **This will permanently delete all uncommitted changes in your local repository. This cannot be undone.**")
-                            if st.button("Confirm & Discard All Changes", type="primary"):
-                                with st.spinner("Resetting repository and re-checking..."):
-                                    # We need a project_id to reset. The orchestrator has it from the failed load attempt.
-                                    project_id_to_reset = st.session_state.orchestrator.project_id
-                                    st.session_state.orchestrator.handle_discard_changes(project_id_to_reset)
-                                st.rerun()
 
         else: # Fallback for any other phase
             st.header(f"Current Phase: {current_phase_name}")
@@ -1608,6 +1370,93 @@ elif page == "Documents":
         else:
             st.error(f"Could not retrieve document data for project ID: {doc_project_id}")
 
+elif page == "Reports":
+    st.header("Project Reports")
+
+    # --- Project Selection Logic ---
+    report_project_id = st.session_state.orchestrator.project_id
+    project_history = st.session_state.orchestrator.get_project_history()
+
+    # If no project is active, prompt the user to select one from history
+    if not report_project_id and project_history:
+        st.info("No project is currently active. Please select a project from the history to view its reports.")
+
+        history_options = {f"{row['project_name']} (ID: {row['project_id']})": row['project_id'] for row in project_history}
+        selected_option = st.selectbox("Select a Project:", options=[""] + list(history_options.keys()))
+
+        if selected_option:
+            report_project_id = history_options[selected_option]
+
+    elif not report_project_id and not project_history:
+        st.warning("Please start a new project or load an archived project to view reports.")
+        st.stop()
+
+    if not report_project_id:
+        st.stop() # Stop if no project is active and none is selected
+
+    st.subheader(f"Displaying Reports for Project ID: {report_project_id}")
+
+    # --- Instantiate the report generator agent ---
+    # We create it here to ensure it's available for both reports
+    try:
+        from agents.agent_report_generator import ReportGeneratorAgent
+        report_generator = ReportGeneratorAgent()
+    except ImportError:
+        st.error("ReportGeneratorAgent could not be loaded. Please check the 'agents' directory.")
+        st.stop()
+
+
+    # --- Report 1: Development Progress Summary ---
+    st.divider()
+    st.markdown("#### Development Progress Summary")
+    with st.session_state.orchestrator.db_manager as db:
+        all_artifacts = db.get_all_artifacts_for_project(report_project_id)
+        status_counts = db.get_component_counts_by_status(report_project_id)
+
+    if not all_artifacts:
+        st.info("No components have been defined for this project yet.")
+    else:
+        total_components = len(all_artifacts)
+        st.metric(label="Total Components Defined", value=total_components)
+
+        # Display status counts in columns for a cleaner look
+        cols = st.columns(len(status_counts) or 1)
+        for i, (status, count) in enumerate(status_counts.items()):
+            cols[i].metric(label=status.replace("_", " ").title(), value=count)
+
+        # Download button for this report
+        summary_docx_bytes = report_generator.generate_progress_summary_docx(total_components, status_counts)
+        st.download_button(
+            label="📄 Print to .docx",
+            data=summary_docx_bytes,
+            file_name=f"ASDF_Progress_Summary_{report_project_id}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
+    # --- Report 2: Change Requests & Bug Fixes ---
+    st.divider()
+    st.markdown("#### Change Requests & Bug Fixes")
+
+    filter_option = st.selectbox("Filter by:", options=["Pending", "Closed", "All"])
+
+    report_data = st.session_state.orchestrator.get_cr_and_bug_report_data(report_project_id, filter_option)
+
+    if not report_data:
+        st.info(f"No items found for the '{filter_option}' filter.")
+    else:
+        df = pd.DataFrame(report_data)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+        # Download button for this report
+        cr_bug_docx_bytes = report_generator.generate_cr_bug_report_docx(report_data, filter_option)
+        st.download_button(
+            label="📄 Print to .docx",
+            data=cr_bug_docx_bytes,
+            file_name=f"ASDF_CR_Bug_Report_{report_project_id}.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            key="cr_bug_download"
+        )
+
 elif page == "Settings":
     st.header("Factory Settings")
     st.markdown("Configure the operational parameters of the ASDF.")
@@ -1719,90 +1568,3 @@ elif page == "Settings":
         st.success("✅ Additional settings saved!")
 
     st.button("Save All Additional Settings", on_click=save_additional_settings, type="primary", use_container_width=True)
-
-elif page == "Reports":
-    st.header("Project Reports")
-
-    # --- Project Selection Logic ---
-    report_project_id = st.session_state.orchestrator.project_id
-    project_history = st.session_state.orchestrator.get_project_history()
-
-    # If no project is active, prompt the user to select one from history
-    if not report_project_id and project_history:
-        st.info("No project is currently active. Please select a project from the history to view its reports.")
-
-        history_options = {f"{row['project_name']} (ID: {row['project_id']})": row['project_id'] for row in project_history}
-        selected_option = st.selectbox("Select a Project:", options=[""] + list(history_options.keys()))
-
-        if selected_option:
-            report_project_id = history_options[selected_option]
-
-    elif not report_project_id and not project_history:
-        st.warning("Please start a new project or load an archived project to view reports.")
-        st.stop()
-
-    if not report_project_id:
-        st.stop() # Stop if no project is active and none is selected
-
-    st.subheader(f"Displaying Reports for Project ID: {report_project_id}")
-
-    # --- Instantiate the report generator agent ---
-    # We create it here to ensure it's available for both reports
-    try:
-        from agents.agent_report_generator import ReportGeneratorAgent
-        report_generator = ReportGeneratorAgent()
-    except ImportError:
-        st.error("ReportGeneratorAgent could not be loaded. Please check the 'agents' directory.")
-        st.stop()
-
-
-    # --- Report 1: Development Progress Summary ---
-    st.divider()
-    st.markdown("#### Development Progress Summary")
-    with st.session_state.orchestrator.db_manager as db:
-        all_artifacts = db.get_all_artifacts_for_project(report_project_id)
-        status_counts = db.get_component_counts_by_status(report_project_id)
-
-    if not all_artifacts:
-        st.info("No components have been defined for this project yet.")
-    else:
-        total_components = len(all_artifacts)
-        st.metric(label="Total Components Defined", value=total_components)
-
-        # Display status counts in columns for a cleaner look
-        cols = st.columns(len(status_counts) or 1)
-        for i, (status, count) in enumerate(status_counts.items()):
-            cols[i].metric(label=status.replace("_", " ").title(), value=count)
-
-        # Download button for this report
-        summary_docx_bytes = report_generator.generate_progress_summary_docx(total_components, status_counts)
-        st.download_button(
-            label="📄 Print to .docx",
-            data=summary_docx_bytes,
-            file_name=f"ASDF_Progress_Summary_{report_project_id}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-
-    # --- Report 2: Change Requests & Bug Fixes ---
-    st.divider()
-    st.markdown("#### Change Requests & Bug Fixes")
-
-    filter_option = st.selectbox("Filter by:", options=["Pending", "Closed", "All"])
-
-    report_data = st.session_state.orchestrator.get_cr_and_bug_report_data(report_project_id, filter_option)
-
-    if not report_data:
-        st.info(f"No items found for the '{filter_option}' filter.")
-    else:
-        df = pd.DataFrame(report_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-
-        # Download button for this report
-        cr_bug_docx_bytes = report_generator.generate_cr_bug_report_docx(report_data, filter_option)
-        st.download_button(
-            label="📄 Print to .docx",
-            data=cr_bug_docx_bytes,
-            file_name=f"ASDF_CR_Bug_Report_{report_project_id}.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            key="cr_bug_download"
-        )
