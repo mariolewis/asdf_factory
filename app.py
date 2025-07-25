@@ -846,15 +846,35 @@ if page == "Project":
                 else:
                     st.success(f"All {total_tasks} development tasks are complete.")
                     st.info("Click 'Proceed' to finalize development and begin the Integration & Validation phase.")
+                # Use a session state flag to disable buttons after a click
+                if 'dev_step_in_progress' not in st.session_state:
+                    st.session_state.dev_step_in_progress = False
+
+                def set_step_in_progress():
+                    st.session_state.dev_step_in_progress = True
+
                 col1, col2, _ = st.columns([1.5, 1.5, 3])
                 with col1:
-                    if st.button("▶️ Proceed", use_container_width=True, type="primary"):
+                    if st.button(
+                        "▶️ Proceed",
+                        use_container_width=True,
+                        type="primary",
+                        on_click=set_step_in_progress,
+                        disabled=st.session_state.dev_step_in_progress
+                    ):
                         with st.status("Executing next development step...", expanded=True) as status:
                             st.session_state.orchestrator.handle_proceed_action(status_ui_object=status)
                             status.update(label="Step completed successfully!", state="complete", expanded=False)
+                        del st.session_state.dev_step_in_progress # Reset flag
                         st.rerun()
                 with col2:
-                    if st.button("⏹️ Stop & Export", use_container_width=True):
+                    st.button(
+                        "⏹️ Stop & Export",
+                        use_container_width=True,
+                        on_click=set_step_in_progress,
+                        disabled=st.session_state.dev_step_in_progress
+                    )
+                    if st.session_state.dev_step_in_progress:
                         st.session_state.show_export_confirmation = True
                         st.rerun()
 
