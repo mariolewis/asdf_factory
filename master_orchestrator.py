@@ -1537,7 +1537,7 @@ class MasterOrchestrator:
                     project_id=self.project_id,
                     project_name=self.project_name,
                     root_folder=project_details['project_root_folder'] if project_details else "N/A",
-                    archive_file_path=str(rowd_file),
+                    archive_path=str(rowd_file),
                     timestamp=datetime.now(timezone.utc).isoformat()
                 )
 

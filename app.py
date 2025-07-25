@@ -123,11 +123,14 @@ with st.sidebar:
                 if archive_name_input:
                     archive_file_path = st.session_state.orchestrator.stop_and_export_project(archive_path, archive_name_input)
                     if archive_file_path:
+                        # --- CORRECTED: Perform a hard reset of the orchestrator state ---
                         st.session_state.last_action_success_message = f"Project archived to: `{archive_file_path}`"
+                        # Re-initialize the orchestrator to ensure a clean state.
+                        st.session_state.orchestrator = MasterOrchestrator(db_path=str(db_path))
+                        st.session_state.show_export_confirmation = False
+                        st.rerun()
                     else:
                         st.error("Failed to export project.")
-                    st.session_state.show_export_confirmation = False
-                    st.rerun()
                 else:
                     st.error("Archive name cannot be empty.")
 
