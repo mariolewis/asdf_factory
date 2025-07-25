@@ -33,47 +33,57 @@ class PlanningAgent_AppTarget:
     def generate_development_plan(self, final_spec_text: str, tech_spec_text: str) -> str:
         """
         Analyzes specifications and generates a development plan as a JSON string.
-        This now uses a multi-step "divide and conquer" approach to avoid timeouts
-        with very large specification documents.
+        This now uses an adaptive strategy: for smaller specs, it uses the full
+        text for consistency; for larger specs, it summarizes to prevent errors.
         """
-        logging.info("PlanningAgent_AppTarget: Generating development plan using 'divide and conquer' strategy...")
+        logging.info("PlanningAgent_AppTarget: Generating development plan using adaptive strategy...")
+
+        # A threshold to decide when to summarize vs. use full text.
+        # This can be adjusted, but 15000 chars is a safe starting point.
+        PLANNING_SUMMARY_THRESHOLD = 15000
+        total_spec_length = len(final_spec_text) + len(tech_spec_text)
+
+        combined_context = ""
 
         try:
-            summary_model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+            # If the total spec length is over the threshold, summarize first.
+            if total_spec_length > PLANNING_SUMMARY_THRESHOLD:
+                logging.info(f"Specifications length ({total_spec_length}) exceeds threshold. Using 'divide and conquer' summary strategy.")
+                summary_model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-            # --- STEP 1: Summarize the Functional Specification ---
-            logging.info("Step 1: Summarizing functional specification...")
-            func_summary_prompt = "Summarize the key features, user stories, and data entities from the following application specification into a concise bulleted list."
-            func_summary_response = summary_model.generate_content(f"{func_summary_prompt}\n\n{final_spec_text}")
-            func_summary = func_summary_response.text
-            logging.info("Step 1: Functional specification summarized.")
+                # Step 1: Summarize the Functional Specification
+                func_summary_prompt = "Summarize the key features, user stories, and data entities from the following application specification into a concise bulleted list."
+                func_summary_response = summary_model.generate_content(f"{func_summary_prompt}\n\n{final_spec_text}")
+                func_summary = func_summary_response.text
 
-            # --- STEP 2: Summarize the Technical Specification ---
-            logging.info("Step 2: Summarizing technical specification...")
-            tech_summary_prompt = "Summarize the key architectural patterns, technology choices, frameworks, and database schema details from the following technical specification into a concise bulleted list."
-            tech_summary_response = summary_model.generate_content(f"{tech_summary_prompt}\n\n{tech_spec_text}")
-            tech_summary = tech_summary_response.text
-            logging.info("Step 2: Technical specification summarized.")
+                # Step 2: Summarize the Technical Specification
+                tech_summary_prompt = "Summarize the key architectural patterns, technology choices, frameworks, and database schema details from the following technical specification into a concise bulleted list."
+                tech_summary_response = summary_model.generate_content(f"{tech_summary_prompt}\n\n{tech_spec_text}")
+                tech_summary = tech_summary_response.text
 
-            # --- STEP 3: Combine summaries and generate the final JSON plan ---
-            logging.info("Step 3: Generating JSON plan from combined summaries...")
-            combined_summary = f"Functional Requirements Summary:\n{func_summary}\n\nTechnical Choices Summary:\n{tech_summary}"
+                combined_context = f"Functional Requirements Summary:\n{func_summary}\n\nTechnical Choices Summary:\n{tech_summary}"
+            else:
+                # If specs are small enough, use the full text for better consistency.
+                logging.info(f"Specifications length ({total_spec_length}) is within threshold. Using direct planning strategy.")
+                combined_context = f"Full Application Specification:\n{final_spec_text}\n\nFull Technical Specification:\n{tech_spec_text}"
 
+            # Step 3: Generate the final JSON plan from the prepared context.
+            logging.info("Generating JSON plan from prepared context...")
             plan_prompt = textwrap.dedent(f"""
-                You are an expert Lead Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format based on the provided summaries of the project's specifications.
+                You are an expert Lead Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format based on the provided project specifications or summaries.
 
                 **MANDATORY INSTRUCTIONS:**
-                1.  **Determine Main Executable:** Based on the summaries, determine a logical name for the main executable file with a file name extension that is appropriate for the implementation technology. (e.g., `main.py`, `app.kt` for Python).
-                2.  **Deconstruct the Project:** Break down the entire application into a logical sequence of fine-grained, independent components based on the summarized requirements.
+                1.  **Determine Main Executable:** Based on the context, determine a logical name for the main executable file with an extension appropriate for the implementation technology (e.g., `main.py`, `app.kt`).
+                2.  **Deconstruct the Project:** Break down the entire application into a logical sequence of the smallest possible, independent, fine-grained components. Prioritize granularity.
                 3.  **JSON Object Output:** Your entire response MUST be a single, valid JSON object `{{}}`.
                 4.  **JSON Schema:** The JSON object MUST have two top-level keys:
-                    - `"main_executable_file"`: A string containing the name of the main executable file you determined.
+                    - `"main_executable_file"`: A string containing the name of the main executable file.
                     - `"development_plan"`: A JSON array `[]` where each element is a micro-specification task.
-                5.  **Micro-specification Schema:** Each task object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
+                5.  **Micro-specification Schema:** Each task object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
                 6.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object itself.
 
-                **--- Project Summaries ---**
-                {combined_summary}
+                **--- Project Context ---**
+                {combined_context}
 
                 **--- Detailed Development Plan (JSON Output) ---**
             """)
@@ -87,7 +97,8 @@ class PlanningAgent_AppTarget:
                     return cleaned_response
                 else:
                     raise ValueError("JSON object is missing required 'main_executable_file' or 'development_plan' keys.")
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                logging.error(f"The AI response was not in a valid JSON format. Response was: {cleaned_response}")
                 raise ValueError("The AI response was not in a valid JSON format.")
 
         except Exception as e:
