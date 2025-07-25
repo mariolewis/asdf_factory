@@ -227,10 +227,32 @@ if page == "Project":
             message = result.get("message")
             if status == "ALL_PASS":
                 st.success(message)
-                st.info("The project environment is valid and clean. You can proceed directly to the main workflow, bypassing the setup phase.")
-                if st.button("▶️ Proceed to Specification Elaboration"):
-                    st.session_state.orchestrator.set_phase("SPEC_ELABORATION")
-                    st.rerun()
+                st.info("The project environment is valid and clean. You can now proceed with the project.")
+
+                # Get the dynamically determined resume phase from the orchestrator
+                resume_phase = st.session_state.orchestrator.resume_phase_after_load
+                if resume_phase:
+                    # Get the display-friendly name for the button
+                    phase_display_name = st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(resume_phase, resume_phase.name.replace("_", " ").title())
+
+                    col1, col2, _ = st.columns([1.5, 2, 3])
+                    with col1:
+                        if st.button(f"▶️ Proceed to {phase_display_name}", type="primary", use_container_width=True):
+                            st.session_state.orchestrator.set_phase(resume_phase.name)
+                            st.session_state.orchestrator.resume_phase_after_load = None # Clean up
+                            st.rerun()
+                    with col2:
+                        # ADDED: A "Back" button to prevent getting stuck.
+                        if st.button("⬅️ Back to Project List", use_container_width=True):
+                            st.session_state.orchestrator = MasterOrchestrator(db_path=str(db_path))
+                            st.session_state.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
+                            st.rerun()
+                else:
+                    st.error("Could not determine the resume phase. Please go back and try loading the project again.")
+                    if st.button("⬅️ Back to Project List"):
+                        st.session_state.orchestrator = MasterOrchestrator(db_path=str(db_path))
+                        st.session_state.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
+                        st.rerun()
             elif status in ["PATH_NOT_FOUND", "GIT_MISSING", "ERROR"]:
                 st.error(message)
                 st.warning("The factory cannot proceed until this environmental issue is resolved.")

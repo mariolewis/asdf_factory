@@ -84,6 +84,7 @@ class MasterOrchestrator:
         self.task_awaiting_approval = None
         self.preflight_check_result = None
         self.debug_attempt_counter = 0
+        self.resume_phase_after_load = None
 
         # --- CORRECTED: Self-initialization from database ---
         # Upon creation, immediately check the DB for a resumable state.
@@ -607,6 +608,43 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to identify integration context files via AI: {e}")
             return [] # Return empty list on failure
+
+    def _determine_resume_phase_from_rowd(self, db: ASDFDBManager) -> FactoryPhase:
+        """
+        Analyzes the loaded project documents to determine the correct logical
+        phase to resume from.
+        """
+        logging.info("Analyzing loaded project state to determine the correct resume phase...")
+        project_details = db.get_project_by_id(self.project_id)
+
+        if not project_details:
+            # If for some reason project details don't exist, default to the start.
+            return FactoryPhase.SPEC_ELABORATION
+
+        # Logic flows from latest phase to earliest.
+        # If a UI test plan exists, the project was in or past the final testing phase.
+        if project_details['ui_test_plan_text']:
+            logging.info("Resume point determined: MANUAL_UI_TESTING (UI test plan exists).")
+            return FactoryPhase.MANUAL_UI_TESTING
+
+        # If an integration plan exists, it was in or past the integration phase.
+        if project_details['integration_plan_text']:
+            logging.info("Resume point determined: INTEGRATION_AND_VERIFICATION (Integration plan exists).")
+            return FactoryPhase.INTEGRATION_AND_VERIFICATION
+
+        # If a development plan exists, it was in the development phase.
+        if project_details['development_plan_text']:
+            logging.info("Resume point determined: GENESIS (Development plan exists).")
+            return FactoryPhase.GENESIS
+
+        # If a tech spec exists, but no dev plan, it was in the planning phase.
+        if project_details['tech_spec_text']:
+            logging.info("Resume point determined: PLANNING (Tech spec exists).")
+            return FactoryPhase.PLANNING
+
+        # Default to the earliest phase if only the app spec exists.
+        logging.info("Resume point determined: SPEC_ELABORATION (Default).")
+        return FactoryPhase.SPEC_ELABORATION
 
     def _run_integration_and_ui_testing_phase(self):
         """
@@ -1594,32 +1632,28 @@ class MasterOrchestrator:
     def handle_discard_changes(self, history_id: int):
         """
         Handles the 'Discard all local changes' expert option for a project
-        with state drift. Resets the git repository and re-runs checks.
+        with state drift. Resets the git repository and then re-runs the
+        entire project loading sequence to ensure a clean state.
         """
         logging.warning(f"Executing 'git reset --hard' for project history ID: {history_id}")
         try:
             with self.db_manager as db:
-                # We need the project path from the history table to perform the reset
                 history_record = db.get_project_history_by_id(history_id)
                 if not history_record:
                     raise Exception(f"Could not find history record for ID {history_id} to get path.")
 
                 project_root = Path(history_record['project_root_folder'])
-
-                # Instantiate and use the dedicated agent for rollback
                 agent = RollbackAgent()
                 success, message = agent.discard_local_changes(project_root)
 
                 if not success:
-                    # If the agent fails, log the error and update the UI
                     raise Exception(f"RollbackAgent failed: {message}")
 
                 logging.info(f"Successfully discarded changes at {project_root}")
 
-                # Re-run pre-flight checks to confirm the environment is now clean
-                check_result = self._perform_preflight_checks(str(project_root))
-                self.preflight_check_result = check_result
-                # The UI will re-render based on this updated result
+            # After successfully discarding changes, re-trigger the load process
+            # to re-run checks and correctly load the project into state.
+            self.load_archived_project(history_id)
 
         except Exception as e:
             logging.error(f"Failed to discard changes for project history ID {history_id}: {e}")
@@ -1727,7 +1761,8 @@ class MasterOrchestrator:
                 self.project_id = history_record['project_id']
                 self.project_name = history_record['project_name']
 
-                # Set the phase for UI resolution
+                # Determine and store the correct resume phase before transitioning.
+                self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
                 self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
                 logging.info(f"Successfully loaded archived project '{self.project_name}'. Awaiting pre-flight resolution.")
 
