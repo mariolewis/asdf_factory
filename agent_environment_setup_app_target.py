@@ -63,19 +63,33 @@ class EnvironmentSetupAgent_AppTarget:
                 st.warning("Please enter a path.")
 
     def _run_git_initialization_step(self):
-        """Handles the UI for initializing the Git repository."""
+        """Handles the UI and logic for initializing the Git repository and making a clean initial commit."""
         st.subheader("2. Initialize Git Repository")
         project_path = st.session_state.project_root_path
 
         if st.button("Initialize Git Repository & Complete Setup"):
             try:
+                # 1. Initialize the repository
                 subprocess.run(['git', 'init'], cwd=project_path, check=True, capture_output=True, text=True)
                 st.success("Successfully initialized Git repository.")
-                # Signal that all steps for this agent are now complete.
+
+                # 2. Create a default .gitignore file
+                gitignore_path = Path(project_path) / ".gitignore"
+                # A sensible default for Python projects to avoid committing virtual environments and cache files.
+                gitignore_content = "# Python standard\n__pycache__/\n*.py[cod]\n*$py.class\n\n# Environments\n.env\n.venv\nvenv/\nenv/\n\n# IDE / Editor specific\n.vscode/\n.idea/\n"
+                gitignore_path.write_text(gitignore_content, encoding='utf-8')
+                logging.info(f"Created .gitignore file at {gitignore_path}")
+
+                # 3. Add .gitignore and make the initial commit to ensure a clean state
+                subprocess.run(['git', 'add', '.gitignore'], cwd=project_path, check=True)
+                subprocess.run(['git', 'commit', '-m', 'Initial commit: Add .gitignore'], cwd=project_path, check=True)
+                st.success("Created .gitignore and made initial commit.")
+
+                # 4. Signal that all steps for this agent are now complete.
                 st.session_state.agent_setup_complete = True
                 st.rerun()
             except Exception as e:
-                st.error(f"Failed to initialize Git repository: {e}")
+                st.error(f"Failed to initialize Git repository and make initial commit: {e}")
 
     def render(self):
         """Renders the setup UI in a controlled, sequential manner."""

@@ -233,7 +233,10 @@ if page == "Project":
                 st.error(message)
                 st.warning("The factory cannot proceed until this environmental issue is resolved.")
                 if st.button("Go to Environment Setup to Resolve"):
-                    st.session_state.orchestrator.set_phase("ENV_SETUP_TARGET_APP")
+                    # This is a fatal error, so we create a new project with the same name.
+                    # This will cleanly guide the user through the setup flow again.
+                    project_name = selected_project_record['project_name'] if selected_project_record else "New Project"
+                    st.session_state.orchestrator.start_new_project(project_name)
                     st.rerun()
             elif status == "STATE_DRIFT":
                 st.warning(message)
@@ -249,7 +252,7 @@ if page == "Project":
                         if st.button("Confirm & Discard All Changes", type="primary"):
                             with st.spinner("Resetting repository and re-checking..."):
                                 project_id_to_reset = st.session_state.orchestrator.project_id
-                                st.session_state.orchestrator.handle_discard_changes(project_id_to_reset)
+                                st.session_state.orchestrator.handle_discard_changes(history_id=selected_id)
                             st.rerun()
 
     elif not st.session_state.orchestrator.project_id:

@@ -1591,22 +1591,18 @@ class MasterOrchestrator:
         # All checks passed
         return {"status": "ALL_PASS", "message": "Project environment successfully verified."}
 
-    def handle_discard_changes(self, project_id: str):
+    def handle_discard_changes(self, history_id: int):
         """
         Handles the 'Discard all local changes' expert option for a project
         with state drift. Resets the git repository and re-runs checks.
         """
-        logging.warning(f"Executing 'git reset --hard' for project {project_id}")
+        logging.warning(f"Executing 'git reset --hard' for project history ID: {history_id}")
         try:
             with self.db_manager as db:
                 # We need the project path from the history table to perform the reset
-                history_record = db.get_project_history_by_id(project_id) # Assuming project_id is the history_id here
+                history_record = db.get_project_history_by_id(history_id)
                 if not history_record:
-                     history_records = db.get_project_history()
-                     history_record = next((p for p in history_records if p['project_id'] == project_id), None)
-
-                if not history_record:
-                    raise Exception(f"Could not find history record for project ID {project_id} to get path.")
+                    raise Exception(f"Could not find history record for ID {history_id} to get path.")
 
                 project_root = Path(history_record['project_root_folder'])
 
@@ -1626,7 +1622,7 @@ class MasterOrchestrator:
                 # The UI will re-render based on this updated result
 
         except Exception as e:
-            logging.error(f"Failed to discard changes for project {project_id}: {e}")
+            logging.error(f"Failed to discard changes for project history ID {history_id}: {e}")
             self.preflight_check_result = {"status": "ERROR", "message": str(e)}
 
     def delete_archived_project(self, history_id: int) -> tuple[bool, str]:
