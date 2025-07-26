@@ -597,7 +597,7 @@ class MasterOrchestrator:
             **--- REQUIRED OUTPUT: JSON Array of File Paths ---**
         """)
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
             response = model.generate_content(prompt)
             cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
             integration_files = json.loads(cleaned_response)

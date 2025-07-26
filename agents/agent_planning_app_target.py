@@ -49,7 +49,7 @@ class PlanningAgent_AppTarget:
             # If the total spec length is over the threshold, summarize first.
             if total_spec_length > PLANNING_SUMMARY_THRESHOLD:
                 logging.info(f"Specifications length ({total_spec_length}) exceeds threshold. Using 'divide and conquer' summary strategy.")
-                summary_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+                summary_model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
                 # Step 1: Summarize the Functional Specification
                 func_summary_prompt = "Summarize the key features, user stories, and data entities from the following application specification into a concise bulleted list."

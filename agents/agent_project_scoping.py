@@ -83,7 +83,7 @@ class ProjectScopingAgent:
 
         try:
             # Using a more capable model for this complex analytical task
-            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
             response = model.generate_content(prompt)
             # Clean the response to ensure it's valid JSON
             cleaned_response_text = response.text.strip().replace("```json", "").replace("```", "")
