@@ -309,7 +309,7 @@ if page == "Project":
             agent.render()
 
         elif current_phase_name == "SPEC_ELABORATION":
-            st.header("Phase 1: Application Specification")
+            st.header("Application Specification")
             if 'spec_draft' not in st.session_state:
                 st.session_state.spec_draft = None
             if 'spec_step' not in st.session_state:
@@ -347,7 +347,7 @@ if page == "Project":
                                 st.rerun()
 
             elif st.session_state.spec_step == 'complexity_analysis':
-                st.header("Phase 1: Application Specification")
+                st.header("Application Specification")
                 with st.spinner("Performing complexity and risk analysis on the specification draft..."):
                     try:
                         with st.session_state.orchestrator.db_manager as db:
@@ -791,7 +791,7 @@ if page == "Project":
                         st.rerun()
 
         elif current_phase_name == "CODING_STANDARD_GENERATION":
-            st.header("Phase 2.A: Coding Standard Generation")
+            st.header("Coding Standard Generation")
             if 'coding_standard_step' not in st.session_state:
                 st.session_state.coding_standard_step = 'initial'
             if 'coding_standard_draft' not in st.session_state:
@@ -851,7 +851,7 @@ if page == "Project":
                             st.rerun()
 
         elif current_phase_name == "PLANNING":
-            st.header("Phase 2: Strategic Development Planning")
+            st.header("Strategic Development Planning")
             if 'development_plan' not in st.session_state:
                 st.session_state.development_plan = None
             if st.session_state.development_plan:
@@ -937,7 +937,7 @@ if page == "Project":
                             st.error(f"An unexpected error occurred: {e}")
 
         elif current_phase_name == "GENESIS":
-            st.header("Phase 3: Iterative Component Development")
+            st.header("Iterative Component Development")
             if not st.session_state.orchestrator.active_plan:
                 st.warning("No active development plan is loaded.")
                 st.info("Please go to the 'Planning' phase to generate a development plan.")
@@ -1018,7 +1018,7 @@ if page == "Project":
                     st.rerun()
 
         elif current_phase_name == "MANUAL_UI_TESTING":
-            st.header("Phase 4: Manual UI Testing")
+            st.header("Manual UI Testing")
             st.info(
                 "The automated integration and build were successful. "
                 "The UI Test Plan has been generated based on the project specification."
@@ -1060,7 +1060,7 @@ if page == "Project":
                 st.rerun()
 
         elif current_phase_name == "AWAITING_INTEGRATION_RESOLUTION":
-            st.header("Phase 5: Integration & Verification Failed")
+            st.header("Integration & Verification Failed")
             st.error("The automated integration and verification process could not be completed due to a system-level or environment error.")
             if st.session_state.orchestrator.task_awaiting_approval:
                 failure_reason = st.session_state.orchestrator.task_awaiting_approval.get("failure_reason", "No specific reason was provided.")
@@ -1072,7 +1072,7 @@ if page == "Project":
                 st.rerun()
 
         elif current_phase_name == "AWAITING_PM_TRIAGE_INPUT":
-            st.header("Phase 5: Interactive Debugging Triage")
+            st.header("Interactive Debugging Triage")
             st.warning(
                 "**Action Required:** The automated triage system could not determine the "
                 "root cause of the last failure from the available logs."
@@ -1107,7 +1107,7 @@ if page == "Project":
                     st.rerun()
 
         elif current_phase_name == "DEBUG_PM_ESCALATION":
-            st.header("Phase 5: Debug Escalation")
+            st.header("Debug Escalation")
             st.error(
                 "**Action Required:** The factory has been unable to automatically fix a persistent bug after multiple attempts."
             )
@@ -1136,7 +1136,7 @@ if page == "Project":
                     st.rerun()
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
-            st.header("Phase 3.5: Automated Integration & Verification")
+            st.header("Automated Integration & Verification")
             st.info("The factory is now integrating all newly developed components, performing a full system build, and running verification tests.")
             with st.spinner("Running automated integration... This may take a moment."):
                 st.session_state.orchestrator._run_integration_and_verification_phase()
@@ -1173,7 +1173,7 @@ if page == "Project":
                     st.rerun()
 
         elif current_phase_name == "RAISING_CHANGE_REQUEST":
-            st.header("Phase 6: Raise New Change Request")
+            st.header("Raise New Change Request")
             st.info("First, select the type of change you are requesting.")
             if 'cr_type' not in st.session_state:
                 st.session_state.cr_type = "Functional Enhancement"
@@ -1224,7 +1224,7 @@ if page == "Project":
                 st.rerun()
 
         elif current_phase_name == "AWAITING_INITIAL_IMPACT_ANALYSIS":
-            st.header("Phase 6: New Change Request Logged")
+            st.header("New Change Request Logged")
             st.success("The new Change Request has been saved to the register.")
             st.markdown("Would you like to perform a high-level impact analysis on this new CR now?")
             try:
@@ -1250,7 +1250,7 @@ if page == "Project":
                     st.rerun()
 
         elif current_phase_name == "IMPLEMENTING_CHANGE_REQUEST":
-            st.header("Phase 6: Implement Requested Change")
+            st.header("Implement Requested Change")
             st.markdown("Select a Change Request from the register below to view available actions.")
             change_requests = st.session_state.orchestrator.get_all_change_requests()
             if not change_requests:
@@ -1303,14 +1303,14 @@ if page == "Project":
                                 st.session_state.orchestrator.handle_implement_cr_action(selected_cr_id)
                             st.rerun()
                 if not st.session_state.orchestrator.is_genesis_complete:
-                    st.info("Note: CR implementation is enabled after the main development plan from Phase 2 is fully completed.")
+                    st.info("Note: CR implementation is enabled after the main development plan is fully completed.")
             st.divider()
             if st.button("⬅️ Back to Main Checkpoint"):
                 st.session_state.orchestrator.set_phase("GENESIS")
                 st.rerun()
 
         elif current_phase_name == "EDITING_CHANGE_REQUEST":
-            st.header("Phase 6: Edit Change Request")
+            st.header("Edit Change Request")
             cr_details = st.session_state.orchestrator.get_active_cr_details_for_edit()
             if not cr_details:
                 st.error("Error: Could not load Change Request details for editing.")
