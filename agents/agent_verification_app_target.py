@@ -59,7 +59,7 @@ class VerificationAgent_AppTarget:
             logging.error(f"LLM call failed to determine test command details: {e}.")
             return None
 
-    def run_all_tests(self, project_root: str | Path, test_command_str: str) -> tuple[bool, str]:
+    def run_all_tests(self, project_root: str | Path, test_command_str: str) -> tuple[str, str]:
         """
         Executes the entire test suite for the project using a provided command.
 
@@ -68,34 +68,36 @@ class VerificationAgent_AppTarget:
             test_command_str (str): The specific command to execute to run all tests.
 
         Returns:
-            A tuple containing a boolean for success/failure and the test runner output.
+            A tuple containing a status string ('SUCCESS', 'CODE_FAILURE',
+            'ENVIRONMENT_FAILURE') and the test runner output.
         """
         logging.info(f"Running full test suite for project at: {project_root}")
         project_root = Path(project_root)
 
         if not project_root.is_dir():
-            return False, f"Verification failed: Project root '{project_root}' is not a valid directory."
+            return 'ENVIRONMENT_FAILURE', f"Verification failed: Project root '{project_root}' is not a valid directory."
 
         if not test_command_str:
-            return False, "Verification failed: Test execution command was not provided."
+            return 'ENVIRONMENT_FAILURE', "Verification failed: Test execution command was not provided."
 
         logging.info(f"Executing verification command: '{test_command_str}'")
 
         try:
-            # Execute the command from the project's root directory
             result = subprocess.run(
                 test_command_str,
                 shell=True,
                 cwd=project_root,
                 capture_output=True,
                 text=True,
-                check=False # check=False to capture output even on failure
+                check=False
             )
             output = result.stdout + "\n" + result.stderr
             logging.info(f"Verification execution finished with exit code: {result.returncode}")
 
-            # Return the result
-            return result.returncode == 0, output
+            if result.returncode == 0:
+                return 'SUCCESS', output
+            else:
+                return 'CODE_FAILURE', output
 
         except FileNotFoundError:
             tool_name = test_command_str.split()[0]
@@ -104,8 +106,8 @@ class VerificationAgent_AppTarget:
                 f"Please ensure the required testing tools are installed and accessible in your system's PATH."
             )
             logging.error(error_msg)
-            return False, error_msg
+            return 'ENVIRONMENT_FAILURE', error_msg
         except Exception as e:
             error_msg = f"An unexpected error occurred during test verification: {e}"
             logging.error(error_msg)
-            return False, error_msg
+            return 'ENVIRONMENT_FAILURE', error_msg

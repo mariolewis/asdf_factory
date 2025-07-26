@@ -716,11 +716,21 @@ class MasterOrchestrator:
                 if not test_command:
                      raise Exception("Cannot run verification tests: Test command is not set.")
 
-                tests_passed, test_output = verification_agent.run_all_tests(project_root_path, test_command)
+                status, test_output = verification_agent.run_all_tests(project_root_path, test_command)
 
-                if not tests_passed:
-                    raise Exception(f"Final integration verification failed.\n{test_output}")
+                if status == 'CODE_FAILURE':
+                    logging.error("Integration verification failed due to test failures. Triggering debug pipeline.")
+                    # Trigger the full debug pipeline for code failures as per the PRD.
+                    self.escalate_for_manual_debug(test_output)
+                    return  # Stop the current phase.
+                elif status == 'ENVIRONMENT_FAILURE':
+                    # For environment issues, use the intended "escape hatch".
+                    logging.error(f"Integration verification failed due to an environment error. Awaiting PM resolution.")
+                    self.task_awaiting_approval = {"failure_reason": test_output}
+                    self.set_phase("AWAITING_INTEGRATION_RESOLUTION")
+                    return  # Stop the current phase.
 
+                # If status is 'SUCCESS', the workflow continues below.
                 repo = git.Repo(project_root_path)
                 repo.git.add(A=True)
                 repo.index.commit(f"feat: Integrate all components for {self.project_name}")
