@@ -1324,8 +1324,7 @@ class MasterOrchestrator:
 
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
-        Initiates the triage process. The automatic rollback is now correctly
-        disabled to allow for manual inspection of faulty code.
+        Initiates the multi-tiered triage and debug process.
         """
         logging.info("A failure has triggered the debugging pipeline.")
 
@@ -1348,41 +1347,63 @@ class MasterOrchestrator:
                     return
 
                 project_details = db.get_project_by_id(self.project_id)
-                project_root_path = str(project_details['project_root_folder'])
+                project_root_path = Path(project_details['project_root_folder'])
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key: raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
 
-                logging.warning("Atomic rollback is currently disabled for manual inspection.")
-
+                triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
                 context_package = {}
-                # Tier 1 Analysis (Stack Trace)
+
+                # --- Tier 1: Automated Stack Trace Analysis ---
                 logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
-                # ... (Future parsing logic would go here) ...
-                if "Traceback (most recent call last):" in failure_log:
-                    pass # Placeholder for future implementation
+                file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
 
-                # Tier 2 Analysis (Apex Trace)
+                if file_paths_from_trace:
+                    logging.info(f"Tier 1 Success: Found {len(file_paths_from_trace)} files in stack trace.")
+                    for file_path in file_paths_from_trace:
+                        full_path = project_root_path / file_path
+                        if full_path.exists():
+                            context_package[file_path] = full_path.read_text(encoding='utf-8')
+                        else:
+                            logging.warning(f"File '{file_path}' from stack trace not found at '{full_path}'.")
+
+                # --- Tier 2: Automated Apex Trace Analysis (Fallback) ---
                 if not context_package:
-                    logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis.")
-                    apex_file_name = project_details["apex_executable_name"]
-                    if apex_file_name:
-                        pass # Placeholder for future implementation
+                    logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
+                    apex_file_name = project_details.get("apex_executable_name")
+                    failing_task = self.get_current_task_details()
+                    failing_component_name = failing_task.get('component_name') if failing_task else None
 
-                # If automated triage (Tiers 1 & 2) succeeds, plan a fix.
+                    if apex_file_name and failing_component_name:
+                        all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                        rowd_json = json.dumps([dict(row) for row in all_artifacts])
+
+                        file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(rowd_json, apex_file_name, failing_component_name)
+                        file_paths_from_trace = json.loads(file_paths_from_trace_json)
+
+                        if file_paths_from_trace:
+                            logging.info(f"Tier 2 Success: Found {len(file_paths_from_trace)} files in apex trace.")
+                            for file_path in file_paths_from_trace:
+                                full_path = project_root_path / file_path
+                                if full_path.exists():
+                                    context_package[file_path] = full_path.read_text(encoding='utf-8')
+                                else:
+                                    logging.warning(f"File '{file_path}' from apex trace not found at '{full_path}'.")
+                    else:
+                        logging.warning("Tier 2 skipped: Apex executable name or failing component name not available.")
+
+                # --- Execute Fix or Escalate to Tier 3 ---
                 if context_package:
                     logging.info("Automated Triage Success: Context gathered. Proceeding to plan a fix.")
                     self._plan_and_execute_fix(failure_log, context_package, api_key)
                     return
-
-                # --- CORRECTED LOGIC ---
-                # If automated triage fails, escalate to the PM with the collected error log.
-                logging.warning("Automated Triage (Tiers 1 & 2) failed. Escalating to PM with full error log.")
-                self.task_awaiting_approval = {"failure_log": failure_log}
-                self.set_phase("DEBUG_PM_ESCALATION")
+                else:
+                    logging.warning("Automated Triage (Tiers 1 & 2) failed to gather context. Escalating to PM for Tier 3.")
+                    self.task_awaiting_approval = {"failure_log": failure_log}
+                    self.set_phase("AWAITING_PM_TRIAGE_INPUT")
 
         except Exception as e:
             logging.error(f"A critical error occurred during the triage process: {e}")
-            # Final fallback: Escalate with the new error message
             self.task_awaiting_approval = {"failure_log": str(e)}
             self.set_phase("DEBUG_PM_ESCALATION")
 

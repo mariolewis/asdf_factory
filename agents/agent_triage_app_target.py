@@ -51,6 +51,46 @@ class TriageAgent_AppTarget:
         tags = set(kw.lower() for kw in keywords + files)
         return list(tags)
 
+    def parse_stack_trace(self, stack_trace_log: str) -> list[str]:
+        """
+        Uses an LLM to parse a raw stack trace and extract a list of file paths.
+
+        Args:
+            stack_trace_log (str): The raw text of the error log containing the stack trace.
+
+        Returns:
+            A list of file paths identified in the stack trace, or an empty list if none are found.
+        """
+        logging.info("TriageAgent: Performing Tier 1 Analysis - Parsing stack trace.")
+
+        prompt = textwrap.dedent(f"""
+            You are a log analysis expert. Your task is to parse the following raw text, which contains a software stack trace, and extract all unique, relative file paths mentioned in it.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Identify File Paths:** Scan the text for any strings that represent a file path (e.g., `src/main/app.py`, `modules/utils.kt`).
+            2.  **JSON Array Output:** Your response MUST be a single, valid JSON array of strings. Each string in the array must be one of the unique file paths you identified.
+            3.  **Order Matters:** The file paths should be in the order they appear in the trace, from the initial call to the point of error.
+            4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself. If no file paths are found, return an empty array `[]`.
+
+            **--- Stack Trace Log ---**
+            {stack_trace_log}
+            **--- End of Log ---**
+
+            **JSON Array of File Paths:**
+        """)
+
+        try:
+            response = self.model.generate_content(prompt)
+            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            file_paths = json.loads(cleaned_response)
+            if isinstance(file_paths, list):
+                logging.info(f"Stack trace analysis identified {len(file_paths)} relevant files.")
+                return file_paths
+            return []
+        except Exception as e:
+            logging.error(f"Stack trace parsing via LLM failed: {e}")
+            return []
+
     def analyze_and_hypothesize(self, error_logs: str, relevant_code: str, test_report: str = "") -> str:
         """
         Analyzes failure data and returns a root cause hypothesis.
