@@ -33,7 +33,7 @@ class TechStackProposalAgent:
     def propose_stack(self, functional_spec_text: str, target_os: str) -> str:
         """
         Analyzes a functional specification and proposes a tech stack tailored
-        for a specific operating system.
+        for a specific operating system, including a development setup guide.
 
         Args:
             functional_spec_text: The full text of the finalized application spec.
@@ -51,8 +51,9 @@ class TechStackProposalAgent:
             1.  **Analyze for Existing Tech:** First, review the specification to see if a technology stack is already mentioned.
             2.  **If Tech IS Specified:** Your primary task is to accept and expand upon the user's choice. Validate that it fits the requirements and then detail the architecture and any missing libraries or components needed to complete the stack.
             3.  **If Tech IS NOT Specified:** Your task is to propose the most appropriate technology stack from scratch, providing a brief justification for each choice.
-            4.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
-            5.  **Format:** Structure your response clearly using Markdown.
+            4.  **Include Setup Guide:** You MUST include a dedicated section in your response titled **"Development Environment Setup Guide"**. This section must contain a clear, human-readable list of all necessary languages, frameworks, libraries, and tools that need to be installed to build and run the application.
+            5.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
+            6.  **Format:** Structure your response clearly using Markdown.
 
             **--- Functional Specification ---**
             {functional_spec_text}
