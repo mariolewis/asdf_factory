@@ -8,6 +8,8 @@ from enum import Enum, auto
 from pathlib import Path
 import git
 import google.generativeai as genai
+from agents.agent_ux_triage import UX_Triage_Agent
+from agents.agent_ux_spec import UX_Spec_Agent
 
 from asdf_db_manager import ASDFDBManager
 from agents.logic_agent_app_target import LogicAgent_AppTarget
@@ -36,6 +38,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class FactoryPhase(Enum):
     """Enumeration for the main factory F-Phases."""
     IDLE = auto()
+    UX_UI_DESIGN = auto()
+    AWAITING_UX_UI_PHASE_DECISION = auto()
+    AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION = auto()
     ENV_SETUP_TARGET_APP = auto()
     SPEC_ELABORATION = auto()
     TECHNICAL_SPECIFICATION = auto()
@@ -85,6 +90,7 @@ class MasterOrchestrator:
         self.preflight_check_result = None
         self.debug_attempt_counter = 0
         self.resume_phase_after_load = None
+        self.active_ux_spec = {}
 
         # --- CORRECTED: Self-initialization from database ---
         # Upon creation, immediately check the DB for a resumable state.
@@ -113,6 +119,9 @@ class MasterOrchestrator:
 
     PHASE_DISPLAY_NAMES = {
         FactoryPhase.IDLE: "Idle",
+        FactoryPhase.UX_UI_DESIGN: "User Experience & Interface Design",
+        FactoryPhase.AWAITING_UX_UI_PHASE_DECISION: "Awaiting UX/UI Phase Decision",
+        FactoryPhase.AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION: "UX/UI Phase Recommendation",
         FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
         FactoryPhase.SPEC_ELABORATION: "Application Specification",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
@@ -222,7 +231,7 @@ class MasterOrchestrator:
         # Proceed with creating the new project.
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
         self.project_name = project_name
-        self.current_phase = FactoryPhase.ENV_SETUP_TARGET_APP
+        self.current_phase = FactoryPhase.AWAITING_UX_UI_PHASE_DECISION
         timestamp = datetime.now(timezone.utc).isoformat()
 
         try:
@@ -236,6 +245,282 @@ class MasterOrchestrator:
             self.project_name = None
             self.current_phase = FactoryPhase.IDLE
             raise
+
+    def handle_ux_ui_brief_submission(self, brief_desc: str):
+        """
+        Handles the initial project brief submission, calls the triage agent,
+        and prepares for the PM's decision on the UX/UI phase.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle brief submission; no active project.")
+            return
+
+        try:
+            # Save the brief to the active UX spec dictionary for later use
+            self.active_ux_spec = {'project_brief': brief_desc}
+
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+                if not api_key:
+                    raise Exception("Cannot analyze brief: LLM_API_KEY is not set.")
+
+            # Call the triage agent to get the analysis
+            triage_agent = UX_Triage_Agent(api_key=api_key)
+            analysis_result = triage_agent.analyze_brief(brief_desc)
+
+            if "error" in analysis_result:
+                self.task_awaiting_approval = {"analysis_error": analysis_result.get('details')}
+            else:
+                # Store the successful analysis for the UI and the personas for the next step
+                self.active_ux_spec['inferred_personas'] = analysis_result.get("inferred_personas", [])
+                self.task_awaiting_approval = {"analysis": analysis_result}
+
+            # Transition to the phase where the PM sees the recommendation
+            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
+
+        except Exception as e:
+            logging.error(f"Failed to handle UX/UI brief submission: {e}")
+            self.task_awaiting_approval = {"analysis_error": str(e)}
+            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
+
+    def handle_ux_ui_phase_decision(self, decision: str):
+        """
+        Handles the PM's decision to either start the UX/UI phase or skip it.
+        """
+        # Persist the is_gui flag regardless of the decision, as it's now known.
+        analysis_result = self.task_awaiting_approval.get("analysis", {})
+        is_gui = analysis_result.get("requires_gui", False)
+        with self.db_manager as db:
+            db.update_project_is_gui_flag(self.project_id, is_gui)
+
+        if decision == "START_UX_UI_PHASE":
+            logging.info("PM chose to start the dedicated UX/UI Design phase.")
+            self.task_awaiting_approval = None # Clear the approval task
+            self.set_phase("UX_UI_DESIGN")
+        elif decision == "SKIP_TO_SPEC":
+            logging.info("PM chose to skip the UX/UI Design phase. Proceeding to Environment Setup.")
+            self.task_awaiting_approval = None # Clear the approval task
+            self.set_phase("ENV_SETUP_TARGET_APP")
+        else:
+            logging.warning(f"Received an unknown decision for UX/UI phase: {decision}")
+
+    def handle_ux_persona_confirmation(self, persona_list: list[str]):
+        """
+        Saves the confirmed personas and triggers user journey generation.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle persona confirmation; no active project.")
+            return
+
+        try:
+            # Save the confirmed personas to our in-progress spec
+            self.active_ux_spec['confirmed_personas'] = persona_list
+
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+
+            # Get the project brief we saved earlier
+            project_brief = self.active_ux_spec.get('project_brief', '')
+            if not project_brief:
+                raise ValueError("Project brief not found in active UX spec.")
+
+            # Call the agent to generate user journeys
+            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            user_journeys = ux_spec_agent.generate_user_journeys(project_brief, persona_list)
+
+            # Save the generated journeys for the next UI step
+            self.active_ux_spec['generated_user_journeys'] = user_journeys
+
+        except Exception as e:
+            logging.error(f"Failed to handle UX persona confirmation: {e}")
+            # Store the error to display it in the UI
+            self.active_ux_spec['error'] = str(e)
+
+    def handle_ux_journey_confirmation(self, journey_list: str):
+        """
+        Saves the confirmed user journeys and triggers screen identification.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle journey confirmation; no active project.")
+            return
+
+        try:
+            # Save the confirmed journeys to our in-progress spec
+            self.active_ux_spec['confirmed_user_journeys'] = journey_list
+
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+
+            # Call the agent to identify screens from the journeys
+            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            identified_screens = ux_spec_agent.identify_screens_from_journeys(journey_list)
+
+            # Save the identified screens for the next UI step
+            self.active_ux_spec['identified_screens'] = identified_screens
+
+            # Clear any previous error messages
+            if 'error' in self.active_ux_spec:
+                del self.active_ux_spec['error']
+
+        except Exception as e:
+            logging.error(f"Failed to handle UX journey confirmation: {e}")
+            self.active_ux_spec['error'] = str(e)
+
+    def handle_ux_screen_confirmation(self, screen_list_str: str):
+        """
+        Saves the confirmed list of screens and initializes the state for the
+        detailed screen-by-screen design loop.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle screen confirmation; no active project.")
+            return
+
+        try:
+            # Save the confirmed screen list to our in-progress spec
+            self.active_ux_spec['confirmed_screens_text'] = screen_list_str
+
+            # Initialize the state for the iterative design loop
+            self.active_ux_spec['screen_design_cursor'] = 0
+            self.active_ux_spec['screen_blueprints'] = {} # To store the JSON for each screen
+
+            logging.info("Initialized state for detailed screen design loop.")
+
+            # Clear any previous error messages
+            if 'error' in self.active_ux_spec:
+                del self.active_ux_spec['error']
+
+        except Exception as e:
+            logging.error(f"Failed to handle UX screen confirmation: {e}")
+            self.active_ux_spec['error'] = str(e)
+
+    def handle_screen_design_submission(self, screen_name: str, pm_description: str):
+        """
+        Handles the PM's description for a single screen, generates the JSON
+        blueprint, and stores it.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle screen design submission; no active project.")
+            return
+
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+
+            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            blueprint_json_str = ux_spec_agent.generate_screen_blueprint(screen_name, pm_description)
+
+            # Store the generated blueprint string, keyed by the screen name.
+            self.active_ux_spec['screen_blueprints'][screen_name] = blueprint_json_str
+
+            logging.info(f"Successfully generated and stored blueprint for screen: {screen_name}")
+
+            # Clear any previous error messages
+            if 'error' in self.active_ux_spec:
+                del self.active_ux_spec['error']
+
+        except Exception as e:
+            logging.error(f"Failed to handle screen design submission for '{screen_name}': {e}")
+            self.active_ux_spec['error'] = str(e)
+
+    def handle_ux_next_screen(self):
+        """Advances the screen design cursor to the next screen."""
+        if 'screen_design_cursor' in self.active_ux_spec:
+            self.active_ux_spec['screen_design_cursor'] += 1
+            logging.info(f"Advanced to screen design index: {self.active_ux_spec['screen_design_cursor']}")
+
+    def handle_ux_previous_screen(self):
+        """Moves the screen design cursor to the previous screen."""
+        if 'screen_design_cursor' in self.active_ux_spec and self.active_ux_spec['screen_design_cursor'] > 0:
+            self.active_ux_spec['screen_design_cursor'] -= 1
+            logging.info(f"Moved back to screen design index: {self.active_ux_spec['screen_design_cursor']}")
+
+    def handle_style_guide_submission(self, pm_description: str):
+        """
+        Handles the PM's description for the style guide and generates it.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle style guide submission; no active project.")
+            return
+
+        try:
+            with self.db_manager as db:
+                api_key = db.get_config_value("LLM_API_KEY")
+
+            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            style_guide_md = ux_spec_agent.generate_style_guide(pm_description)
+
+            # Store the generated markdown
+            self.active_ux_spec['style_guide'] = style_guide_md
+
+            logging.info("Successfully generated and stored the Theming & Style Guide.")
+
+            # Clear any previous error messages
+            if 'error' in self.active_ux_spec:
+                del self.active_ux_spec['error']
+
+        except Exception as e:
+            logging.error(f"Failed to handle style guide submission: {e}")
+            self.active_ux_spec['error'] = str(e)
+
+    def handle_ux_spec_completion(self) -> bool:
+        """
+        Compiles the final UX/UI Specification from all collected parts,
+        saves it to the database, and transitions to the next main phase.
+
+        Returns:
+            bool: True on success, False on failure.
+        """
+        if not self.project_id:
+            logging.error("Cannot complete UX spec; no active project.")
+            return False
+
+        try:
+            # Part 1: Compile the final document
+            final_spec_parts = []
+
+            personas = self.active_ux_spec.get('confirmed_personas', [])
+            if personas:
+                final_spec_parts.append("## 1. User Personas\n- " + "\n- ".join(personas))
+
+            journeys = self.active_ux_spec.get('confirmed_user_journeys', '')
+            if journeys:
+                final_spec_parts.append("## 2. Core User Journeys\n" + journeys)
+
+            blueprints = self.active_ux_spec.get('screen_blueprints', {})
+            if blueprints:
+                blueprint_section = ["## 3. Structural Blueprint (JSON)"]
+                blueprint_section.append("```json")
+                # We need to load each JSON string before dumping the whole collection
+                parsed_blueprints = {k: json.loads(v) for k, v in blueprints.items()}
+                blueprint_section.append(json.dumps(parsed_blueprints, indent=2))
+                blueprint_section.append("```")
+                final_spec_parts.append("\n".join(blueprint_section))
+
+            style_guide = self.active_ux_spec.get('style_guide', '')
+            if style_guide:
+                final_spec_parts.append("## 4. Theming & Style Guide\n" + style_guide)
+
+            final_spec_doc = "\n\n---\n\n".join(final_spec_parts)
+
+            # Part 2: Save to the database
+            with self.db_manager as db:
+                db.save_ux_specification(self.project_id, final_spec_doc)
+
+            logging.info("Successfully compiled and saved the final UX/UI Specification.")
+
+            # Part 3: Clean up and transition
+            self.active_ux_spec = {} # Clear the in-progress spec
+            self.task_awaiting_approval = None # Clear any leftover data
+            self.set_phase("ENV_SETUP_TARGET_APP")
+
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to complete UX/UI Specification: {e}")
+            # Store error for the UI to potentially display
+            if 'error' not in self.active_ux_spec:
+                 self.active_ux_spec['error'] = str(e)
+            return False
 
     def set_phase(self, phase_name: str):
         """

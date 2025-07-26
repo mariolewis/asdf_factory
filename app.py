@@ -302,7 +302,251 @@ if page == "Project":
                 st.error("Please enter a project name.")
     else:
         # This 'else' block now correctly handles all other phases for an active project.
-        if current_phase_name == "ENV_SETUP_TARGET_APP":
+        if current_phase_name == "AWAITING_UX_UI_PHASE_DECISION":
+                st.header("New Project Intake")
+                st.markdown("To help guide the development process, please provide a brief, one or two-sentence description of the application you want to build.")
+
+                if 'project_brief_input' not in st.session_state:
+                    st.session_state.project_brief_input = ""
+
+                brief_desc = st.text_area(
+                    "Project Brief:",
+                    value=st.session_state.project_brief_input,
+                    height=100,
+                    key="project_brief_input"
+                )
+
+                if st.button("Analyze Brief", type="primary"):
+                    if brief_desc.strip():
+                        with st.spinner("Analyzing brief..."):
+                            # In the next steps, we will create the backend logic for this.
+                            # For now, we are just creating the UI.
+                            st.session_state.orchestrator.handle_ux_ui_brief_submission(brief_desc)
+                        st.rerun()
+                    else:
+                        st.warning("Please provide a brief description before analyzing.")
+
+        elif current_phase_name == "AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION":
+                st.header("UX/UI Phase Recommendation")
+
+                approval_task = st.session_state.orchestrator.task_awaiting_approval or {}
+
+                if "analysis_error" in approval_task:
+                    st.error(f"An error occurred during the initial analysis: {approval_task['analysis_error']}")
+                    st.warning("Please choose how to proceed manually.")
+                else:
+                    analysis = approval_task.get("analysis", {})
+                    recommendation = analysis.get("ux_phase_necessity", "Optional")
+                    justification = analysis.get("justification", "No justification was provided.")
+
+                    st.info(f"**AI Recommendation: {recommendation}**")
+                    st.write(justification)
+
+                    personas = analysis.get("inferred_personas", [])
+                    if personas:
+                        st.write("**Inferred User Personas:**")
+                        st.markdown("- " + "\n- ".join(personas))
+
+                st.divider()
+                st.markdown("How would you like to proceed?")
+
+                col1, col2, _ = st.columns([1.5, 2, 3])
+                with col1:
+                    # The recommended option is highlighted as the primary button
+                    is_primary = recommendation in ["Recommended", "Optional"]
+                    if st.button("Start UX/UI Design Phase", type="primary" if is_primary else "secondary", use_container_width=True):
+                        st.session_state.orchestrator.handle_ux_ui_phase_decision("START_UX_UI_PHASE")
+                        st.rerun()
+
+                with col2:
+                    is_primary_skip = recommendation == "Not Recommended"
+                    if st.button("Skip to Application Spec", type="primary" if is_primary_skip else "secondary", use_container_width=True):
+                        st.session_state.orchestrator.handle_ux_ui_phase_decision("SKIP_TO_SPEC")
+                        st.rerun()
+
+        elif current_phase_name == "UX_UI_DESIGN":
+                st.header("User Experience & Interface Design")
+
+                # Initialize state for this multi-step phase
+                if 'ux_design_step' not in st.session_state:
+                    st.session_state.ux_design_step = 'confirm_personas'
+
+                if st.session_state.ux_design_step == 'confirm_personas':
+                    st.subheader("Step 1: Confirm User Personas")
+                    st.markdown("The AI has inferred the following user personas/roles from your project brief. Please review, edit if necessary, and confirm.")
+
+                    # Load inferred personas into an editable text area
+                    if 'personas_text' not in st.session_state:
+                        analysis = st.session_state.orchestrator.task_awaiting_approval.get("analysis", {})
+                        initial_personas = analysis.get("inferred_personas", ["Default User"])
+                        st.session_state.personas_text = "\n".join(initial_personas)
+
+                    edited_personas = st.text_area(
+                        "User Personas (one per line):",
+                        value=st.session_state.personas_text,
+                        height=150,
+                        key="personas_text_area"
+                    )
+
+                    if st.button("Confirm Personas & Generate User Journeys", type="primary"):
+                        if edited_personas.strip():
+                            persona_list = [p.strip() for p in edited_personas.strip().split('\n') if p.strip()]
+                            with st.spinner("Generating core user journeys based on personas..."):
+                                # We will create this backend method in the next step.
+                                st.session_state.orchestrator.handle_ux_persona_confirmation(persona_list)
+                            st.session_state.ux_design_step = 'review_user_journeys'
+                            st.rerun()
+                        else:
+                            st.warning("Please define at least one user persona.")
+
+                elif st.session_state.ux_design_step == 'review_user_journeys':
+                    st.subheader("Step 2: Review User Journeys")
+                    st.markdown("The AI has generated a list of core user journeys based on the personas. Please review, edit if necessary, and confirm.")
+
+                    # Load generated journeys into an editable text area
+                    if 'journeys_text' not in st.session_state:
+                        journeys = st.session_state.orchestrator.active_ux_spec.get('generated_user_journeys', '1. Default user journey.')
+                        st.session_state.journeys_text = journeys
+
+                    edited_journeys = st.text_area(
+                        "Core User Journeys:",
+                        value=st.session_state.journeys_text,
+                        height=200,
+                        key="journeys_text_area"
+                    )
+
+                    if st.button("Confirm Journeys & Identify Screens", type="primary"):
+                        if edited_journeys.strip():
+                            with st.spinner("Analyzing journeys to identify application screens..."):
+                                st.session_state.orchestrator.handle_ux_journey_confirmation(edited_journeys)
+                            st.session_state.ux_design_step = 'review_screens'
+                            st.rerun()
+                        else:
+                            st.warning("Please define at least one user journey.")
+
+                elif st.session_state.ux_design_step == 'review_screens':
+                    st.subheader("Step 3: Review Application Screens")
+                    st.markdown("Based on the user journeys, the AI has identified the following necessary screens/views for the application. Please review, edit, and confirm this list.")
+
+                    # Load identified screens into an editable text area
+                    if 'screens_text' not in st.session_state:
+                        screens = st.session_state.orchestrator.active_ux_spec.get('identified_screens', '1. Main Screen')
+                        st.session_state.screens_text = screens
+
+                    edited_screens = st.text_area(
+                        "Application Screens/Views (one per line):",
+                        value=st.session_state.screens_text,
+                        height=200,
+                        key="screens_text_area"
+                    )
+
+                    if st.button("Confirm Screens & Begin Detailed Design", type="primary"):
+                        if edited_screens.strip():
+                            st.session_state.orchestrator.handle_ux_screen_confirmation(edited_screens)
+                            st.session_state.ux_design_step = 'detailed_screen_design'
+                            st.rerun()
+                        else:
+                            st.warning("Please define at least one screen.")
+
+                elif st.session_state.ux_design_step == 'detailed_screen_design':
+                    st.subheader("Step 4: Detailed Screen Design")
+
+                    # Get the list of screens to design
+                    screens_str = st.session_state.orchestrator.active_ux_spec.get('confirmed_screens_text', '1. Main Screen')
+                    screen_list = [line.strip() for line in screens_str.split('\n') if line.strip()]
+
+                    # Get the current screen index
+                    cursor = st.session_state.orchestrator.active_ux_spec.get('screen_design_cursor', 0)
+
+                    if cursor >= len(screen_list):
+                        st.success("All screen blueprints have been designed.")
+                        st.info("The next step is to define the overall theme and style guide for the application.")
+                        if st.button("Proceed to Style Guide", type="primary"):
+                            st.session_state.ux_design_step = 'define_style_guide'
+                            st.rerun()
+                        st.stop()
+
+                    current_screen_name = screen_list[cursor].split('. ', 1)[-1] # Clean the "1. " prefix
+
+                    st.markdown(f"#### Designing Screen {cursor + 1} of {len(screen_list)}: **{current_screen_name}**")
+
+                    st.markdown("Describe the components, layout, and functionality of this screen in the text area below.")
+
+                    pm_description = st.text_area(
+                        f"Description for {current_screen_name}:",
+                        height=200,
+                        key=f"desc_{current_screen_name}"
+                    )
+
+                    if st.button(f"Generate Blueprint for {current_screen_name}"):
+                        if pm_description.strip():
+                            with st.spinner(f"Generating JSON blueprint for {current_screen_name}..."):
+                                st.session_state.orchestrator.handle_screen_design_submission(current_screen_name, pm_description)
+                            st.rerun()
+                        else:
+                            st.warning("Please provide a description for the screen.")
+
+                    # Display the generated blueprint for review
+                    blueprints = st.session_state.orchestrator.active_ux_spec.get('screen_blueprints', {})
+                    if current_screen_name in blueprints:
+                        st.markdown("**Generated Blueprint (JSON):**")
+                        st.json(blueprints[current_screen_name])
+
+                    # Navigation and finalization buttons
+                    st.divider()
+                    col1, col2, col3 = st.columns([1.5, 1.5, 3])
+                    with col1:
+                        if st.button("⬅️ Previous Screen", disabled=(cursor == 0)):
+                            st.session_state.orchestrator.handle_ux_previous_screen()
+                            st.rerun()
+
+                    with col2:
+                        if st.button("Next Screen ➡️", disabled=(cursor >= len(screen_list) - 1)):
+                            st.session_state.orchestrator.handle_ux_next_screen()
+                            st.rerun()
+
+                elif st.session_state.ux_design_step == 'define_style_guide':
+                    st.subheader("Step 5: Define Theming & Style Guide")
+                    st.markdown("Describe the desired look and feel of the application (e.g., 'professional, minimalist, dark theme,' 'playful and colorful'). The AI will convert this into a formal style guide.")
+
+                    style_guide_desc = st.text_area(
+                        "Describe the desired look and feel:",
+                        height=150,
+                        key="style_guide_desc"
+                    )
+
+                    if st.button("Generate Style Guide"):
+                        if style_guide_desc.strip():
+                            with st.spinner("Generating Theming & Style Guide..."):
+                                st.session_state.orchestrator.handle_style_guide_submission(style_guide_desc)
+                            st.rerun()
+                        else:
+                            st.warning("Please provide a description for the style guide.")
+
+                    # Display the generated style guide for review
+                    style_guide_md = st.session_state.orchestrator.active_ux_spec.get('style_guide')
+                    if style_guide_md:
+                        st.markdown("**Generated Style Guide:**")
+                        st.markdown(style_guide_md)
+                        st.divider()
+                        if st.button("✅ Complete UX/UI Specification", type="primary", use_container_width=True):
+                            with st.spinner("Compiling and saving the final UX/UI Specification..."):
+                                success = st.session_state.orchestrator.handle_ux_spec_completion()
+
+                            if success:
+                                st.success("UX/UI Specification saved. Proceeding to Environment Setup.")
+                                # Clean up all session state keys used by the UX/UI phase
+                                keys_to_clear = ['ux_design_step', 'personas_text', 'journeys_text', 'screens_text', 'style_guide_desc']
+                                for key in keys_to_clear:
+                                    if key in st.session_state:
+                                        del st.session_state[key]
+                                time.sleep(2) # Give user time to read the success message
+                                st.rerun()
+                            else:
+                                error_msg = st.session_state.orchestrator.active_ux_spec.get('error', 'An unknown error occurred.')
+                                st.error(f"Failed to finalize the UX/UI Specification: {error_msg}")
+
+        elif current_phase_name == "ENV_SETUP_TARGET_APP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
             st.divider()
             agent = EnvironmentSetupAgent_AppTarget()

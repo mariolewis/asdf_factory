@@ -119,6 +119,8 @@ class ASDFDBManager:
             project_root_folder TEXT,
             apex_executable_name TEXT,
             complexity_assessment_text TEXT,
+            ux_spec_text TEXT,
+            is_gui_project BOOLEAN NOT NULL DEFAULT 0,
             final_spec_text TEXT,
             tech_spec_text TEXT,
             is_build_automated BOOLEAN NOT NULL DEFAULT 1,
@@ -266,6 +268,15 @@ class ASDFDBManager:
         self._execute_query(query, params)
         logging.info(f"Saved technical specification for project ID '{project_id}'.")
 
+    def save_ux_specification(self, project_id: str, ux_spec_text: str):
+        """
+        Saves the UX/UI Specification text to the project's record.
+        """
+        query = "UPDATE Projects SET ux_spec_text = ? WHERE project_id = ?"
+        params = (ux_spec_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved UX/UI Specification for project ID '{project_id}'.")
+
     def save_coding_standard(self, project_id: str, standard_text: str):
         """
         Saves the approved Coding Standard text to the project's record.
@@ -356,6 +367,17 @@ class ASDFDBManager:
         params = (target_os, project_id)
         self._execute_query(query, params)
         logging.info(f"Set target OS for project ID '{project_id}' to '{target_os}'.")
+
+    def update_project_is_gui_flag(self, project_id: str, is_gui: bool):
+        """
+        Updates the is_gui_project flag for a given project.
+        """
+        # Convert boolean to integer for SQLite compatibility
+        is_gui_int = 1 if is_gui else 0
+        query = "UPDATE Projects SET is_gui_project = ? WHERE project_id = ?"
+        params = (is_gui_int, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set is_gui_project flag for project ID '{project_id}' to {is_gui}.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 
