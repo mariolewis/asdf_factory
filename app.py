@@ -331,7 +331,7 @@ if page == "Project":
                                 st.error(size_error)
                             elif extracted_text:
                                 st.session_state.spec_draft = extracted_text
-                                st.session_state.spec_step = 'pm_feedback'
+                                st.session_state.spec_step = 'complexity_analysis'
                                 st.rerun()
                 with tab2:
                     brief_desc_input = st.text_area("Brief Description", height=150, key="brief_desc")
@@ -343,8 +343,120 @@ if page == "Project":
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                                 expanded_text = agent.expand_brief_description(brief_desc_input)
                                 st.session_state.spec_draft = expanded_text
+                                st.session_state.spec_step = 'complexity_analysis'
+                                st.rerun()
+
+            elif st.session_state.spec_step == 'complexity_analysis':
+                st.header("Phase 1: Application Specification")
+                with st.spinner("Performing complexity and risk analysis on the specification draft..."):
+                    try:
+                        with st.session_state.orchestrator.db_manager as db:
+                            api_key = db.get_config_value("LLM_API_KEY")
+
+                        if not api_key:
+                            st.error("Cannot perform analysis. LLM API Key is not set.")
+                            st.stop()
+
+                        agent = ProjectScopingAgent(api_key=api_key)
+                        analysis_result = agent.analyze_complexity(st.session_state.spec_draft)
+
+                        if "error" in analysis_result:
+                            st.error(f"Failed to analyze project complexity: {analysis_result.get('details', analysis_result['error'])}")
+                            st.warning("You can bypass this step and proceed to the manual review.")
+                            if st.button("Bypass and Proceed to Manual Review"):
                                 st.session_state.spec_step = 'pm_feedback'
                                 st.rerun()
+                            st.stop()
+
+                        # Append the standard cautionary note
+                        footnote = "\n\n**Note**: This assessment is based on the initial specifications provided to the ASDF. It is a point-in-time analysis and will not be updated if the project requirements evolve."
+                        analysis_result_str = json.dumps(analysis_result, indent=4) + footnote
+
+                        # Save the full assessment to the database
+                        with st.session_state.orchestrator.db_manager as db:
+                            db.save_complexity_assessment(st.session_state.orchestrator.project_id, analysis_result_str)
+
+                        # Store the structured result for the UI and transition
+                        st.session_state.complexity_analysis = analysis_result
+                        st.session_state.spec_step = 'pm_complexity_review'
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"An unexpected error occurred during complexity analysis: {e}")
+                        st.stop()
+
+            elif st.session_state.spec_step == 'pm_complexity_review':
+                st.header("Project Complexity & Risk Assessment")
+                st.info("The AI has performed a high-level analysis of the specification draft. Please review the assessment below before proceeding.")
+
+                analysis = st.session_state.get('complexity_analysis', {})
+
+                if not analysis:
+                    st.error("Complexity analysis result not found. Please go back and try again.")
+                    if st.button("Go Back"):
+                        st.session_state.spec_step = 'initial_input'
+                        if 'spec_draft' in st.session_state:
+                            del st.session_state['spec_draft']
+                        st.rerun()
+                    st.stop()
+
+                # --- Display Risk Assessment ---
+                risk = analysis.get('risk_assessment', {})
+                st.subheader("Overall Risk Assessment")
+
+                cols = st.columns(2)
+                with cols[0]:
+                    st.metric("Overall Risk Level", risk.get('overall_risk_level', 'N/A'))
+                with cols[1]:
+                    st.metric("Token Consumption Outlook", risk.get('token_consumption_outlook', 'N/A'))
+
+                st.write("**Risk Summary:**")
+                st.write(risk.get('summary', 'No summary provided.'))
+
+                recommendations = risk.get('recommendations', [])
+                if recommendations:
+                    st.write("**Recommendations:**")
+                    for rec in recommendations:
+                        st.warning(f"⚠️ {rec}")
+
+                st.divider()
+
+                # --- Display Complexity Breakdown ---
+                with st.expander("Show Detailed Complexity Breakdown"):
+                    complexity = analysis.get('complexity_analysis', {})
+
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.subheader("Feature Scope")
+                        fs = complexity.get('feature_scope', {})
+                        st.metric("Rating", fs.get('rating', 'N/A'))
+                        st.caption(fs.get('justification', ''))
+
+                        st.subheader("UI/UX")
+                        ui = complexity.get('ui_ux', {})
+                        st.metric("Rating", ui.get('rating', 'N/A'))
+                        st.caption(ui.get('justification', ''))
+                    with c2:
+                        st.subheader("Data Schema")
+                        ds = complexity.get('data_schema', {})
+                        st.metric("Rating", ds.get('rating', 'N/A'))
+                        st.caption(ds.get('justification', ''))
+
+                        st.subheader("Integrations")
+                        ig = complexity.get('integrations', {})
+                        st.metric("Rating", ig.get('rating', 'N/A'))
+                        st.caption(ig.get('justification', ''))
+
+                st.divider()
+
+                # --- Final Confirmation ---
+                if st.button("Confirm Assessment & Proceed to Review", type="primary", use_container_width=True):
+                    del st.session_state.complexity_analysis
+                    st.session_state.spec_step = 'pm_feedback'
+                    st.rerun()
+
+                st.caption("Note: This assessment is based on the initial specifications provided to the ASDF. It is a point-in-time analysis and will not be updated if the project requirements evolve.")
+
             elif st.session_state.spec_step == 'pm_feedback':
                 st.subheader("Draft Specification - Your Review")
                 st.markdown("Please review the initial draft. Provide any corrections, additions, or feedback in the text area below.")
@@ -1398,6 +1510,32 @@ elif page == "Documents":
                     st.json(dev_plan_text)
                     dev_plan_docx_bytes = report_generator.generate_text_document_docx(f"Development Plan - {doc_project_name}", dev_plan_text, is_code=True)
                     st.download_button("📄 Print to .docx", dev_plan_docx_bytes, f"DevPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_dev_plan_{doc_project_id}")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+
+            # Complexity & Risk Assessment
+            with st.expander("Complexity & Risk Assessment", expanded=False):
+                assessment_text = project_docs['complexity_assessment_text'] if project_docs else None
+                if assessment_text:
+                    # The assessment is stored as a JSON string with a footnote.
+                    # We can display it in a clean way.
+                    try:
+                        # Find the split between JSON and the footnote
+                        json_end_index = assessment_text.rfind('}') + 1
+                        json_part_str = assessment_text[:json_end_index]
+                        note_part = assessment_text[json_end_index:]
+
+                        # Display the JSON part in a st.json element for good formatting
+                        st.json(json_part_str)
+                        # Display the footnote
+                        st.caption(note_part.strip())
+
+                    except Exception:
+                        # Fallback for any parsing error
+                        st.text_area("Assessment Content", assessment_text, height=300, disabled=True, key=f"assess_{doc_project_id}")
+
+                    assessment_docx_bytes = report_generator.generate_text_document_docx(f"Complexity & Risk Assessment - {doc_project_name}", assessment_text, is_code=True)
+                    st.download_button("📄 Print to .docx", assessment_docx_bytes, f"Assessment_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_assess_{doc_project_id}")
                 else:
                     st.info("This document has not been generated for this project yet.")
 

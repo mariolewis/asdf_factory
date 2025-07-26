@@ -118,6 +118,7 @@ class ASDFDBManager:
             technology_stack TEXT,
             project_root_folder TEXT,
             apex_executable_name TEXT,
+            complexity_assessment_text TEXT,
             final_spec_text TEXT,
             tech_spec_text TEXT,
             is_build_automated BOOLEAN NOT NULL DEFAULT 1,
@@ -246,6 +247,15 @@ class ASDFDBManager:
         params = (spec_text, project_id)
         self._execute_query(query, params)
         logging.info(f"Saved final specification for project ID '{project_id}'.")
+
+    def save_complexity_assessment(self, project_id: str, assessment_text: str):
+        """
+        Saves the complexity and risk assessment text to the project's record.
+        """
+        query = "UPDATE Projects SET complexity_assessment_text = ? WHERE project_id = ?"
+        params = (assessment_text, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Saved complexity assessment for project ID '{project_id}'.")
 
     def save_tech_specification(self, project_id: str, tech_spec_text: str):
         """

@@ -35,30 +35,43 @@ class ProjectScopingAgent:
 
     def analyze_complexity(self, spec_text: str) -> dict:
         """
-        Performs a high-level complexity analysis on the specification text.
+        Performs a detailed complexity and risk analysis on the specification text.
+        Returns a structured dictionary with the full analysis.
         (ASDF Change Request CR-ASDF-004, Stage 2: Complexity Analysis Filter)
 
         Args:
             spec_text: The full text of the specification.
 
         Returns:
-            A dictionary containing the complexity rating and justification.
-            Example: {"rating": "High", "justification": "The project involves... a lot of things"}
+            A dictionary containing the full analysis, or an error dictionary on failure.
         """
-        logging.info("ProjectScopingAgent: Analyzing specification complexity...")
+        logging.info("ProjectScopingAgent: Analyzing specification for complexity and risk...")
 
         prompt = textwrap.dedent(f"""
-            As an expert project manager and systems architect, analyze the following software specification.
-            Your task is to provide a high-level complexity rating. The rating should be one of: "Low", "Medium", "High", or "Very Large".
+            You are an expert project manager and senior systems architect. Your task is to perform a detailed complexity and risk analysis of the following software specification.
 
-            Consider factors such as:
-            - The number of distinct features or modules.
-            - The requirement for database schemas and the number of tables.
-            - The presence of complex business logic, algorithms, or external integrations.
-            - The scope of the user interface.
-
-            Provide your output in a JSON format with two keys: "rating" and "justification".
-            The "justification" should be a concise, one-sentence explanation for your rating.
+            **MANDATORY INSTRUCTIONS:**
+            1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
+            2.  **Decomposed Analysis:** You must provide a two-part analysis: a `complexity_analysis` and a `risk_assessment`.
+            3.  **JSON Schema:** The JSON object MUST strictly adhere to the following schema:
+                {{
+                  "complexity_analysis": {{
+                    "feature_scope": {{"rating": "...", "justification": "..."}},
+                    "data_schema": {{"rating": "...", "justification": "..."}},
+                    "ui_ux": {{"rating": "...", "justification": "..."}},
+                    "integrations": {{"rating": "...", "justification": "..."}}
+                  }},
+                  "risk_assessment": {{
+                    "overall_risk_level": "...",
+                    "summary": "...",
+                    "token_consumption_outlook": "...",
+                    "recommendations": ["..."]
+                  }}
+                }}
+            4.  **Ratings:** All `rating` keys and the `overall_risk_level` key must use one of these values: "Low", "Medium", "High", or "Very Large". The `token_consumption_outlook` must be "Low", "Medium", or "High".
+            5.  **Justification & Summary:** The `justification` and `summary` values must be concise, single-sentence or single-paragraph explanations.
+            6.  **Recommendations:** The `recommendations` value must be an array of strings. If the risk is high, recommend increasing the 'Context Window Character Limit' setting.
+            7.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
 
             ---
             SPECIFICATION TEXT:
@@ -69,15 +82,23 @@ class ProjectScopingAgent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
+            # Using a more capable model for this complex analytical task
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
+            response = model.generate_content(prompt)
             # Clean the response to ensure it's valid JSON
             cleaned_response_text = response.text.strip().replace("```json", "").replace("```", "")
             result = json.loads(cleaned_response_text)
-            logging.info(f"Successfully received complexity analysis: {result}")
+            logging.info(f"Successfully received complexity and risk analysis.")
             return result
-        except (json.JSONDecodeError, AttributeError, ValueError) as e:
+        except (json.JSONDecodeError, AttributeError, ValueError, KeyError) as e:
             logging.error(f"ProjectScopingAgent failed to parse LLM response: {e}\\nResponse was: {response.text}")
-            return {"rating": "Error", "justification": "Failed to get a valid analysis from the AI model."}
+            return {{
+                "error": "Failed to get a valid analysis from the AI model.",
+                "details": response.text
+            }}
         except Exception as e:
             logging.error(f"ProjectScopingAgent API call failed: {e}")
-            return {"rating": "Error", "justification": f"An unexpected error occurred: {e}"}
+            return {{
+                "error": "An unexpected error occurred during analysis.",
+                "details": str(e)
+            }}
