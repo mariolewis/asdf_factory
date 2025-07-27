@@ -644,7 +644,16 @@ class MasterOrchestrator:
 
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
         if status_ui_object: status_ui_object.update(label=f"Generating source code for {component_name}...")
-        source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language)
+
+        # Determine which style guide to use (from the full UX spec or the fallback in the main spec)
+        style_guide_to_use = project_details.get('ux_spec_text') or project_details.get('final_spec_text')
+
+        source_code = code_agent.generate_code_for_component(
+            logic_plan=logic_plan,
+            coding_standard=coding_standard,
+            target_language=target_language,
+            style_guide=style_guide_to_use
+        )
 
         MAX_REVIEW_ATTEMPTS = 2
         review_status = "fail"

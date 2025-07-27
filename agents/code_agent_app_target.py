@@ -28,13 +28,13 @@ class CodeAgent_AppTarget:
         # Configure the genai library with the API key upon initialization.
         genai.configure(api_key=self.api_key)
 
-    def generate_code_for_component(self, logic_plan: str, coding_standard: str, target_language: str, feedback: Optional[str] = None) -> str:
+    def generate_code_for_component(self, logic_plan: str, coding_standard: str, target_language: str, style_guide: Optional[str] = None, feedback: Optional[str] = None) -> str:
         """
-        Generates source code based on a logic plan and a coding standard,
-        explicitly targeting a specific programming language.
+        Generates source code based on a logic plan, a coding standard, and an
+        optional style guide, explicitly targeting a specific programming language.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-pro')
+            model = genai.GenerativeModel('gemini-1.5-pro-latest')
 
             correction_context = ""
             if feedback:
@@ -45,6 +45,16 @@ class CodeAgent_AppTarget:
 
                 **--- Code Review Feedback to Address ---**
                 {feedback}
+                """
+
+            style_guide_context = ""
+            if style_guide:
+                style_guide_context = f"""
+                **--- INPUT 3: The Theming & Style Guide to Follow (MANDATORY) ---**
+                You MUST ensure the generated code, especially for UI components, adheres to the following aesthetic style guide (e.g., colors, fonts, component styles).
+                ```
+                {style_guide}
+                ```
                 """
 
             prompt = f"""
@@ -68,6 +78,8 @@ class CodeAgent_AppTarget:
             ```
             {coding_standard}
             ```
+
+            {style_guide_context}
 
             **--- Generated Source Code (Language: {target_language}) ---**
             """

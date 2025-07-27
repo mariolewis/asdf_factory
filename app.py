@@ -584,8 +584,10 @@ if page == "Project":
                             with st.spinner("AI is expanding the description into a draft specification..."):
                                 with st.session_state.orchestrator.db_manager as db:
                                     api_key = db.get_config_value("LLM_API_KEY")
+                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                    is_gui = bool(project_details.get('is_gui_project', False)) if project_details else False
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                expanded_text = agent.expand_brief_description(brief_desc_input)
+                                expanded_text = agent.expand_brief_description(brief_desc_input, is_gui_project=is_gui)
                                 st.session_state.spec_draft = expanded_text
                                 st.session_state.spec_step = 'complexity_analysis'
                                 st.rerun()
@@ -713,8 +715,10 @@ if page == "Project":
                             with st.spinner("AI is refining the draft with your feedback..."):
                                 with st.session_state.orchestrator.db_manager as db:
                                     api_key = db.get_config_value("LLM_API_KEY")
+                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                    is_gui = bool(project_details.get('is_gui_project', False)) if project_details else False
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text)
+                                refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text, is_gui_project=is_gui)
                                 st.session_state.spec_draft = refined_draft
                                 st.session_state.spec_step = 'pm_review_refined'
                                 st.rerun()
@@ -765,13 +769,15 @@ if page == "Project":
                             with st.spinner("AI is refining the draft and re-analyzing..."):
                                 with st.session_state.orchestrator.db_manager as db:
                                     api_key = db.get_config_value("LLM_API_KEY")
+                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                    is_gui = bool(project_details.get('is_gui_project', False)) if project_details else False
                                 agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
                                 st.session_state.orchestrator.capture_spec_clarification_learning(
                                     problem_context=st.session_state.ai_issues,
                                     solution_text=clarification_text,
                                     spec_text=st.session_state.spec_draft
                                 )
-                                refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_text)
+                                refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_text, is_gui_project=is_gui)
                                 st.session_state.spec_draft = refined_draft
                                 issues = agent.identify_potential_issues(st.session_state.spec_draft)
                                 st.session_state.ai_issues = issues
