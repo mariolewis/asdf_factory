@@ -1,5 +1,6 @@
 
 import logging
+import docx
 import uuid
 import json
 import re
@@ -246,36 +247,69 @@ class MasterOrchestrator:
             self.current_phase = FactoryPhase.IDLE
             raise
 
-    def handle_ux_ui_brief_submission(self, brief_desc: str):
+    def handle_ux_ui_brief_submission(self, brief_input):
         """
-        Handles the initial project brief submission, calls the triage agent,
-        and prepares for the PM's decision on the UX/UI phase.
+        Handles the initial project brief submission from either text or a file,
+        saves the brief as a project artifact, stores its path, calls the
+        triage agent, and prepares for the PM's decision.
         """
         if not self.project_id:
             logging.error("Cannot handle brief submission; no active project.")
             return
 
         try:
-            # Save the brief to the active UX spec dictionary for later use
-            self.active_ux_spec = {'project_brief': brief_desc}
+            # Create a dedicated directory for the project's internal documents
+            project_data_dir = Path(f"data/projects/{self.project_id}")
+            project_data_dir.mkdir(parents=True, exist_ok=True)
 
+            brief_content = ""
+            brief_file_path = ""
+
+            # --- Step 1: Process and Save the Brief ---
+            if isinstance(brief_input, str):
+                brief_content = brief_input
+                brief_file_path_obj = project_data_dir / "project_brief.md"
+                with open(brief_file_path_obj, "w", encoding="utf-8") as f:
+                    f.write(brief_content)
+                brief_file_path = str(brief_file_path_obj)
+                logging.info(f"Saved text brief to: {brief_file_path}")
+            else: # Assumes it's a Streamlit UploadedFile object
+                file_name = getattr(brief_input, 'name', 'project_brief_uploaded')
+                brief_file_path_obj = project_data_dir / file_name
+
+                # Read content for the agent
+                if file_name.endswith('.docx'):
+                    doc = docx.Document(brief_input)
+                    brief_content = "\n".join([p.text for p in doc.paragraphs])
+                    # Reset buffer after reading for the save operation below
+                    brief_input.seek(0)
+                else: # For .txt and .md
+                    brief_content = brief_input.getvalue().decode("utf-8")
+
+                # Save the original file
+                with open(brief_file_path_obj, "wb") as f:
+                    f.write(brief_input.getvalue())
+                brief_file_path = str(brief_file_path_obj)
+                logging.info(f"Saved uploaded brief to: {brief_file_path}")
+
+            # --- Step 2: Save the path to the database ---
             with self.db_manager as db:
+                db.update_project_brief_path(self.project_id, brief_file_path)
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key:
                     raise Exception("Cannot analyze brief: LLM_API_KEY is not set.")
 
-            # Call the triage agent to get the analysis
+            # --- Step 3: Proceed with Analysis (as before) ---
+            self.active_ux_spec = {'project_brief': brief_content}
             triage_agent = UX_Triage_Agent(api_key=api_key)
-            analysis_result = triage_agent.analyze_brief(brief_desc)
+            analysis_result = triage_agent.analyze_brief(brief_content)
 
             if "error" in analysis_result:
                 self.task_awaiting_approval = {"analysis_error": analysis_result.get('details')}
             else:
-                # Store the successful analysis for the UI and the personas for the next step
                 self.active_ux_spec['inferred_personas'] = analysis_result.get("inferred_personas", [])
                 self.task_awaiting_approval = {"analysis": analysis_result}
 
-            # Transition to the phase where the PM sees the recommendation
             self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
 
         except Exception as e:
@@ -502,9 +536,15 @@ class MasterOrchestrator:
 
             final_spec_doc = "\n\n---\n\n".join(final_spec_parts)
 
+            # Prepend the standard header before saving
+            final_doc_with_header = self._prepend_standard_header(
+                document_content=final_spec_doc,
+                document_type="UX/UI Specification"
+            )
+
             # Part 2: Save to the database
             with self.db_manager as db:
-                db.save_ux_specification(self.project_id, final_spec_doc)
+                db.save_ux_specification(self.project_id, final_doc_with_header)
 
             logging.info("Successfully compiled and saved the final UX/UI Specification.")
 
@@ -521,6 +561,132 @@ class MasterOrchestrator:
             if 'error' not in self.active_ux_spec:
                  self.active_ux_spec['error'] = str(e)
             return False
+
+    def finalize_and_save_app_spec(self, spec_draft: str):
+        """
+        Applies the standard header to the final application spec, saves it to
+        the database, and transitions to the next phase.
+        """
+        if not self.project_id:
+            logging.error("Cannot save application spec; no active project.")
+            return
+
+        try:
+            # Prepend the standard header
+            final_doc_with_header = self._prepend_standard_header(
+                document_content=spec_draft,
+                document_type="Application Specification"
+            )
+
+            # Save to the database
+            with self.db_manager as db:
+                db.save_final_specification(self.project_id, final_doc_with_header)
+
+            logging.info("Successfully finalized and saved the Application Specification.")
+
+            # Transition to the next phase
+            self.set_phase("TECHNICAL_SPECIFICATION")
+
+        except Exception as e:
+            logging.error(f"Failed to finalize and save application spec: {e}")
+
+    def finalize_and_save_tech_spec(self, tech_spec_draft: str, target_os: str):
+        """
+        Applies the standard header to the final technical spec, saves it,
+        extracts key info, and transitions to the next phase.
+        """
+        if not self.project_id:
+            logging.error("Cannot save technical spec; no active project.")
+            return
+
+        try:
+            # Prepend the standard header
+            final_doc_with_header = self._prepend_standard_header(
+                document_content=tech_spec_draft,
+                document_type="Technical Specification"
+            )
+
+            # Save to the database and update related fields
+            with self.db_manager as db:
+                db.update_project_os(self.project_id, target_os)
+                db.save_tech_specification(self.project_id, final_doc_with_header)
+
+            # Extract and save the primary technology for agent use
+            self._extract_and_save_primary_technology(final_doc_with_header)
+
+            logging.info("Successfully finalized and saved the Technical Specification.")
+
+            # Transition to the next phase
+            self.set_phase("BUILD_SCRIPT_SETUP")
+
+        except Exception as e:
+            logging.error(f"Failed to finalize and save technical spec: {e}")
+
+    def finalize_and_save_coding_standard(self, standard_draft: str):
+        """
+        Applies the standard header to the final coding standard, saves it,
+        and transitions to the next phase.
+        """
+        if not self.project_id:
+            logging.error("Cannot save coding standard; no active project.")
+            return
+
+        try:
+            # Prepend the standard header
+            final_doc_with_header = self._prepend_standard_header(
+                document_content=standard_draft,
+                document_type="Coding Standard"
+            )
+
+            # Save to the database
+            with self.db_manager as db:
+                db.save_coding_standard(self.project_id, final_doc_with_header)
+
+            logging.info("Successfully finalized and saved the Coding Standard.")
+
+            # Transition to the next phase
+            self.set_phase("PLANNING")
+
+        except Exception as e:
+            logging.error(f"Failed to finalize and save coding standard: {e}")
+
+    def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
+        """
+        Applies the standard header to the final dev plan, saves it,
+        loads it into the active state, and transitions to Genesis.
+        """
+        if not self.project_id:
+            logging.error("Cannot save development plan; no active project.")
+            return False, "No active project."
+
+        try:
+            # Prepend the standard header
+            final_doc_with_header = self._prepend_standard_header(
+                document_content=plan_json_string,
+                document_type="Sequential Development Plan"
+            )
+
+            # Save to the database
+            with self.db_manager as db:
+                db.save_development_plan(self.project_id, final_doc_with_header)
+
+            # Load the plan for execution
+            full_plan_data = json.loads(plan_json_string)
+            dev_plan_list = full_plan_data.get("development_plan")
+            if dev_plan_list is None:
+                raise ValueError("The plan JSON is missing the 'development_plan' key.")
+
+            self.load_development_plan(json.dumps(dev_plan_list))
+
+            logging.info("Successfully finalized and saved the Development Plan.")
+
+            # Transition to the next phase
+            self.set_phase("GENESIS")
+            return True, "Plan approved! Starting development..."
+
+        except Exception as e:
+            logging.error(f"Failed to finalize and save development plan: {e}")
+            return False, f"Failed to process the development plan: {e}"
 
     def set_phase(self, phase_name: str):
         """
@@ -805,7 +971,7 @@ class MasterOrchestrator:
     def _run_post_implementation_doc_update(self, db: ASDFDBManager, api_key: str):
         """
         After a CR/bug fix plan is fully implemented, this method updates all
-        relevant project documents to reflect the changes.
+        relevant project documents with the new standard header.
         """
         logging.info("Change implementation complete. Running post-implementation documentation update...")
         project_details = db.get_project_by_id(self.project_id)
@@ -813,61 +979,31 @@ class MasterOrchestrator:
             logging.error("Could not run doc update; project details not found.")
             return
 
-        # Use the entire completed plan as context for the update.
         implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
         doc_agent = DocUpdateAgentRoWD(db)
 
-        # Part A: Update Application Specification
-        original_app_spec = project_details['final_spec_text']
-        if original_app_spec:
-            logging.info("Checking for Application Specification updates...")
-            updated_app_spec = doc_agent.update_specification_text(
-                original_spec=original_app_spec,
-                implementation_plan=implementation_plan_for_update,
-                api_key=api_key
-            )
-            if updated_app_spec != original_app_spec:
-                db.save_final_specification(self.project_id, updated_app_spec)
-                logging.info("Successfully updated and saved the Application Specification.")
+        # Helper function to process each document type
+        def update_document(doc_key: str, doc_name: str, save_func):
+            original_doc = project_details.get(doc_key)
+            if original_doc:
+                logging.info(f"Checking for {doc_name} updates...")
+                # The agent updates the content AND the version number within the text
+                updated_content = doc_agent.update_specification_text(
+                    original_spec=original_doc,
+                    implementation_plan=implementation_plan_for_update,
+                    api_key=api_key
+                )
+                if updated_content != original_doc:
+                    # Prepend the header, which will extract the newly updated version
+                    doc_with_header = self._prepend_standard_header(updated_content, doc_name)
+                    save_func(self.project_id, doc_with_header)
+                    logging.info(f"Successfully updated and saved the {doc_name}.")
 
-        # Part B: Update Technical Specification
-        original_tech_spec = project_details['tech_spec_text']
-        if original_tech_spec:
-            logging.info("Checking for Technical Specification updates...")
-            updated_tech_spec = doc_agent.update_specification_text(
-                original_spec=original_tech_spec,
-                implementation_plan=implementation_plan_for_update,
-                api_key=api_key
-            )
-            if updated_tech_spec != original_tech_spec:
-                db.save_tech_specification(self.project_id, updated_tech_spec)
-                logging.info("Successfully updated and saved the Technical Specification.")
-
-        # Part C: Update UI Test Plan
-        original_ui_test_plan = project_details['ui_test_plan_text']
-        if original_ui_test_plan:
-            logging.info("Checking for UI Test Plan updates...")
-            updated_ui_test_plan = doc_agent.update_specification_text(
-                original_spec=original_ui_test_plan,
-                implementation_plan=implementation_plan_for_update,
-                api_key=api_key
-            )
-            if updated_ui_test_plan != original_ui_test_plan:
-                db.save_ui_test_plan(self.project_id, updated_ui_test_plan)
-                logging.info("Successfully updated and saved the UI Test Plan.")
-
-        # Part D: Update UX/UI Specification
-        original_ux_spec = project_details.get('ux_spec_text')
-        if original_ux_spec:
-            logging.info("Checking for UX/UI Specification updates...")
-            updated_ux_spec = doc_agent.update_specification_text(
-                original_spec=original_ux_spec,
-                implementation_plan=implementation_plan_for_update,
-                api_key=api_key
-            )
-            if updated_ux_spec != original_ux_spec:
-                db.save_ux_specification(self.project_id, updated_ux_spec)
-                logging.info("Successfully updated and saved the UX/UI Specification.")
+        # Update all relevant documents using the helper function
+        update_document('final_spec_text', 'Application Specification', db.save_final_specification)
+        update_document('tech_spec_text', 'Technical Specification', db.save_tech_specification)
+        update_document('ux_spec_text', 'UX/UI Specification', db.save_ux_specification)
+        update_document('ui_test_plan_text', 'UI Test Plan', db.save_ui_test_plan)
 
     def _get_integration_context_files(self, db: ASDFDBManager, api_key: str, new_artifacts: list[dict]) -> list[str]:
         """
@@ -1004,7 +1140,10 @@ class MasterOrchestrator:
 
                     if "error" in integration_plan:
                         raise Exception(f"IntegrationPlannerAgent failed: {integration_plan['error']}")
-                    db.save_integration_plan(self.project_id, integration_plan_str)
+
+                    # Prepend header and save
+                    plan_with_header = self._prepend_standard_header(integration_plan_str, "Integration Plan")
+                    db.save_integration_plan(self.project_id, plan_with_header)
 
                     logging.info("Invoking OrchestrationCodeAgent to apply integration plan...")
                     code_agent = OrchestrationCodeAgent(api_key=api_key)
@@ -1049,7 +1188,9 @@ class MasterOrchestrator:
                 ui_test_planner = UITestPlannerAgent_AppTarget(api_key=api_key)
                 ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
 
-                db.save_ui_test_plan(self.project_id, ui_test_plan_content)
+                # Prepend header and save
+                plan_with_header = self._prepend_standard_header(ui_test_plan_content, "UI Test Plan")
+                db.save_ui_test_plan(self.project_id, plan_with_header)
                 self.set_phase("MANUAL_UI_TESTING")
 
         except Exception as e:
@@ -1823,6 +1964,29 @@ class MasterOrchestrator:
                 logging.error(f"Failed to update artifact status to 'KNOWN_ISSUE': {e}")
                 self.set_phase("GENESIS")
                 self.task_awaiting_approval = None # Clean up context
+
+    def _prepend_standard_header(self, document_content: str, document_type: str) -> str:
+        """
+        Prepends a standard project header, including a version number
+        extracted from the content, to a given document.
+        """
+        if not self.project_id:
+            return document_content # Cannot add header without a project ID
+
+        # Attempt to find a version number like vX.X or Version X.X in the content
+        version_number = "1.0" # Default to 1.0 if not found
+        # Regex to find patterns like v0.7, v1.0, Version 1.2, etc., case-insensitively
+        match = re.search(r'(?:v|Version\s)(\d+\.\d+)', document_content, re.IGNORECASE)
+        if match:
+            version_number = match.group(1)
+
+        header = (
+            f"PROJECT NUMBER: {self.project_id}\\n"
+            f"{document_type.upper()}\\n"
+            f"Version number: {version_number}\\n"
+            f"{'-' * 50}\\n\\n"
+        )
+        return header + document_content
 
     def _save_current_state(self):
         """

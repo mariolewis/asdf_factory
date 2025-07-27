@@ -118,6 +118,7 @@ class ASDFDBManager:
             technology_stack TEXT,
             project_root_folder TEXT,
             apex_executable_name TEXT,
+            project_brief_path TEXT,
             complexity_assessment_text TEXT,
             ux_spec_text TEXT,
             is_gui_project BOOLEAN NOT NULL DEFAULT 0,
@@ -330,6 +331,15 @@ class ASDFDBManager:
         params = (apex_name, project_id)
         self._execute_query(query, params)
         logging.info(f"Set apex file for project ID '{project_id}' to '{apex_name}'.")
+
+    def update_project_brief_path(self, project_id: str, path: str):
+        """
+        Updates the project_brief_path for a given project.
+        """
+        query = "UPDATE Projects SET project_brief_path = ? WHERE project_id = ?"
+        params = (path, project_id)
+        self._execute_query(query, params)
+        logging.info(f"Set project brief path for project ID '{project_id}' to '{path}'.")
 
     def update_project_root_folder(self, project_id: str, path: str):
         """

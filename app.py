@@ -304,27 +304,41 @@ if page == "Project":
         # This 'else' block now correctly handles all other phases for an active project.
         if current_phase_name == "AWAITING_UX_UI_PHASE_DECISION":
                 st.header("New Project Intake")
-                st.markdown("To help guide the development process, please provide a brief, one or two-sentence description of the application you want to build.")
+                st.markdown("To help guide the development process, please provide the initial project brief. You can either type a brief description or upload an existing document.")
 
-                if 'project_brief_input' not in st.session_state:
-                    st.session_state.project_brief_input = ""
+                tab1, tab2 = st.tabs(["Enter Brief Description", "Upload Brief Document"])
 
-                brief_desc = st.text_area(
-                    "Project Brief:",
-                    value=st.session_state.project_brief_input,
-                    height=100,
-                    key="project_brief_input"
-                )
+                with tab1:
+                    if 'project_brief_input' not in st.session_state:
+                        st.session_state.project_brief_input = ""
 
-                if st.button("Analyze Brief", type="primary"):
-                    if brief_desc.strip():
-                        with st.spinner("Analyzing brief..."):
-                            # In the next steps, we will create the backend logic for this.
-                            # For now, we are just creating the UI.
-                            st.session_state.orchestrator.handle_ux_ui_brief_submission(brief_desc)
-                        st.rerun()
-                    else:
-                        st.warning("Please provide a brief description before analyzing.")
+                    brief_desc = st.text_area(
+                        "Project Brief:",
+                        value=st.session_state.project_brief_input,
+                        height=150,
+                        key="project_brief_input"
+                    )
+                    if st.button("Analyze Text Brief", type="primary"):
+                        if brief_desc.strip():
+                            with st.spinner("Analyzing brief..."):
+                                st.session_state.orchestrator.handle_ux_ui_brief_submission(brief_desc)
+                            st.rerun()
+                        else:
+                            st.warning("Please provide a brief description before analyzing.")
+
+                with tab2:
+                    uploaded_brief = st.file_uploader(
+                        "Upload Brief Document",
+                        type=['txt', 'md', 'docx'],
+                        label_visibility="collapsed"
+                    )
+                    if st.button("Analyze Uploaded Brief", type="primary"):
+                        if uploaded_brief is not None:
+                            with st.spinner("Analyzing brief..."):
+                                st.session_state.orchestrator.handle_ux_ui_brief_submission(uploaded_brief)
+                            st.rerun()
+                        else:
+                            st.warning("Please upload a document before analyzing.")
 
         elif current_phase_name == "AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION":
                 st.header("UX/UI Phase Recommendation")
@@ -787,9 +801,8 @@ if page == "Project":
                 with col2:
                     if st.button("✅ Approve Specification and Proceed", type="primary", use_container_width=True):
                         with st.spinner("Finalizing and saving specification..."):
-                            with st.session_state.orchestrator.db_manager as db:
-                                db.save_final_specification(st.session_state.orchestrator.project_id, st.session_state.spec_draft)
-                            st.session_state.orchestrator.set_phase("TECHNICAL_SPECIFICATION")
+                            st.session_state.orchestrator.finalize_and_save_app_spec(st.session_state.spec_draft)
+                            # Clean up UI state
                             keys_to_clear = ['spec_draft', 'spec_step', 'ai_issues', 'brief_desc', 'pm_clarification_text']
                             for key in keys_to_clear:
                                 if key in st.session_state:
@@ -909,16 +922,16 @@ if page == "Project":
                 with col2:
                     is_disabled = not st.session_state.tech_spec_draft.strip()
                     if st.button("✅ Approve Specification", use_container_width=True, type="primary", disabled=is_disabled):
-                        with st.spinner("Saving technical specification and extracting primary technology..."):
-                            with st.session_state.orchestrator.db_manager as db:
-                                db.update_project_os(st.session_state.orchestrator.project_id, st.session_state.target_os)
-                                db.save_tech_specification(st.session_state.orchestrator.project_id, st.session_state.tech_spec_draft)
-                            st.session_state.orchestrator._extract_and_save_primary_technology(st.session_state.tech_spec_draft)
-                        st.session_state.orchestrator.set_phase("BUILD_SCRIPT_SETUP")
+                        with st.spinner("Saving technical specification..."):
+                            st.session_state.orchestrator.finalize_and_save_tech_spec(
+                                st.session_state.tech_spec_draft,
+                                st.session_state.target_os
+                            )
+                        # Clean up UI state
                         keys_to_clear = ['tech_spec_draft', 'target_os', 'tech_spec_step']
                         for key in keys_to_clear:
-                                if key in st.session_state:
-                                    del st.session_state[key]
+                            if key in st.session_state:
+                                del st.session_state[key]
                         st.rerun()
 
         elif current_phase_name == "BUILD_SCRIPT_SETUP":
@@ -1088,17 +1101,15 @@ if page == "Project":
                     is_disabled = not st.session_state.coding_standard_draft.strip()
                     if st.button("✅ Approve Coding Standard", use_container_width=True, type="primary", disabled=is_disabled):
                         with st.spinner("Saving coding standard..."):
-                            with st.session_state.orchestrator.db_manager as db:
-                                db.save_coding_standard(
-                                    st.session_state.orchestrator.project_id,
-                                    st.session_state.coding_standard_draft
-                                )
-                            st.session_state.orchestrator.set_phase("PLANNING")
-                            keys_to_clear = ['coding_standard_draft', 'coding_standard_step']
-                            for key in keys_to_clear:
-                                if key in st.session_state:
-                                    del st.session_state[key]
-                            st.rerun()
+                            st.session_state.orchestrator.finalize_and_save_coding_standard(
+                                st.session_state.coding_standard_draft
+                            )
+                        # Clean up UI state
+                        keys_to_clear = ['coding_standard_draft', 'coding_standard_step']
+                        for key in keys_to_clear:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        st.rerun()
 
         elif current_phase_name == "PLANNING":
             st.header("Strategic Development Planning")
@@ -1113,30 +1124,18 @@ if page == "Project":
                 with col1:
                     if st.button("✅ Approve Plan & Proceed to Development", type="primary"):
                         with st.spinner("Saving plan and transitioning to development phase..."):
-                            full_plan_object_str = st.session_state.development_plan
-                            with st.session_state.orchestrator.db_manager as db:
-                                db.save_development_plan(st.session_state.orchestrator.project_id, full_plan_object_str)
-                            try:
-                                with st.session_state.orchestrator.db_manager as db:
-                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    if not project_details or not project_details['technology_stack']:
-                                        st.error("Validation Failed: A target technology stack has not been set for this project. Please reload the project and complete the Technical Specification phase.")
-                                        st.stop() # Halt execution
-                                full_plan_data = json.loads(full_plan_object_str)
-                                dev_plan_list = full_plan_data.get("development_plan")
-                                if dev_plan_list is not None:
-                                    st.session_state.orchestrator.load_development_plan(json.dumps(dev_plan_list))
-                                    st.session_state.orchestrator.set_phase("GENESIS")
-                                    keys_to_clear = ['development_plan']
-                                    for key in keys_to_clear:
-                                        if key in st.session_state:
-                                            del st.session_state[key]
-                                    st.toast("Plan approved! Starting development...")
-                                    st.rerun()
-                                else:
-                                    st.error("The generated plan is missing the 'development_plan' key.")
-                            except json.JSONDecodeError:
-                                st.error("Failed to parse the development plan. The format is invalid.")
+                            success, message = st.session_state.orchestrator.finalize_and_save_dev_plan(
+                                st.session_state.development_plan
+                            )
+
+                        if success:
+                            st.toast(message)
+                            # Clean up UI state
+                            if 'development_plan' in st.session_state:
+                                del st.session_state['development_plan']
+                            st.rerun()
+                        else:
+                            st.error(message)
                 with col2:
                     report_generator = ReportGeneratorAgent()
                     dev_plan_docx_bytes = report_generator.generate_text_document_docx(
@@ -1713,6 +1712,37 @@ elif page == "Documents":
     # --- Document Display and Download ---
     if doc_project_id:
         st.subheader(f"Documents for: {doc_project_name}")
+
+        # Project Brief
+        with st.expander("Project Brief", expanded=True): # Expanded by default
+            brief_path_str = project_docs.get('project_brief_path') if project_docs else None
+            if brief_path_str:
+                brief_path = Path(brief_path_str)
+                if brief_path.exists():
+                    try:
+                        # Display content for quick view
+                        if brief_path.suffix == '.docx':
+                            doc = docx.Document(brief_path)
+                            brief_content = "\n".join([p.text for p in doc.paragraphs])
+                            st.text_area("Brief Content", brief_content, height=200, disabled=True, key=f"brief_view_{doc_project_id}")
+                        else: # .md, .txt
+                            brief_content = brief_path.read_text(encoding='utf-8')
+                            st.text_area("Brief Content", brief_content, height=200, disabled=True, key=f"brief_view_{doc_project_id}")
+
+                        # Add download button for the original file
+                        with open(brief_path, "rb") as f:
+                            st.download_button(
+                                label="📄 Download Original Brief",
+                                data=f,
+                                file_name=brief_path.name,
+                                use_container_width=True
+                            )
+                    except Exception as e:
+                        st.error(f"Error reading brief file: {e}")
+                else:
+                    st.warning("Brief file path is recorded in the database, but the file was not found on disk.")
+            else:
+                st.info("No project brief was saved for this project.")
 
         with st.session_state.orchestrator.db_manager as db:
             project_docs = db.get_project_by_id(doc_project_id)
