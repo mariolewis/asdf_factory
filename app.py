@@ -1731,6 +1731,16 @@ elif page == "Documents":
                 else:
                     st.info("This document has not been generated for this project yet.")
 
+            # UX/UI Specification
+            with st.expander("UX/UI Specification", expanded=False):
+                ux_spec_text = project_docs.get('ux_spec_text') if project_docs else None
+                if ux_spec_text:
+                    st.text_area("UX/UI Spec Content", ux_spec_text, height=300, disabled=True, key=f"ux_spec_{doc_project_id}")
+                    ux_spec_docx_bytes = report_generator.generate_text_document_docx(f"UX-UI Specification - {doc_project_name}", ux_spec_text)
+                    st.download_button("📄 Print to .docx", ux_spec_docx_bytes, f"UX-Spec_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_ux_spec_{doc_project_id}")
+                else:
+                    st.info("This document has not been generated for this project yet.")
+
             # Technical Specification
             with st.expander("Technical Specification", expanded=False):
                 # CORRECTED: Use dictionary-style key access

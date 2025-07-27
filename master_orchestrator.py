@@ -856,6 +856,19 @@ class MasterOrchestrator:
                 db.save_ui_test_plan(self.project_id, updated_ui_test_plan)
                 logging.info("Successfully updated and saved the UI Test Plan.")
 
+        # Part D: Update UX/UI Specification
+        original_ux_spec = project_details.get('ux_spec_text')
+        if original_ux_spec:
+            logging.info("Checking for UX/UI Specification updates...")
+            updated_ux_spec = doc_agent.update_specification_text(
+                original_spec=original_ux_spec,
+                implementation_plan=implementation_plan_for_update,
+                api_key=api_key
+            )
+            if updated_ux_spec != original_ux_spec:
+                db.save_ux_specification(self.project_id, updated_ux_spec)
+                logging.info("Successfully updated and saved the UX/UI Specification.")
+
     def _get_integration_context_files(self, db: ASDFDBManager, api_key: str, new_artifacts: list[dict]) -> list[str]:
         """
         Uses an AI agent to analyze the RoWD and new artifacts to determine which
