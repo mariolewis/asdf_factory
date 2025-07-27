@@ -111,7 +111,7 @@ class MasterOrchestrator:
             # Configure logging based on DB settings
             log_level_str = db.get_config_value("LOGGING_LEVEL") or "Standard"
             if not db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT"):
-                db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", "200000")
+                db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", "2000000")
 
         log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
         log_level = log_level_map.get(log_level_str, logging.INFO)
