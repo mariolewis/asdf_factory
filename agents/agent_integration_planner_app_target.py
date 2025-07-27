@@ -33,12 +33,14 @@ class IntegrationPlannerAgent:
             # Prepare the context of existing files for the prompt
             existing_files_context = ""
             for path, content in existing_code_files.items():
-                existing_files_context += f"--- File: {path} ---\n```\n{content}\n```\n\n"
+                existing_files_context += f"--- File: {path} ---\\n```\\n{content}\\n```\\n\\n"
 
             # CORRECTED: Escaped all literal curly braces in the JSON schema example.
             prompt = f"""
             You are a senior software engineer specializing in system integration.
             Your task is to create a detailed plan to integrate newly created software components into an existing codebase.
+
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the JSON object. Do not include any preamble, introduction, comments, or markdown formatting like ```json. The first character of your response must be the opening brace `{{`.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your response MUST be a single, valid JSON object. This object will map file paths to the modifications needed for that file.
@@ -85,10 +87,10 @@ class IntegrationPlannerAgent:
             return cleaned_response
 
         except json.JSONDecodeError as e:
-            error_msg = f"Error: The AI did not return a valid JSON object. {e}\nResponse was:\n{response.text}"
+            error_msg = f"Error: The AI did not return a valid JSON object. {e}\\nResponse was:\\n{response.text}"
             logging.error(error_msg)
-            return f'{{"error": "{error_msg}"}}'
+            return f'{{{"error": "{error_msg}"}}}'
         except Exception as e:
             error_msg = f"An unexpected error occurred during integration planning: {e}"
             logging.error(error_msg)
-            return f'{{"error": "{error_msg}"}}'
+            return f'{{{"error": "{error_msg}"}}}'

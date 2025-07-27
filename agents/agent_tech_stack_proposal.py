@@ -47,6 +47,8 @@ class TechStackProposalAgent:
         prompt = textwrap.dedent(f"""
             You are an expert Solutions Architect. Your task is to create a formal Technical Specification, including a high-level architecture and a complete technology stack, based on the provided functional specification for a **{target_os}** environment.
 
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Technical Specification document. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the document's content.
+
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze for Existing Tech:** First, review the specification to see if a technology stack is already mentioned.
             2.  **If Tech IS Specified:** Your primary task is to accept and expand upon the user's choice. Validate that it fits the requirements and then detail the architecture and any missing libraries or components needed to complete the stack.
@@ -55,9 +57,11 @@ class TechStackProposalAgent:
             5.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
             6.  **Format:** Structure your response clearly using Markdown.
 
-            **--- Functional Specification ---**
+            ---
+            **Functional Specification:**
             {functional_spec_text}
-            **--- End of Specification ---**
+            ---
+            **End of Specification** ---
 
             Based on the specification provided, here is the recommended Technical Specification for a **{target_os}** deployment:
         """)

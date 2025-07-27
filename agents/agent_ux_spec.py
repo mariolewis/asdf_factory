@@ -37,11 +37,12 @@ class UX_Spec_Agent:
         prompt = textwrap.dedent(f"""
             You are a senior UX Designer. Your task is to outline the most critical user journeys for an application based on its description and the target user personas.
 
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the numbered list. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the list (e.g., "1.").
+
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze:** Consider the project brief and the user personas.
             2.  **Identify Journeys:** Identify a list of high-level, end-to-end user journeys. A journey describes a complete task a user would perform (e.g., "Booking a flight," "Viewing a monthly sales report," "Configuring user settings").
             3.  **Numbered List:** Your response MUST be only a numbered list of these journeys.
-            4.  **No Other Text:** Do not include any introductory phrases, explanations, or summaries.
 
             ---
             **Project Brief:**
@@ -70,11 +71,12 @@ class UX_Spec_Agent:
         prompt = textwrap.dedent(f"""
             You are a senior UI/UX Architect. Your task is to analyze a list of user journeys and identify all the unique screens, views, or major UI components required to fulfill them.
 
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the numbered list. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the list (e.g., "1.").
+
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze:** Read the user journeys and list every distinct screen or view that is explicitly mentioned or strongly implied.
             2.  **Consolidate:** Consolidate duplicate screens. For example, if one journey mentions a "Login Page" and another mentions a "Sign-in screen," list it once as "Login Screen."
             3.  **Numbered List:** Your response MUST be only a numbered list of these screen/view names.
-            4.  **No Other Text:** Do not include any introductory phrases, explanations, or summaries.
 
             ---
             **Core User Journeys:**
@@ -101,6 +103,8 @@ class UX_Spec_Agent:
         prompt = textwrap.dedent(f"""
             You are a meticulous UI/UX Architect creating a machine-readable specification. Your task is to convert a natural language description of a single application screen into a structured JSON object.
 
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the JSON object. Do not include any preamble, introduction, comments, or markdown formatting like ```json. The first character of your response must be the opening brace `{{`.
+
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your response MUST be a single, valid JSON object.
             2.  **JSON Schema:** The JSON object MUST adhere to the following schema:
@@ -124,7 +128,6 @@ class UX_Spec_Agent:
                 - `label`: The visible text or title for the component.
                 - `details`: A brief description of the component's purpose or the data it displays.
                 - `action`: A description of what happens when the user interacts with the component (e.g., "navigate_to_details_screen", "submit_form", "opens_settings_modal").
-            4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object itself.
 
             ---
             **Screen to Design:**
@@ -159,6 +162,8 @@ class UX_Spec_Agent:
         prompt = textwrap.dedent(f"""
             You are a senior UI/UX Designer specializing in creating design systems. Your task is to take a high-level, natural language description of a desired "look and feel" and convert it into a structured, text-based Theming & Style Guide using Markdown.
 
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown document. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the document's content (e.g., the `#` of a heading).
+
             **MANDATORY INSTRUCTIONS:**
             1.  **Markdown Output:** Your response MUST be a well-formatted Markdown document.
             2.  **Core Sections:** The document MUST include the following sections:
@@ -167,7 +172,6 @@ class UX_Spec_Agent:
                 - `## Component Styling`: Provide general rules for the look of common elements (e.g., buttons, input fields, cards).
                 - `## Iconography`: Suggest a suitable, widely-used icon library (e.g., "Material Design Icons", "Font Awesome").
             3.  **Interpret Vague Terms:** Interpret subjective terms from the user's description (e.g., "modern," "professional," "clean") into concrete design choices.
-            4.  **No Other Text:** Do not include any introductory phrases or summaries outside of the Markdown guide itself.
 
             ---
             **Product Manager's Description of Desired Look and Feel:**

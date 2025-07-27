@@ -78,6 +78,8 @@ class SpecClarificationAgent:
         prompt = textwrap.dedent(f"""
             You are an expert Business Analyst. Your task is to expand the following brief description into a detailed, structured Application Specification.
 
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the specification document. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the document.
+
             **MANDATORY INSTRUCTIONS:**
             1.  **Technology Agnostic:** Your response MUST be purely functional and non-functional. You MUST NOT include any recommendations for specific programming languages, frameworks, databases, or technology stacks.
             2.  **User-Specified Tech:** The only exception is if the user's brief explicitly commands the use of a specific technology. In that case, you must include it.

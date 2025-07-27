@@ -49,28 +49,30 @@ class PlanningAgent_AppTarget:
             # If the total spec length is over the threshold, summarize first.
             if total_spec_length > PLANNING_SUMMARY_THRESHOLD:
                 logging.info(f"Specifications length ({total_spec_length}) exceeds threshold. Using 'divide and conquer' summary strategy.")
-                summary_model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+                summary_model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
                 # Step 1: Summarize the Functional Specification
                 func_summary_prompt = "Summarize the key features, user stories, and data entities from the following application specification into a concise bulleted list."
-                func_summary_response = summary_model.generate_content(f"{func_summary_prompt}\n\n{final_spec_text}")
+                func_summary_response = summary_model.generate_content(f"{func_summary_prompt}\\n\\n{final_spec_text}")
                 func_summary = func_summary_response.text
 
                 # Step 2: Summarize the Technical Specification
                 tech_summary_prompt = "Summarize the key architectural patterns, technology choices, frameworks, and database schema details from the following technical specification into a concise bulleted list."
-                tech_summary_response = summary_model.generate_content(f"{tech_summary_prompt}\n\n{tech_spec_text}")
+                tech_summary_response = summary_model.generate_content(f"{tech_summary_prompt}\\n\\n{tech_spec_text}")
                 tech_summary = tech_summary_response.text
 
-                combined_context = f"Functional Requirements Summary:\n{func_summary}\n\nTechnical Choices Summary:\n{tech_summary}"
+                combined_context = f"Functional Requirements Summary:\\n{func_summary}\\n\\nTechnical Choices Summary:\\n{tech_summary}"
             else:
                 # If specs are small enough, use the full text for better consistency.
                 logging.info(f"Specifications length ({total_spec_length}) is within threshold. Using direct planning strategy.")
-                combined_context = f"Full Application Specification:\n{final_spec_text}\n\nFull Technical Specification:\n{tech_spec_text}"
+                combined_context = f"Full Application Specification:\\n{final_spec_text}\\n\\nFull Technical Specification:\\n{tech_spec_text}"
 
             # Step 3: Generate the final JSON plan from the prepared context.
             logging.info("Generating JSON plan from prepared context...")
             plan_prompt = textwrap.dedent(f"""
                 You are an expert Lead Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format based on the provided project specifications or summaries.
+
+                **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the JSON object. Do not include any preamble, introduction, comments, or markdown formatting like ```json. The first character of your response must be the opening brace `{{`.
 
                 **MANDATORY INSTRUCTIONS:**
                 1.  **Determine Main Executable:** Based on the context, determine a logical name for the main executable file with an extension appropriate for the implementation technology (e.g., `main.py`, `app.kt`).
@@ -103,4 +105,4 @@ class PlanningAgent_AppTarget:
 
         except Exception as e:
             logging.error(f"PlanningAgent_AppTarget logic failed: {e}")
-            return json.dumps({"error": f"An unexpected error occurred in the planning agent: {e}"})
+            return json.dumps({{"error": f"An unexpected error occurred in the planning agent: {e}"}})

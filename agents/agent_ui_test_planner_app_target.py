@@ -43,12 +43,13 @@ class UITestPlannerAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+            model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
             prompt = f"""
             You are a meticulous Software Quality Assurance (QA) Specialist.
             Your task is to create a detailed, human-readable UI test plan.
-            You MUST consider both the functional requirements and the technical architecture.
+
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown table for the test plan. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the table's header.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Format:** Your entire response MUST be a single Markdown table. Do not include any other text.

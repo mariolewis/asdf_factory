@@ -46,6 +46,8 @@ class CodingStandardAgent_AppTarget:
             You are a lead software architect with extensive experience in establishing best practices.
             Your task is to generate a detailed, professional coding standard document based on the provided Technical Specification. The goal is to produce code that is highly readable, modular, and easily maintainable.
 
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the coding standard document. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the document's content.
+
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze Tech Stack:** Analyze the Technical Specification to identify the primary programming language, frameworks, and key libraries.
             2.  **Generate Comprehensive Standard:** Your response MUST be a complete coding standard document formatted in Markdown. It must include, at a minimum, the following sections as specified in the PRD:
