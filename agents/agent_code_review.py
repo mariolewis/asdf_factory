@@ -74,9 +74,8 @@ class CodeReviewAgent:
         """)
 
         try:
-            # Using the Pro model as this is a highly complex reasoning and generation task.
-            model = genai.GenerativeModel('gemini-2.5-pro')
-            response = model.generate_content(prompt)
+            # Use the model initialized in the constructor
+            response = self.model.generate_content(prompt)
             response_text = response.text.strip()
 
             if response_text.startswith("PASS:"):
