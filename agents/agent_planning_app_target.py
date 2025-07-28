@@ -7,8 +7,8 @@ This module contains the PlanningAgent_AppTarget class.
 
 import logging
 import textwrap
-import google.generativeai as genai
 import json
+from llm_service import LLMService
 
 class PlanningAgent_AppTarget:
     """
@@ -16,18 +16,16 @@ class PlanningAgent_AppTarget:
     based on the finalized application and technical specifications.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the PlanningAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for LLM interactions.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key is required for the PlanningAgent_AppTarget.")
-
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        if not llm_service:
+            raise ValueError("llm_service is required for the PlanningAgent_AppTarget.")
+        self.llm_service = llm_service
         logging.info("PlanningAgent_AppTarget initialized.")
 
     def generate_development_plan(self, final_spec_text: str, tech_spec_text: str) -> str:
@@ -49,25 +47,22 @@ class PlanningAgent_AppTarget:
             # If the total spec length is over the threshold, summarize first.
             if total_spec_length > PLANNING_SUMMARY_THRESHOLD:
                 logging.info(f"Specifications length ({total_spec_length}) exceeds threshold. Using 'divide and conquer' summary strategy.")
-                summary_model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-                # Step 1: Summarize the Functional Specification
-                func_summary_prompt = "Summarize the key features, user stories, and data entities from the following application specification into a concise bulleted list."
-                func_summary_response = summary_model.generate_content(f"{func_summary_prompt}\\n\\n{final_spec_text}")
-                func_summary = func_summary_response.text
+                # Step 1: Summarize the Functional Specification using the "simple" model
+                func_summary_prompt = f"Summarize the key features, user stories, and data entities from the following application specification into a concise bulleted list.\n\n{final_spec_text}"
+                func_summary = self.llm_service.generate_text(func_summary_prompt, task_complexity="simple")
 
-                # Step 2: Summarize the Technical Specification
-                tech_summary_prompt = "Summarize the key architectural patterns, technology choices, frameworks, and database schema details from the following technical specification into a concise bulleted list."
-                tech_summary_response = summary_model.generate_content(f"{tech_summary_prompt}\\n\\n{tech_spec_text}")
-                tech_summary = tech_summary_response.text
+                # Step 2: Summarize the Technical Specification using the "simple" model
+                tech_summary_prompt = f"Summarize the key architectural patterns, technology choices, frameworks, and database schema details from the following technical specification into a concise bulleted list.\n\n{tech_spec_text}"
+                tech_summary = self.llm_service.generate_text(tech_summary_prompt, task_complexity="simple")
 
-                combined_context = f"Functional Requirements Summary:\\n{func_summary}\\n\\nTechnical Choices Summary:\\n{tech_summary}"
+                combined_context = f"Functional Requirements Summary:\n{func_summary}\n\nTechnical Choices Summary:\n{tech_summary}"
             else:
                 # If specs are small enough, use the full text for better consistency.
                 logging.info(f"Specifications length ({total_spec_length}) is within threshold. Using direct planning strategy.")
-                combined_context = f"Full Application Specification:\\n{final_spec_text}\\n\\nFull Technical Specification:\\n{tech_spec_text}"
+                combined_context = f"Full Application Specification:\n{final_spec_text}\n\nFull Technical Specification:\n{tech_spec_text}"
 
-            # Step 3: Generate the final JSON plan from the prepared context.
+            # Step 3: Generate the final JSON plan from the prepared context using the "complex" model.
             logging.info("Generating JSON plan from prepared context...")
             plan_prompt = textwrap.dedent(f"""
                 You are an expert Lead Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format based on the provided project specifications or summaries.
@@ -90,8 +85,8 @@ class PlanningAgent_AppTarget:
                 **--- Detailed Development Plan (JSON Output) ---**
             """)
 
-            response = self.model.generate_content(plan_prompt)
-            cleaned_response = response.text.strip().removeprefix("```json").removesuffix("```").strip()
+            response_text = self.llm_service.generate_text(plan_prompt, task_complexity="complex")
+            cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
 
             try:
                 parsed_json = json.loads(cleaned_response)

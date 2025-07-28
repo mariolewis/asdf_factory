@@ -1,5 +1,5 @@
-import google.generativeai as genai
 import logging
+from llm_service import LLMService
 
 """
 This module contains the UITestPlannerAgent_AppTarget class.
@@ -16,19 +16,16 @@ class UITestPlannerAgent_AppTarget:
     human-readable test plan for the Product Manager to execute manually.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the UITestPlannerAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
-
-        self.api_key = api_key
-        # Configure the genai library with the API key upon initialization.
-        genai.configure(api_key=self.api_key)
+        if not llm_service:
+            raise ValueError("llm_service is required for the UITestPlannerAgent_AppTarget.")
+        self.llm_service = llm_service
 
     def generate_ui_test_plan(self, functional_spec_text: str, technical_spec_text: str) -> str:
         """
@@ -43,8 +40,6 @@ class UITestPlannerAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
             prompt = f"""
             You are a meticulous Software Quality Assurance (QA) Specialist.
             Your task is to create a detailed, human-readable UI test plan.
@@ -72,15 +67,15 @@ class UITestPlannerAgent_AppTarget:
             **--- Generated UI Test Plan (Markdown Table) ---**
             """
 
-            response = model.generate_content(prompt)
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
 
-            if "|" in response.text and "---" in response.text:
-                return response.text
+            if "|" in response_text and "---" in response_text:
+                return response_text
             else:
                 logging.warning("LLM response did not appear to be a Markdown table.")
                 return "Error: The AI did not return a valid Markdown table. Please try again."
 
         except Exception as e:
-            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            error_message = f"An error occurred during UI test plan generation: {e}"
             logging.error(error_message)
             return error_message

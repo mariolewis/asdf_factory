@@ -2,32 +2,28 @@
 
 """
 This module contains the TechStackProposalAgent class.
-(ASDF Change Request CR-ASDF-001)
 """
 
 import logging
 import textwrap
-import google.generativeai as genai
+from llm_service import LLMService
 
 class TechStackProposalAgent:
     """
     Analyzes functional specifications to propose a suitable technology stack.
     This is a core component of the Formal Technical Specification Phase.
-    (ASDF Change Request CR-ASDF-001)
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the TechStackProposalAgent.
 
         Args:
-            api_key (str): The Gemini API key for LLM interactions.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key is required for the TechStackProposalAgent.")
-
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        if not llm_service:
+            raise ValueError("llm_service is required for the TechStackProposalAgent.")
+        self.llm_service = llm_service
         logging.info("TechStackProposalAgent initialized.")
 
     def propose_stack(self, functional_spec_text: str, target_os: str) -> str:
@@ -67,9 +63,9 @@ class TechStackProposalAgent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             logging.info("Successfully received OS-aware technology stack proposal from API.")
-            return response.text
+            return response_text
         except Exception as e:
             logging.error(f"TechStackProposalAgent API call failed: {e}")
             return f"Error: An unexpected error occurred while generating the tech stack proposal: {e}"

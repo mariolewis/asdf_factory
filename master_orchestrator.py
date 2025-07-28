@@ -9,9 +9,9 @@ from enum import Enum, auto
 from pathlib import Path
 import git
 import google.generativeai as genai
+from llm_service import LLMService, GeminiAdapter, OpenAIAdapter, AnthropicAdapter, LocalPhi3Adapter
 from agents.agent_ux_triage import UX_Triage_Agent
 from agents.agent_ux_spec import UX_Spec_Agent
-
 from asdf_db_manager import ASDFDBManager
 from agents.logic_agent_app_target import LogicAgent_AppTarget
 from agents.code_agent_app_target import CodeAgent_AppTarget
@@ -116,6 +116,12 @@ class MasterOrchestrator:
         log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
         log_level = log_level_map.get(log_level_str, logging.INFO)
         logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s', force=True)
+
+        # --- Initialize the LLM Service ---
+        self.llm_service = self._create_llm_service()
+        if not self.llm_service:
+            logging.error("MasterOrchestrator failed to initialize LLM service. Check configuration.")
+
         logging.info("MasterOrchestrator initialized.")
 
     PHASE_DISPLAY_NAMES = {
@@ -2617,7 +2623,7 @@ class MasterOrchestrator:
 
     def _extract_and_save_primary_technology(self, tech_spec_text: str):
         """
-        Uses an LLM to extract the primary programming language from the
+        Uses the LLM service to extract the primary programming language from the
         technical specification text and saves it to the database.
 
         Args:
@@ -2625,32 +2631,29 @@ class MasterOrchestrator:
         """
         logging.info("Extracting primary technology from technical specification...")
         try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key:
-                    raise Exception("Cannot extract technology: LLM API Key is not set.")
+            if not self.llm_service:
+                raise Exception("Cannot extract technology: LLM Service is not initialized.")
 
-                model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
-                prompt = f"""
-                Analyze the following technical specification document. Your single task is to identify the primary, top-level programming language or technology stack.
+            prompt = f"""
+            Analyze the following technical specification document. Your single task is to identify the primary, top-level programming language or technology stack.
 
-                Your response MUST be only the name of the language (e.g., "Python", "Java", "C#", "Go"). Do not include any other words, explanations, or punctuation.
+            Your response MUST be only the name of the language (e.g., "Python", "Java", "C#", "Go"). Do not include any other words, explanations, or punctuation.
 
-                --- Technical Specification ---
-                {tech_spec_text}
-                --- End Specification ---
+            --- Technical Specification ---
+            {tech_spec_text}
+            --- End Specification ---
 
-                Primary Language:
-                """
+            Primary Language:
+            """
 
-                response = model.generate_content(prompt)
-                primary_technology = response.text.strip()
+            primary_technology = self.llm_service.generate_text(prompt, task_complexity="simple").strip()
 
-                if primary_technology:
+            if primary_technology and not primary_technology.startswith("Error:"):
+                with self.db_manager as db:
                     db.update_project_technology(self.project_id, primary_technology)
-                    logging.info(f"Successfully extracted and saved primary technology: {primary_technology}")
-                else:
-                    raise ValueError("LLM returned an empty response for technology extraction.")
+                logging.info(f"Successfully extracted and saved primary technology: {primary_technology}")
+            else:
+                raise ValueError(f"LLM service returned an empty or error response for technology extraction: {primary_technology}")
 
         except Exception as e:
             # Log the error but don't halt the entire process.
@@ -2675,6 +2678,51 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Could not retrieve latest commit timestamp: {e}")
             return None
+
+    def _create_llm_service(self) -> LLMService | None:
+        """
+        Factory method to create the appropriate LLM service adapter based on
+        the configuration stored in the database.
+        (ASDF Flexi Model Change, F-Dev 10.2)
+        """
+        logging.info("Attempting to create and configure LLM service...")
+        with self.db_manager as db:
+            provider = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini" # Default to Gemini
+
+            if provider == "Gemini":
+                api_key = db.get_config_value("GEMINI_API_KEY")
+                reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL") or "gemini-1.5-pro-latest"
+                fast_model = db.get_config_value("GEMINI_FAST_MODEL") or "gemini-1.5-flash-latest"
+                if not api_key:
+                    logging.warning("Gemini is selected, but GEMINI_API_KEY is not set.")
+                    return None
+                return GeminiAdapter(api_key, reasoning_model, fast_model)
+
+            elif provider == "OpenAI":
+                api_key = db.get_config_value("OPENAI_API_KEY")
+                reasoning_model = db.get_config_value("OPENAI_REASONING_MODEL") or "gpt-4-turbo"
+                fast_model = db.get_config_value("OPENAI_FAST_MODEL") or "gpt-3.5-turbo"
+                if not api_key:
+                    logging.warning("OpenAI is selected, but OPENAI_API_KEY is not set.")
+                    return None
+                return OpenAIAdapter(api_key, reasoning_model, fast_model)
+
+            elif provider == "Anthropic":
+                api_key = db.get_config_value("ANTHROPIC_API_KEY")
+                reasoning_model = db.get_config_value("ANTHROPIC_REASONING_MODEL") or "claude-3-opus-20240229"
+                fast_model = db.get_config_value("ANTHROPIC_FAST_MODEL") or "claude-3-haiku-20240307"
+                if not api_key:
+                    logging.warning("Anthropic is selected, but ANTHROPIC_API_KEY is not set.")
+                    return None
+                return AnthropicAdapter(api_key, reasoning_model, fast_model)
+
+            elif provider == "LocalPhi3":
+                # No API key needed, but we could make the URL configurable in the future.
+                return LocalPhi3Adapter()
+
+            else:
+                logging.error(f"Invalid LLM provider configured: {provider}")
+                return None
 
     def _sanitize_path(self, raw_path: str | None) -> str | None:
         """

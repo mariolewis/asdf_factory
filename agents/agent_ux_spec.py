@@ -8,7 +8,7 @@ generation of the UX/UI Specification document.
 import logging
 import textwrap
 import json
-import google.generativeai as genai
+from llm_service import LLMService
 
 class UX_Spec_Agent:
     """
@@ -16,14 +16,13 @@ class UX_Spec_Agent:
     UX/UI Specification document.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the UX_Spec_Agent.
         """
-        if not api_key:
-            raise ValueError("API key is required for the UX_Spec_Agent.")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        if not llm_service:
+            raise ValueError("llm_service is required for the UX_Spec_Agent.")
+        self.llm_service = llm_service
         logging.info("UX_Spec_Agent initialized.")
 
     def generate_user_journeys(self, project_brief: str, personas: list[str]) -> str:
@@ -56,11 +55,11 @@ class UX_Spec_Agent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text.strip()
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to generate user journeys: {e}")
-            return f"Error: Could not generate user journeys. Details: {{str(e)}}"
+            return f"Error: Could not generate user journeys. Details: {e}"
 
     def identify_screens_from_journeys(self, user_journeys: str) -> str:
         """
@@ -87,11 +86,11 @@ class UX_Spec_Agent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text.strip()
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to identify screens: {e}")
-            return f"Error: Could not identify screens from journeys. Details: {{str(e)}}"
+            return f"Error: Could not identify screens from journeys. Details: {e}"
 
     def generate_screen_blueprint(self, screen_name: str, pm_description: str) -> str:
         """
@@ -141,15 +140,15 @@ class UX_Spec_Agent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             # Clean the response to remove potential markdown fences
-            cleaned_response = response.text.strip().removeprefix("```json").removesuffix("```").strip()
+            cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
             # Final validation check
             json.loads(cleaned_response)
             return cleaned_response
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to generate screen blueprint: {e}")
-            error_json = {{"error": f"Could not generate blueprint. Details: {{str(e)}}"}}
+            error_json = {{"error": f"Could not generate blueprint. Details: {e}"}}
             return json.dumps(error_json, indent=2)
 
     def generate_style_guide(self, pm_description: str) -> str:
@@ -182,8 +181,8 @@ class UX_Spec_Agent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text.strip()
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to generate style guide: {e}")
-            return f"### Error\nCould not generate style guide. Details: {{str(e)}}"
+            return f"### Error\nCould not generate style guide. Details: {e}"

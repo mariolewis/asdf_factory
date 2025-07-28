@@ -1,10 +1,8 @@
-import google.generativeai as genai
 import logging
 import json
+from llm_service import LLMService
 
-"""
-This module contains the ImpactAnalysisAgent_AppTarget class.
-"""
+# ... (module docstring)
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,18 +15,16 @@ class ImpactAnalysisAgent_AppTarget:
     and Record-of-Work-Done (RoWD) to determine its scope and potential impact.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the ImpactAnalysisAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
-
-        self.api_key = api_key
-        genai.configure(api_key=self.api_key)
+        if not llm_service:
+            raise ValueError("LLMService is required for the ImpactAnalysisAgent_AppTarget.")
+        self.llm_service = llm_service
 
     def analyze_impact(self, change_request_desc: str, final_spec_text: str, rowd_json: str) -> tuple[str | None, str | None, list[str] | None]:
         """
@@ -40,8 +36,6 @@ class ImpactAnalysisAgent_AppTarget:
             Returns (None, None, None) on failure.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
-
             prompt = f"""
             You are a seasoned Software Architect. Your task is to perform a high-level impact analysis of a proposed change request.
 
@@ -62,8 +56,8 @@ class ImpactAnalysisAgent_AppTarget:
             **--- Impact Analysis (JSON Output) ---**
             """
 
-            response = self.model.generate_content(prompt)
-            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
             analysis_result = json.loads(cleaned_response)
 
             rating = analysis_result.get("impact_rating")

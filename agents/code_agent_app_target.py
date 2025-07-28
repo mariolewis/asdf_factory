@@ -1,7 +1,7 @@
 import logging
 import re
-import google.generativeai as genai
 from typing import Optional
+from llm_service import LLMService
 
 """
 This module contains the CodeAgent_AppTarget class.
@@ -14,19 +14,16 @@ class CodeAgent_AppTarget:
     programming language, adhering to the project's coding standard.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the CodeAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
-
-        self.api_key = api_key
-        # Configure the genai library with the API key upon initialization.
-        genai.configure(api_key=self.api_key)
+        if not llm_service:
+            raise ValueError("llm_service is required for the CodeAgent_AppTarget.")
+        self.llm_service = llm_service
 
     def generate_code_for_component(self, logic_plan: str, coding_standard: str, target_language: str, style_guide: Optional[str] = None, feedback: Optional[str] = None) -> str:
         """
@@ -34,8 +31,6 @@ class CodeAgent_AppTarget:
         optional style guide, explicitly targeting a specific programming language.
         """
         try:
-            model = genai.GenerativeModel('gemini-1.5-pro-latest')
-
             correction_context = ""
             if feedback:
                 correction_context = f"""
@@ -84,11 +79,11 @@ class CodeAgent_AppTarget:
             **--- Generated Source Code (Language: {target_language}) ---**
             """
 
-            response = model.generate_content(prompt)
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 
             # --- Robust Cleanup Logic using Regular Expressions ---
             # 1. Strip leading/trailing whitespace
-            code_text = response.text.strip()
+            code_text = response_text.strip()
             # 2. Remove the starting markdown fence (e.g., ```python or ```) and any text on that line
             code_text = re.sub(r"^\s*`{3}.*?\n", "", code_text)
             # 3. Remove the ending markdown fence (```)
@@ -97,11 +92,6 @@ class CodeAgent_AppTarget:
             return code_text.strip()
 
         except Exception as e:
-            error_message = f"An error occurred while communicating with the Gemini API: {e}"
-            logging.error(error_message)
-            return error_message
-
-        except Exception as e:
-            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            error_message = f"An error occurred during code generation: {e}"
             logging.error(error_message)
             return error_message

@@ -6,6 +6,7 @@ import git
 from pathlib import Path
 import logging
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
+from llm_service import LLMService
 
 class BuildAndCommitAgentAppTarget:
     """
@@ -61,7 +62,7 @@ class BuildAndCommitAgentAppTarget:
 
         return path
 
-    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, api_key: str) -> tuple[bool, str]:
+    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[bool, str]:
         """
         Writes the component and its tests, runs all tests using the
         VerificationAgent, and commits on success.
@@ -91,7 +92,7 @@ class BuildAndCommitAgentAppTarget:
 
             # Use the dedicated VerificationAgent to run the test suite
             logging.info(f"Running test suite with command: '{test_command}'")
-            verification_agent = VerificationAgent_AppTarget(api_key=api_key)
+            verification_agent = VerificationAgent_AppTarget(llm_service=llm_service)
             tests_passed, test_output = verification_agent.run_all_tests(self.repo_path, test_command)
 
             if not tests_passed:

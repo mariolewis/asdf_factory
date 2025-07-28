@@ -1,10 +1,11 @@
 # agents/agent_triage_app_target.py
 
-import google.generativeai as genai
 import logging
 import re
 from asdf_db_manager import ASDFDBManager
 import textwrap
+import json
+from llm_service import LLMService
 
 """
 This module contains the TriageAgent_AppTarget class.
@@ -16,30 +17,24 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 class TriageAgent_AppTarget:
     """
     Agent responsible for analyzing failures and hypothesizing the root cause.
-
-    This agent first queries the internal knowledge base for known solutions.
-    If no relevant solution is found, it uses the Gemini API to analyze
-    error logs, test reports, and relevant code to determine the likely
-    source of the problem.
+    ...
     """
 
-    def __init__(self, api_key: str, db_manager: ASDFDBManager):
+    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
         """
         Initializes the TriageAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
             db_manager (ASDFDBManager): An instance of the database manager for KB access.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
+        if not llm_service:
+            raise ValueError("llm_service cannot be empty.")
         if not db_manager:
             raise ValueError("Database manager cannot be None.")
 
-        self.api_key = api_key
+        self.llm_service = llm_service
         self.db_manager = db_manager
-        genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
 
     def _extract_tags_from_error(self, error_logs: str) -> list[str]:
         """A simple helper to extract potential search tags from error logs."""
@@ -80,8 +75,8 @@ class TriageAgent_AppTarget:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
-            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
             file_paths = json.loads(cleaned_response)
             if isinstance(file_paths, list):
                 logging.info(f"Stack trace analysis identified {len(file_paths)} relevant files.")
@@ -157,15 +152,15 @@ class TriageAgent_AppTarget:
             **--- Root Cause Hypothesis ---**
             """
 
-            response = self.model.generate_content(prompt)
-            return response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text.strip()
 
         except Exception as e:
-            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            error_message = f"An error occurred during triage hypothesis: {e}"
             logging.error(error_message)
             return error_message
 
-    def perform_apex_trace_analysis(self, rowd_json: str, apex_file_name: str, failing_component_name: str) -> list[str]:
+    def perform_apex_trace_analysis(self, rowd_json: str, apex_file_name: str, failing_component_name: str) -> str:
         """
         Performs a guided dependency trace using the RoWD to find a likely
         execution path from the main executable to a failing component.
@@ -176,7 +171,7 @@ class TriageAgent_AppTarget:
             failing_component_name (str): The name of the component where failure is suspected.
 
         Returns:
-            A list of file paths representing the likely call stack.
+            A string containing a JSON array of file paths representing the likely call stack.
         """
         logging.info(f"TriageAgent: Performing Tier 2 Apex Trace Analysis from '{apex_file_name}' to '{failing_component_name}'.")
 
@@ -200,8 +195,8 @@ class TriageAgent_AppTarget:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
-            cleaned_response = response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            cleaned_response = response_text.strip()
             # Basic validation to ensure we got a list-like string
             if cleaned_response.startswith('[') and cleaned_response.endswith(']'):
                 # The orchestrator will handle the final JSON parsing

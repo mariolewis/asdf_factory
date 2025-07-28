@@ -7,7 +7,7 @@ This module contains the UX_Triage_Agent class.
 import logging
 import textwrap
 import json
-import google.generativeai as genai
+from llm_service import LLMService
 
 class UX_Triage_Agent:
     """
@@ -16,15 +16,16 @@ class UX_Triage_Agent:
     UX/UI Design phase.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the UX_Triage_Agent.
+
+        Args:
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key is required for the UX_Triage_Agent.")
-        genai.configure(api_key=api_key)
-        # Use a capable model for this nuanced analysis
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        if not llm_service:
+            raise ValueError("llm_service is required for the UX_Triage_Agent.")
+        self.llm_service = llm_service
         logging.info("UX_Triage_Agent initialized.")
 
     def analyze_brief(self, project_brief: str) -> dict:
@@ -65,8 +66,8 @@ class UX_Triage_Agent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
-            cleaned_response_text = response.text.strip().replace("```json", "").replace("```", "")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            cleaned_response_text = response_text.strip().replace("```json", "").replace("```", "")
             result = json.loads(cleaned_response_text)
             logging.info("Successfully received initial UX triage analysis.")
             return result

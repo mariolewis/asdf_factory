@@ -1,5 +1,5 @@
 import logging
-import google.generativeai as genai
+from llm_service import LLMService
 
 """
 This module contains the TestAgent_AppTarget class.
@@ -12,19 +12,16 @@ class TestAgent_AppTarget:
     a comprehensive suite of tests.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the TestAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
-
-        self.api_key = api_key
-        # Configure the genai library with the API key upon initialization.
-        genai.configure(api_key=self.api_key)
+        if not llm_service:
+            raise ValueError("llm_service is required for the TestAgent_AppTarget.")
+        self.llm_service = llm_service
 
     def generate_unit_tests_for_component(self, source_code: str, component_spec: str, coding_standard: str, target_language: str) -> str:
         """
@@ -41,9 +38,6 @@ class TestAgent_AppTarget:
             str: The generated source code for the unit tests.
         """
         try:
-            # Use the more capable model for test generation
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
-
             prompt = f"""
             You are an expert Software Quality Assurance (QA) Engineer specializing in automated testing.
             Your task is to write a comprehensive suite of unit tests for the provided source code, based on its specification and adhering to a strict coding standard.
@@ -75,12 +69,11 @@ class TestAgent_AppTarget:
             **--- Generated Unit Test Source Code (Language: {target_language}) ---**
             """
 
-            response = model.generate_content(prompt)
-
-            return response.text
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text
 
         except Exception as e:
-            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            error_message = f"An error occurred during unit test generation: {e}"
             logging.error(error_message)
             return error_message
 
@@ -88,7 +81,7 @@ class TestAgent_AppTarget:
         """
         Generates integration test code for a set of interacting components.
 
-        This method prompts the Gemini API to create tests that verify the
+        This method prompts the LLM service to create tests that verify the
         collaboration between multiple components based on an overall
         integration specification.
 
@@ -105,8 +98,6 @@ class TestAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
-
             # Build the context string with all component details
             component_context = ""
             for i, comp in enumerate(components):
@@ -148,12 +139,11 @@ class TestAgent_AppTarget:
             **--- Generated Integration Test Source Code ---**
             """
 
-            response = model.generate_content(prompt)
-
-            return response.text
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text
 
         except Exception as e:
-            error_message = f"An error occurred while communicating with the Gemini API: {e}"
+            error_message = f"An error occurred during integration test generation: {e}"
             # In a real scenario, this would use the configured logger
             logging.error(error_message)
             return error_message

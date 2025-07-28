@@ -12,7 +12,7 @@ that exceed a configurable complexity threshold.
 import logging
 import textwrap
 import json
-import google.generativeai as genai
+from llm_service import LLMService
 
 class ProjectScopingAgent:
     """
@@ -20,18 +20,16 @@ class ProjectScopingAgent:
     (ASDF Change Request CR-ASDF-004)
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the ProjectScopingAgent.
 
         Args:
-            api_key (str): The Gemini API key for LLM interactions.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key is required for the ProjectScopingAgent.")
-
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        if not llm_service:
+            raise ValueError("llm_service is required for the ProjectScopingAgent.")
+        self.llm_service = llm_service
 
     def analyze_complexity(self, spec_text: str) -> dict:
         """
@@ -82,19 +80,18 @@ class ProjectScopingAgent:
         """)
 
         try:
-            # Using a more capable model for this complex analytical task
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
-            response = model.generate_content(prompt)
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             # Clean the response to ensure it's valid JSON
-            cleaned_response_text = response.text.strip().replace("```json", "").replace("```", "")
+            cleaned_response_text = response_text.strip().replace("```json", "").replace("```", "")
             result = json.loads(cleaned_response_text)
             logging.info(f"Successfully received complexity and risk analysis.")
             return result
         except (json.JSONDecodeError, AttributeError, ValueError, KeyError) as e:
-            logging.error(f"ProjectScopingAgent failed to parse LLM response: {e}\\nResponse was: {response.text}")
+            # Note: I've added the response_text to the error log to make debugging easier if this happens again.
+            logging.error(f"ProjectScopingAgent failed to parse LLM response: {e}\\nResponse was: {response_text}")
             return {{
                 "error": "Failed to get a valid analysis from the AI model.",
-                "details": response.text
+                "details": response_text
             }}
         except Exception as e:
             logging.error(f"ProjectScopingAgent API call failed: {e}")

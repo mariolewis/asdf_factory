@@ -11,9 +11,9 @@ PM to resolve ambiguities in a specification draft, including database details.
 import logging
 import textwrap
 import re
-import google.generativeai as genai
 from typing import List
 from asdf_db_manager import ASDFDBManager
+from llm_service import LLMService
 
 
 class SpecClarificationAgent:
@@ -22,25 +22,21 @@ class SpecClarificationAgent:
     to produce a complete and clear specification document.
     """
 
-    def __init__(self, api_key: str, db_manager: ASDFDBManager):
+    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
         """
         Initializes the SpecClarificationAgent.
 
         Args:
-            api_key (str): The Gemini API key for LLM interactions.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
             db_manager (ASDFDBManager): An instance of the database manager for KB access.
         """
-        if not api_key:
-            raise ValueError("API key is required for the SpecClarificationAgent.")
+        if not llm_service:
+            raise ValueError("llm_service is required for the SpecClarificationAgent.")
         if not db_manager:
             raise ValueError("Database manager is required for the SpecClarificationAgent.")
 
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        self.llm_service = llm_service
         self.db_manager = db_manager
-
-        # As per the PRD, the clarification loop must handle DB table specs.
-        # This was confirmed by the PM.
 
     def _extract_tags_from_spec(self, spec_text: str) -> list[str]:
         """A simple helper to extract potential search tags from spec text."""
@@ -92,16 +88,16 @@ class SpecClarificationAgent:
         """)
 
         try:
-            logging.info("Calling Gemini API to expand brief description...")
-            response = self.model.generate_content(prompt)
+            logging.info("Calling LLM service to expand brief description...")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 
-            if not response.text:
-                raise ValueError("The AI model returned an empty response.")
+            if not response_text:
+                raise ValueError("The LLM service returned an empty response.")
 
-            logging.info("Successfully received expanded specification from API.")
-            return response.text
+            logging.info("Successfully received expanded specification from LLM service.")
+            return response_text
         except Exception as e:
-            logging.error(f"Gemini API call failed during spec expansion: {e}")
+            logging.error(f"LLM service call failed during spec expansion: {e}")
             # Re-raise the exception so the UI layer can catch it and display an error.
             raise
 
@@ -137,7 +133,7 @@ class SpecClarificationAgent:
                 logging.warning(f"SpecClarificationAgent: Failed to query Knowledge Base. Error: {e}")
 
         # --- Step 2: Proceed with LLM analysis ---
-        logging.info("SpecClarificationAgent: Calling Gemini API to identify potential spec issues...")
+        logging.info("SpecClarificationAgent: Calling LLM service to identify potential spec issues...")
 
         # --- CORRECTED & ENHANCED PROMPT ---
         prompt = textwrap.dedent(f"""
@@ -163,17 +159,17 @@ class SpecClarificationAgent:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 
-            if not response.text:
-                raise ValueError("The AI model returned an empty response when identifying issues.")
+            if not response_text:
+                raise ValueError("The LLM service returned an empty response when identifying issues.")
 
-            logging.info("Successfully received issue analysis from API.")
+            logging.info("Successfully received issue analysis from LLM service.")
             # Prepend the knowledge base finding (if any) to the fresh analysis
-            return kb_prefix + response.text
+            return kb_prefix + response_text
 
         except Exception as e:
-            logging.error(f"Gemini API call failed during issue identification: {e}")
+            logging.error(f"LLM service call failed during issue identification: {e}")
             raise
 
     def refine_specification(self, original_spec_text: str, issues_found: str, pm_clarification: str, is_gui_project: bool = False) -> str:
@@ -227,12 +223,12 @@ class SpecClarificationAgent:
         """)
 
         try:
-            logging.info("Calling Gemini API to refine the specification...")
-            response = self.model.generate_content(prompt)
-            if not response.text:
-                raise ValueError("The AI model returned an empty response during refinement.")
-            logging.info("Successfully received refined specification from API.")
-            return response.text
+            logging.info("Calling LLM service to refine the specification...")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            if not response_text:
+                raise ValueError("The LLM service returned an empty response during refinement.")
+            logging.info("Successfully received refined specification from LLM service.")
+            return response_text
         except Exception as e:
-            logging.error(f"Gemini API call failed during spec refinement: {e}")
+            logging.error(f"LLM service call failed during spec refinement: {e}")
             raise

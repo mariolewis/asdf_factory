@@ -7,8 +7,8 @@ This module contains the CodeReviewAgent class.
 
 import logging
 import textwrap
-import google.generativeai as genai
 from typing import Tuple
+from llm_service import LLMService
 
 class CodeReviewAgent:
     """
@@ -17,18 +17,16 @@ class CodeReviewAgent:
     (ASDF Change Request CR-ASDF-002)
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the CodeReviewAgent.
 
         Args:
-            api_key (str): The Gemini API key for LLM interactions.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key is required for the CodeReviewAgent.")
-
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-pro')
+        if not llm_service:
+            raise ValueError("llm_service is required for the CodeReviewAgent.")
+        self.llm_service = llm_service
         logging.info("CodeReviewAgent initialized.")
 
     def review_code(self, micro_spec: str, logic_plan: str, new_source_code: str, rowd_json: str, coding_standard: str) -> Tuple[str, str]:
@@ -74,9 +72,8 @@ class CodeReviewAgent:
         """)
 
         try:
-            # Use the model initialized in the constructor
-            response = self.model.generate_content(prompt)
-            response_text = response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            response_text = response_text.strip()
 
             if response_text.startswith("PASS:"):
                 logging.info("Code review status: PASS")

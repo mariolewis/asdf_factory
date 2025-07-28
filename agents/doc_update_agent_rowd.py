@@ -3,6 +3,7 @@ This module contains the DocUpdateAgentRoWD class.
 """
 import logging
 import json
+from llm_service import LLMService
 
 class DocUpdateAgentRoWD:
     """
@@ -10,17 +11,20 @@ class DocUpdateAgentRoWD:
     for the target application.
     """
 
-    def __init__(self, db_manager):
+    def __init__(self, db_manager, llm_service: LLMService):
         """
         Initializes the DocUpdateAgentRoWD.
 
         Args:
-            db_manager: An instance of the database manager (DAO) to interact
-                        with the ASDF database.
+            db_manager: An instance of the database manager (DAO).
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
         if not db_manager:
             raise ValueError("Database manager cannot be None.")
+        if not llm_service:
+            raise ValueError("LLMService is required for the DocUpdateAgentRoWD.")
         self.db_manager = db_manager
+        self.llm_service = llm_service
 
     def update_artifact_record(self, artifact_data: dict) -> bool:
         """
@@ -49,25 +53,19 @@ class DocUpdateAgentRoWD:
             logging.error(f"Error updating RoWD for artifact: {artifact_data.get('artifact_id')}. Error: {e}")
             return False
 
-    def update_specification_text(self, original_spec: str, implementation_plan: str, api_key: str) -> str:
+    def update_specification_text(self, original_spec: str, implementation_plan: str) -> str:
         """
         Updates a specification document based on a completed implementation plan.
 
         Args:
             original_spec (str): The original text of the specification document.
             implementation_plan (str): The JSON string of the development plan that was executed.
-            api_key (str): The LLM API key.
 
         Returns:
             str: The new, updated specification text. Returns original spec on failure.
         """
         logging.info("Invoking LLM to update specification document post-implementation.")
         try:
-            # This agent now needs to make an API call, so it needs the key and a model.
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
-
             prompt = f"""
             You are an expert technical writer responsible for keeping documentation in sync with source code.
             An existing specification document needs to be updated to reflect a series of code changes that were just implemented.
@@ -93,11 +91,11 @@ class DocUpdateAgentRoWD:
             **--- OUTPUT: New, Updated Specification Document ---**
             """
 
-            response = model.generate_content(prompt)
-            if not response.text:
-                raise ValueError("LLM returned an empty response for spec update.")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            if not response_text or response_text.startswith("Error:"):
+                raise ValueError(f"LLM returned an error or empty response for spec update: {response_text}")
 
-            return response.text
+            return response_text
 
         except Exception as e:
             logging.error(f"Failed to update specification document via LLM: {e}")

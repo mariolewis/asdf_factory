@@ -1,6 +1,6 @@
-import google.generativeai as genai
 import logging
 import json
+from llm_service import LLMService
 
 class IntegrationPlannerAgent:
     """
@@ -11,18 +11,16 @@ class IntegrationPlannerAgent:
     the new components.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the IntegrationPlannerAgent.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
-
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        if not llm_service:
+            raise ValueError("llm_service is required for the IntegrationPlannerAgent.")
+        self.llm_service = llm_service
 
 
     def create_integration_plan(self, new_artifacts_json: str, existing_code_files: dict[str, str]) -> str:
@@ -81,16 +79,16 @@ class IntegrationPlannerAgent:
             **--- Detailed Integration Plan (JSON Output) ---**
             """
 
-            response = self.model.generate_content(prompt)
-            cleaned_response = response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            cleaned_response = response_text.strip()
             json.loads(cleaned_response) # Validate if the response is a valid JSON object
             return cleaned_response
 
         except json.JSONDecodeError as e:
-            error_msg = f"Error: The AI did not return a valid JSON object. {e}\\nResponse was:\\n{response.text}"
+            error_msg = f"Error: The AI did not return a valid JSON object. {e}\\nResponse was:\\n{response_text}"
             logging.error(error_msg)
-            return f'{{{"error": "{error_msg}"}}}'
+            return f'{{"error": "{error_msg}"}}'
         except Exception as e:
             error_msg = f"An unexpected error occurred during integration planning: {e}"
             logging.error(error_msg)
-            return f'{{{"error": "{error_msg}"}}}'
+            return f'{{"error": "{error_msg}"}}'

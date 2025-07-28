@@ -6,7 +6,7 @@ import textwrap
 import json
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
-import google.generativeai as genai
+from llm_service import LLMService
 
 class VerificationAgent_AppTarget:
     """
@@ -14,17 +14,16 @@ class VerificationAgent_AppTarget:
     by intelligently determining the command and its tool dependencies.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the VerificationAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for LLM interactions.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key is required for the VerificationAgent_AppTarget.")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        if not llm_service:
+            raise ValueError("llm_service is required for the VerificationAgent_AppTarget.")
+        self.llm_service = llm_service
         logging.info("VerificationAgent initialized.")
 
     def _get_test_execution_details(self, tech_spec_text: str) -> Optional[Dict[str, any]]:
@@ -48,8 +47,8 @@ class VerificationAgent_AppTarget:
         """)
 
         try:
-            response = self.model.generate_content(prompt)
-            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
             result = json.loads(cleaned_response)
             if result.get("command") and isinstance(result.get("required_tools"), list):
                 return result

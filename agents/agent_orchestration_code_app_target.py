@@ -1,6 +1,6 @@
-import google.generativeai as genai
 import logging
 import json
+from llm_service import LLMService
 
 class OrchestrationCodeAgent:
     """
@@ -8,18 +8,16 @@ class OrchestrationCodeAgent:
     structured integration plan.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the OrchestrationCodeAgent.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
-
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
+        if not llm_service:
+            raise ValueError("llm_service is required for the OrchestrationCodeAgent.")
+        self.llm_service = llm_service
 
     def apply_modifications(self, original_code: str, modifications_json: str) -> str:
         """
@@ -58,9 +56,9 @@ class OrchestrationCodeAgent:
             **--- Full Source Code After Modifications ---**
             """
 
-            response = self.model.generate_content(prompt)
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             # The raw text of the response is the full, modified code file.
-            return response.text.strip()
+            return response_text.strip()
 
         except Exception as e:
             error_msg = f"An unexpected error occurred while applying code modifications: {e}"

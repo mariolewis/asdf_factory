@@ -1,6 +1,6 @@
-import google.generativeai as genai
 import logging
 import json
+from llm_service import LLMService
 
 """
 This module contains the RefactoringPlannerAgent_AppTarget class.
@@ -15,18 +15,16 @@ class RefactoringPlannerAgent_AppTarget:
     a change request. It acts as the core of the Refactoring Pipeline.
     """
 
-    def __init__(self, api_key: str):
+    def __init__(self, llm_service: LLMService):
         """
         Initializes the RefactoringPlannerAgent_AppTarget.
 
         Args:
-            api_key (str): The Gemini API key for authentication.
+            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
         """
-        if not api_key:
-            raise ValueError("API key cannot be empty.")
-
-        self.api_key = api_key
-        genai.configure(api_key=self.api_key)
+        if not llm_service:
+            raise ValueError("llm_service is required for the RefactoringPlannerAgent_AppTarget.")
+        self.llm_service = llm_service
 
     def create_refactoring_plan(self, change_request_desc: str, final_spec_text: str, rowd_json: str, source_code_context: dict | None = None) -> str:
         """
@@ -34,8 +32,6 @@ class RefactoringPlannerAgent_AppTarget:
         optionally using the full source code of impacted components for higher accuracy.
         """
         try:
-            model = genai.GenerativeModel('gemini-2.5-pro')
-
             # --- Prepare the source code context for the prompt ---
             source_code_context_str = "# No specific source code provided for review.\n"
             if source_code_context:
@@ -69,8 +65,8 @@ class RefactoringPlannerAgent_AppTarget:
             **--- Detailed Refactoring Plan (JSON Array Output) ---**
             """
 
-            response = self.model.generate_content(prompt)
-            cleaned_response = response.text.strip()
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            cleaned_response = response_text.strip()
             if cleaned_response.startswith("[") and cleaned_response.endswith("]"):
                 json.loads(cleaned_response)
                 return cleaned_response
