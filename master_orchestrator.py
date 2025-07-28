@@ -9,7 +9,10 @@ from enum import Enum, auto
 from pathlib import Path
 import git
 import google.generativeai as genai
-from llm_service import LLMService, GeminiAdapter, OpenAIAdapter, AnthropicAdapter, LocalPhi3Adapter
+from llm_service import LLMService, GeminiAdapter, OpenAIAdapter, AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter
+from agents.agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
+from agents.agent_project_bootstrap import ProjectBootstrapAgent
+from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_ux_triage import UX_Triage_Agent
 from agents.agent_ux_spec import UX_Spec_Agent
 from asdf_db_manager import ASDFDBManager
@@ -2717,8 +2720,17 @@ class MasterOrchestrator:
                 return AnthropicAdapter(api_key, reasoning_model, fast_model)
 
             elif provider == "LocalPhi3":
-                # No API key needed, but we could make the URL configurable in the future.
                 return LocalPhi3Adapter()
+
+            elif provider == "Enterprise":
+                base_url = db.get_config_value("CUSTOM_ENDPOINT_URL")
+                api_key = db.get_config_value("CUSTOM_ENDPOINT_API_KEY")
+                reasoning_model = db.get_config_value("CUSTOM_REASONING_MODEL")
+                fast_model = db.get_config_value("CUSTOM_FAST_MODEL")
+                if not all([base_url, api_key, reasoning_model, fast_model]):
+                    logging.warning("Enterprise provider selected, but one or more required settings (URL, Key, Models) are missing.")
+                    return None
+                return CustomEndpointAdapter(base_url, api_key, reasoning_model, fast_model)
 
             else:
                 logging.error(f"Invalid LLM provider configured: {provider}")

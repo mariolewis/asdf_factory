@@ -204,3 +204,48 @@ class LocalPhi3Adapter(LLMService):
         except Exception as e:
             logging.error(f"Local Phi-3 (Ollama) API call failed: {e}")
             return f"Error: The call to the local Phi-3 (Ollama) API failed. Details: {e}"
+
+class CustomEndpointAdapter(LLMService):
+    """
+    Concrete implementation for a generic, OpenAI-compatible custom endpoint.
+    """
+    def __init__(self, base_url: str, api_key: str, reasoning_model_name: str, fast_model_name: str):
+        """
+        Initializes the CustomEndpointAdapter.
+
+        Args:
+            base_url (str): The base URL of the custom LLM endpoint.
+            api_key (str): The API key for the custom endpoint.
+            reasoning_model_name (str): The name of the model for complex tasks.
+            fast_model_name (str): The name of the model for simple tasks.
+        """
+        if not all([base_url, api_key, reasoning_model_name, fast_model_name]):
+            raise ValueError("base_url, api_key, and both model names are required for the CustomEndpointAdapter.")
+        self.client = openai.OpenAI(base_url=base_url, api_key=api_key)
+        self.reasoning_model = reasoning_model_name
+        self.fast_model = fast_model_name
+        logging.info(f"CustomEndpointAdapter initialized for endpoint at {base_url}.")
+
+    def generate_text(self, prompt: str, task_complexity: str) -> str:
+        """
+        Generates text using the configured custom model.
+        """
+        try:
+            model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
+            logging.debug(f"Using Custom Endpoint model: {'Reasoning' if task_complexity == 'complex' else 'Fast'}")
+
+            completion = self.client.chat.completions.create(
+                model=model_to_use,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ]
+            )
+
+            response_text = completion.choices[0].message.content
+            if not response_text:
+                raise ValueError("The custom endpoint model returned an empty response.")
+
+            return response_text.strip()
+        except Exception as e:
+            logging.error(f"Custom Endpoint API call failed: {e}")
+            return f"Error: The call to the Custom Endpoint API failed. Details: {e}"

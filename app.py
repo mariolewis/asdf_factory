@@ -9,9 +9,9 @@ import json
 
 # Imports from the project's root directory
 from master_orchestrator import MasterOrchestrator
-from agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
-from agent_project_bootstrap import ProjectBootstrapAgent
-from agent_spec_clarification import SpecClarificationAgent
+from agents.agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
+from agents.agent_project_bootstrap import ProjectBootstrapAgent
+from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_planning_app_target import PlanningAgent_AppTarget
 from agents.agent_report_generator import ReportGeneratorAgent
 from agents.agent_project_scoping import ProjectScopingAgent
@@ -1945,33 +1945,119 @@ elif page == "Settings":
     st.markdown("Configure the operational parameters of the ASDF.")
     st.divider()
 
-    # --- LLM API Key Management ---
-    st.subheader("LLM API Key Management")
-    def save_api_key():
-        if st.session_state.api_key_input:
-            with st.session_state.orchestrator.db_manager as db:
-                db.set_config_value("LLM_API_KEY", st.session_state.api_key_input)
-            st.success("✅ LLM API Key saved!")
-        else:
-            st.warning("API Key field cannot be empty.")
+    # --- LLM Service Configuration ---
+    st.subheader("LLM Service Configuration")
 
-    def clear_api_key():
-        with st.session_state.orchestrator.db_manager as db:
-            db.set_config_value("LLM_API_KEY", "")
-        st.session_state.api_key_input = ""
-        st.success("✅ LLM API Key cleared.")
-
+    # Load all current settings from the DB to populate the widgets
     with st.session_state.orchestrator.db_manager as db:
-        current_key_value = db.get_config_value("LLM_API_KEY")
-        key_status = "Set" if current_key_value else "Not Set"
+        all_config = db.get_all_config_values()
 
-    st.markdown(f"**Current Status:** `{key_status}`")
-    st.text_input("Enter or Update LLM API Key", type="password", key="api_key_input")
-    col1, col2, _ = st.columns([1, 1, 5])
-    with col1:
-        col1.button("Save Key", on_click=save_api_key, use_container_width=True)
-    with col2:
-        col2.button("Clear Key", on_click=clear_api_key, use_container_width=True, disabled=(key_status == "Not Set"))
+    provider_options = ["Gemini", "OpenAI", "Anthropic", "LocalPhi3", "Enterprise"]
+    current_provider = all_config.get("SELECTED_LLM_PROVIDER", "Gemini")
+
+    # Ensure the current provider is in the list to prevent errors
+    try:
+        provider_index = provider_options.index(current_provider)
+    except ValueError:
+        provider_index = 0 # Default to Gemini if saved value is invalid
+
+    selected_provider = st.selectbox(
+        "Select LLM Provider",
+        options=provider_options,
+        index=provider_index,
+        key="selected_llm_provider"
+    )
+
+    if selected_provider == "Gemini":
+        st.text_input("Gemini API Key", type="password", key="gemini_api_key", value=all_config.get("GEMINI_API_KEY", ""))
+        st.text_input("Reasoning Model", key="gemini_reasoning_model", value=all_config.get("GEMINI_REASONING_MODEL", "gemini-1.5-pro-latest"))
+        st.text_input("Fast Model", key="gemini_fast_model", value=all_config.get("GEMINI_FAST_MODEL", "gemini-1.5-flash-latest"))
+
+    elif selected_provider == "OpenAI":
+        st.text_input("OpenAI API Key", type="password", key="openai_api_key", value=all_config.get("OPENAI_API_KEY", ""))
+        st.text_input("Reasoning Model", key="openai_reasoning_model", value=all_config.get("OPENAI_REASONING_MODEL", "gpt-4-turbo"))
+        st.text_input("Fast Model", key="openai_fast_model", value=all_config.get("OPENAI_FAST_MODEL", "gpt-3.5-turbo"))
+
+    elif selected_provider == "Anthropic":
+        st.text_input("Anthropic API Key", type="password", key="anthropic_api_key", value=all_config.get("ANTHROPIC_API_KEY", ""))
+        st.text_input("Reasoning Model", key="anthropic_reasoning_model", value=all_config.get("ANTHROPIC_REASONING_MODEL", "claude-3-opus-20240229"))
+        st.text_input("Fast Model", key="anthropic_fast_model", value=all_config.get("ANTHROPIC_FAST_MODEL", "claude-3-haiku-20240307"))
+
+    elif selected_provider == "LocalPhi3":
+        st.info("No configuration needed. Ensure your local Ollama server is running with the 'phi3' model available.")
+
+    elif selected_provider == "Enterprise":
+        st.text_input("Endpoint URL", key="custom_endpoint_url", value=all_config.get("CUSTOM_ENDPOINT_URL", ""))
+        st.text_input("Endpoint API Key", type="password", key="custom_endpoint_api_key", value=all_config.get("CUSTOM_ENDPOINT_API_KEY", ""))
+        st.text_input("Reasoning Model", key="custom_reasoning_model", value=all_config.get("CUSTOM_REASONING_MODEL", ""))
+        st.text_input("Fast Model", key="custom_fast_model", value=all_config.get("CUSTOM_FAST_MODEL", ""))
+
+    st.caption("Pro-Tip: For any provider, you can use the fast model name in both fields to optimize for speed and cost.")
+
+    def save_llm_settings():
+        """Callback to save all LLM settings and re-initialize the service."""
+        provider = st.session_state.selected_llm_provider
+
+        # --- Model Name Defaulting Logic ---
+        if provider in ["Gemini", "OpenAI", "Anthropic", "Enterprise"]:
+            prefix = provider.lower()
+            if provider == "Enterprise":
+                prefix = "custom" # Use the database key prefix
+
+            reasoning_key = f"{prefix}_reasoning_model"
+            fast_key = f"{prefix}_fast_model"
+
+            reasoning_val = st.session_state.get(reasoning_key, "").strip()
+            fast_val = st.session_state.get(fast_key, "").strip()
+
+            if not reasoning_val and not fast_val:
+                st.warning(f"Please enter a model name for 'Reasoning Model' and/or 'Fast Model' for {provider}.")
+                return # Stop the save if both are empty
+
+            # Apply the defaulting logic
+            if not reasoning_val:
+                st.session_state[reasoning_key] = fast_val
+            elif not fast_val:
+                st.session_state[fast_key] = reasoning_val
+
+        # --- Prepare all settings to be saved ---
+        settings_to_save = {
+            "SELECTED_LLM_PROVIDER": provider
+        }
+        if provider == "Gemini":
+            settings_to_save["GEMINI_API_KEY"] = st.session_state.gemini_api_key
+            settings_to_save["GEMINI_REASONING_MODEL"] = st.session_state.gemini_reasoning_model
+            settings_to_save["GEMINI_FAST_MODEL"] = st.session_state.gemini_fast_model
+        elif provider == "OpenAI":
+            settings_to_save["OPENAI_API_KEY"] = st.session_state.openai_api_key
+            settings_to_save["OPENAI_REASONING_MODEL"] = st.session_state.openai_reasoning_model
+            settings_to_save["OPENAI_FAST_MODEL"] = st.session_state.openai_fast_model
+        elif provider == "Anthropic":
+            settings_to_save["ANTHROPIC_API_KEY"] = st.session_state.anthropic_api_key
+            settings_to_save["ANTHROPIC_REASONING_MODEL"] = st.session_state.anthropic_reasoning_model
+            settings_to_save["ANTHROPIC_FAST_MODEL"] = st.session_state.anthropic_fast_model
+        elif provider == "Enterprise":
+            settings_to_save["CUSTOM_ENDPOINT_URL"] = st.session_state.custom_endpoint_url
+            settings_to_save["CUSTOM_ENDPOINT_API_KEY"] = st.session_state.custom_endpoint_api_key
+            settings_to_save["CUSTOM_REASONING_MODEL"] = st.session_state.custom_reasoning_model
+            settings_to_save["CUSTOM_FAST_MODEL"] = st.session_state.custom_fast_model
+
+        try:
+            with st.session_state.orchestrator.db_manager as db:
+                for key, value in settings_to_save.items():
+                    db.set_config_value(key, str(value))
+
+            # --- Re-initialize the LLM service with the new settings ---
+            st.session_state.orchestrator.llm_service = st.session_state.orchestrator._create_llm_service()
+            if st.session_state.orchestrator.llm_service:
+                st.success("✅ LLM Service settings saved and activated!")
+            else:
+                st.error("Settings saved, but failed to activate the LLM Service. Please check your API key or endpoint details.")
+
+        except Exception as e:
+            st.error(f"Failed to save LLM settings: {e}")
+
+    st.button("Save LLM Service Settings", on_click=save_llm_settings, use_container_width=True, type="primary")
 
     st.divider()
 
