@@ -35,6 +35,7 @@ from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarge
 from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
+from agents.agent_project_scoping import ProjectScopingAgent
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -70,6 +71,7 @@ class FactoryPhase(Enum):
     VIEWING_PROJECT_HISTORY = auto()
     AWAITING_CONTEXT_REESTABLISHMENT = auto()
     AWAITING_PM_TRIAGE_INPUT = auto()
+    AWAITING_REASSESSMENT_CONFIRMATION = auto()
     # Add other phases as they are developed
 
 class MasterOrchestrator:
@@ -169,7 +171,8 @@ class MasterOrchestrator:
         FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
         FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
         FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
-        FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input"
+        FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input",
+        FactoryPhase.AWAITING_REASSESSMENT_CONFIRMATION: "LLM Re-assessment Confirmation"
     }
 
     def get_status(self) -> dict:
@@ -2799,6 +2802,116 @@ class MasterOrchestrator:
             else:
                 logging.error(f"Invalid LLM provider configured: {provider}")
                 return None
+
+    def run_mid_project_reassessment(self):
+        """
+        Calculates the remaining work in a project and invokes the
+        ProjectScopingAgent to perform a new risk and complexity analysis.
+        (F-Dev 12.2)
+        """
+        logging.info(f"Running mid-project re-assessment for project: {self.project_name}")
+        if not self.project_id:
+            logging.error("Cannot run re-assessment; no active project.")
+            return
+
+        remaining_work_spec = ""
+        try:
+            with self.db_manager as db:
+                project_details = db.get_project_by_id(self.project_id)
+                dev_plan_text = project_details.get('development_plan_text')
+
+                if not dev_plan_text:
+                    # If no dev plan exists, the 'remaining work' is the entire spec
+                    remaining_work_spec = project_details.get('final_spec_text', '')
+                    logging.info("No development plan found. Using full application spec for re-assessment.")
+                else:
+                    # If a dev plan exists, find uncompleted tasks
+                    dev_plan = json.loads(dev_plan_text).get("development_plan", [])
+                    all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+
+                    completed_spec_ids = {
+                        artifact['micro_spec_id'] for artifact in all_artifacts
+                        if artifact['micro_spec_id']
+                    }
+
+                    remaining_tasks = [
+                        task for task in dev_plan
+                        if task.get('micro_spec_id') not in completed_spec_ids
+                    ]
+
+                    if not remaining_tasks:
+                        logging.info("No remaining tasks found in the development plan.")
+                        remaining_work_spec = "Project development is complete. Assess risk of any final integration or bug fixing."
+                    else:
+                        remaining_work_descriptions = [
+                            task['task_description'] for task in remaining_tasks
+                            if 'task_description' in task
+                        ]
+                        remaining_work_spec = "\n\n".join(remaining_work_descriptions)
+                        logging.info(f"Found {len(remaining_tasks)} remaining tasks for re-assessment.")
+
+            if not remaining_work_spec.strip():
+                logging.warning("Remaining work specification is empty. Cannot perform re-assessment.")
+                self.task_awaiting_approval = {
+                    "reassessment_result": {"error": "Could not determine remaining work."}
+                }
+                return
+
+            # Invoke the scoping agent
+            scoping_agent = ProjectScopingAgent(llm_service=self.llm_service)
+            analysis_result = scoping_agent.analyze_complexity(remaining_work_spec)
+
+            # Store the result for the UI to display
+            self.task_awaiting_approval = {"reassessment_result": analysis_result}
+            logging.info("Successfully completed mid-project re-assessment.")
+
+        except Exception as e:
+            logging.error(f"An error occurred during mid-project re-assessment: {e}")
+            self.task_awaiting_approval = {
+                "reassessment_result": {"error": f"An unexpected error occurred: {e}"}
+            }
+
+    def commit_pending_llm_change(self, new_provider: str) -> tuple[bool, str]:
+        """
+        Finalizes a pending LLM provider change after a successful
+        re-assessment by saving it to the database and re-initializing
+        the LLM service.
+        (F-Dev 12.3)
+
+        Args:
+            new_provider (str): The name of the new provider to commit.
+
+        Returns:
+            A tuple containing a success boolean and a status message.
+        """
+        logging.info(f"Committing pending LLM change to: {new_provider}")
+        try:
+            with self.db_manager as db:
+                # Save the new provider selection
+                db.set_config_value("SELECTED_LLM_PROVIDER", new_provider)
+
+                # Update the active context limit to the new provider's default
+                provider_key_map = {
+                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
+                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
+                }
+                provider_default_key = provider_key_map.get(new_provider)
+                if provider_default_key:
+                    provider_default_value = db.get_config_value(provider_default_key)
+                    if provider_default_value:
+                        db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", provider_default_value)
+                        logging.info(f"Active context limit updated to default for {new_provider}: {provider_default_value} chars.")
+
+            # Re-initialize the LLM service with the new settings
+            self.llm_service = self._create_llm_service()
+            if not self.llm_service:
+                 raise Exception("Failed to re-initialize LLM service with new provider.")
+
+            return True, f"Successfully switched to {new_provider}."
+        except Exception as e:
+            logging.error(f"Failed to commit pending LLM change: {e}")
+            return False, f"Failed to commit LLM change: {e}"
 
     def _sanitize_path(self, raw_path: str | None) -> str | None:
         """

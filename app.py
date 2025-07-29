@@ -287,6 +287,74 @@ if page == "Project":
                                 st.session_state.orchestrator.handle_discard_changes(history_id=st.session_state.selected_history_id_for_action)
                             st.rerun()
 
+            elif current_phase_name == "AWAITING_REASSESSMENT_CONFIRMATION":
+                st.header("Mid-Project Re-assessment Required")
+
+                # This UI has two stages: initial confirmation, and final decision after report.
+                reassessment_data = st.session_state.orchestrator.task_awaiting_approval or {}
+                reassessment_result = reassessment_data.get("reassessment_result")
+
+                if not reassessment_result:
+                    # Stage 1: Initial Confirmation
+                    st.warning(
+                        "You have selected an LLM Provider with a smaller default context window than the one currently active. "
+                        "This may increase the risk of failure for complex tasks on the remaining work in this project."
+                    )
+                    st.markdown("It is recommended to run a re-assessment on the project's remaining scope before proceeding.")
+                    st.divider()
+
+                    col1, col2, _ = st.columns([1.5, 2, 3])
+                    with col1:
+                        if st.button("▶️ Proceed with Re-assessment", type="primary", use_container_width=True):
+                            with st.spinner("Analyzing remaining project scope..."):
+                                st.session_state.orchestrator.run_mid_project_reassessment()
+                            st.rerun()
+                    with col2:
+                        if st.button("❌ Cancel and Revert LLM Choice", use_container_width=True):
+                            # Clean up state and return to GENESIS
+                            keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
+                            for key in keys_to_clear:
+                                if key in st.session_state: del st.session_state[key]
+                            st.session_state.orchestrator.set_phase("GENESIS")
+                            st.toast("LLM provider change was cancelled.")
+                            st.rerun()
+                else:
+                    # Stage 2: Review Report and Make Final Decision
+                    st.subheader("Re-assessment Report for Remaining Work")
+                    if "error" in reassessment_result:
+                        st.error(f"Could not generate re-assessment report: {reassessment_result['error']}")
+                    else:
+                        # Display a simplified version of the assessment report
+                        risk = reassessment_result.get('risk_assessment', {})
+                        st.metric("Overall Risk Level for Remaining Work", risk.get('overall_risk_level', 'N/A'))
+                        st.write("**Risk Summary:**")
+                        st.write(risk.get('summary', 'No summary provided.'))
+
+                    st.divider()
+                    st.markdown(f"Do you want to finalize the switch to **{st.session_state.get('pending_llm_provider')}** or revert to **{st.session_state.get('previous_llm_provider')}**?")
+
+                    col1, col2, _ = st.columns([2, 2, 3])
+                    with col1:
+                        if st.button(f"✅ Continue with {st.session_state.get('pending_llm_provider')}", type="primary", use_container_width=True):
+                            success, message = st.session_state.orchestrator.commit_pending_llm_change(st.session_state.pending_llm_provider)
+                            if success:
+                                st.toast(message, icon="✅")
+                            else:
+                                st.error(message)
+                            keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
+                            for key in keys_to_clear:
+                                if key in st.session_state: del st.session_state[key]
+                            st.session_state.orchestrator.set_phase("GENESIS")
+                            st.rerun()
+                    with col2:
+                        if st.button(f"❌ Revert to {st.session_state.get('previous_llm_provider')}", use_container_width=True):
+                            keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
+                            for key in keys_to_clear:
+                                if key in st.session_state: del st.session_state[key]
+                            st.session_state.orchestrator.set_phase("GENESIS")
+                            st.toast("LLM provider change was reverted.")
+                            st.rerun()
+
     elif not st.session_state.orchestrator.project_id:
         st.subheader("Start a New Project")
         st.info(
@@ -1996,16 +2064,45 @@ elif page == "Settings":
 
     def save_llm_settings():
         """
-        Callback to save all LLM settings, dynamically update the active context limit,
-        and re-initialize the service. (F-Dev 11.3)
+        Callback to save LLM settings. Now includes the trigger for the
+        Mid-Project Re-assessment Flow. (F-Dev 12.1)
         """
-        provider = st.session_state.selected_llm_provider
+        new_provider = st.session_state.selected_llm_provider
 
-        # --- Model Name Defaulting Logic ---
+        # --- F-Dev 12.1: Re-assessment Trigger Logic ---
+        if st.session_state.orchestrator.project_id:
+            with st.session_state.orchestrator.db_manager as db:
+                all_config = db.get_all_config_values()
+                current_active_limit = int(all_config.get("CONTEXT_WINDOW_CHAR_LIMIT", "0"))
+                current_provider = all_config.get("SELECTED_LLM_PROVIDER")
+
+                provider_key_map = {
+                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
+                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
+                }
+                new_provider_default_key = provider_key_map.get(new_provider)
+                # Ensure we have the latest defaults in our config dict for comparison
+                all_config.update(db.get_all_config_values())
+                new_provider_default_limit = int(all_config.get(new_provider_default_key, "0"))
+
+                if new_provider != current_provider and new_provider_default_limit < current_active_limit:
+                    logging.info(f"Triggering re-assessment: New limit {new_provider_default_limit} is less than current {current_active_limit}.")
+                    st.session_state.reassessment_required = True
+                    st.session_state.pending_llm_provider = new_provider
+                    st.session_state.previous_llm_provider = current_provider
+                    st.session_state.orchestrator.set_phase("AWAITING_REASSESSMENT_CONFIRMATION")
+                    st.warning("Re-assessment required due to smaller context window. Please navigate to the Project page to proceed.")
+                    st.rerun()
+                    return
+        # --- End of F-Dev 12.1 Change ---
+
+        # Original save logic proceeds if no re-assessment is needed
+        provider = new_provider
+
         if provider in ["Gemini", "OpenAI", "Anthropic", "Enterprise"]:
             prefix = provider.lower()
-            if provider == "Enterprise":
-                prefix = "custom"
+            if provider == "Enterprise": prefix = "custom"
             reasoning_key = f"{prefix}_reasoning_model"
             fast_key = f"{prefix}_fast_model"
             reasoning_val = st.session_state.get(reasoning_key, "").strip()
@@ -2016,7 +2113,6 @@ elif page == "Settings":
             if not reasoning_val: st.session_state[reasoning_key] = fast_val
             elif not fast_val: st.session_state[fast_key] = reasoning_val
 
-        # --- Prepare all settings to be saved ---
         settings_to_save = {"SELECTED_LLM_PROVIDER": provider}
         if provider == "Gemini":
             settings_to_save["GEMINI_API_KEY"] = st.session_state.gemini_api_key
@@ -2041,7 +2137,6 @@ elif page == "Settings":
                 for key, value in settings_to_save.items():
                     db.set_config_value(key, str(value))
 
-                # --- F-Dev 11.3: Dynamically update the active context limit ---
                 provider_key_map = {
                     "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
                     "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
@@ -2053,7 +2148,6 @@ elif page == "Settings":
                     if provider_default_value:
                         db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", provider_default_value)
                         logging.info(f"Active context limit updated to default for {provider}: {provider_default_value} chars.")
-                # --- End of F-Dev 11.3 Change ---
 
             st.session_state.orchestrator.llm_service = st.session_state.orchestrator._create_llm_service()
             if st.session_state.orchestrator.llm_service:
