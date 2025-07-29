@@ -335,13 +335,13 @@ class MasterOrchestrator:
             # --- Step 2: Save the path to the database ---
             with self.db_manager as db:
                 db.update_project_brief_path(self.project_id, brief_file_path)
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key:
-                    raise Exception("Cannot analyze brief: LLM_API_KEY is not set.")
 
-            # --- Step 3: Proceed with Analysis (as before) ---
+            # --- Step 3: Proceed with Analysis using the llm_service ---
+            if not self.llm_service:
+                raise Exception("Cannot analyze brief: LLM Service is not configured.")
+
             self.active_ux_spec = {'project_brief': brief_content}
-            triage_agent = UX_Triage_Agent(api_key=api_key)
+            triage_agent = UX_Triage_Agent(llm_service=self.llm_service)
             analysis_result = triage_agent.analyze_brief(brief_content)
 
             if "error" in analysis_result:
@@ -390,8 +390,8 @@ class MasterOrchestrator:
             # Save the confirmed personas to our in-progress spec
             self.active_ux_spec['confirmed_personas'] = persona_list
 
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
+            if not self.llm_service:
+                raise Exception("Cannot generate user journeys: LLM Service is not configured.")
 
             # Get the project brief we saved earlier
             project_brief = self.active_ux_spec.get('project_brief', '')
@@ -399,7 +399,7 @@ class MasterOrchestrator:
                 raise ValueError("Project brief not found in active UX spec.")
 
             # Call the agent to generate user journeys
-            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            ux_spec_agent = UX_Spec_Agent(llm_service=self.llm_service)
             user_journeys = ux_spec_agent.generate_user_journeys(project_brief, persona_list)
 
             # Save the generated journeys for the next UI step
@@ -422,11 +422,11 @@ class MasterOrchestrator:
             # Save the confirmed journeys to our in-progress spec
             self.active_ux_spec['confirmed_user_journeys'] = journey_list
 
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
+            if not self.llm_service:
+                raise Exception("Cannot identify screens: LLM Service is not configured.")
 
             # Call the agent to identify screens from the journeys
-            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            ux_spec_agent = UX_Spec_Agent(llm_service=self.llm_service)
             identified_screens = ux_spec_agent.identify_screens_from_journeys(journey_list)
 
             # Save the identified screens for the next UI step
@@ -477,10 +477,10 @@ class MasterOrchestrator:
             return
 
         try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
+            if not self.llm_service:
+                raise Exception("Cannot generate screen blueprint: LLM Service is not configured.")
 
-            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            ux_spec_agent = UX_Spec_Agent(llm_service=self.llm_service)
             blueprint_json_str = ux_spec_agent.generate_screen_blueprint(screen_name, pm_description)
 
             # Store the generated blueprint string, keyed by the screen name.
@@ -517,10 +517,10 @@ class MasterOrchestrator:
             return
 
         try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
+            if not self.llm_service:
+                raise Exception("Cannot generate style guide: LLM Service is not configured.")
 
-            ux_spec_agent = UX_Spec_Agent(api_key=api_key)
+            ux_spec_agent = UX_Spec_Agent(llm_service=self.llm_service)
             style_guide_md = ux_spec_agent.generate_style_guide(pm_description)
 
             # Store the generated markdown
@@ -757,8 +757,7 @@ class MasterOrchestrator:
     def handle_proceed_action(self, status_ui_object=None):
         """
         Handles the logic for the Genesis Pipeline.
-        This version now includes a check for the PM_CHECKPOINT_BEHAVIOR setting
-        to enable an auto-proceed loop.
+        This version is refactored to remove the outdated api_key dependency.
         """
         if self.current_phase != FactoryPhase.GENESIS:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
@@ -767,9 +766,8 @@ class MasterOrchestrator:
         with self.db_manager as db:
             pm_behavior = db.get_config_value("PM_CHECKPOINT_BEHAVIOR") or "ALWAYS_ASK"
             is_auto_proceed = (pm_behavior == "AUTO_PROCEED")
-            api_key = db.get_config_value("LLM_API_KEY")
 
-        while True: # This loop will run once for "ALWAYS_ASK", or continuously for "AUTO_PROCEED"
+        while True:
             if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
                 logging.info("Development plan is complete. Performing pre-integration check for known issues.")
                 with self.db_manager as db:
@@ -783,7 +781,7 @@ class MasterOrchestrator:
                 else:
                     logging.info("No known issues found. Proceeding directly to integration.")
                     self._run_integration_and_ui_testing_phase()
-                return # Exit the method completely once the plan is done
+                return
 
             task = self.active_plan[self.active_plan_cursor]
             component_type = task.get("component_type", "CLASS")
@@ -795,36 +793,37 @@ class MasterOrchestrator:
                     project_root_path = Path(project_details['project_root_folder'])
 
                     if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
-                        self._execute_declarative_modification_task(task, project_root_path, db, api_key)
+                        # Note: We will fix the called method in the next step.
+                        self._execute_declarative_modification_task(task, project_root_path, db, None)
                     else:
                         if component_type not in ["FUNCTION", "CLASS", "Model"]:
                             logging.warning(f"Unknown component_type '{component_type}' found. Defaulting to source code generation pipeline.")
-                        self._execute_source_code_generation_task(task, project_root_path, db, api_key, status_ui_object)
+                        self._execute_source_code_generation_task(task, project_root_path, db, status_ui_object)
 
-                    # CORRECTED: Increment the cursor only after all DB and file operations succeed.
                     self.active_plan_cursor += 1
 
-                    # If the last task of a post-genesis plan was just completed, run the doc update.
                     if self.active_plan_cursor >= len(self.active_plan) and self.is_genesis_complete:
-                        self._run_post_implementation_doc_update(db, api_key)
+                        self._run_post_implementation_doc_update(db)
 
-                # If in "ALWAYS_ASK" mode, break the loop after one successful task.
                 if not is_auto_proceed:
                     break
 
             except Exception as e:
                 logging.error(f"Genesis Pipeline failed while executing plan for {task.get('component_name')}. Error: {e}")
                 self.escalate_for_manual_debug(str(e))
-                return # Stop the loop and the method on failure
+                return
 
-    def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str, status_ui_object=None):
+    def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, status_ui_object=None):
         """
         Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
-        This version now sanitizes file paths before use to prevent file system errors.
+        This version is refactored to use the central llm_service.
         """
         component_name = task.get("component_name")
         if status_ui_object: status_ui_object.update(label=f"Executing source code generation for: {component_name}")
         logging.info(f"Executing source code generation for: {component_name}")
+
+        if not self.llm_service:
+            raise Exception("Cannot generate code: LLM Service is not configured.")
 
         project_details = db.get_project_by_id(self.project_id)
         coding_standard = project_details['coding_standard_text']
@@ -843,15 +842,14 @@ class MasterOrchestrator:
 
         # --- Code Generation and Review Loop ---
         if status_ui_object: status_ui_object.update(label=f"Generating logic plan for {component_name}...")
-        logic_agent = LogicAgent_AppTarget(api_key=api_key)
-        code_agent = CodeAgent_AppTarget(api_key=api_key)
-        review_agent = CodeReviewAgent(api_key=api_key)
-        test_agent = TestAgent_AppTarget(api_key=api_key)
+        logic_agent = LogicAgent_AppTarget(llm_service=self.llm_service)
+        code_agent = CodeAgent_AppTarget(llm_service=self.llm_service)
+        review_agent = CodeReviewAgent(llm_service=self.llm_service)
+        test_agent = TestAgent_AppTarget(llm_service=self.llm_service)
 
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
         if status_ui_object: status_ui_object.update(label=f"Generating source code for {component_name}...")
 
-        # Determine which style guide to use (from the full UX spec or the fallback in the main spec)
         style_guide_to_use = project_details.get('ux_spec_text') or project_details.get('final_spec_text')
 
         source_code = code_agent.generate_code_for_component(
@@ -888,46 +886,41 @@ class MasterOrchestrator:
         if status_ui_object: status_ui_object.update(label=f"Generating unit tests for {component_name}...")
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
 
-        # --- Refactored: Delegate build, test, and commit to the specialist agent ---
         if status_ui_object: status_ui_object.update(label=f"Writing files, testing, and committing {component_name}...")
         build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
         component_path_str = task.get("component_file_path")
         test_path_str = task.get("test_file_path")
 
-        # The agent now handles file writing, testing, and committing in one step.
         success, result_message = build_agent.build_and_commit_component(
             component_path_str=component_path_str,
             component_code=source_code,
             test_path_str=test_path_str,
             test_code=unit_tests,
             test_command=test_command,
-            api_key=api_key
+            llm_service=self.llm_service
         )
 
         if not success:
-            # If the agent reports failure, raise an exception to trigger the debug pipeline.
             raise Exception(f"BuildAndCommitAgent failed for component {component_name}: {result_message}")
 
-        # Extract the commit hash from the success message for the RoWD update.
         if "New commit hash:" in result_message:
             commit_hash = result_message.split(":")[-1].strip()
         else:
-            commit_hash = "N/A" # Handle cases where no commit was made (e.g., no files generated)
+            commit_hash = "N/A"
 
-        # --- Step 4: Update RoWD ---
         if status_ui_object: status_ui_object.update(label=f"Updating project records for {component_name}...")
-        doc_agent = DocUpdateAgentRoWD(db)
+        doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
         doc_agent.update_artifact_record({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
             "file_path": component_path_str, "artifact_name": component_name,
             "artifact_type": task.get("component_type"), "short_description": micro_spec_content,
             "status": "UNIT_TESTS_PASSING", "unit_test_status": "TESTS_PASSING",
             "commit_hash": commit_hash, "version": 1,
-            "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+            "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),def _run_post_implementation_doc_update(self, db: ASDFDBManager, api_key: str):
             "micro_spec_id": task.get("micro_spec_id")
         })
 
-    def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, api_key: str):
+    def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, status_ui_object=None):
         """
         Pauses the workflow to await PM confirmation for a declarative change.
         """
@@ -941,7 +934,7 @@ class MasterOrchestrator:
     def handle_declarative_checkpoint_decision(self, decision: str):
         """
         Processes the PM's decision from the declarative checkpoint.
-        This now includes special handling for initial directory setup and creating an initial commit.
+        This version is refactored to use the central llm_service.
         """
         if not self.task_awaiting_approval:
             logging.error("Received a checkpoint decision, but no task is awaiting approval.")
@@ -957,20 +950,10 @@ class MasterOrchestrator:
                 project_details = db.get_project_by_id(self.project_id)
                 project_root_path = str(project_details['project_root_folder'])
 
-                if component_name == "Project_Structure_Setup" and decision == "EXECUTE_AUTOMATICALLY":
-                    logging.info("Executing special task: Project_Structure_Setup")
-                    (Path(project_root_path) / 'taskmaster').mkdir(parents=True, exist_ok=True)
-                    (Path(project_root_path) / 'tests').mkdir(parents=True, exist_ok=True)
-                    logging.info(f"Successfully created directories in {project_root_path}")
+                if decision == "EXECUTE_AUTOMATICALLY":
+                    if not self.llm_service:
+                        raise Exception("Cannot execute declarative change: LLM Service is not configured.")
 
-                    build_agent = BuildAndCommitAgentAppTarget(project_root_path)
-                    gitignore_path = Path(project_root_path) / ".gitignore"
-                    gitignore_path.write_text("# Ignore virtual environments and cache\n__pycache__/\n.venv/\nvenv/\n", encoding='utf-8')
-                    build_agent.commit_changes([".gitignore"], "feat: Initial commit and project structure setup")
-                    logging.info("Created .gitignore and made initial repository commit.")
-
-                elif decision == "EXECUTE_AUTOMATICALLY":
-                    api_key = db.get_config_value("LLM_API_KEY")
                     file_to_modify_path_str = task.get("component_file_path")
 
                     if not file_to_modify_path_str or file_to_modify_path_str == "N/A":
@@ -985,8 +968,16 @@ class MasterOrchestrator:
                     original_code = file_to_modify.read_text(encoding='utf-8')
                     change_snippet = task.get("task_description")
 
-                    orch_agent = OrchestrationCodeAgent(api_key=api_key)
-                    modified_code = orch_agent.apply_modifications(original_code, change_snippet)
+                    orch_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
+                    # The OrchestrationCodeAgent expects a JSON list of modifications.
+                    # The task_description for declarative changes is a snippet, not a full plan.
+                    # We will wrap it to match the expected format.
+                    modifications_json = json.dumps([{
+                        "action": "APPEND_SNIPPET", # A conceptual action for the agent
+                        "content": change_snippet
+                    }])
+
+                    modified_code = orch_agent.apply_modifications(original_code, modifications_json)
                     file_to_modify.write_text(modified_code, encoding='utf-8')
 
                     build_agent = BuildAndCommitAgentAppTarget(project_root_path)
@@ -997,7 +988,6 @@ class MasterOrchestrator:
                 elif decision == "WILL_EXECUTE_MANUALLY":
                     logging.info(f"Acknowledged that PM will manually execute change for {component_name}.")
 
-        # This `except` block is now correctly indented to match the `try` block.
         except Exception as e:
             logging.error(f"Failed to handle declarative checkpoint decision for {component_name}. Error: {e}")
             self.escalate_for_manual_debug(str(e))
@@ -1008,10 +998,10 @@ class MasterOrchestrator:
         self.set_phase("GENESIS")
         logging.info("Declarative task handled. Returning to Genesis phase.")
 
-    def _run_post_implementation_doc_update(self, db: ASDFDBManager, api_key: str):
+    def _run_post_implementation_doc_update(self, db: ASDFDBManager):
         """
         After a CR/bug fix plan is fully implemented, this method updates all
-        relevant project documents with the new standard header.
+        relevant project documents.
         """
         logging.info("Change implementation complete. Running post-implementation documentation update...")
         project_details = db.get_project_by_id(self.project_id)
@@ -1019,22 +1009,23 @@ class MasterOrchestrator:
             logging.error("Could not run doc update; project details not found.")
             return
 
+        if not self.llm_service:
+            logging.error("Could not run doc update; LLM Service is not configured.")
+            return
+
         implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
-        doc_agent = DocUpdateAgentRoWD(db)
+        doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
 
         # Helper function to process each document type
         def update_document(doc_key: str, doc_name: str, save_func):
             original_doc = project_details.get(doc_key)
             if original_doc:
                 logging.info(f"Checking for {doc_name} updates...")
-                # The agent updates the content AND the version number within the text
                 updated_content = doc_agent.update_specification_text(
                     original_spec=original_doc,
-                    implementation_plan=implementation_plan_for_update,
-                    api_key=api_key
+                    implementation_plan=implementation_plan_for_update
                 )
                 if updated_content != original_doc:
-                    # Prepend the header, which will extract the newly updated version
                     doc_with_header = self._prepend_standard_header(updated_content, doc_name)
                     save_func(self.project_id, doc_with_header)
                     logging.info(f"Successfully updated and saved the {doc_name}.")
@@ -1045,14 +1036,18 @@ class MasterOrchestrator:
         update_document('ux_spec_text', 'UX/UI Specification', db.save_ux_specification)
         update_document('ui_test_plan_text', 'UI Test Plan', db.save_ui_test_plan)
 
-    def _get_integration_context_files(self, db: ASDFDBManager, api_key: str, new_artifacts: list[dict]) -> list[str]:
+    def _get_integration_context_files(self, db: ASDFDBManager, new_artifacts: list[dict]) -> list[str]:
         """
-        Uses an AI agent to analyze the RoWD and new artifacts to determine which
-        existing files are the most likely integration points.
+        Uses the LLM service to determine which existing files are the most
+        likely integration points.
         """
         logging.info("AI is analyzing the project to identify relevant integration files...")
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         if not all_artifacts_rows:
+            return []
+
+        if not self.llm_service:
+            logging.error("Cannot identify integration files: LLM Service is not configured.")
             return []
 
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows], indent=2)
@@ -1080,9 +1075,8 @@ class MasterOrchestrator:
             **--- REQUIRED OUTPUT: JSON Array of File Paths ---**
         """)
         try:
-            model = genai.GenerativeModel('gemini-2.5-flash-preview-05-20')
-            response = model.generate_content(prompt)
-            cleaned_response = response.text.strip().replace("```json", "").replace("```", "")
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
             integration_files = json.loads(cleaned_response)
             if isinstance(integration_files, list):
                 logging.info(f"AI identified the following integration files: {integration_files}")
@@ -1090,7 +1084,7 @@ class MasterOrchestrator:
             return []
         except Exception as e:
             logging.error(f"Failed to identify integration context files via AI: {e}")
-            return [] # Return empty list on failure
+            return []
 
     def _determine_resume_phase_from_rowd(self, db: ASDFDBManager) -> FactoryPhase:
         """
@@ -1132,14 +1126,16 @@ class MasterOrchestrator:
     def _run_integration_and_ui_testing_phase(self):
         """
         Executes the full Integration and UI Testing workflow.
-        This version implements the Adaptive Context Strategy (F-Dev 11.2).
+        This version is refactored to use the central llm_service.
         """
         logging.info("Starting Phase: Automated Integration & Verification.")
         self.set_phase("INTEGRATION_AND_VERIFICATION")
 
         try:
+            if not self.llm_service:
+                raise Exception("Cannot run integration: LLM Service is not configured.")
+
             with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
                 project_details = db.get_project_by_id(self.project_id)
                 if not project_details:
                     raise Exception(f"Could not retrieve project details for project ID: {self.project_id}")
@@ -1150,12 +1146,10 @@ class MasterOrchestrator:
 
                 if not new_artifacts_rows:
                     logging.warning("Integration phase started, but no new artifacts found to integrate. Skipping to UI Test Plan generation.")
-                    # Even if there are no new artifacts, we should still run verification and generate the UI plan
 
                 new_artifacts = [dict(row) for row in new_artifacts_rows]
                 existing_files_context = {}
 
-                # --- F-Dev 11.2: Adaptive Context Strategy ---
                 logging.info("Applying Adaptive Context Strategy for integration planning...")
                 limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
                 context_limit = int(limit_str)
@@ -1181,9 +1175,8 @@ class MasterOrchestrator:
                     existing_files_context = all_source_files
                 else:
                     logging.warning(f"Full project source ({total_chars:,} chars) exceeds limit ({context_limit:,} chars). Falling back to heuristic file selection.")
-                    # Fallback to existing heuristic method if new artifacts exist
                     if new_artifacts:
-                        integration_file_paths = self._get_integration_context_files(db, api_key, new_artifacts)
+                        integration_file_paths = self._get_integration_context_files(db, new_artifacts)
                         if not integration_file_paths:
                             raise Exception("AI could not identify any files for integration. Cannot proceed.")
 
@@ -1193,13 +1186,12 @@ class MasterOrchestrator:
                                 existing_files_context[file_path_str] = full_path.read_text(encoding='utf-8')
                             else:
                                 logging.warning(f"AI identified integration file '{file_path_str}' but it was not found on disk. Skipping.")
-                # --- End of F-Dev 11.2 Change ---
 
                 if new_artifacts:
                     new_artifacts_json = json.dumps(new_artifacts, indent=4)
 
                     logging.info("Invoking IntegrationPlannerAgent...")
-                    planner_agent = IntegrationPlannerAgent(api_key=api_key)
+                    planner_agent = IntegrationPlannerAgent(llm_service=self.llm_service)
                     integration_plan_str = planner_agent.create_integration_plan(new_artifacts_json, existing_files_context)
                     integration_plan = json.loads(integration_plan_str)
 
@@ -1210,7 +1202,7 @@ class MasterOrchestrator:
                     db.save_integration_plan(self.project_id, plan_with_header)
 
                     logging.info("Invoking OrchestrationCodeAgent to apply integration plan...")
-                    code_agent = OrchestrationCodeAgent(api_key=api_key)
+                    code_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
                     for file_path, modifications in integration_plan.items():
                         full_file_path = project_root_path / file_path
                         if not full_file_path.exists():
@@ -1222,7 +1214,7 @@ class MasterOrchestrator:
                         logging.info(f"Successfully applied integration modifications to {file_path}.")
 
                 logging.info("Invoking VerificationAgent for final verification...")
-                verification_agent = VerificationAgent_AppTarget(api_key=api_key)
+                verification_agent = VerificationAgent_AppTarget(llm_service=self.llm_service)
 
                 test_command = project_details['test_execution_command']
                 if not test_command:
@@ -1250,7 +1242,7 @@ class MasterOrchestrator:
 
                 functional_spec_text = project_details['final_spec_text']
                 technical_spec_text = project_details['tech_spec_text']
-                ui_test_planner = UITestPlannerAgent_AppTarget(api_key=api_key)
+                ui_test_planner = UITestPlannerAgent_AppTarget(llm_service=self.llm_service)
                 ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
 
                 plan_with_header = self._prepend_standard_header(ui_test_plan_content, "UI Test Plan")
@@ -1265,12 +1257,7 @@ class MasterOrchestrator:
     def handle_ui_test_result_upload(self, test_result_content: str):
         """
         Orchestrates the evaluation of an uploaded UI test results file.
-
-        If failures are found, it triggers the debug pipeline (F-Phase 5).
-
-        Args:
-            test_result_content (str): The string content of the uploaded
-                                       test results file.
+        This version is refactored to use the central llm_service.
         """
         if not self.project_id:
             logging.error("Cannot handle test result upload; no active project.")
@@ -1278,21 +1265,16 @@ class MasterOrchestrator:
 
         logging.info(f"Handling UI test result upload for project {self.project_id}.")
         try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key:
-                    raise Exception("Cannot evaluate test results: LLM_API_KEY is not set.")
+            if not self.llm_service:
+                raise Exception("Cannot evaluate test results: LLM Service is not configured.")
 
             # 1. Evaluate the results using the dedicated agent.
-            eval_agent = TestResultEvaluationAgent_AppTarget(api_key=api_key)
+            eval_agent = TestResultEvaluationAgent_AppTarget(llm_service=self.llm_service)
             failure_summary = eval_agent.evaluate_ui_test_results(test_result_content)
 
             # 2. Check the agent's response for failures.
             if "ALL_TESTS_PASSED" in failure_summary:
                 logging.info("UI test result evaluation complete: All tests passed.")
-                # In a future step, we will add a UI element to let the PM
-                # confirm completion of this phase. For now, we just log it.
-
             else:
                 # 3. If failures are found, trigger the debug pipeline as a functional bug.
                 logging.warning("UI test result evaluation complete: Failures detected.")
@@ -1300,7 +1282,6 @@ class MasterOrchestrator:
 
         except Exception as e:
             logging.error(f"An unexpected error occurred during UI test result evaluation: {e}")
-            # Escalate with the error message itself if the process fails.
             self.escalate_for_manual_debug(str(e))
 
     def handle_raise_cr_action(self):
@@ -1339,16 +1320,18 @@ class MasterOrchestrator:
     def save_spec_correction_cr(self, new_spec_text: str):
         """
         Saves a 'Specification Correction' CR, runs an immediate impact analysis
-        by comparing it to the old spec, and auto-generates a linked CR for the
-        required code changes.
+        and auto-generates a linked CR for the required code changes.
+        This version is refactored to use the central llm_service.
         """
         if not self.project_id:
             logging.error("Cannot save spec correction; no active project.")
             return
 
         try:
+            if not self.llm_service:
+                raise Exception("Cannot run impact analysis: LLM Service is not configured.")
+
             with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
                 project_details = db.get_project_by_id(self.project_id)
                 original_spec_text = project_details['final_spec_text']
 
@@ -1369,7 +1352,6 @@ class MasterOrchestrator:
                 all_artifacts = db.get_all_artifacts_for_project(self.project_id)
                 rowd_json = json.dumps([dict(row) for row in all_artifacts])
 
-                # Create a synthetic change request description for the agent
                 cr_desc_for_agent = (
                     "Analyze the difference between the 'Original Specification' and the 'New Specification' "
                     "to identify the necessary code changes. The 'New Specification' is the source of truth."
@@ -1377,7 +1359,7 @@ class MasterOrchestrator:
                     f"\n\n--- New Specification ---\n{new_spec_text}"
                 )
 
-                impact_agent = ImpactAnalysisAgent_AppTarget(api_key=api_key)
+                impact_agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
                 _, summary, impacted_ids = impact_agent.analyze_impact(
                     change_request_desc=cr_desc_for_agent,
                     final_spec_text=new_spec_text, # Analyze against the new spec
@@ -1399,6 +1381,10 @@ class MasterOrchestrator:
 
             # 5. Return to the CR register to show the results
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+
+        except Exception as e:
+            logging.error(f"Failed to process specification correction CR: {e}")
+            self.set_phase("RAISING_CHANGE_REQUEST")
 
         except Exception as e:
             logging.error(f"Failed to process specification correction CR: {e}")
@@ -1459,17 +1445,19 @@ class MasterOrchestrator:
     def handle_implement_cr_action(self, cr_id: int):
         """
         Handles the logic for when the PM confirms a CR for implementation.
-        This now includes a staleness check for the impact analysis.
+        This version is refactored to use the central llm_service.
         """
         logging.info(f"PM has confirmed implementation for Change Request ID: {cr_id}.")
 
         try:
+            if not self.llm_service:
+                raise Exception("Cannot implement CR: LLM Service is not configured.")
+
             with self.db_manager as db:
                 cr_details = db.get_cr_by_id(cr_id)
                 if not cr_details:
                     raise Exception(f"CR-{cr_id} not found in the database.")
 
-                # --- NEW: Impact Analysis Staleness Check ---
                 analysis_timestamp_str = cr_details['last_modified_timestamp']
                 last_commit_timestamp = self.get_latest_commit_timestamp()
 
@@ -1478,15 +1466,9 @@ class MasterOrchestrator:
                     if last_commit_timestamp > analysis_time:
                         logging.warning(f"Impact analysis for CR-{cr_id} is stale. Awaiting PM confirmation.")
                         self.task_awaiting_approval = {"cr_id_for_reanalysis": cr_id}
-                        self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE") # Reuse this phase for the re-analysis choice
-                        return # Stop here and wait for PM input
+                        self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
+                        return
 
-                # --- Proceed if analysis is fresh or not present ---
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key:
-                    raise Exception("CRITICAL: LLM_API_KEY is not set.")
-
-                # The rest of the original logic proceeds from here
                 project_details = db.get_project_by_id(self.project_id)
                 project_root_path = Path(project_details['project_root_folder'])
 
@@ -1508,16 +1490,14 @@ class MasterOrchestrator:
                 if context_package.get("error"):
                     raise Exception(f"Context Builder Error: {context_package['error']}")
 
-                # This part will be enhanced later to display the message in the UI
                 if context_package.get("was_trimmed"):
                     logging.warning(f"Context for CR-{cr_id} was trimmed.")
 
-                final_context_str = "\n".join(context_package["source_code"].values())
                 all_artifacts = db.get_all_artifacts_for_project(self.project_id)
                 rowd_json = json.dumps([dict(row) for row in all_artifacts])
                 db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
 
-                planner_agent = RefactoringPlannerAgent_AppTarget(api_key=api_key)
+                planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
                 new_plan_str = planner_agent.create_refactoring_plan(
                     cr_details['description'], project_details['final_spec_text'], rowd_json, context_package["source_code"]
                 )
@@ -1555,21 +1535,21 @@ class MasterOrchestrator:
     def handle_run_impact_analysis_action(self, cr_id: int):
         """
         Orchestrates the running of an impact analysis for a specific CR.
+        This version is refactored to use the central llm_service.
         """
         logging.info(f"PM has requested to run impact analysis for CR ID: {cr_id}.")
         try:
+            if not self.llm_service:
+                raise Exception("Cannot run impact analysis: LLM Service is not configured.")
+
             with self.db_manager as db:
-                # Get necessary context
-                api_key = db.get_config_value("LLM_API_KEY")
                 cr_details = db.get_cr_by_id(cr_id)
                 project_details = db.get_project_by_id(self.project_id)
                 all_artifacts = db.get_all_artifacts_for_project(self.project_id)
 
-                # Prepare context for the agent
                 rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
 
-                # Invoke the agent
-                agent = ImpactAnalysisAgent_AppTarget(api_key=api_key)
+                agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
                 rating, summary, impacted_ids = agent.analyze_impact(
                     change_request_desc=cr_details['description'],
                     final_spec_text=project_details['final_spec_text'],
@@ -1577,16 +1557,13 @@ class MasterOrchestrator:
                 )
 
                 if rating is None:
-                    # The agent failed, log the summary which now contains the error
                     raise Exception(f"ImpactAnalysisAgent failed: {summary}")
 
-                # Save the real results to the database
                 db.update_cr_impact_analysis(cr_id, rating, summary, impacted_ids)
                 logging.info(f"Successfully ran and saved impact analysis for CR ID: {cr_id}.")
 
         except Exception as e:
             logging.error(f"Failed to run impact analysis for CR ID {cr_id}: {e}")
-            # Optionally, set an error state to be displayed in the UI
 
     def handle_delete_cr_action(self, cr_id_to_delete: int):
         """
@@ -1836,7 +1813,7 @@ class MasterOrchestrator:
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
         Initiates the multi-tiered triage and debug process.
-        This version implements the Adaptive Context Strategy (F-Dev 11.2).
+        This version is refactored to use the central llm_service.
         """
         logging.info("A failure has triggered the debugging pipeline.")
 
@@ -1858,15 +1835,15 @@ class MasterOrchestrator:
                     self.set_phase("DEBUG_PM_ESCALATION")
                     return
 
+                if not self.llm_service:
+                    raise Exception("Cannot proceed with debugging: LLM Service is not configured.")
+
                 project_details = db.get_project_by_id(self.project_id)
                 project_root_path = Path(project_details['project_root_folder'])
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key: raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
 
                 triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
                 context_package = {}
 
-                # --- F-Dev 11.2: Adaptive Context Strategy for Debugging ---
                 logging.info("Applying Adaptive Context Strategy for debugging...")
                 limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
                 context_limit = int(limit_str)
@@ -1894,7 +1871,6 @@ class MasterOrchestrator:
                     if total_chars > 0:
                          logging.warning(f"Full project source ({total_chars:,} chars) exceeds limit ({context_limit:,} chars). Falling back to heuristic triage.")
 
-                    # --- Tier 1: Automated Stack Trace Analysis ---
                     logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
                     file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
 
@@ -1907,7 +1883,6 @@ class MasterOrchestrator:
                             else:
                                 logging.warning(f"File '{file_path}' from stack trace not found at '{full_path}'.")
 
-                    # --- Tier 2: Automated Apex Trace Analysis (Fallback) ---
                     if not context_package:
                         logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
                         apex_file_name = project_details.get("apex_executable_name")
@@ -1929,12 +1904,10 @@ class MasterOrchestrator:
                                         logging.warning(f"File '{file_path}' from apex trace not found at '{full_path}'.")
                         else:
                             logging.warning("Tier 2 skipped: Apex executable name or failing component name not available.")
-                # --- End of F-Dev 11.2 Change ---
 
-                # --- Execute Fix or Escalate to Tier 3 ---
                 if context_package:
                     logging.info("Automated Triage Success: Context gathered. Proceeding to plan a fix.")
-                    self._plan_and_execute_fix(failure_log, context_package, api_key)
+                    self._plan_and_execute_fix(failure_log, context_package)
                     return
                 else:
                     logging.warning("Automated Triage (Tiers 1 & 2) failed to gather context. Escalating to PM for Tier 3.")
@@ -2375,29 +2348,25 @@ class MasterOrchestrator:
             logging.error(f"Failed to retrieve project history: {e}")
             return []
 
-    def _plan_and_execute_fix(self, failure_log: str, context_package: dict, api_key: str):
+    def _plan_and_execute_fix(self, failure_log: str, context_package: dict):
         """
-        A helper method that invokes the FixPlannerAgent with gathered context
-        and prepares the resulting plan for execution by the Genesis pipeline.
-
-        Args:
-            failure_log (str): The error log or failure description.
-            context_package (dict): A dictionary containing the source code of relevant files.
-            api_key (str): The LLM API key.
+        A helper method that invokes the FixPlannerAgent and prepares the
+        resulting plan for execution by the Genesis pipeline.
+        This version is refactored to use the central llm_service.
         """
         logging.info("Invoking FixPlannerAgent with rich context to generate a fix plan...")
 
-        # For now, we will pass the first available source code as the context.
-        # This will be enhanced when we implement the full trace analysis.
+        if not self.llm_service:
+            raise Exception("Cannot plan fix: LLM Service is not configured.")
+
         relevant_code = next(iter(context_package.values()), "No code context available.")
 
-        planner_agent = FixPlannerAgent_AppTarget(api_key=api_key)
+        planner_agent = FixPlannerAgent_AppTarget(llm_service=self.llm_service)
         fix_plan_str = planner_agent.create_fix_plan(
             root_cause_hypothesis=failure_log,
             relevant_code=relevant_code
         )
 
-        # Check for errors from the agent call
         if "error" in fix_plan_str:
             raise Exception(f"FixPlannerAgent failed to generate a plan: {fix_plan_str}")
 
@@ -2467,20 +2436,16 @@ class MasterOrchestrator:
     def _plan_fix_from_description(self, description: str):
         """
         Takes a natural language description of a bug, forms a hypothesis,
-        and generates a fix plan. This is the core of functional bug handling.
-
-        Args:
-            description (str): The text description of the bug.
+        and generates a fix plan. This version is refactored to use the
+        central llm_service.
         """
         logging.info(f"Attempting to plan fix from description: '{description[:100]}...'")
         try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key:
-                    raise Exception("Cannot proceed with triage. LLM API Key is not set.")
+            if not self.llm_service:
+                raise Exception("Cannot proceed with triage: LLM Service is not configured.")
 
             # Step 1: Use TriageAgent to refine the description into a testable hypothesis.
-            triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
+            triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
             hypothesis = triage_agent.analyze_and_hypothesize(
                 error_logs=description,
                 relevant_code="No specific code context available; base analysis on user description.",
@@ -2491,7 +2456,7 @@ class MasterOrchestrator:
             logging.info(f"TriageAgent formed hypothesis: {hypothesis}")
 
             # Step 2: Use FixPlannerAgent to create a plan from the hypothesis.
-            planner_agent = FixPlannerAgent_AppTarget(api_key=api_key)
+            planner_agent = FixPlannerAgent_AppTarget(llm_service=self.llm_service)
             fix_plan_str = planner_agent.create_fix_plan(
                 root_cause_hypothesis=hypothesis,
                 relevant_code="No specific code context was automatically identified. Base the fix on the TriageAgent's hypothesis."
@@ -2564,25 +2529,22 @@ class MasterOrchestrator:
     def start_test_environment_setup(self):
         """
         Calls the advisor agent to get a list of test environment setup tasks.
-
-        Returns:
-            A list of setup task dictionaries, or None on failure.
+        This version is refactored to use the central llm_service.
         """
         logging.info("Initiating test environment setup guidance.")
         try:
+            if not self.llm_service:
+                raise Exception("Cannot get setup tasks: LLM Service is not configured.")
+
             with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
                 project_details = db.get_project_by_id(self.project_id)
                 tech_spec_text = project_details['tech_spec_text']
+                target_os = project_details.get('target_os', 'Linux') # Use saved OS
 
-                if not api_key or not tech_spec_text:
-                    raise Exception("Cannot get setup tasks: Missing API Key or Technical Specification.")
+                if not tech_spec_text:
+                    raise Exception("Cannot get setup tasks: Technical Specification is missing.")
 
-            # TODO: In a future iteration, capture the target OS during tech spec phase
-            # and pass it here for more accurate guidance.
-            target_os = "Linux" # Using a generic default for now.
-
-            agent = TestEnvironmentAdvisorAgent(api_key=api_key)
+            agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
             tasks = agent.get_setup_tasks(tech_spec_text, target_os)
             return tasks
 
@@ -2593,21 +2555,18 @@ class MasterOrchestrator:
     def get_help_for_setup_task(self, task_instructions: str):
         """
         Calls the advisor agent to get detailed help for a specific setup task.
-
-        Returns:
-            A string containing helpful information.
+        This version is refactored to use the central llm_service.
         """
         logging.info("Getting help for a test environment setup task.")
         try:
+            if not self.llm_service:
+                raise Exception("Cannot get help: LLM Service is not configured.")
+
             with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key:
-                    raise Exception("Cannot get help: Missing API Key.")
+                project_details = db.get_project_by_id(self.project_id)
+                target_os = project_details.get('target_os', 'Linux')
 
-            # TODO: Pass the correct target_os.
-            target_os = "Linux" # Using a generic default for now.
-
-            agent = TestEnvironmentAdvisorAgent(api_key=api_key)
+            agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
             help_text = agent.get_help_for_task(task_instructions, target_os)
             return help_text
 

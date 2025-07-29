@@ -801,12 +801,24 @@ if page == "Project":
                     if st.button("Submit Feedback & Refine Draft", use_container_width=True):
                         if pm_feedback_text.strip():
                             with st.spinner("AI is refining the draft with your feedback..."):
+                                if not st.session_state.orchestrator.llm_service:
+                                    st.error("Cannot refine draft: LLM Service is not configured.")
+                                    st.stop()
+
                                 with st.session_state.orchestrator.db_manager as db:
-                                    api_key = db.get_config_value("LLM_API_KEY")
                                     project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    is_gui = bool(project_details.get('is_gui_project', False)) if project_details else False
-                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
-                                refined_draft = agent.refine_specification(st.session_state.spec_draft, "PM initial review feedback.", pm_feedback_text, is_gui_project=is_gui)
+                                    is_gui = bool(project_details['is_gui_project']) if project_details else False
+
+                                agent = SpecClarificationAgent(
+                                    llm_service=st.session_state.orchestrator.llm_service,
+                                    db_manager=st.session_state.orchestrator.db_manager
+                                )
+                                refined_draft = agent.refine_specification(
+                                    st.session_state.spec_draft,
+                                    "PM initial review feedback.",
+                                    pm_feedback_text,
+                                    is_gui_project=is_gui
+                                )
                                 st.session_state.spec_draft = refined_draft
                                 st.session_state.spec_step = 'pm_review_refined'
                                 st.rerun()
@@ -815,9 +827,14 @@ if page == "Project":
                 with col2:
                     if st.button("✅ Approve & Proceed with Review", use_container_width=True, type="primary"):
                         with st.spinner("AI is checking the draft for ambiguities..."):
-                            with st.session_state.orchestrator.db_manager as db:
-                                api_key = db.get_config_value("LLM_API_KEY")
-                            agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                            if not st.session_state.orchestrator.llm_service:
+                                st.error("Cannot analyze draft: LLM Service is not configured.")
+                                st.stop()
+
+                            agent = SpecClarificationAgent(
+                                llm_service=st.session_state.orchestrator.llm_service,
+                                db_manager=st.session_state.orchestrator.db_manager
+                            )
                             issues = agent.identify_potential_issues(st.session_state.spec_draft)
                             st.session_state.ai_issues = issues
                             st.session_state.spec_step = 'ai_clarification'
@@ -831,9 +848,14 @@ if page == "Project":
                 with col1:
                     if st.button("✅ Approve & Proceed to your Review", type="primary", use_container_width=True):
                         with st.spinner("AI is checking the refined draft for ambiguities..."):
-                            with st.session_state.orchestrator.db_manager as db:
-                                api_key = db.get_config_value("LLM_API_KEY")
-                            agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                            if not st.session_state.orchestrator.llm_service:
+                                st.error("Cannot analyze draft: LLM Service is not configured.")
+                                st.stop()
+
+                            agent = SpecClarificationAgent(
+                                llm_service=st.session_state.orchestrator.llm_service,
+                                db_manager=st.session_state.orchestrator.db_manager
+                            )
                             issues = agent.identify_potential_issues(st.session_state.spec_draft)
                             st.session_state.ai_issues = issues
                             st.session_state.spec_step = 'ai_clarification'
@@ -855,17 +877,29 @@ if page == "Project":
                     if st.button("Submit Clarifications", use_container_width=True):
                         if clarification_text.strip():
                             with st.spinner("AI is refining the draft and re-analyzing..."):
+                                if not st.session_state.orchestrator.llm_service:
+                                    st.error("Cannot refine draft: LLM Service is not configured.")
+                                    st.stop()
+
                                 with st.session_state.orchestrator.db_manager as db:
-                                    api_key = db.get_config_value("LLM_API_KEY")
                                     project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    is_gui = bool(project_details.get('is_gui_project', False)) if project_details else False
-                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                                    is_gui = bool(project_details['is_gui_project']) if project_details else False
+
+                                agent = SpecClarificationAgent(
+                                    llm_service=st.session_state.orchestrator.llm_service,
+                                    db_manager=st.session_state.orchestrator.db_manager
+                                )
                                 st.session_state.orchestrator.capture_spec_clarification_learning(
                                     problem_context=st.session_state.ai_issues,
                                     solution_text=clarification_text,
                                     spec_text=st.session_state.spec_draft
                                 )
-                                refined_draft = agent.refine_specification(st.session_state.spec_draft, st.session_state.ai_issues, clarification_text, is_gui_project=is_gui)
+                                refined_draft = agent.refine_specification(
+                                    st.session_state.spec_draft,
+                                    st.session_state.ai_issues,
+                                    clarification_text,
+                                    is_gui_project=is_gui
+                                )
                                 st.session_state.spec_draft = refined_draft
                                 issues = agent.identify_potential_issues(st.session_state.spec_draft)
                                 st.session_state.ai_issues = issues
@@ -891,6 +925,7 @@ if page == "Project":
                 st.session_state.tech_spec_draft = ""
             if 'target_os' not in st.session_state:
                 st.session_state.target_os = "Linux"
+
             if st.session_state.tech_spec_step == 'initial_choice':
                 st.markdown("First, select the target Operating System for the application.")
                 st.session_state.target_os = st.selectbox(
@@ -905,14 +940,14 @@ if page == "Project":
                     if st.button("🤖 Let ASDF Propose a Tech Stack", use_container_width=True, type="primary"):
                         with st.spinner("AI is analyzing the specification and generating a proposal..."):
                             try:
-                                with st.session_state.orchestrator.db_manager as db:
-                                    api_key = db.get_config_value("LLM_API_KEY")
-                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    final_spec_text = project_details['final_spec_text']
-                                if not api_key: st.error("Cannot generate proposal. LLM API Key is not set.")
+                                if not st.session_state.orchestrator.llm_service:
+                                    st.error("Cannot generate proposal: LLM Service is not configured.")
                                 else:
-                                    from agents.agent_tech_stack_proposal import TechStackProposalAgent
-                                    agent = TechStackProposalAgent(api_key=api_key)
+                                    with st.session_state.orchestrator.db_manager as db:
+                                        project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                        final_spec_text = project_details['final_spec_text']
+
+                                    agent = TechStackProposalAgent(llm_service=st.session_state.orchestrator.llm_service)
                                     proposal = agent.propose_stack(final_spec_text, st.session_state.target_os)
                                     st.session_state.tech_spec_draft = proposal
                                     st.session_state.tech_spec_step = 'pm_review'
@@ -936,18 +971,16 @@ if page == "Project":
                     if st.session_state.tech_spec_draft.strip():
                         with st.spinner("AI is expanding your input into a full technical specification..."):
                             try:
-                                with st.session_state.orchestrator.db_manager as db:
-                                    api_key = db.get_config_value("LLM_API_KEY")
-                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    context = (
-                                        f"{project_details['final_spec_text']}\n\n"
-                                        f"--- PM Directive for Technology Stack ---\n{st.session_state.tech_spec_draft}"
-                                    )
-                                if not api_key:
-                                    st.error("Cannot generate proposal. LLM API Key is not set.")
+                                if not st.session_state.orchestrator.llm_service:
+                                    st.error("Cannot generate specification: LLM Service is not configured.")
                                 else:
-                                    from agents.agent_tech_stack_proposal import TechStackProposalAgent
-                                    agent = TechStackProposalAgent(api_key=api_key)
+                                    with st.session_state.orchestrator.db_manager as db:
+                                        project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                        context = (
+                                            f"{project_details['final_spec_text']}\n\n"
+                                            f"--- PM Directive for Technology Stack ---\n{st.session_state.tech_spec_draft}"
+                                        )
+                                    agent = TechStackProposalAgent(llm_service=st.session_state.orchestrator.llm_service)
                                     proposal = agent.propose_stack(context, st.session_state.target_os)
                                     st.session_state.tech_spec_draft = proposal
                                     st.session_state.tech_spec_step = 'pm_review'
@@ -960,12 +993,11 @@ if page == "Project":
             elif st.session_state.tech_spec_step == 'pm_review':
                 st.subheader("Review Technical Specification")
                 st.markdown("Please review the draft below. You can either approve it or provide feedback for refinement.")
-                st.text_area(
+                st.session_state.tech_spec_draft = st.text_area(
                     "Technical Specification Draft",
                     value=st.session_state.tech_spec_draft,
                     height=400,
-                    key="tech_spec_draft_display",
-                    disabled=False
+                    key="tech_spec_draft_display"
                 )
                 feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
                 col1, col2, _ = st.columns([1.5, 2, 3])
@@ -974,18 +1006,17 @@ if page == "Project":
                         if feedback_text.strip():
                             with st.spinner("AI is refining the proposal based on your feedback..."):
                                 try:
-                                    with st.session_state.orchestrator.db_manager as db:
-                                        api_key = db.get_config_value("LLM_API_KEY")
-                                        project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                        context = (
-                                            f"{project_details['final_spec_text']}\n\n"
-                                            f"--- Current Draft to Refine ---\n{st.session_state.tech_spec_draft}\n\n"
-                                            f"--- PM Feedback for Refinement ---\n{feedback_text}"
-                                        )
-                                    if not api_key: st.error("Cannot generate proposal. LLM API Key is not set.")
+                                    if not st.session_state.orchestrator.llm_service:
+                                        st.error("Cannot refine proposal: LLM Service is not configured.")
                                     else:
-                                        from agents.agent_tech_stack_proposal import TechStackProposalAgent
-                                        agent = TechStackProposalAgent(api_key=api_key)
+                                        with st.session_state.orchestrator.db_manager as db:
+                                            project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                            context = (
+                                                f"{project_details['final_spec_text']}\n\n"
+                                                f"--- Current Draft to Refine ---\n{st.session_state.tech_spec_draft}\n\n"
+                                                f"--- PM Feedback for Refinement ---\n{feedback_text}"
+                                            )
+                                        agent = TechStackProposalAgent(llm_service=st.session_state.orchestrator.llm_service)
                                         proposal = agent.propose_stack(context, st.session_state.target_os)
                                         st.session_state.tech_spec_draft = proposal
                                         st.rerun()
@@ -1001,7 +1032,6 @@ if page == "Project":
                                 st.session_state.tech_spec_draft,
                                 st.session_state.target_os
                             )
-                        # Clean up UI state
                         keys_to_clear = ['tech_spec_draft', 'target_os', 'tech_spec_step']
                         for key in keys_to_clear:
                             if key in st.session_state:
@@ -1012,11 +1042,12 @@ if page == "Project":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
             st.markdown("The technical specification is complete. Now, let's establish the build script for the project.")
             st.info("This script (e.g., `requirements.txt`, `pom.xml`) manages project dependencies and how the application is built.")
+
             with st.session_state.orchestrator.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                 tech_spec_text = project_details['tech_spec_text']
                 target_os = project_details['target_os']
+
             if not target_os:
                 st.error("Cannot proceed: Target OS has not been set in the previous step.")
             else:
@@ -1027,11 +1058,11 @@ if page == "Project":
                     if st.button("🤖 Auto-Generate Build Script", use_container_width=True, type="primary"):
                         with st.spinner(f"Generating standard build script for the specified tech stack..."):
                             try:
-                                if not api_key:
-                                    st.error("Cannot generate script: LLM API Key is not set.")
+                                if not st.session_state.orchestrator.llm_service:
+                                    st.error("Cannot generate script: LLM Service is not configured.")
                                 else:
                                     from agents.agent_build_script_generator import BuildScriptGeneratorAgent
-                                    agent = BuildScriptGeneratorAgent(api_key=api_key)
+                                    agent = BuildScriptGeneratorAgent(llm_service=st.session_state.orchestrator.llm_service)
                                     script_info = agent.generate_script(tech_spec_text, target_os)
                                     if script_info:
                                         filename, content = script_info
@@ -1059,30 +1090,32 @@ if page == "Project":
         elif current_phase_name == "TEST_ENVIRONMENT_SETUP":
             st.header(st.session_state.orchestrator.PHASE_DISPLAY_NAMES.get(st.session_state.orchestrator.current_phase))
             st.markdown("Please follow the steps below to set up the necessary testing frameworks for your project's technology stack.")
+
             if 'setup_tasks' not in st.session_state:
                 with st.spinner("Analyzing technical spec to generate setup steps..."):
                     st.session_state.setup_tasks = st.session_state.orchestrator.start_test_environment_setup()
                     st.session_state.current_setup_step = 0
                     st.session_state.setup_help_text = None
+
             tasks = st.session_state.setup_tasks
             if tasks is None:
                 st.error("Could not generate setup tasks. Please check the logs and ensure the technical specification is complete.")
             elif st.session_state.current_setup_step >= len(tasks):
                 st.success("All setup steps have been actioned.")
                 st.markdown("Please confirm the final command that should be used to run all automated tests for this project.")
+
                 with st.session_state.orchestrator.db_manager as db:
                      project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                      tech_spec_text = project_details['tech_spec_text']
+
                 if 'suggested_test_command' not in st.session_state:
-                    from agents.agent_verification_app_target import VerificationAgent_AppTarget # Local import
-                    with st.session_state.orchestrator.db_manager as db:
-                        api_key = db.get_config_value("LLM_API_KEY")
-                    if api_key and tech_spec_text:
-                        agent = VerificationAgent_AppTarget(api_key)
+                    if st.session_state.orchestrator.llm_service and tech_spec_text:
+                        agent = VerificationAgent_AppTarget(llm_service=st.session_state.orchestrator.llm_service)
                         details = agent._get_test_execution_details(tech_spec_text)
                         st.session_state.suggested_test_command = details.get("command") if details else "pytest"
                     else:
                         st.session_state.suggested_test_command = "pytest"
+
                 confirmed_command = st.text_input(
                     "Test Execution Command:",
                     value=st.session_state.suggested_test_command
@@ -1112,7 +1145,7 @@ if page == "Project":
                 with col1:
                     if st.button("✅ Done, Next Step", use_container_width=True, type="primary"):
                         st.session_state.current_setup_step += 1
-                        st.session_state.setup_help_text = None # Clear help text when moving on
+                        st.session_state.setup_help_text = None
                         st.rerun()
                 with col2:
                     if st.button("❓ I Need Help", use_container_width=True):
@@ -1133,37 +1166,42 @@ if page == "Project":
                 st.session_state.coding_standard_step = 'initial'
             if 'coding_standard_draft' not in st.session_state:
                 st.session_state.coding_standard_draft = ""
+
             if st.session_state.coding_standard_step == 'initial':
                 st.markdown("Generate a project-specific coding standard based on the technical specification. This standard will be enforced by all code-generating agents.")
                 if st.button("Generate Coding Standard Draft", type="primary"):
                     with st.spinner("AI is generating the coding standard..."):
                         try:
-                            with st.session_state.orchestrator.db_manager as db:
-                                api_key = db.get_config_value("LLM_API_KEY")
-                                project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                tech_spec = project_details['tech_spec_text']
-                            if not api_key or not tech_spec:
-                                st.error("Cannot generate standard: Missing API Key or Technical Specification.")
+                            if not st.session_state.orchestrator.llm_service:
+                                st.error("Cannot generate standard: LLM Service is not configured.")
                             else:
-                                from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
-                                agent = CodingStandardAgent_AppTarget(api_key=api_key)
-                                standard = agent.generate_standard(tech_spec)
-                                st.session_state.coding_standard_draft = standard
-                                st.session_state.coding_standard_step = 'pm_review' # Move to review step
-                                st.rerun()
+                                with st.session_state.orchestrator.db_manager as db:
+                                    project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
+                                    tech_spec = project_details['tech_spec_text']
+
+                                if not tech_spec:
+                                    st.error("Cannot generate standard: Technical Specification is missing.")
+                                else:
+                                    from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
+                                    agent = CodingStandardAgent_AppTarget(llm_service=st.session_state.orchestrator.llm_service)
+                                    standard = agent.generate_standard(tech_spec)
+                                    st.session_state.coding_standard_draft = standard
+                                    st.session_state.coding_standard_step = 'pm_review'
+                                    st.rerun()
                         except Exception as e:
                             st.error(f"Failed to generate coding standard: {e}")
+
             elif st.session_state.coding_standard_step == 'pm_review':
                 st.subheader("Review Coding Standard")
                 st.markdown("Please review the draft below. You can either approve it or provide feedback for refinement.")
-                st.text_area(
+                st.session_state.coding_standard_draft = st.text_area(
                     "Coding Standard Draft",
                     value=st.session_state.coding_standard_draft,
                     height=400,
-                    key="coding_standard_display",
-                    disabled=True
+                    key="coding_standard_display"
                 )
                 feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
+
                 col1, col2, _ = st.columns([1.5, 2, 3])
                 with col1:
                     if st.button("Submit Feedback & Refine", use_container_width=True):
@@ -1178,7 +1216,6 @@ if page == "Project":
                             st.session_state.orchestrator.finalize_and_save_coding_standard(
                                 st.session_state.coding_standard_draft
                             )
-                        # Clean up UI state
                         keys_to_clear = ['coding_standard_draft', 'coding_standard_step']
                         for key in keys_to_clear:
                             if key in st.session_state:
@@ -1837,7 +1874,7 @@ elif page == "Documents":
 
             # UX/UI Specification
             with st.expander("UX/UI Specification", expanded=False):
-                ux_spec_text = project_docs.get('ux_spec_text') if project_docs else None
+                ux_spec_text = project_docs['ux_spec_text'] if project_docs else None
                 if ux_spec_text:
                     st.text_area("UX/UI Spec Content", ux_spec_text, height=300, disabled=True, key=f"ux_spec_{doc_project_id}")
                     ux_spec_docx_bytes = report_generator.generate_text_document_docx(f"UX-UI Specification - {doc_project_name}", ux_spec_text)
