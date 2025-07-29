@@ -10,39 +10,42 @@ text content from various file formats and enforce initial project size limits.
 """
 
 import docx
+import logging
 from typing import List, Tuple, Optional
+from asdf_db_manager import ASDFDBManager
 
 # Note: The Streamlit 'UploadedFile' object will be passed to this agent,
 # so we avoid a direct 'import streamlit' to keep the agent's logic
 # independent from the UI framework where possible.
-
-# A configurable limit to prevent overly large specifications from being processed.
-# (ASDF Change Request CR-ASDF-004, Stage 1: Dynamic Size Guardrail)
-# For this implementation, we use a fixed but easily configurable value.
-# A future enhancement could make this truly dynamic based on the LLM's token limit.
-SPEC_MAX_CHAR_LIMIT = 30000
-
 
 class ProjectBootstrapAgent:
     """
     Processes uploaded specification documents for the target application.
 
     This agent extracts text from .txt, .md, and .docx files, preparing the
-    content for the SpecClarificationAgent. It also enforces a size limit
-    on the incoming specification.
-    (ASDF PRD v0.4, Section 3.2, Phase 1)
+    content for the SpecClarificationAgent. It now enforces a dynamic size limit
+    on the incoming specification based on the active factory configuration.
+    (ASDF Adaptive Context Strategy, F-Dev 11.1)
     """
 
-    def __init__(self):
-        """Initializes the ProjectBootstrapAgent."""
-        pass
+    def __init__(self, db_manager: ASDFDBManager):
+        """
+        Initializes the ProjectBootstrapAgent.
+
+        Args:
+            db_manager (ASDFDBManager): An instance of the database manager to access config.
+        """
+        if not db_manager:
+            raise ValueError("db_manager is required for the ProjectBootstrapAgent.")
+        self.db_manager = db_manager
+
 
     def extract_text_from_files(self, uploaded_files: List) -> Tuple[Optional[str], List[str], Optional[str]]:
         """
         Extracts text content from a list of uploaded files and checks size limits.
 
         Supports .txt, .md, and .docx formats as per the PRD.
-        Implements the size guardrail from CR-ASDF-004.
+        Implements the dynamic size guardrail by reading the active context limit from the database.
 
         Args:
             uploaded_files: A list of files uploaded via st.file_uploader.
@@ -73,13 +76,22 @@ class ProjectBootstrapAgent:
 
         concatenated_text = "\n\n---\n\n".join(all_text)
 
-        # (CR-ASDF-004) Stage 1: Dynamic Size Guardrail Implementation
-        if len(concatenated_text) > SPEC_MAX_CHAR_LIMIT:
+        # --- F-Dev 11.1: Dynamic Size Guardrail Implementation ---
+        try:
+            with self.db_manager as db:
+                limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
+            spec_max_char_limit = int(limit_str)
+        except Exception as e:
+            logging.error(f"Could not read CONTEXT_WINDOW_CHAR_LIMIT from DB, using default. Error: {e}")
+            spec_max_char_limit = 2000000 # Fallback to a safe default
+
+        if len(concatenated_text) > spec_max_char_limit:
             error_message = (
-                "The provided specification is too large for a single project. "
-                "Please divide it into smaller, more focused sub-projects."
+                "The provided specification is too large for a single project based on the current LLM's context limit. "
+                "Please divide it into smaller, more focused sub-projects or select an LLM with a larger context window in Settings."
             )
-            messages.append(f"Error: Specification character count ({len(concatenated_text)}) exceeds the limit of {SPEC_MAX_CHAR_LIMIT}.")
+            messages.append(f"Error: Specification character count ({len(concatenated_text):,}) exceeds the active limit of {spec_max_char_limit:,}.")
             return None, messages, error_message
+        # --- End of F-Dev 11.1 Change ---
 
         return concatenated_text, messages, None

@@ -581,7 +581,7 @@ if page == "Project":
                     uploaded_files = st.file_uploader("Upload Docs", type=["txt", "md", "docx"], accept_multiple_files=True, label_visibility="collapsed")
                     if st.button("Process Uploaded Documents"):
                         if uploaded_files:
-                            bootstrap_agent = ProjectBootstrapAgent()
+                            bootstrap_agent = ProjectBootstrapAgent(db_manager=st.session_state.orchestrator.db_manager)
                             extracted_text, messages, size_error = bootstrap_agent.extract_text_from_files(uploaded_files)
                             for msg in messages:
                                 st.warning(msg)
@@ -1167,7 +1167,7 @@ if page == "Project":
                             if not all([api_key, final_spec, tech_spec]):
                                 st.error("Could not generate plan: Missing API Key, Final Specification, or Technical Specification.")
                             else:
-                                agent = PlanningAgent_AppTarget(api_key=api_key)
+                                agent = PlanningAgent_AppTarget(llm_service=st.session_state.orchestrator.llm_service, db_manager=st.session_state.orchestrator.db_manager)
                                 response_json_str = agent.generate_development_plan(final_spec, tech_spec)
                                 response_data = json.loads(response_json_str)
                                 if "error" in response_data:
@@ -1995,35 +1995,29 @@ elif page == "Settings":
     st.caption("Pro-Tip: For any provider, you can use the fast model name in both fields to optimize for speed and cost.")
 
     def save_llm_settings():
-        """Callback to save all LLM settings and re-initialize the service."""
+        """
+        Callback to save all LLM settings, dynamically update the active context limit,
+        and re-initialize the service. (F-Dev 11.3)
+        """
         provider = st.session_state.selected_llm_provider
 
         # --- Model Name Defaulting Logic ---
         if provider in ["Gemini", "OpenAI", "Anthropic", "Enterprise"]:
             prefix = provider.lower()
             if provider == "Enterprise":
-                prefix = "custom" # Use the database key prefix
-
+                prefix = "custom"
             reasoning_key = f"{prefix}_reasoning_model"
             fast_key = f"{prefix}_fast_model"
-
             reasoning_val = st.session_state.get(reasoning_key, "").strip()
             fast_val = st.session_state.get(fast_key, "").strip()
-
             if not reasoning_val and not fast_val:
                 st.warning(f"Please enter a model name for 'Reasoning Model' and/or 'Fast Model' for {provider}.")
-                return # Stop the save if both are empty
-
-            # Apply the defaulting logic
-            if not reasoning_val:
-                st.session_state[reasoning_key] = fast_val
-            elif not fast_val:
-                st.session_state[fast_key] = reasoning_val
+                return
+            if not reasoning_val: st.session_state[reasoning_key] = fast_val
+            elif not fast_val: st.session_state[fast_key] = reasoning_val
 
         # --- Prepare all settings to be saved ---
-        settings_to_save = {
-            "SELECTED_LLM_PROVIDER": provider
-        }
+        settings_to_save = {"SELECTED_LLM_PROVIDER": provider}
         if provider == "Gemini":
             settings_to_save["GEMINI_API_KEY"] = st.session_state.gemini_api_key
             settings_to_save["GEMINI_REASONING_MODEL"] = st.session_state.gemini_reasoning_model
@@ -2047,13 +2041,25 @@ elif page == "Settings":
                 for key, value in settings_to_save.items():
                     db.set_config_value(key, str(value))
 
-            # --- Re-initialize the LLM service with the new settings ---
+                # --- F-Dev 11.3: Dynamically update the active context limit ---
+                provider_key_map = {
+                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
+                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
+                }
+                provider_default_key = provider_key_map.get(provider)
+                if provider_default_key:
+                    provider_default_value = db.get_config_value(provider_default_key)
+                    if provider_default_value:
+                        db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", provider_default_value)
+                        logging.info(f"Active context limit updated to default for {provider}: {provider_default_value} chars.")
+                # --- End of F-Dev 11.3 Change ---
+
             st.session_state.orchestrator.llm_service = st.session_state.orchestrator._create_llm_service()
             if st.session_state.orchestrator.llm_service:
                 st.success("✅ LLM Service settings saved and activated!")
             else:
                 st.error("Settings saved, but failed to activate the LLM Service. Please check your API key or endpoint details.")
-
         except Exception as e:
             st.error(f"Failed to save LLM settings: {e}")
 

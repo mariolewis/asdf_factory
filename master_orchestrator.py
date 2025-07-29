@@ -116,6 +116,19 @@ class MasterOrchestrator:
             if not db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT"):
                 db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", "2000000")
 
+            # --- Populate default context limits if they don't exist ---
+            default_limits = {
+                "GEMINI_CONTEXT_LIMIT": "6000000",
+                "OPENAI_CONTEXT_LIMIT": "380000",
+                "ANTHROPIC_CONTEXT_LIMIT": "600000",
+                "LOCALPHI3_CONTEXT_LIMIT": "380000",
+                "ENTERPRISE_CONTEXT_LIMIT": "128000"
+            }
+            for key, value in default_limits.items():
+                if not db.get_config_value(key):
+                    db.set_config_value(key, value, f"Default context character limit for {key.split('_')[0]}.")
+            # --- End of flow
+
         log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
         log_level = log_level_map.get(log_level_str, logging.INFO)
         logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s', force=True)
@@ -1101,7 +1114,7 @@ class MasterOrchestrator:
     def _run_integration_and_ui_testing_phase(self):
         """
         Executes the full Integration and UI Testing workflow.
-        This version now dynamically identifies the main executable file.
+        This version implements the Adaptive Context Strategy (F-Dev 11.2).
         """
         logging.info("Starting Phase: Automated Integration & Verification.")
         self.set_phase("INTEGRATION_AND_VERIFICATION")
@@ -1116,31 +1129,56 @@ class MasterOrchestrator:
                 project_root_path = Path(project_details['project_root_folder'])
                 statuses_to_integrate = ["UNIT_TESTS_PASSING", "UNIT_TESTS_FAILING", "KNOWN_ISSUE"]
                 new_artifacts_rows = db.get_artifacts_by_statuses(self.project_id, statuses_to_integrate)
+
                 if not new_artifacts_rows:
                     logging.warning("Integration phase started, but no new artifacts found to integrate. Skipping to UI Test Plan generation.")
-                else:
-                    new_artifacts = [dict(row) for row in new_artifacts_rows]
-                    # Use the new helper method to dynamically identify all relevant files for integration.
-                    integration_file_paths = self._get_integration_context_files(db, api_key, new_artifacts)
+                    # Even if there are no new artifacts, we should still run verification and generate the UI plan
 
-                    if not integration_file_paths:
-                        raise Exception("AI could not identify any files for integration. Cannot proceed.")
+                new_artifacts = [dict(row) for row in new_artifacts_rows]
+                existing_files_context = {}
 
-                    # Read the content of all identified files to create a rich context.
-                    existing_files_context = {}
-                    for file_path_str in integration_file_paths:
+                # --- F-Dev 11.2: Adaptive Context Strategy ---
+                logging.info("Applying Adaptive Context Strategy for integration planning...")
+                limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
+                context_limit = int(limit_str)
+
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                all_source_files = {}
+                total_chars = 0
+
+                for artifact in all_artifacts:
+                    file_path_str = artifact['file_path']
+                    if file_path_str and file_path_str.lower() != 'n/a':
                         full_path = project_root_path / file_path_str
-                        if full_path.exists():
-                            existing_files_context[file_path_str] = full_path.read_text(encoding='utf-8')
-                        else:
-                            logging.warning(f"AI identified integration file '{file_path_str}' but it was not found on disk. Skipping.")
+                        if full_path.exists() and full_path.is_file():
+                            try:
+                                content = full_path.read_text(encoding='utf-8')
+                                all_source_files[file_path_str] = content
+                                total_chars += len(content)
+                            except Exception as e:
+                                logging.warning(f"Could not read file for context: {full_path}. Error: {e}")
 
-                statuses_to_integrate = ["UNIT_TESTS_PASSING", "UNIT_TESTS_FAILING", "KNOWN_ISSUE"]
-                new_artifacts = db.get_artifacts_by_statuses(self.project_id, statuses_to_integrate)
-                if not new_artifacts:
-                    logging.warning("Integration phase started, but no artifacts found to integrate. Skipping to UI Test Plan.")
+                if total_chars < context_limit:
+                    logging.info(f"Full project source code ({total_chars:,} chars) fits within the context limit ({context_limit:,} chars). Using rich context.")
+                    existing_files_context = all_source_files
                 else:
-                    new_artifacts_json = json.dumps([dict(row) for row in new_artifacts], indent=4)
+                    logging.warning(f"Full project source ({total_chars:,} chars) exceeds limit ({context_limit:,} chars). Falling back to heuristic file selection.")
+                    # Fallback to existing heuristic method if new artifacts exist
+                    if new_artifacts:
+                        integration_file_paths = self._get_integration_context_files(db, api_key, new_artifacts)
+                        if not integration_file_paths:
+                            raise Exception("AI could not identify any files for integration. Cannot proceed.")
+
+                        for file_path_str in integration_file_paths:
+                            full_path = project_root_path / file_path_str
+                            if full_path.exists():
+                                existing_files_context[file_path_str] = full_path.read_text(encoding='utf-8')
+                            else:
+                                logging.warning(f"AI identified integration file '{file_path_str}' but it was not found on disk. Skipping.")
+                # --- End of F-Dev 11.2 Change ---
+
+                if new_artifacts:
+                    new_artifacts_json = json.dumps(new_artifacts, indent=4)
 
                     logging.info("Invoking IntegrationPlannerAgent...")
                     planner_agent = IntegrationPlannerAgent(api_key=api_key)
@@ -1150,7 +1188,6 @@ class MasterOrchestrator:
                     if "error" in integration_plan:
                         raise Exception(f"IntegrationPlannerAgent failed: {integration_plan['error']}")
 
-                    # Prepend header and save
                     plan_with_header = self._prepend_standard_header(integration_plan_str, "Integration Plan")
                     db.save_integration_plan(self.project_id, plan_with_header)
 
@@ -1158,13 +1195,15 @@ class MasterOrchestrator:
                     code_agent = OrchestrationCodeAgent(api_key=api_key)
                     for file_path, modifications in integration_plan.items():
                         full_file_path = project_root_path / file_path
+                        if not full_file_path.exists():
+                            logging.warning(f"Integration plan specifies modifications for non-existent file: {file_path}. Skipping.")
+                            continue
                         original_code = full_file_path.read_text(encoding='utf-8')
                         modified_code = code_agent.apply_modifications(original_code, json.dumps(modifications))
                         full_file_path.write_text(modified_code, encoding='utf-8')
                         logging.info(f"Successfully applied integration modifications to {file_path}.")
 
                 logging.info("Invoking VerificationAgent for final verification...")
-                from agents.agent_verification_app_target import VerificationAgent_AppTarget
                 verification_agent = VerificationAgent_AppTarget(api_key=api_key)
 
                 test_command = project_details['test_execution_command']
@@ -1175,36 +1214,33 @@ class MasterOrchestrator:
 
                 if status == 'CODE_FAILURE':
                     logging.error("Integration verification failed due to test failures. Triggering debug pipeline.")
-                    # Trigger the full debug pipeline for code failures as per the PRD.
                     self.escalate_for_manual_debug(test_output)
-                    return  # Stop the current phase.
+                    return
                 elif status == 'ENVIRONMENT_FAILURE':
-                    # For environment issues, use the intended "escape hatch".
                     logging.error(f"Integration verification failed due to an environment error. Awaiting PM resolution.")
                     self.task_awaiting_approval = {"failure_reason": test_output}
                     self.set_phase("AWAITING_INTEGRATION_RESOLUTION")
-                    return  # Stop the current phase.
+                    return
 
-                # If status is 'SUCCESS', the workflow continues below.
                 repo = git.Repo(project_root_path)
-                repo.git.add(A=True)
-                repo.index.commit(f"feat: Integrate all components for {self.project_name}")
-                logging.info("Successfully integrated all components and passed verification tests.")
+                if repo.is_dirty(untracked_files=True):
+                    repo.git.add(A=True)
+                    repo.index.commit(f"feat: Integrate all components for {self.project_name}")
+                    logging.info("Successfully integrated all components and passed verification tests.")
+                else:
+                    logging.info("No changes to commit after integration. Verification tests passed.")
 
-                # Generate UI Test Plan
                 functional_spec_text = project_details['final_spec_text']
                 technical_spec_text = project_details['tech_spec_text']
                 ui_test_planner = UITestPlannerAgent_AppTarget(api_key=api_key)
                 ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
 
-                # Prepend header and save
                 plan_with_header = self._prepend_standard_header(ui_test_plan_content, "UI Test Plan")
                 db.save_ui_test_plan(self.project_id, plan_with_header)
                 self.set_phase("MANUAL_UI_TESTING")
 
         except Exception as e:
             logging.error(f"Integration & Verification Phase failed. Awaiting PM resolution. Error: {e}")
-            # Store the failure reason for the UI to display
             self.task_awaiting_approval = {"failure_reason": str(e)}
             self.set_phase("AWAITING_INTEGRATION_RESOLUTION")
 
@@ -1782,6 +1818,7 @@ class MasterOrchestrator:
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
         Initiates the multi-tiered triage and debug process.
+        This version implements the Adaptive Context Strategy (F-Dev 11.2).
         """
         logging.info("A failure has triggered the debugging pipeline.")
 
@@ -1808,46 +1845,73 @@ class MasterOrchestrator:
                 api_key = db.get_config_value("LLM_API_KEY")
                 if not api_key: raise Exception("Cannot proceed with debugging. LLM API Key is not set.")
 
-                triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
+                triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
                 context_package = {}
 
-                # --- Tier 1: Automated Stack Trace Analysis ---
-                logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
-                file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
+                # --- F-Dev 11.2: Adaptive Context Strategy for Debugging ---
+                logging.info("Applying Adaptive Context Strategy for debugging...")
+                limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
+                context_limit = int(limit_str)
 
-                if file_paths_from_trace:
-                    logging.info(f"Tier 1 Success: Found {len(file_paths_from_trace)} files in stack trace.")
-                    for file_path in file_paths_from_trace:
-                        full_path = project_root_path / file_path
-                        if full_path.exists():
-                            context_package[file_path] = full_path.read_text(encoding='utf-8')
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                all_source_files = {}
+                total_chars = 0
+
+                for artifact in all_artifacts:
+                    file_path_str = artifact['file_path']
+                    if file_path_str and file_path_str.lower() != 'n/a':
+                        full_path = project_root_path / file_path_str
+                        if full_path.exists() and full_path.is_file():
+                            try:
+                                content = full_path.read_text(encoding='utf-8')
+                                all_source_files[file_path_str] = content
+                                total_chars += len(content)
+                            except Exception as e:
+                                logging.warning(f"Could not read file for debug context: {full_path}. Error: {e}")
+
+                if total_chars > 0 and total_chars < context_limit:
+                    logging.info(f"Full project source code ({total_chars:,} chars) fits within the context limit ({context_limit:,} chars). Using rich context for triage.")
+                    context_package = all_source_files
+                else:
+                    if total_chars > 0:
+                         logging.warning(f"Full project source ({total_chars:,} chars) exceeds limit ({context_limit:,} chars). Falling back to heuristic triage.")
+
+                    # --- Tier 1: Automated Stack Trace Analysis ---
+                    logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
+                    file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
+
+                    if file_paths_from_trace:
+                        logging.info(f"Tier 1 Success: Found {len(file_paths_from_trace)} files in stack trace.")
+                        for file_path in file_paths_from_trace:
+                            full_path = project_root_path / file_path
+                            if full_path.exists():
+                                context_package[file_path] = full_path.read_text(encoding='utf-8')
+                            else:
+                                logging.warning(f"File '{file_path}' from stack trace not found at '{full_path}'.")
+
+                    # --- Tier 2: Automated Apex Trace Analysis (Fallback) ---
+                    if not context_package:
+                        logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
+                        apex_file_name = project_details.get("apex_executable_name")
+                        failing_task = self.get_current_task_details()
+                        failing_component_name = failing_task.get('component_name') if failing_task else None
+
+                        if apex_file_name and failing_component_name:
+                            all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
+                            file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
+                            file_paths_from_trace = json.loads(file_paths_from_trace_json)
+
+                            if file_paths_from_trace:
+                                logging.info(f"Tier 2 Success: Found {len(file_paths_from_trace)} files in apex trace.")
+                                for file_path in file_paths_from_trace:
+                                    full_path = project_root_path / file_path
+                                    if full_path.exists():
+                                        context_package[file_path] = full_path.read_text(encoding='utf-8')
+                                    else:
+                                        logging.warning(f"File '{file_path}' from apex trace not found at '{full_path}'.")
                         else:
-                            logging.warning(f"File '{file_path}' from stack trace not found at '{full_path}'.")
-
-                # --- Tier 2: Automated Apex Trace Analysis (Fallback) ---
-                if not context_package:
-                    logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
-                    apex_file_name = project_details.get("apex_executable_name")
-                    failing_task = self.get_current_task_details()
-                    failing_component_name = failing_task.get('component_name') if failing_task else None
-
-                    if apex_file_name and failing_component_name:
-                        all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                        rowd_json = json.dumps([dict(row) for row in all_artifacts])
-
-                        file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(rowd_json, apex_file_name, failing_component_name)
-                        file_paths_from_trace = json.loads(file_paths_from_trace_json)
-
-                        if file_paths_from_trace:
-                            logging.info(f"Tier 2 Success: Found {len(file_paths_from_trace)} files in apex trace.")
-                            for file_path in file_paths_from_trace:
-                                full_path = project_root_path / file_path
-                                if full_path.exists():
-                                    context_package[file_path] = full_path.read_text(encoding='utf-8')
-                                else:
-                                    logging.warning(f"File '{file_path}' from apex trace not found at '{full_path}'.")
-                    else:
-                        logging.warning("Tier 2 skipped: Apex executable name or failing component name not available.")
+                            logging.warning("Tier 2 skipped: Apex executable name or failing component name not available.")
+                # --- End of F-Dev 11.2 Change ---
 
                 # --- Execute Fix or Escalate to Tier 3 ---
                 if context_package:

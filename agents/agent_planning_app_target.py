@@ -9,6 +9,7 @@ import logging
 import textwrap
 import json
 from llm_service import LLMService
+from asdf_db_manager import ASDFDBManager
 
 class PlanningAgent_AppTarget:
     """
@@ -16,37 +17,49 @@ class PlanningAgent_AppTarget:
     based on the finalized application and technical specifications.
     """
 
-    def __init__(self, llm_service: LLMService):
+    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
         """
         Initializes the PlanningAgent_AppTarget.
 
         Args:
             llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
+            db_manager (ASDFDBManager): An instance of the database manager for config access.
         """
         if not llm_service:
             raise ValueError("llm_service is required for the PlanningAgent_AppTarget.")
+        if not db_manager:
+            raise ValueError("db_manager is required for the PlanningAgent_AppTarget.")
         self.llm_service = llm_service
+        self.db_manager = db_manager
         logging.info("PlanningAgent_AppTarget initialized.")
 
     def generate_development_plan(self, final_spec_text: str, tech_spec_text: str) -> str:
         """
         Analyzes specifications and generates a development plan as a JSON string.
-        This now uses an adaptive strategy: for smaller specs, it uses the full
-        text for consistency; for larger specs, it summarizes to prevent errors.
+        This now uses an adaptive strategy based on the active CONTEXT_WINDOW_CHAR_LIMIT from the database.
+        (ASDF Adaptive Context Strategy, F-Dev 11.1)
         """
         logging.info("PlanningAgent_AppTarget: Generating development plan using adaptive strategy...")
 
-        # A threshold to decide when to summarize vs. use full text.
-        # This can be adjusted, but 15000 chars is a safe starting point.
-        PLANNING_SUMMARY_THRESHOLD = 15000
-        total_spec_length = len(final_spec_text) + len(tech_spec_text)
+        # --- F-Dev 11.1: Use dynamic context limit from DB ---
+        try:
+            with self.db_manager as db:
+                limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
+            planning_summary_threshold = int(limit_str)
+            # Use 80% of the limit as a safe threshold for this specific task
+            planning_summary_threshold = int(planning_summary_threshold * 0.8)
+        except Exception as e:
+            logging.error(f"Could not read CONTEXT_WINDOW_CHAR_LIMIT from DB, using fallback. Error: {e}")
+            planning_summary_threshold = 15000 # Fallback to original safe default
+        # --- End of F-Dev 11.1 Change ---
 
+        total_spec_length = len(final_spec_text) + len(tech_spec_text)
         combined_context = ""
 
         try:
             # If the total spec length is over the threshold, summarize first.
-            if total_spec_length > PLANNING_SUMMARY_THRESHOLD:
-                logging.info(f"Specifications length ({total_spec_length}) exceeds threshold. Using 'divide and conquer' summary strategy.")
+            if total_spec_length > planning_summary_threshold:
+                logging.info(f"Specifications length ({total_spec_length}) exceeds threshold ({planning_summary_threshold}). Using 'divide and conquer' summary strategy.")
 
                 # Step 1: Summarize the Functional Specification using the "simple" model
                 func_summary_prompt = f"Summarize the key features, user stories, and data entities from the following application specification into a concise bulleted list.\n\n{final_spec_text}"
