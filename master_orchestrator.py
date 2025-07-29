@@ -916,7 +916,7 @@ class MasterOrchestrator:
             "artifact_type": task.get("component_type"), "short_description": micro_spec_content,
             "status": "UNIT_TESTS_PASSING", "unit_test_status": "TESTS_PASSING",
             "commit_hash": commit_hash, "version": 1,
-            "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),def _run_post_implementation_doc_update(self, db: ASDFDBManager, api_key: str):
+            "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
             "micro_spec_id": task.get("micro_spec_id")
         })
 
