@@ -50,7 +50,7 @@ class PlanningAgent_AppTarget:
             planning_summary_threshold = int(planning_summary_threshold * 0.8)
         except Exception as e:
             logging.error(f"Could not read CONTEXT_WINDOW_CHAR_LIMIT from DB, using fallback. Error: {e}")
-            planning_summary_threshold = 15000 # Fallback to original safe default
+            planning_summary_threshold = 128000 # Fallback to the most restrictive default
         # --- End of F-Dev 11.1 Change ---
 
         total_spec_length = len(final_spec_text) + len(tech_spec_text)

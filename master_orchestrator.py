@@ -129,7 +129,22 @@ class MasterOrchestrator:
             for key, value in default_limits.items():
                 if not db.get_config_value(key):
                     db.set_config_value(key, value, f"Default context character limit for {key.split('_')[0]}.")
-            # --- End of flow
+
+            # --- Ensure active context limit is correctly initialized on startup ---
+            if not db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT"):
+                logging.info("Active context limit not found. Initializing from provider default.")
+                current_provider = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini"
+                provider_key_map = {
+                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
+                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
+                }
+                default_key = provider_key_map.get(current_provider)
+                if default_key:
+                    default_value = db.get_config_value(default_key)
+                    if default_value:
+                        db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", default_value)
+            # --- End of Bugfix ---
 
         log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
         log_level = log_level_map.get(log_level_str, logging.INFO)
@@ -257,7 +272,7 @@ class MasterOrchestrator:
         # Proceed with creating the new project.
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
         self.project_name = project_name
-        self.current_phase = FactoryPhase.AWAITING_UX_UI_PHASE_DECISION
+        self.current_phase = FactoryPhase.ENV_SETUP_TARGET_APP
         timestamp = datetime.now(timezone.utc).isoformat()
 
         try:
@@ -2752,17 +2767,28 @@ class MasterOrchestrator:
     def _create_llm_service(self) -> LLMService | None:
         """
         Factory method to create the appropriate LLM service adapter based on
-        the configuration stored in the database.
-        (ASDF Flexi Model Change, F-Dev 10.2)
+        the configuration stored in the database. Now uses new provider names.
         """
         logging.info("Attempting to create and configure LLM service...")
         with self.db_manager as db:
-            provider = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini" # Default to Gemini
+            # The database now stores the user-facing name, which we map back
+            # to the original key for creating the correct adapter.
+            provider_name_from_db = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini"
+
+            provider_map = {
+                "Gemini": "Gemini",
+                "ChatGPT": "OpenAI",
+                "Claude": "Anthropic",
+                "Phi-3 (Local)": "LocalPhi3",
+                "Any Other": "Enterprise"
+            }
+            # Find the internal key (e.g., "OpenAI") from the name stored in the DB (e.g., "ChatGPT")
+            provider = provider_map.get(provider_name_from_db, "Gemini")
 
             if provider == "Gemini":
                 api_key = db.get_config_value("GEMINI_API_KEY")
-                reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL") or "gemini-1.5-pro-latest"
-                fast_model = db.get_config_value("GEMINI_FAST_MODEL") or "gemini-1.5-flash-latest"
+                reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL") or "gemini-2.5-pro"
+                fast_model = db.get_config_value("GEMINI_FAST_MODEL") or "gemini-2.5-flash-preview-05-20"
                 if not api_key:
                     logging.warning("Gemini is selected, but GEMINI_API_KEY is not set.")
                     return None
@@ -2773,7 +2799,7 @@ class MasterOrchestrator:
                 reasoning_model = db.get_config_value("OPENAI_REASONING_MODEL") or "gpt-4-turbo"
                 fast_model = db.get_config_value("OPENAI_FAST_MODEL") or "gpt-3.5-turbo"
                 if not api_key:
-                    logging.warning("OpenAI is selected, but OPENAI_API_KEY is not set.")
+                    logging.warning("ChatGPT (OpenAI) is selected, but OPENAI_API_KEY is not set.")
                     return None
                 return OpenAIAdapter(api_key, reasoning_model, fast_model)
 
@@ -2782,7 +2808,7 @@ class MasterOrchestrator:
                 reasoning_model = db.get_config_value("ANTHROPIC_REASONING_MODEL") or "claude-3-opus-20240229"
                 fast_model = db.get_config_value("ANTHROPIC_FAST_MODEL") or "claude-3-haiku-20240307"
                 if not api_key:
-                    logging.warning("Anthropic is selected, but ANTHROPIC_API_KEY is not set.")
+                    logging.warning("Claude (Anthropic) is selected, but ANTHROPIC_API_KEY is not set.")
                     return None
                 return AnthropicAdapter(api_key, reasoning_model, fast_model)
 
@@ -2795,12 +2821,12 @@ class MasterOrchestrator:
                 reasoning_model = db.get_config_value("CUSTOM_REASONING_MODEL")
                 fast_model = db.get_config_value("CUSTOM_FAST_MODEL")
                 if not all([base_url, api_key, reasoning_model, fast_model]):
-                    logging.warning("Enterprise provider selected, but one or more required settings (URL, Key, Models) are missing.")
+                    logging.warning("Enterprise provider selected, but one or more required settings are missing.")
                     return None
                 return CustomEndpointAdapter(base_url, api_key, reasoning_model, fast_model)
 
             else:
-                logging.error(f"Invalid LLM provider configured: {provider}")
+                logging.error(f"Invalid LLM provider configured: {provider_name_from_db}")
                 return None
 
     def run_mid_project_reassessment(self):

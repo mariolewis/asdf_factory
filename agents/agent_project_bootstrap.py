@@ -83,7 +83,7 @@ class ProjectBootstrapAgent:
             spec_max_char_limit = int(limit_str)
         except Exception as e:
             logging.error(f"Could not read CONTEXT_WINDOW_CHAR_LIMIT from DB, using default. Error: {e}")
-            spec_max_char_limit = 2000000 # Fallback to a safe default
+            spec_max_char_limit = 128000 # Fallback to the most restrictive default
 
         if len(concatenated_text) > spec_max_char_limit:
             error_message = (

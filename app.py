@@ -664,11 +664,17 @@ if page == "Project":
                     if st.button("Process Brief Description"):
                         if brief_desc_input:
                             with st.spinner("AI is expanding the description into a draft specification..."):
+                                # --- Use the central llm_service and correct data access ---
                                 with st.session_state.orchestrator.db_manager as db:
-                                    api_key = db.get_config_value("LLM_API_KEY")
                                     project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    is_gui = bool(project_details.get('is_gui_project', False)) if project_details else False
-                                agent = SpecClarificationAgent(api_key=api_key, db_manager=st.session_state.orchestrator.db_manager)
+                                    # Use dictionary-style access for sqlite3.Row
+                                    is_gui = bool(project_details['is_gui_project']) if project_details else False
+
+                                # Instantiate the agent correctly with the llm_service object
+                                agent = SpecClarificationAgent(
+                                    llm_service=st.session_state.orchestrator.llm_service,
+                                    db_manager=st.session_state.orchestrator.db_manager
+                                )
                                 expanded_text = agent.expand_brief_description(brief_desc_input, is_gui_project=is_gui)
                                 st.session_state.spec_draft = expanded_text
                                 st.session_state.spec_step = 'complexity_analysis'
@@ -2016,18 +2022,16 @@ elif page == "Settings":
     # --- LLM Service Configuration ---
     st.subheader("LLM Service Configuration")
 
-    # Load all current settings from the DB to populate the widgets
     with st.session_state.orchestrator.db_manager as db:
         all_config = db.get_all_config_values()
 
-    provider_options = ["Gemini", "OpenAI", "Anthropic", "LocalPhi3", "Enterprise"]
+    provider_options = ["Gemini", "ChatGPT", "Claude", "Phi-3 (Local)", "Any Other"]
     current_provider = all_config.get("SELECTED_LLM_PROVIDER", "Gemini")
 
-    # Ensure the current provider is in the list to prevent errors
     try:
         provider_index = provider_options.index(current_provider)
     except ValueError:
-        provider_index = 0 # Default to Gemini if saved value is invalid
+        provider_index = 0
 
     selected_provider = st.selectbox(
         "Select LLM Provider",
@@ -2038,23 +2042,20 @@ elif page == "Settings":
 
     if selected_provider == "Gemini":
         st.text_input("Gemini API Key", type="password", key="gemini_api_key", value=all_config.get("GEMINI_API_KEY", ""))
-        st.text_input("Reasoning Model", key="gemini_reasoning_model", value=all_config.get("GEMINI_REASONING_MODEL", "gemini-1.5-pro-latest"))
-        st.text_input("Fast Model", key="gemini_fast_model", value=all_config.get("GEMINI_FAST_MODEL", "gemini-1.5-flash-latest"))
-
-    elif selected_provider == "OpenAI":
+        st.text_input("Reasoning Model", key="gemini_reasoning_model", value=all_config.get("GEMINI_REASONING_MODEL", "gemini-2.5-pro"))
+        st.text_input("Fast Model", key="gemini_fast_model", value=all_config.get("GEMINI_FAST_MODEL", "gemini-2.5-flash-preview-05-20"))
+    elif selected_provider == "ChatGPT":
         st.text_input("OpenAI API Key", type="password", key="openai_api_key", value=all_config.get("OPENAI_API_KEY", ""))
         st.text_input("Reasoning Model", key="openai_reasoning_model", value=all_config.get("OPENAI_REASONING_MODEL", "gpt-4-turbo"))
         st.text_input("Fast Model", key="openai_fast_model", value=all_config.get("OPENAI_FAST_MODEL", "gpt-3.5-turbo"))
-
-    elif selected_provider == "Anthropic":
+    elif selected_provider == "Claude":
         st.text_input("Anthropic API Key", type="password", key="anthropic_api_key", value=all_config.get("ANTHROPIC_API_KEY", ""))
         st.text_input("Reasoning Model", key="anthropic_reasoning_model", value=all_config.get("ANTHROPIC_REASONING_MODEL", "claude-3-opus-20240229"))
         st.text_input("Fast Model", key="anthropic_fast_model", value=all_config.get("ANTHROPIC_FAST_MODEL", "claude-3-haiku-20240307"))
-
-    elif selected_provider == "LocalPhi3":
+    elif selected_provider == "Phi-3 (Local)":
         st.info("No configuration needed. Ensure your local Ollama server is running with the 'phi3' model available.")
-
-    elif selected_provider == "Enterprise":
+    elif selected_provider == "Any Other":
+        st.caption("Use this for any other publicly available model, or for your own company's private LLM.")
         st.text_input("Endpoint URL", key="custom_endpoint_url", value=all_config.get("CUSTOM_ENDPOINT_URL", ""))
         st.text_input("Endpoint API Key", type="password", key="custom_endpoint_api_key", value=all_config.get("CUSTOM_ENDPOINT_API_KEY", ""))
         st.text_input("Reasoning Model", key="custom_reasoning_model", value=all_config.get("CUSTOM_REASONING_MODEL", ""))
@@ -2063,13 +2064,8 @@ elif page == "Settings":
     st.caption("Pro-Tip: For any provider, you can use the fast model name in both fields to optimize for speed and cost.")
 
     def save_llm_settings():
-        """
-        Callback to save LLM settings. Now includes the trigger for the
-        Mid-Project Re-assessment Flow. (F-Dev 12.1)
-        """
         new_provider = st.session_state.selected_llm_provider
 
-        # --- F-Dev 12.1: Re-assessment Trigger Logic ---
         if st.session_state.orchestrator.project_id:
             with st.session_state.orchestrator.db_manager as db:
                 all_config = db.get_all_config_values()
@@ -2077,12 +2073,11 @@ elif page == "Settings":
                 current_provider = all_config.get("SELECTED_LLM_PROVIDER")
 
                 provider_key_map = {
-                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
-                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
-                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
+                    "Gemini": "GEMINI_CONTEXT_LIMIT", "ChatGPT": "OPENAI_CONTEXT_LIMIT",
+                    "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Any Other": "ENTERPRISE_CONTEXT_LIMIT"
                 }
                 new_provider_default_key = provider_key_map.get(new_provider)
-                # Ensure we have the latest defaults in our config dict for comparison
                 all_config.update(db.get_all_config_values())
                 new_provider_default_limit = int(all_config.get(new_provider_default_key, "0"))
 
@@ -2095,14 +2090,12 @@ elif page == "Settings":
                     st.warning("Re-assessment required due to smaller context window. Please navigate to the Project page to proceed.")
                     st.rerun()
                     return
-        # --- End of F-Dev 12.1 Change ---
 
-        # Original save logic proceeds if no re-assessment is needed
         provider = new_provider
 
-        if provider in ["Gemini", "OpenAI", "Anthropic", "Enterprise"]:
-            prefix = provider.lower()
-            if provider == "Enterprise": prefix = "custom"
+        if provider in ["Gemini", "ChatGPT", "Claude", "Any Other"]:
+            prefix_map = {"Gemini": "gemini", "ChatGPT": "openai", "Claude": "anthropic", "Any Other": "custom"}
+            prefix = prefix_map.get(provider)
             reasoning_key = f"{prefix}_reasoning_model"
             fast_key = f"{prefix}_fast_model"
             reasoning_val = st.session_state.get(reasoning_key, "").strip()
@@ -2114,19 +2107,20 @@ elif page == "Settings":
             elif not fast_val: st.session_state[fast_key] = reasoning_val
 
         settings_to_save = {"SELECTED_LLM_PROVIDER": provider}
+
         if provider == "Gemini":
             settings_to_save["GEMINI_API_KEY"] = st.session_state.gemini_api_key
             settings_to_save["GEMINI_REASONING_MODEL"] = st.session_state.gemini_reasoning_model
             settings_to_save["GEMINI_FAST_MODEL"] = st.session_state.gemini_fast_model
-        elif provider == "OpenAI":
+        elif provider == "ChatGPT":
             settings_to_save["OPENAI_API_KEY"] = st.session_state.openai_api_key
             settings_to_save["OPENAI_REASONING_MODEL"] = st.session_state.openai_reasoning_model
             settings_to_save["OPENAI_FAST_MODEL"] = st.session_state.openai_fast_model
-        elif provider == "Anthropic":
+        elif provider == "Claude":
             settings_to_save["ANTHROPIC_API_KEY"] = st.session_state.anthropic_api_key
             settings_to_save["ANTHROPIC_REASONING_MODEL"] = st.session_state.anthropic_reasoning_model
             settings_to_save["ANTHROPIC_FAST_MODEL"] = st.session_state.anthropic_fast_model
-        elif provider == "Enterprise":
+        elif provider == "Any Other":
             settings_to_save["CUSTOM_ENDPOINT_URL"] = st.session_state.custom_endpoint_url
             settings_to_save["CUSTOM_ENDPOINT_API_KEY"] = st.session_state.custom_endpoint_api_key
             settings_to_save["CUSTOM_REASONING_MODEL"] = st.session_state.custom_reasoning_model
@@ -2138,9 +2132,9 @@ elif page == "Settings":
                     db.set_config_value(key, str(value))
 
                 provider_key_map = {
-                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
-                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
-                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
+                    "Gemini": "GEMINI_CONTEXT_LIMIT", "ChatGPT": "OPENAI_CONTEXT_LIMIT",
+                    "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Any Other": "ENTERPRISE_CONTEXT_LIMIT"
                 }
                 provider_default_key = provider_key_map.get(provider)
                 if provider_default_key:
@@ -2161,29 +2155,45 @@ elif page == "Settings":
 
     st.divider()
 
-    # --- Additional Settings ---
     st.subheader("Additional Settings")
 
-    # Load all settings from DB to populate widgets
     with st.session_state.orchestrator.db_manager as db:
         all_config = db.get_all_config_values()
 
-    # Create widgets for each configurable parameter
     st.number_input(
         "Maximum Automated Debug Attempts",
-        min_value=1,
-        key="max_debug_attempts",
+        min_value=1, key="max_debug_attempts",
         value=int(all_config.get("MAX_DEBUG_ATTEMPTS", 2)),
         help="Defines the number of automated fix attempts the Debug Pipeline will perform before escalating to the PM."
     )
+
+    # Get the provider currently selected in the dropdown (might not be saved yet)
+    selected_provider_in_ui = st.session_state.get("selected_llm_provider", current_provider)
+    # Get the provider that is actually saved in the database
+    saved_provider_in_db = all_config.get("SELECTED_LLM_PROVIDER", "Gemini")
+
+    display_value = 0
+    if selected_provider_in_ui == saved_provider_in_db:
+        # If the selection matches what's saved, display the saved active limit.
+        display_value = int(all_config.get("CONTEXT_WINDOW_CHAR_LIMIT", 2000000))
+    else:
+        # If the user has selected a *new* provider, predictively show its default.
+        provider_key_map = {
+            "Gemini": "GEMINI_CONTEXT_LIMIT", "ChatGPT": "OPENAI_CONTEXT_LIMIT",
+            "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
+            "Any Other": "ENTERPRISE_CONTEXT_LIMIT"
+        }
+        provider_default_key = provider_key_map.get(selected_provider_in_ui)
+        # Get the default value from the full config dictionary loaded at the top of the page.
+        display_value = int(all_config.get(provider_default_key, 2000000))
 
     st.number_input(
         "Context Window Character Limit",
         min_value=10000,
         step=5000,
         key="context_window_limit",
-        value=int(all_config.get("CONTEXT_WINDOW_CHAR_LIMIT", 200000)),
-        help="Defines the maximum number of characters to send to the LLM for complex analysis. A larger value may provide more context but increase processing time."
+        value=display_value, # Use the dynamically determined value
+        help="Defines the maximum number of characters to send to the LLM for complex analysis. This value defaults to the recommended limit for the selected provider."
     )
 
     pm_checkpoint_options = {"ALWAYS_ASK": "Always ask before proceeding", "AUTO_PROCEED": "Automatically proceed if successful"}
@@ -2192,31 +2202,26 @@ elif page == "Settings":
     st.selectbox(
         "PM Checkpoint Behavior (Genesis Phase)",
         options=pm_checkpoint_options.values(),
-        index=pm_checkpoint_index,
-        key="pm_checkpoint_behavior",
+        index=pm_checkpoint_index, key="pm_checkpoint_behavior",
         help="Controls the factory's behavior after successfully developing a component."
     )
 
     logging_options = ["Standard", "Detailed", "Debug"]
     current_logging_level = all_config.get("LOGGING_LEVEL", "Standard")
-    # Handle case where saved value might not be in the list
     try:
         logging_index = logging_options.index(current_logging_level)
     except ValueError:
-        logging_index = 0 # Default to Standard
+        logging_index = 0
     st.selectbox(
         "ASDF Operational Logging Level",
-        options=logging_options,
-        index=logging_index,
-        key="logging_level",
+        options=logging_options, index=logging_index, key="logging_level",
         help="Controls the verbosity of ASDF's internal logs, useful for troubleshooting the factory application itself."
     )
 
-    st.text_input("Default Base Path for New Target Projects", key="default_project_path", value=all_config.get("DEFAULT_PROJECT_PATH", ""), help="Optional. Set a default parent directory (e.g., 'C:\\Users\\YourName\\Projects'). When you start a new project, ASDF will suggest a path inside this directory, which you can still edit for each project.")
-    st.text_input("Default Project Archive Path", key="default_archive_path", value=all_config.get("DEFAULT_ARCHIVE_PATH", ""), help="Optional. Set a default folder for saving project archives when you use the 'Stop & Export' feature. This provides a consistent location to find your exported project data.")
+    st.text_input("Default Base Path for New Target Projects", key="default_project_path", value=all_config.get("DEFAULT_PROJECT_PATH", ""), help="Optional. Set a default parent directory (e.g., 'C:\\Users\\YourName\\Projects').")
+    st.text_input("Default Project Archive Path", key="default_archive_path", value=all_config.get("DEFAULT_ARCHIVE_PATH", ""), help="Optional. Set a default folder for saving project archives.")
 
     def save_additional_settings():
-        """Callback function to save all settings to the database."""
         settings_to_save = {
             "MAX_DEBUG_ATTEMPTS": st.session_state.max_debug_attempts,
             "CONTEXT_WINDOW_CHAR_LIMIT": st.session_state.context_window_limit,
@@ -2224,13 +2229,11 @@ elif page == "Settings":
             "DEFAULT_PROJECT_PATH": st.session_state.default_project_path,
             "DEFAULT_ARCHIVE_PATH": st.session_state.default_archive_path
         }
-        # Convert selected UI text back to the key for storage
         selected_pm_behavior_value = st.session_state.pm_checkpoint_behavior
         for key, value in pm_checkpoint_options.items():
             if value == selected_pm_behavior_value:
                 settings_to_save["PM_CHECKPOINT_BEHAVIOR"] = key
                 break
-
         with st.session_state.orchestrator.db_manager as db:
             for key, value in settings_to_save.items():
                 db.set_config_value(key, str(value))
