@@ -951,6 +951,9 @@ class MasterOrchestrator:
                 project_root_path = str(project_details['project_root_folder'])
 
                 if decision == "EXECUTE_AUTOMATICALLY":
+                    if not self.llm_service:
+                        raise Exception("Cannot execute declarative change: LLM Service is not configured.")
+
                     file_to_modify_path_str = task.get("component_file_path")
                     change_snippet = task.get("task_description")
 
@@ -958,11 +961,23 @@ class MasterOrchestrator:
                         raise ValueError(f"Invalid file path for declarative task '{component_name}'.")
 
                     file_to_modify = Path(project_root_path) / file_to_modify_path_str
-                    file_to_modify.parent.mkdir(parents=True, exist_ok=True)
+                    original_code = ""
+                    if file_to_modify.exists():
+                        original_code = file_to_modify.read_text(encoding='utf-8')
+                    else:
+                        file_to_modify.parent.mkdir(parents=True, exist_ok=True)
+                        logging.warning(f"File '{file_to_modify_path_str}' did not exist. It will be created.")
 
-                    # For declarative changes, we append the snippet directly. This is more robust.
-                    with open(file_to_modify, 'a', encoding='utf-8') as f:
-                        f.write("\n" + change_snippet)
+                    # Use the OrchestrationCodeAgent with a more direct prompt for this task.
+                    # The 'modifications_json' here is a simple instruction for the agent.
+                    modifications_json = json.dumps({
+                        "instruction": "Apply the following snippet to the original code. If the snippet represents a dependency or a new entry, append it logically. If it represents an update to an existing value, replace the old value.",
+                        "snippet": change_snippet
+                    })
+
+                    orch_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
+                    modified_code = orch_agent.apply_modifications(original_code, modifications_json)
+                    file_to_modify.write_text(modified_code, encoding='utf-8')
 
                     build_agent = BuildAndCommitAgentAppTarget(project_root_path)
                     commit_message = f"refactor: Apply approved modification to {component_name}"

@@ -1709,7 +1709,7 @@ if page == "Project":
                     st.rerun()
             else:
                 if 'cr_edit_description' not in st.session_state:
-                    st.session_state.cr_edit_description = cr_details.get('description', '')
+                    st.session_state.cr_edit_description = cr_details['description'] if cr_details and 'description' in cr_details else ''
                 st.markdown(f"You are editing **CR-{cr_details['cr_id']}**.")
                 st.session_state.cr_edit_description = st.text_area(
                     "Change Request Description:",
