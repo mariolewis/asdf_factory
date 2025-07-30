@@ -650,7 +650,7 @@ if page == "Project":
                 st.markdown("Please provide the initial specification for your target application.")
                 tab1, tab2 = st.tabs(["Upload Specification Documents", "Enter Brief Description"])
                 with tab1:
-                    uploaded_files = st.file_uploader("Upload Docs", type=["txt", "md", "docx"], accept_multiple_files=True, label_visibility="collapsed")
+                    uploaded_files = st.file_uploader("Upload Docs", accept_multiple_files=True, label_visibility="collapsed")
                     if st.button("Process Uploaded Documents"):
                         if uploaded_files:
                             bootstrap_agent = ProjectBootstrapAgent(db_manager=st.session_state.orchestrator.db_manager)
