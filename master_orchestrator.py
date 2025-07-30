@@ -951,34 +951,18 @@ class MasterOrchestrator:
                 project_root_path = str(project_details['project_root_folder'])
 
                 if decision == "EXECUTE_AUTOMATICALLY":
-                    if not self.llm_service:
-                        raise Exception("Cannot execute declarative change: LLM Service is not configured.")
-
                     file_to_modify_path_str = task.get("component_file_path")
-
-                    if not file_to_modify_path_str or file_to_modify_path_str == "N/A":
-                        raise ValueError(f"Invalid file path '{file_to_modify_path_str}' for declarative task '{component_name}'.")
-
-                    file_to_modify = Path(project_root_path) / file_to_modify_path_str
-                    if not file_to_modify.exists():
-                        file_to_modify.parent.mkdir(parents=True, exist_ok=True)
-                        file_to_modify.touch()
-                        logging.warning(f"File '{file_to_modify_path_str}' did not exist. Created a new empty file.")
-
-                    original_code = file_to_modify.read_text(encoding='utf-8')
                     change_snippet = task.get("task_description")
 
-                    orch_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
-                    # The OrchestrationCodeAgent expects a JSON list of modifications.
-                    # The task_description for declarative changes is a snippet, not a full plan.
-                    # We will wrap it to match the expected format.
-                    modifications_json = json.dumps([{
-                        "action": "APPEND_SNIPPET", # A conceptual action for the agent
-                        "content": change_snippet
-                    }])
+                    if not file_to_modify_path_str or file_to_modify_path_str == "N/A":
+                        raise ValueError(f"Invalid file path for declarative task '{component_name}'.")
 
-                    modified_code = orch_agent.apply_modifications(original_code, modifications_json)
-                    file_to_modify.write_text(modified_code, encoding='utf-8')
+                    file_to_modify = Path(project_root_path) / file_to_modify_path_str
+                    file_to_modify.parent.mkdir(parents=True, exist_ok=True)
+
+                    # For declarative changes, we append the snippet directly. This is more robust.
+                    with open(file_to_modify, 'a', encoding='utf-8') as f:
+                        f.write("\n" + change_snippet)
 
                     build_agent = BuildAndCommitAgentAppTarget(project_root_path)
                     commit_message = f"refactor: Apply approved modification to {component_name}"
@@ -1018,7 +1002,7 @@ class MasterOrchestrator:
 
         # Helper function to process each document type
         def update_document(doc_key: str, doc_name: str, save_func):
-            original_doc = project_details.get(doc_key)
+            original_doc = project_details[doc_key]
             if original_doc:
                 logging.info(f"Checking for {doc_name} updates...")
                 updated_content = doc_agent.update_specification_text(
@@ -1885,7 +1869,7 @@ class MasterOrchestrator:
 
                     if not context_package:
                         logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
-                        apex_file_name = project_details.get("apex_executable_name")
+                        apex_file_name = project_details['apex_executable_name'] if 'apex_executable_name' in project_details else None
                         failing_task = self.get_current_task_details()
                         failing_component_name = failing_task.get('component_name') if failing_task else None
 
@@ -2609,7 +2593,7 @@ class MasterOrchestrator:
         try:
             with self.db_manager as db:
                 # Use the DocUpdateAgent to create the new artifact record
-                doc_agent = DocUpdateAgentRoWD(db)
+                doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
                 artifact_name = f"Skipped Setup Task: {task.get('tool_name', 'Unnamed Step')}"
                 description = f"The PM chose to ignore the setup/installation for the following tool or step: {task.get('instructions', 'No instructions provided.')}"
 
@@ -2803,11 +2787,11 @@ class MasterOrchestrator:
         try:
             with self.db_manager as db:
                 project_details = db.get_project_by_id(self.project_id)
-                dev_plan_text = project_details.get('development_plan_text')
+                dev_plan_text = project_details['development_plan_text'] if 'development_plan_text' in project_details else None
 
                 if not dev_plan_text:
                     # If no dev plan exists, the 'remaining work' is the entire spec
-                    remaining_work_spec = project_details.get('final_spec_text', '')
+                    remaining_work_spec = project_details['final_spec_text'] if 'final_spec_text' in project_details else ''
                     logging.info("No development plan found. Using full application spec for re-assessment.")
                 else:
                     # If a dev plan exists, find uncompleted tasks

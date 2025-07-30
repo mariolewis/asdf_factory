@@ -1012,7 +1012,8 @@ if page == "Project":
                     "Technical Specification Draft",
                     value=st.session_state.tech_spec_draft,
                     height=400,
-                    key="tech_spec_draft_display"
+                    key="tech_spec_draft_display",
+                    disabled=False
                 )
                 feedback_text = st.text_area("Your Feedback and Refinements:", height=150)
                 col1, col2, _ = st.columns([1.5, 2, 3])
@@ -1288,13 +1289,17 @@ if page == "Project":
                 if st.button("Generate Development Plan", type="primary"):
                     with st.spinner("AI is generating the development plan... This may take a few moments."):
                         try:
+                            if not st.session_state.orchestrator.llm_service:
+                                st.error("Could not generate plan: LLM Service is not configured. Please check Settings.")
+                                st.stop()
+
                             with st.session_state.orchestrator.db_manager as db:
-                                api_key = db.get_config_value("LLM_API_KEY")
                                 project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
                                 final_spec = project_details['final_spec_text']
                                 tech_spec = project_details['tech_spec_text']
-                            if not all([api_key, final_spec, tech_spec]):
-                                st.error("Could not generate plan: Missing API Key, Final Specification, or Technical Specification.")
+
+                            if not all([final_spec, tech_spec]):
+                                st.error("Could not generate plan: Missing Final Specification or Technical Specification in the database.")
                             else:
                                 agent = PlanningAgent_AppTarget(llm_service=st.session_state.orchestrator.llm_service, db_manager=st.session_state.orchestrator.db_manager)
                                 response_json_str = agent.generate_development_plan(final_spec, tech_spec)
@@ -1842,9 +1847,12 @@ elif page == "Documents":
     if doc_project_id:
         st.subheader(f"Documents for: {doc_project_name}")
 
+        with st.session_state.orchestrator.db_manager as db:
+            project_docs = db.get_project_by_id(doc_project_id)
+
         # Project Brief
         with st.expander("Project Brief", expanded=True): # Expanded by default
-            brief_path_str = project_docs.get('project_brief_path') if project_docs else None
+            brief_path_str = project_docs['project_brief_path'] if project_docs else None
             if brief_path_str:
                 brief_path = Path(brief_path_str)
                 if brief_path.exists():
@@ -1872,9 +1880,6 @@ elif page == "Documents":
                     st.warning("Brief file path is recorded in the database, but the file was not found on disk.")
             else:
                 st.info("No project brief was saved for this project.")
-
-        with st.session_state.orchestrator.db_manager as db:
-            project_docs = db.get_project_by_id(doc_project_id)
 
         if project_docs:
             report_generator = ReportGeneratorAgent()
