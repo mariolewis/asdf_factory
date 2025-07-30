@@ -850,7 +850,7 @@ class MasterOrchestrator:
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
         if status_ui_object: status_ui_object.update(label=f"Generating source code for {component_name}...")
 
-        style_guide_to_use = project_details.get('ux_spec_text') or project_details.get('final_spec_text')
+        style_guide_to_use = project_details['ux_spec_text'] or project_details['final_spec_text']
 
         source_code = code_agent.generate_code_for_component(
             logic_plan=logic_plan,
@@ -1906,21 +1906,16 @@ class MasterOrchestrator:
     def handle_pm_triage_input(self, pm_error_description: str):
         """
         Handles the text input provided by the PM during interactive triage (Tier 3).
-        It uses the TriageAgent to form a hypothesis and the FixPlannerAgent to create a plan.
-
-        Args:
-            pm_error_description (str): The PM's description of the error.
+        This version is refactored to use the central llm_service.
         """
         logging.info("Tier 3: Received manual error description from PM. Attempting to generate fix plan.")
 
         try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
-                if not api_key:
-                    raise Exception("Cannot proceed with triage. LLM API Key is not set.")
+            if not self.llm_service:
+                raise Exception("Cannot proceed with triage: LLM Service is not configured.")
 
             # Use TriageAgent to refine the PM's description into a testable hypothesis.
-            triage_agent = TriageAgent_AppTarget(api_key=api_key, db_manager=self.db_manager)
+            triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
             hypothesis = triage_agent.analyze_and_hypothesize(
                 error_logs=pm_error_description,
                 relevant_code="No specific code context available; base analysis on user description.",
@@ -1933,7 +1928,7 @@ class MasterOrchestrator:
             logging.info(f"TriageAgent formed hypothesis: {hypothesis}")
 
             # Use FixPlannerAgent to create a plan from the hypothesis.
-            planner_agent = FixPlannerAgent_AppTarget(api_key=api_key)
+            planner_agent = FixPlannerAgent_AppTarget(llm_service=self.llm_service)
             fix_plan_str = planner_agent.create_fix_plan(
                 root_cause_hypothesis=hypothesis,
                 relevant_code="No specific code context was automatically identified. Base the fix on the TriageAgent's hypothesis."

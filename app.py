@@ -668,13 +668,20 @@ if page == "Project":
                     if st.button("Process Brief Description"):
                         if brief_desc_input:
                             with st.spinner("AI is expanding the description into a draft specification..."):
-                                # --- Use the central llm_service and correct data access ---
+                                # --- Bugfix: Save the project brief to a file ---
+                                project_data_dir = Path(f"data/projects/{st.session_state.orchestrator.project_id}")
+                                project_data_dir.mkdir(parents=True, exist_ok=True)
+                                brief_file_path = project_data_dir / "project_brief.md"
+                                brief_file_path.write_text(brief_desc_input, encoding='utf-8')
+                                with st.session_state.orchestrator.db_manager as db:
+                                    db.update_project_brief_path(st.session_state.orchestrator.project_id, str(brief_file_path))
+                                logging.info(f"Saved text brief to: {brief_file_path}")
+                                # --- End of Bugfix ---
+
                                 with st.session_state.orchestrator.db_manager as db:
                                     project_details = db.get_project_by_id(st.session_state.orchestrator.project_id)
-                                    # Use dictionary-style access for sqlite3.Row
                                     is_gui = bool(project_details['is_gui_project']) if project_details else False
 
-                                # Instantiate the agent correctly with the llm_service object
                                 agent = SpecClarificationAgent(
                                     llm_service=st.session_state.orchestrator.llm_service,
                                     db_manager=st.session_state.orchestrator.db_manager
@@ -1928,10 +1935,17 @@ elif page == "Documents":
 
             # Development Plan
             with st.expander("Development Plan", expanded=False):
-                # CORRECTED: Use dictionary-style key access
                 dev_plan_text = project_docs['development_plan_text'] if project_docs else None
                 if dev_plan_text:
-                    st.json(dev_plan_text)
+                    # Bugfix: Strip the text header before parsing as JSON
+                    try:
+                        # The header is separated by a distinct line of 50 dashes
+                        json_content_str = dev_plan_text.split(f"\n{'-' * 50}\n\n", 1)[1]
+                        st.json(json_content_str)
+                    except (IndexError, json.JSONDecodeError):
+                        # Fallback to display raw text if stripping fails or content is not as expected
+                        st.text_area("Dev Plan Content (Raw)", dev_plan_text, height=300, disabled=True, key=f"dev_plan_{doc_project_id}")
+
                     dev_plan_docx_bytes = report_generator.generate_text_document_docx(f"Development Plan - {doc_project_name}", dev_plan_text, is_code=True)
                     st.download_button("📄 Print to .docx", dev_plan_docx_bytes, f"DevPlan_{doc_project_id}.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"download_dev_plan_{doc_project_id}")
                 else:
