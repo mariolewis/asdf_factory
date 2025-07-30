@@ -15,6 +15,10 @@ from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_planning_app_target import PlanningAgent_AppTarget
 from agents.agent_report_generator import ReportGeneratorAgent
 from agents.agent_project_scoping import ProjectScopingAgent
+from agents.agent_tech_stack_proposal import TechStackProposalAgent
+from agents.agent_build_script_generator import BuildScriptGeneratorAgent
+from agents.agent_verification_app_target import VerificationAgent_AppTarget
+from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -684,14 +688,11 @@ if page == "Project":
                 st.header("Application Specification")
                 with st.spinner("Performing complexity and risk analysis on the specification draft..."):
                     try:
-                        with st.session_state.orchestrator.db_manager as db:
-                            api_key = db.get_config_value("LLM_API_KEY")
-
-                        if not api_key:
-                            st.error("Cannot perform analysis. LLM API Key is not set.")
+                        if not st.session_state.orchestrator.llm_service:
+                            st.error("Cannot perform analysis. LLM Service is not configured. Please check Settings.")
                             st.stop()
 
-                        agent = ProjectScopingAgent(api_key=api_key)
+                        agent = ProjectScopingAgent(llm_service=st.session_state.orchestrator.llm_service)
                         analysis_result = agent.analyze_complexity(st.session_state.spec_draft)
 
                         if "error" in analysis_result:
@@ -701,6 +702,20 @@ if page == "Project":
                                 st.session_state.spec_step = 'pm_feedback'
                                 st.rerun()
                             st.stop()
+
+                        footnote = "\n\n**Note**: This assessment is based on the initial specifications provided to the ASDF. It is a point-in-time analysis and will not be updated if the project requirements evolve."
+                        analysis_result_str = json.dumps(analysis_result, indent=4) + footnote
+
+                        with st.session_state.orchestrator.db_manager as db:
+                            db.save_complexity_assessment(st.session_state.orchestrator.project_id, analysis_result_str)
+
+                        st.session_state.complexity_analysis = analysis_result
+                        st.session_state.spec_step = 'pm_complexity_review'
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error(f"An unexpected error occurred during complexity analysis: {e}")
+                        st.stop()
 
                         # Append the standard cautionary note
                         footnote = "\n\n**Note**: This assessment is based on the initial specifications provided to the ASDF. It is a point-in-time analysis and will not be updated if the project requirements evolve."

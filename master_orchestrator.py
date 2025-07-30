@@ -35,7 +35,7 @@ from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarge
 from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
-from agents.agent_project_scoping import ProjectScopingAgent
+
 
 # Configure basic logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -2539,7 +2539,7 @@ class MasterOrchestrator:
             with self.db_manager as db:
                 project_details = db.get_project_by_id(self.project_id)
                 tech_spec_text = project_details['tech_spec_text']
-                target_os = project_details.get('target_os', 'Linux') # Use saved OS
+                target_os = project_details['target_os'] if project_details and 'target_os' in project_details else 'Linux'
 
                 if not tech_spec_text:
                     raise Exception("Cannot get setup tasks: Technical Specification is missing.")
@@ -2564,7 +2564,7 @@ class MasterOrchestrator:
 
             with self.db_manager as db:
                 project_details = db.get_project_by_id(self.project_id)
-                target_os = project_details.get('target_os', 'Linux')
+                target_os = project_details['target_os'] if project_details and 'target_os' in project_details else 'Linux'
 
             agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
             help_text = agent.get_help_for_task(task_instructions, target_os)
