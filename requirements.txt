@@ -5,3 +5,4 @@ google-generativeai
 GitPython
 openai
 anthropic
+pypdf

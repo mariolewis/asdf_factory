@@ -27,6 +27,30 @@ st.set_page_config(
     layout="wide"
 )
 
+def full_ui_reset():
+    """
+    Performs a hard reset of the orchestrator and all temporary UI session state keys.
+    """
+    # Re-initialize the orchestrator for a completely clean backend state
+    st.session_state.orchestrator = MasterOrchestrator(db_path=str(db_path))
+
+    # Define all temporary UI state keys that should be cleared
+    keys_to_clear = [
+        'reassessment_required', 'pending_llm_provider', 'previous_llm_provider',
+        'spec_draft', 'spec_step', 'ai_issues', 'complexity_analysis', 'brief_desc',
+        'pm_clarification_text', 'tech_spec_step', 'tech_spec_draft', 'target_os',
+        'coding_standard_step', 'coding_standard_draft', 'development_plan',
+        'setup_tasks', 'current_setup_step', 'setup_help_text', 'suggested_test_command',
+        'dev_step_in_progress', 'show_export_confirmation', 'cr_type', 'cr_description',
+        'spec_correction_text', 'cr_edit_description', 'bug_description', 'bug_severity',
+        'last_action_success_message'
+    ]
+    # Loop through and delete each key if it exists
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+    logging.info("Performed a full UI and orchestrator state reset.")
+
 # --- Application State Management ---
 db_dir = Path("data")
 db_dir.mkdir(exist_ok=True)
@@ -122,11 +146,9 @@ with st.sidebar:
                 if archive_name_input:
                     archive_file_path = st.session_state.orchestrator.stop_and_export_project(archive_path, archive_name_input)
                     if archive_file_path:
-                        # --- CORRECTED: Perform a hard reset of the orchestrator state ---
                         st.session_state.last_action_success_message = f"Project archived to: `{archive_file_path}`"
-                        # Re-initialize the orchestrator to ensure a clean state.
-                        st.session_state.orchestrator = MasterOrchestrator(db_path=str(db_path))
-                        st.session_state.show_export_confirmation = False
+                        # Use the new comprehensive reset function
+                        full_ui_reset()
                         st.rerun()
                     else:
                         st.error("Failed to export project.")
@@ -291,73 +313,73 @@ if page == "Project":
                                 st.session_state.orchestrator.handle_discard_changes(history_id=st.session_state.selected_history_id_for_action)
                             st.rerun()
 
-            elif current_phase_name == "AWAITING_REASSESSMENT_CONFIRMATION":
-                st.header("Mid-Project Re-assessment Required")
+    elif current_phase_name == "AWAITING_REASSESSMENT_CONFIRMATION":
+        st.header("Mid-Project Re-assessment Required")
 
-                # This UI has two stages: initial confirmation, and final decision after report.
-                reassessment_data = st.session_state.orchestrator.task_awaiting_approval or {}
-                reassessment_result = reassessment_data.get("reassessment_result")
+        # This UI has two stages: initial confirmation, and final decision after report.
+        reassessment_data = st.session_state.orchestrator.task_awaiting_approval or {}
+        reassessment_result = reassessment_data.get("reassessment_result")
 
-                if not reassessment_result:
-                    # Stage 1: Initial Confirmation
-                    st.warning(
-                        "You have selected an LLM Provider with a smaller default context window than the one currently active. "
-                        "This may increase the risk of failure for complex tasks on the remaining work in this project."
-                    )
-                    st.markdown("It is recommended to run a re-assessment on the project's remaining scope before proceeding.")
-                    st.divider()
+        if not reassessment_result:
+            # Stage 1: Initial Confirmation
+            st.warning(
+                "You have selected an LLM Provider with a smaller default context window than the one currently active. "
+                "This may increase the risk of failure for complex tasks on the remaining work in this project."
+            )
+            st.markdown("It is recommended to run a re-assessment on the project's remaining scope before proceeding.")
+            st.divider()
 
-                    col1, col2, _ = st.columns([1.5, 2, 3])
-                    with col1:
-                        if st.button("▶️ Proceed with Re-assessment", type="primary", use_container_width=True):
-                            with st.spinner("Analyzing remaining project scope..."):
-                                st.session_state.orchestrator.run_mid_project_reassessment()
-                            st.rerun()
-                    with col2:
-                        if st.button("❌ Cancel and Revert LLM Choice", use_container_width=True):
-                            # Clean up state and return to GENESIS
-                            keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
-                            for key in keys_to_clear:
-                                if key in st.session_state: del st.session_state[key]
-                            st.session_state.orchestrator.set_phase("GENESIS")
-                            st.toast("LLM provider change was cancelled.")
-                            st.rerun()
-                else:
-                    # Stage 2: Review Report and Make Final Decision
-                    st.subheader("Re-assessment Report for Remaining Work")
-                    if "error" in reassessment_result:
-                        st.error(f"Could not generate re-assessment report: {reassessment_result['error']}")
+            col1, col2, _ = st.columns([1.5, 2, 3])
+            with col1:
+                if st.button("▶️ Proceed with Re-assessment", type="primary", use_container_width=True):
+                    with st.spinner("Analyzing remaining project scope..."):
+                        st.session_state.orchestrator.run_mid_project_reassessment()
+                    st.rerun()
+            with col2:
+                if st.button("❌ Cancel and Revert LLM Choice", use_container_width=True):
+                    # Clean up state and return to GENESIS
+                    keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
+                    for key in keys_to_clear:
+                        if key in st.session_state: del st.session_state[key]
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.toast("LLM provider change was cancelled.")
+                    st.rerun()
+        else:
+            # Stage 2: Review Report and Make Final Decision
+            st.subheader("Re-assessment Report for Remaining Work")
+            if "error" in reassessment_result:
+                st.error(f"Could not generate re-assessment report: {reassessment_result['error']}")
+            else:
+                # Display a simplified version of the assessment report
+                risk = reassessment_result.get('risk_assessment', {})
+                st.metric("Overall Risk Level for Remaining Work", risk.get('overall_risk_level', 'N/A'))
+                st.write("**Risk Summary:**")
+                st.write(risk.get('summary', 'No summary provided.'))
+
+            st.divider()
+            st.markdown(f"Do you want to finalize the switch to **{st.session_state.get('pending_llm_provider')}** or revert to **{st.session_state.get('previous_llm_provider')}**?")
+
+            col1, col2, _ = st.columns([2, 2, 3])
+            with col1:
+                if st.button(f"✅ Continue with {st.session_state.get('pending_llm_provider')}", type="primary", use_container_width=True):
+                    success, message = st.session_state.orchestrator.commit_pending_llm_change(st.session_state.pending_llm_provider)
+                    if success:
+                        st.toast(message, icon="✅")
                     else:
-                        # Display a simplified version of the assessment report
-                        risk = reassessment_result.get('risk_assessment', {})
-                        st.metric("Overall Risk Level for Remaining Work", risk.get('overall_risk_level', 'N/A'))
-                        st.write("**Risk Summary:**")
-                        st.write(risk.get('summary', 'No summary provided.'))
-
-                    st.divider()
-                    st.markdown(f"Do you want to finalize the switch to **{st.session_state.get('pending_llm_provider')}** or revert to **{st.session_state.get('previous_llm_provider')}**?")
-
-                    col1, col2, _ = st.columns([2, 2, 3])
-                    with col1:
-                        if st.button(f"✅ Continue with {st.session_state.get('pending_llm_provider')}", type="primary", use_container_width=True):
-                            success, message = st.session_state.orchestrator.commit_pending_llm_change(st.session_state.pending_llm_provider)
-                            if success:
-                                st.toast(message, icon="✅")
-                            else:
-                                st.error(message)
-                            keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
-                            for key in keys_to_clear:
-                                if key in st.session_state: del st.session_state[key]
-                            st.session_state.orchestrator.set_phase("GENESIS")
-                            st.rerun()
-                    with col2:
-                        if st.button(f"❌ Revert to {st.session_state.get('previous_llm_provider')}", use_container_width=True):
-                            keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
-                            for key in keys_to_clear:
-                                if key in st.session_state: del st.session_state[key]
-                            st.session_state.orchestrator.set_phase("GENESIS")
-                            st.toast("LLM provider change was reverted.")
-                            st.rerun()
+                        st.error(message)
+                    keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
+                    for key in keys_to_clear:
+                        if key in st.session_state: del st.session_state[key]
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.rerun()
+            with col2:
+                if st.button(f"❌ Revert to {st.session_state.get('previous_llm_provider')}", use_container_width=True):
+                    keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
+                    for key in keys_to_clear:
+                        if key in st.session_state: del st.session_state[key]
+                    st.session_state.orchestrator.set_phase("GENESIS")
+                    st.toast("LLM provider change was reverted.")
+                    st.rerun()
 
     elif not st.session_state.orchestrator.project_id:
         st.subheader("Start a New Project")

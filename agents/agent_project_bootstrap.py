@@ -13,6 +13,7 @@ import docx
 import logging
 from typing import List, Tuple, Optional
 from asdf_db_manager import ASDFDBManager
+from pypdf import PdfReader
 
 # Note: The Streamlit 'UploadedFile' object will be passed to this agent,
 # so we avoid a direct 'import streamlit' to keep the agent's logic
@@ -22,10 +23,9 @@ class ProjectBootstrapAgent:
     """
     Processes uploaded specification documents for the target application.
 
-    This agent extracts text from .txt, .md, and .docx files, preparing the
-    content for the SpecClarificationAgent. It now enforces a dynamic size limit
+    This agent extracts text from .txt, .md, .docx, and .pdf files, preparing the
+    content for the SpecClarificationAgent. It enforces a dynamic size limit
     on the incoming specification based on the active factory configuration.
-    (ASDF Adaptive Context Strategy, F-Dev 11.1)
     """
 
     def __init__(self, db_manager: ASDFDBManager):
@@ -44,7 +44,7 @@ class ProjectBootstrapAgent:
         """
         Extracts text content from a list of uploaded files and checks size limits.
 
-        Supports .txt, .md, and .docx formats as per the PRD.
+        Supports .txt, .md, .docx, and .pdf formats.
         Implements the dynamic size guardrail by reading the active context limit from the database.
 
         Args:
@@ -65,6 +65,14 @@ class ProjectBootstrapAgent:
                     document = docx.Document(doc)
                     for para in document.paragraphs:
                         all_text.append(para.text)
+                elif doc.name.endswith('.pdf'):
+                    # Use pypdf to read .pdf files
+                    try:
+                        pdf_reader = PdfReader(doc)
+                        for page in pdf_reader.pages:
+                            all_text.append(page.extract_text() or "")
+                    except Exception as pdf_e:
+                        messages.append(f"Warning: Could not read PDF file '{doc.name}'. It may be corrupted or image-based. Error: {pdf_e}")
                 elif doc.name.endswith(('.txt', '.md')):
                     # Read .txt and .md files as plain text
                     all_text.append(doc.getvalue().decode("utf-8"))
@@ -76,7 +84,6 @@ class ProjectBootstrapAgent:
 
         concatenated_text = "\n\n---\n\n".join(all_text)
 
-        # --- F-Dev 11.1: Dynamic Size Guardrail Implementation ---
         try:
             with self.db_manager as db:
                 limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
@@ -92,6 +99,5 @@ class ProjectBootstrapAgent:
             )
             messages.append(f"Error: Specification character count ({len(concatenated_text):,}) exceeds the active limit of {spec_max_char_limit:,}.")
             return None, messages, error_message
-        # --- End of F-Dev 11.1 Change ---
 
         return concatenated_text, messages, None

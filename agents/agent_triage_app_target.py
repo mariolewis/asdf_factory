@@ -12,7 +12,7 @@ This module contains the TriageAgent_AppTarget class.
 """
 
 # Configure basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class TriageAgent_AppTarget:
     """

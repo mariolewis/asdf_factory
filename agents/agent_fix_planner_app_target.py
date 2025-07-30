@@ -7,7 +7,7 @@ This module contains the FixPlannerAgent_AppTarget class.
 """
 
 # Configure basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class FixPlannerAgent_AppTarget:
     """

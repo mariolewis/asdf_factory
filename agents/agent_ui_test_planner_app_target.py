@@ -6,7 +6,7 @@ This module contains the UITestPlannerAgent_AppTarget class.
 """
 
 # Configure basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class UITestPlannerAgent_AppTarget:
     """

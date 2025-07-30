@@ -6,8 +6,8 @@ from typing import Optional, List
 import json
 from datetime import datetime, timezone
 
-# Configure basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+## Configure basic logging
+#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 @dataclass
 class Artifact:
