@@ -1151,7 +1151,10 @@ if page == "Project":
                 current_step_index = st.session_state.current_setup_step
                 task = tasks[current_step_index]
                 st.subheader(f"Step {current_step_index + 1} of {len(tasks)}: {task.get('tool_name', 'Unnamed Step')}")
-                st.markdown(task.get('instructions', 'No instructions provided.'))
+                instructions_text = task.get('instructions', 'No instructions provided.')
+                # Sanitize LLM output to prevent inconsistent font sizes by removing markdown headings
+                sanitized_instructions = "\n".join([line.lstrip('# ') for line in instructions_text.split('\n')])
+                st.markdown(sanitized_instructions)
                 if st.session_state.setup_help_text:
                     with st.chat_message("assistant", avatar="❓"):
                         st.info(st.session_state.setup_help_text)
