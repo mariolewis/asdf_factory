@@ -144,11 +144,10 @@ class MasterOrchestrator:
                     default_value = db.get_config_value(default_key)
                     if default_value:
                         db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", default_value)
-            # --- End of Bugfix ---
 
-        log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
-        log_level = log_level_map.get(log_level_str, logging.INFO)
-        logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s', force=True)
+        # log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
+        # log_level = log_level_map.get(log_level_str, logging.INFO)
+        # logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s', force=True)
 
         # --- Initialize the LLM Service ---
         self.llm_service = self._create_llm_service()
@@ -735,21 +734,15 @@ class MasterOrchestrator:
         try:
             new_phase = FactoryPhase[phase_name]
 
-            if new_phase in [FactoryPhase.VIEWING_PROJECT_HISTORY, FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION]:
-                self.current_phase = new_phase
-                logging.info(f"Transitioning to phase: {self.current_phase.name}")
-                # We don't save state when just viewing history
-                return
-
-            if not self.project_id:
-                logging.error("Cannot set phase; no active project.")
-                return
-
+            # All phase transitions should be handled consistently.
+            # A project ID is required for state saving, but not for just setting
+            # the phase for UI navigation like viewing history.
             self.current_phase = new_phase
-            logging.info(f"Project '{self.project_name}' phase changed to: {self.current_phase.name}")
+            logging.info(f"Transitioning to phase: {self.current_phase.name}")
 
-            # Automatically save the state on every phase transition
-            self._save_current_state()
+            # If a project is active, save its new state to the database.
+            if self.project_id:
+                self._save_current_state()
 
         except KeyError:
             logging.error(f"Attempted to set an invalid phase: {phase_name}")
@@ -2154,37 +2147,43 @@ class MasterOrchestrator:
     def _perform_preflight_checks(self, project_root_str: str) -> dict:
         """
         Performs a sequence of pre-flight checks on an existing project environment.
-
-        Args:
-            project_root_str: The path to the project's root folder.
-
-        Returns:
-            A dictionary containing the status and a message.
+        This version includes a more robust Git repository check.
         """
         project_root = Path(project_root_str)
 
         # 1. Path Validation
-        if not project_root.exists():
-            return {"status": "PATH_NOT_FOUND", "message": f"The project folder could not be found. Please confirm the new location: {project_root_str}"}
+        if not project_root.exists() or not project_root.is_dir():
+            return {"status": "PATH_NOT_FOUND", "message": f"The project folder could not be found or is not a directory. Please confirm the new location: {project_root_str}"}
 
-        # 2. VCS Validation
+        # 2. VCS Validation (Multi-tiered check for robustness)
+        # Check 2a: Directory existence
         if not (project_root / '.git').is_dir():
-            return {"status": "GIT_MISSING", "message": "The project folder was found, but the Git repository is missing. Please re-initialize the repository."}
+            return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing. Please re-initialize the repository."}
 
+        # Check 2b: GitPython validation
         try:
             repo = git.Repo(project_root)
         except git.InvalidGitRepositoryError:
-            return {"status": "GIT_MISSING", "message": "The project folder contains an invalid Git repository."}
+            return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (GitPython check failed)."}
+
+        # Check 2c: Subprocess command validation (most robust)
+        try:
+            result = subprocess.run(
+                ['git', 'status'],
+                cwd=project_root,
+                capture_output=True,
+                text=True,
+                check=False,
+                startupinfo=subprocess.STARTUPINFO(dwFlags=subprocess.STARTF_USESHOWWINDOW) if os.name == 'nt' else None
+            )
+            if result.returncode != 0:
+                return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (command-line check failed)."}
+        except FileNotFoundError:
+            return {"status": "GIT_MISSING", "message": "Git command not found. Please ensure Git is installed and in your system's PATH."}
 
         # 3. State Drift Validation
         if repo.is_dirty(untracked_files=True):
             return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository."}
-
-        # 4. Core Artifact Validation (Placeholder for more complex logic)
-        # This check is basic for now. A future version would iterate through the RoWD
-        # and ensure key files exist. We'll simulate one check.
-        if "build.gradle.kts" in [p.name for p in project_root.iterdir()]:
-             logging.info("Pre-flight check: Found build.gradle.kts, core artifact check passed (simulated).")
 
         # All checks passed
         return {"status": "ALL_PASS", "message": "Project environment successfully verified."}

@@ -314,72 +314,64 @@ if page == "Project":
                             st.rerun()
 
     elif current_phase_name == "AWAITING_REASSESSMENT_CONFIRMATION":
-        st.header("Mid-Project Re-assessment Required")
+            st.header("Mid-Project Re-assessment Required")
 
-        # This UI has two stages: initial confirmation, and final decision after report.
-        reassessment_data = st.session_state.orchestrator.task_awaiting_approval or {}
-        reassessment_result = reassessment_data.get("reassessment_result")
+            reassessment_data = st.session_state.orchestrator.task_awaiting_approval or {}
+            reassessment_result = reassessment_data.get("reassessment_result")
 
-        if not reassessment_result:
-            # Stage 1: Initial Confirmation
-            st.warning(
-                "You have selected an LLM Provider with a smaller default context window than the one currently active. "
-                "This may increase the risk of failure for complex tasks on the remaining work in this project."
-            )
-            st.markdown("It is recommended to run a re-assessment on the project's remaining scope before proceeding.")
-            st.divider()
+            # Define the cleanup and return logic once to be reused by all buttons
+            def cleanup_and_return():
+                return_phase = st.session_state.get("phase_before_reassessment", "GENESIS")
+                keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider', 'phase_before_reassessment']
+                for key in keys_to_clear:
+                    if key in st.session_state: del st.session_state[key]
+                st.session_state.orchestrator.set_phase(return_phase)
+                st.rerun()
 
-            col1, col2, _ = st.columns([1.5, 2, 3])
-            with col1:
-                if st.button("▶️ Proceed with Re-assessment", type="primary", use_container_width=True):
-                    with st.spinner("Analyzing remaining project scope..."):
-                        st.session_state.orchestrator.run_mid_project_reassessment()
-                    st.rerun()
-            with col2:
-                if st.button("❌ Cancel and Revert LLM Choice", use_container_width=True):
-                    # Clean up state and return to GENESIS
-                    keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
-                    for key in keys_to_clear:
-                        if key in st.session_state: del st.session_state[key]
-                    st.session_state.orchestrator.set_phase("GENESIS")
-                    st.toast("LLM provider change was cancelled.")
-                    st.rerun()
-        else:
-            # Stage 2: Review Report and Make Final Decision
-            st.subheader("Re-assessment Report for Remaining Work")
-            if "error" in reassessment_result:
-                st.error(f"Could not generate re-assessment report: {reassessment_result['error']}")
+            if not reassessment_result:
+                st.warning(
+                    "You have selected an LLM Provider with a smaller default context window than the one currently active. "
+                    "This may increase the risk of failure for complex tasks on the remaining work in this project."
+                )
+                st.markdown("It is recommended to run a re-assessment on the project's remaining scope before proceeding.")
+                st.divider()
+
+                col1, col2, _ = st.columns([1.5, 2, 3])
+                with col1:
+                    if st.button("▶️ Proceed with Re-assessment", type="primary", use_container_width=True):
+                        with st.spinner("Analyzing remaining project scope..."):
+                            st.session_state.orchestrator.run_mid_project_reassessment()
+                        st.rerun()
+                with col2:
+                    if st.button("❌ Cancel and Revert LLM Choice", use_container_width=True):
+                        st.toast("LLM provider change was cancelled.")
+                        cleanup_and_return()
             else:
-                # Display a simplified version of the assessment report
-                risk = reassessment_result.get('risk_assessment', {})
-                st.metric("Overall Risk Level for Remaining Work", risk.get('overall_risk_level', 'N/A'))
-                st.write("**Risk Summary:**")
-                st.write(risk.get('summary', 'No summary provided.'))
+                st.subheader("Re-assessment Report for Remaining Work")
+                if "error" in reassessment_result:
+                    st.error(f"Could not generate re-assessment report: {reassessment_result['error']}")
+                else:
+                    risk = reassessment_result.get('risk_assessment', {})
+                    st.metric("Overall Risk Level for Remaining Work", risk.get('overall_risk_level', 'N/A'))
+                    st.write("**Risk Summary:**")
+                    st.write(risk.get('summary', 'No summary provided.'))
 
-            st.divider()
-            st.markdown(f"Do you want to finalize the switch to **{st.session_state.get('pending_llm_provider')}** or revert to **{st.session_state.get('previous_llm_provider')}**?")
+                st.divider()
+                st.markdown(f"Do you want to finalize the switch to **{st.session_state.get('pending_llm_provider')}** or revert to **{st.session_state.get('previous_llm_provider')}**?")
 
-            col1, col2, _ = st.columns([2, 2, 3])
-            with col1:
-                if st.button(f"✅ Continue with {st.session_state.get('pending_llm_provider')}", type="primary", use_container_width=True):
-                    success, message = st.session_state.orchestrator.commit_pending_llm_change(st.session_state.pending_llm_provider)
-                    if success:
-                        st.toast(message, icon="✅")
-                    else:
-                        st.error(message)
-                    keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
-                    for key in keys_to_clear:
-                        if key in st.session_state: del st.session_state[key]
-                    st.session_state.orchestrator.set_phase("GENESIS")
-                    st.rerun()
-            with col2:
-                if st.button(f"❌ Revert to {st.session_state.get('previous_llm_provider')}", use_container_width=True):
-                    keys_to_clear = ['reassessment_required', 'pending_llm_provider', 'previous_llm_provider']
-                    for key in keys_to_clear:
-                        if key in st.session_state: del st.session_state[key]
-                    st.session_state.orchestrator.set_phase("GENESIS")
-                    st.toast("LLM provider change was reverted.")
-                    st.rerun()
+                col1, col2, _ = st.columns([2, 2, 3])
+                with col1:
+                    if st.button(f"✅ Continue with {st.session_state.get('pending_llm_provider')}", type="primary", use_container_width=True):
+                        success, message = st.session_state.orchestrator.commit_pending_llm_change(st.session_state.pending_llm_provider)
+                        if success:
+                            st.toast(message, icon="✅")
+                        else:
+                            st.error(message)
+                        cleanup_and_return()
+                with col2:
+                    if st.button(f"❌ Revert to {st.session_state.get('previous_llm_provider')}", use_container_width=True):
+                        st.toast("LLM provider change was reverted.")
+                        cleanup_and_return()
 
     elif not st.session_state.orchestrator.project_id:
         st.subheader("Start a New Project")
@@ -1834,43 +1826,38 @@ elif page == "Documents":
     st.markdown("Select a project to view and download its core documents.")
 
     # --- Project Selection Logic ---
-    doc_project_id = st.session_state.orchestrator.project_id
-    doc_project_name = st.session_state.orchestrator.project_name
-
+    active_project_id = st.session_state.orchestrator.project_id
+    active_project_name = st.session_state.orchestrator.project_name
     project_history = st.session_state.orchestrator.get_project_history()
 
+    # Build a comprehensive list of all possible projects to view
+    project_options = {}
+    # Add active project first if it exists
+    if active_project_id:
+        project_options[f"{active_project_name} (Active)"] = active_project_id
+    # Add historical projects, avoiding duplicates
     if project_history:
-        # Create a dictionary to map display names to project IDs
-        history_options = {f"{row['project_name']} (ID: {row['project_id']})": row['project_id'] for row in project_history}
+        for row in project_history:
+            if row['project_id'] != active_project_id:
+                project_options[f"{row['project_name']} (ID: {row['project_id']})"] = row['project_id']
 
-        # If a project is active, find its corresponding display name to set the default
-        default_index = 0
-        if doc_project_id:
-            try:
-                active_project_display_name = next(name for name, pid in history_options.items() if pid == doc_project_id)
-                default_index = list(history_options.keys()).index(active_project_display_name) + 1
-            except StopIteration:
-                pass # Active project might not be in history yet
+    doc_project_id = None
+    doc_project_name = None
 
-        selected_option = st.selectbox(
-            "Select a Project:",
-            options=[""] + list(history_options.keys()),
-            index=default_index,
-            help="Select any active or archived project to view its documents."
-        )
-
-        if selected_option:
-            doc_project_id = history_options[selected_option]
-            doc_project_name = selected_option.split(' (ID:')[0]
-        else:
-            # Clear the ID if the user selects the blank option
-            doc_project_id = None
-
-    elif doc_project_id:
-        st.info(f"Displaying documents for the only active project: **{doc_project_name}**")
-    else:
+    if not project_options:
         st.warning("Please start a new project to generate documents.")
         st.stop()
+    else:
+        # The first option is always the active one if it exists, otherwise the most recent history.
+        selected_option = st.selectbox(
+            "Select a Project:",
+            options=list(project_options.keys()),
+            index=0, # Default to the top of the list
+            help="Select any active or archived project to view its documents."
+        )
+        if selected_option:
+            doc_project_id = project_options[selected_option]
+            doc_project_name = selected_option.split(' (')[0]
 
     # --- Document Display and Download ---
     if doc_project_id:
@@ -2182,6 +2169,8 @@ elif page == "Settings":
                     st.session_state.reassessment_required = True
                     st.session_state.pending_llm_provider = new_provider
                     st.session_state.previous_llm_provider = current_provider
+                    # Remember the phase we were in before the re-assessment
+                    st.session_state.phase_before_reassessment = st.session_state.orchestrator.current_phase.name
                     st.session_state.orchestrator.set_phase("AWAITING_REASSESSMENT_CONFIRMATION")
                     st.warning("Re-assessment required due to smaller context window. Please navigate to the Project page to proceed.")
                     st.rerun()
