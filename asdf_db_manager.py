@@ -600,6 +600,14 @@ class ASDFDBManager:
         cursor = self._execute_query(query, (history_id,))
         return cursor.fetchone()
 
+    def get_project_history_by_name(self, project_name: str) -> list:
+        """
+        Retrieves project history records that match a given project name.
+        """
+        query = "SELECT * FROM ProjectHistory WHERE project_name = ?"
+        cursor = self._execute_query(query, (project_name,))
+        return cursor.fetchall()
+
     def delete_project_from_history(self, history_id: int):
         """
         Deletes a project record from the ProjectHistory table.
