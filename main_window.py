@@ -69,14 +69,19 @@ class ASDFMainWindow(QMainWindow):
         project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
         if ok and project_name:
             # Check if a project with this name already exists in the archives
+            name_exists_in_history = False
             with self.orchestrator.db_manager as db:
-                existing_projects = db.get_project_history_by_name(project_name)
+                if db.get_project_history_by_name(project_name):
+                    name_exists_in_history = True
 
-            if existing_projects:
+            # Also check against the currently active project name
+            is_active_project_name = (self.orchestrator.project_id is not None and self.orchestrator.project_name == project_name)
+
+            if name_exists_in_history or is_active_project_name:
                 reply = QMessageBox.warning(
                     self,
                     "Duplicate Project Name",
-                    f"A project named '{project_name}' already exists in your archives.\n\n"
+                    f"A project named '{project_name}' already exists.\n\n"
                     "Are you sure you want to create a new project with the same name?",
                     QMessageBox.Yes | QMessageBox.No,
                     QMessageBox.No
