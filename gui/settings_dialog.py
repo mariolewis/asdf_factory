@@ -15,16 +15,15 @@ class SettingsDialog(QDialog):
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
+        self.all_config = {}
 
         self.setWindowTitle("ASDF Settings")
-        self.setMinimumSize(600, 450)
+        self.setMinimumSize(600, 500)
         self.setModal(True)
 
-        # Create widgets and layouts programmatically
         self._create_widgets()
         self._create_layouts()
-
-        self.populate_fields()
+        # populate_fields() is now called from show_settings_dialog to ensure it's fresh each time
         self.connect_signals()
 
     def _create_widgets(self):
@@ -37,23 +36,38 @@ class SettingsDialog(QDialog):
         self.provider_combo_box = QComboBox()
         self.provider_stacked_widget = QStackedWidget()
 
+        # Gemini Page
         self.gemini_page = QWidget()
         self.gemini_api_key_input = QLineEdit()
         self.gemini_api_key_input.setEchoMode(QLineEdit.Password)
+        self.gemini_reasoning_model_input = QLineEdit()
+        self.gemini_fast_model_input = QLineEdit()
 
+        # ChatGPT Page
         self.chatgpt_page = QWidget()
         self.openai_api_key_input = QLineEdit()
         self.openai_api_key_input.setEchoMode(QLineEdit.Password)
+        self.openai_reasoning_model_input = QLineEdit()
+        self.openai_fast_model_input = QLineEdit()
 
+        # Claude Page
         self.claude_page = QWidget()
         self.anthropic_api_key_input = QLineEdit()
         self.anthropic_api_key_input.setEchoMode(QLineEdit.Password)
+        self.anthropic_reasoning_model_input = QLineEdit()
+        self.anthropic_fast_model_input = QLineEdit()
 
+        # Phi-3 Local Page
         self.phi3local_page = QWidget()
+
+        # Any Other/Custom Page
         self.anyother_page = QWidget()
         self.custom_endpoint_url_input = QLineEdit()
         self.custom_endpoint_api_key_input = QLineEdit()
         self.custom_endpoint_api_key_input.setEchoMode(QLineEdit.Password)
+        self.custom_reasoning_model_input = QLineEdit()
+        self.custom_fast_model_input = QLineEdit()
+
 
         # --- Factory Behavior Tab Widgets ---
         self.factory_behavior_tab = QWidget()
@@ -67,23 +81,27 @@ class SettingsDialog(QDialog):
 
     def _create_layouts(self):
         """Creates and arranges layouts for the dialog."""
-        # --- LLM Providers Tab Layout ---
         llm_tab_layout = QVBoxLayout(self.llm_providers_tab)
         provider_form_layout = QFormLayout()
         provider_form_layout.addRow("Select LLM Provider:", self.provider_combo_box)
         llm_tab_layout.addLayout(provider_form_layout)
 
-        # Setup pages and add them to stacked widget
         gemini_layout = QFormLayout(self.gemini_page)
         gemini_layout.addRow("Gemini API Key:", self.gemini_api_key_input)
+        gemini_layout.addRow("Reasoning Model:", self.gemini_reasoning_model_input)
+        gemini_layout.addRow("Fast Model:", self.gemini_fast_model_input)
         self.provider_stacked_widget.addWidget(self.gemini_page)
 
         chatgpt_layout = QFormLayout(self.chatgpt_page)
         chatgpt_layout.addRow("OpenAI API Key:", self.openai_api_key_input)
+        chatgpt_layout.addRow("Reasoning Model:", self.openai_reasoning_model_input)
+        chatgpt_layout.addRow("Fast Model:", self.openai_fast_model_input)
         self.provider_stacked_widget.addWidget(self.chatgpt_page)
 
         claude_layout = QFormLayout(self.claude_page)
         claude_layout.addRow("Anthropic API Key:", self.anthropic_api_key_input)
+        claude_layout.addRow("Reasoning Model:", self.anthropic_reasoning_model_input)
+        claude_layout.addRow("Fast Model:", self.anthropic_fast_model_input)
         self.provider_stacked_widget.addWidget(self.claude_page)
 
         phi3_layout = QVBoxLayout(self.phi3local_page)
@@ -93,12 +111,13 @@ class SettingsDialog(QDialog):
         anyother_layout = QFormLayout(self.anyother_page)
         anyother_layout.addRow("Endpoint URL:", self.custom_endpoint_url_input)
         anyother_layout.addRow("Endpoint API Key:", self.custom_endpoint_api_key_input)
+        anyother_layout.addRow("Reasoning Model:", self.custom_reasoning_model_input)
+        anyother_layout.addRow("Fast Model:", self.custom_fast_model_input)
         self.provider_stacked_widget.addWidget(self.anyother_page)
 
         llm_tab_layout.addWidget(self.provider_stacked_widget)
         llm_tab_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
-        # --- Factory Behavior Tab Layout ---
         factory_tab_layout = QFormLayout(self.factory_behavior_tab)
         factory_tab_layout.addRow("Max Debug Attempts:", self.max_debug_spin_box)
         factory_tab_layout.addRow("Context Window Limit:", self.context_limit_spin_box)
@@ -113,20 +132,35 @@ class SettingsDialog(QDialog):
         self.main_layout.addWidget(self.button_box)
 
     def populate_fields(self):
+        """Loads all current settings from the database and populates the UI fields."""
         with self.orchestrator.db_manager as db:
             self.all_config = db.get_all_config_values()
 
+        # LLM Provider Tab
         provider_options = ["Gemini", "ChatGPT", "Claude", "Phi-3 (Local)", "Any Other"]
+        self.provider_combo_box.clear() # Fix: Clear before adding items
         self.provider_combo_box.addItems(provider_options)
         current_provider = self.all_config.get("SELECTED_LLM_PROVIDER", "Gemini")
         self.provider_combo_box.setCurrentText(current_provider)
 
         self.gemini_api_key_input.setText(self.all_config.get("GEMINI_API_KEY", ""))
+        self.gemini_reasoning_model_input.setText(self.all_config.get("GEMINI_REASONING_MODEL", "gemini-2.5-flash-preview-05-20"))
+        self.gemini_fast_model_input.setText(self.all_config.get("GEMINI_FAST_MODEL", "gemini-2.5-flash-preview-05-20"))
+
         self.openai_api_key_input.setText(self.all_config.get("OPENAI_API_KEY", ""))
+        self.openai_reasoning_model_input.setText(self.all_config.get("OPENAI_REASONING_MODEL", "gpt-4-turbo"))
+        self.openai_fast_model_input.setText(self.all_config.get("OPENAI_FAST_MODEL", "gpt-3.5-turbo"))
+
         self.anthropic_api_key_input.setText(self.all_config.get("ANTHROPIC_API_KEY", ""))
+        self.anthropic_reasoning_model_input.setText(self.all_config.get("ANTHROPIC_REASONING_MODEL", "claude-3-opus-20240229"))
+        self.anthropic_fast_model_input.setText(self.all_config.get("ANTHROPIC_FAST_MODEL", "claude-3-haiku-20240307"))
+
         self.custom_endpoint_url_input.setText(self.all_config.get("CUSTOM_ENDPOINT_URL", ""))
         self.custom_endpoint_api_key_input.setText(self.all_config.get("CUSTOM_ENDPOINT_API_KEY", ""))
+        self.custom_reasoning_model_input.setText(self.all_config.get("CUSTOM_REASONING_MODEL", ""))
+        self.custom_fast_model_input.setText(self.all_config.get("CUSTOM_FAST_MODEL", ""))
 
+        # Factory Behavior Tab
         self.max_debug_spin_box.setRange(1, 10)
         self.max_debug_spin_box.setValue(int(self.all_config.get("MAX_DEBUG_ATTEMPTS", 2)))
 
@@ -134,6 +168,7 @@ class SettingsDialog(QDialog):
         self.context_limit_spin_box.setSingleStep(10000)
 
         logging_options = ["Standard", "Detailed", "Debug"]
+        self.logging_combo_box.clear() # Fix: Clear before adding items
         self.logging_combo_box.addItems(logging_options)
         self.logging_combo_box.setCurrentText(self.all_config.get("LOGGING_LEVEL", "Standard"))
 
@@ -171,23 +206,45 @@ class SettingsDialog(QDialog):
     def save_settings_and_accept(self):
         logging.info("Saving settings from dialog...")
         try:
+            settings_to_save = {
+                "SELECTED_LLM_PROVIDER": self.provider_combo_box.currentText(),
+                "GEMINI_API_KEY": self.gemini_api_key_input.text(),
+                "GEMINI_REASONING_MODEL": self.gemini_reasoning_model_input.text(),
+                "GEMINI_FAST_MODEL": self.gemini_fast_model_input.text(),
+                "OPENAI_API_KEY": self.openai_api_key_input.text(),
+                "OPENAI_REASONING_MODEL": self.openai_reasoning_model_input.text(),
+                "OPENAI_FAST_MODEL": self.openai_fast_model_input.text(),
+                "ANTHROPIC_API_KEY": self.anthropic_api_key_input.text(),
+                "ANTHROPIC_REASONING_MODEL": self.anthropic_reasoning_model_input.text(),
+                "ANTHROPIC_FAST_MODEL": self.anthropic_fast_model_input.text(),
+                "CUSTOM_ENDPOINT_URL": self.custom_endpoint_url_input.text(),
+                "CUSTOM_ENDPOINT_API_KEY": self.custom_endpoint_api_key_input.text(),
+                "CUSTOM_REASONING_MODEL": self.custom_reasoning_model_input.text(),
+                "CUSTOM_FAST_MODEL": self.custom_fast_model_input.text(),
+                "MAX_DEBUG_ATTEMPTS": str(self.max_debug_spin_box.value()),
+                "CONTEXT_WINDOW_CHAR_LIMIT": str(self.context_limit_spin_box.value()),
+                "LOGGING_LEVEL": self.logging_combo_box.currentText(),
+                "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
+                "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text()
+            }
+
+            provider_prefixes = ["GEMINI", "OPENAI", "ANTHROPIC", "CUSTOM"]
+            for prefix in provider_prefixes:
+                reasoning_key = f"{prefix}_REASONING_MODEL"
+                fast_key = f"{prefix}_FAST_MODEL"
+                if not settings_to_save[reasoning_key] and settings_to_save[fast_key]:
+                    settings_to_save[reasoning_key] = settings_to_save[fast_key]
+                elif not settings_to_save[fast_key] and settings_to_save[reasoning_key]:
+                    settings_to_save[fast_key] = settings_to_save[reasoning_key]
+
             with self.orchestrator.db_manager as db:
-                db.set_config_value("SELECTED_LLM_PROVIDER", self.provider_combo_box.currentText())
-                db.set_config_value("GEMINI_API_KEY", self.gemini_api_key_input.text())
-                db.set_config_value("OPENAI_API_KEY", self.openai_api_key_input.text())
-                db.set_config_value("ANTHROPIC_API_KEY", self.anthropic_api_key_input.text())
-                db.set_config_value("CUSTOM_ENDPOINT_URL", self.custom_endpoint_url_input.text())
-                db.set_config_value("CUSTOM_ENDPOINT_API_KEY", self.custom_endpoint_api_key_input.text())
+                for key, value in settings_to_save.items():
+                    db.set_config_value(key, value)
 
-                db.set_config_value("MAX_DEBUG_ATTEMPTS", str(self.max_debug_spin_box.value()))
-                db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", str(self.context_limit_spin_box.value()))
-                db.set_config_value("LOGGING_LEVEL", self.logging_combo_box.currentText())
-                db.set_config_value("DEFAULT_PROJECT_PATH", self.project_path_input.text())
-                db.set_config_value("DEFAULT_ARCHIVE_PATH", self.archive_path_input.text())
-
-            self.orchestrator._llm_service = None
-            logging.info("Settings saved successfully.")
+            self.orchestrator.llm_service = self.orchestrator._create_llm_service()
+            logging.info("Settings saved and LLM service re-initialized.")
             self.accept()
+
         except Exception as e:
             logging.error(f"Failed to save settings: {e}")
             self.reject()

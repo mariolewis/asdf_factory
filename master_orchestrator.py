@@ -1,14 +1,13 @@
 
 import logging
-import docx
+# import docx
 import uuid
 import json
 import re
 from datetime import datetime, timezone
 from enum import Enum, auto
 from pathlib import Path
-import git
-import google.generativeai as genai
+
 from llm_service import LLMService, GeminiAdapter, OpenAIAdapter, AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter
 from agents.agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
@@ -149,12 +148,23 @@ class MasterOrchestrator:
         # log_level = log_level_map.get(log_level_str, logging.INFO)
         # logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s', force=True)
 
-        # --- Initialize the LLM Service ---
-        self.llm_service = self._create_llm_service()
-        if not self.llm_service:
-            logging.error("MasterOrchestrator failed to initialize LLM service. Check configuration.")
+        # --- Initialize the LLM Service (Deferred) ---
+        self._llm_service = None  # The actual service object, initially None
+        logging.info("MasterOrchestrator initialized. LLM service will be created on first use.")
 
-        logging.info("MasterOrchestrator initialized.")
+    @property
+    def llm_service(self) -> LLMService:
+        """
+        Provides on-demand creation of the LLM service.
+        The service is only initialized the first time it is accessed.
+        """
+        if self._llm_service is None:
+            logging.info("First use of LLM service detected, initializing now...")
+            self._llm_service = self._create_llm_service()
+            if not self._llm_service:
+                # This is a critical failure that should be reported
+                raise RuntimeError("Failed to initialize LLM service. Please check your settings.")
+        return self._llm_service
 
     PHASE_DISPLAY_NAMES = {
         FactoryPhase.IDLE: "Idle",
@@ -292,6 +302,9 @@ class MasterOrchestrator:
         saves the brief as a project artifact, stores its path, calls the
         triage agent, and prepares for the PM's decision.
         """
+
+        import docx
+
         if not self.project_id:
             logging.error("Cannot handle brief submission; no active project.")
             return
@@ -1120,6 +1133,7 @@ class MasterOrchestrator:
         Executes the full Integration and UI Testing workflow.
         This version is refactored to use the central llm_service.
         """
+        import git
         logging.info("Starting Phase: Automated Integration & Verification.")
         self.set_phase("INTEGRATION_AND_VERIFICATION")
 
@@ -2149,6 +2163,9 @@ class MasterOrchestrator:
         Performs a sequence of pre-flight checks on an existing project environment.
         This version includes a more robust Git repository check.
         """
+        import os
+        import subprocess
+        import git
         project_root = Path(project_root_str)
 
         # 1. Path Validation
@@ -2701,6 +2718,7 @@ class MasterOrchestrator:
         """
         Retrieves the timestamp of the most recent commit in the project's repo.
         """
+        import git
         try:
             with self.db_manager as db:
                 project_details = db.get_project_by_id(self.project_id)

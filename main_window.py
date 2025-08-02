@@ -10,6 +10,10 @@ from PySide6.QtUiTools import QUiLoader
 from master_orchestrator import MasterOrchestrator
 from gui.settings_dialog import SettingsDialog
 from gui.env_setup_page import EnvSetupPage
+from gui.spec_elaboration_page import SpecElaborationPage
+from gui.tech_spec_page import TechSpecPage
+from gui.build_script_page import BuildScriptPage
+from gui.test_env_page import TestEnvPage
 
 
 class ASDFMainWindow(QMainWindow):
@@ -34,6 +38,24 @@ class ASDFMainWindow(QMainWindow):
         # Create an instance of the environment setup page
         self.env_setup_page = EnvSetupPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.env_setup_page)
+
+        # Create an instance of the specification elaboration page
+        self.spec_elaboration_page = SpecElaborationPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.spec_elaboration_page)
+
+        # Create an instance of the technical specification page
+        self.tech_spec_page = TechSpecPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.tech_spec_page)
+
+        # Create an instance of the build script page
+        self.build_script_page = BuildScriptPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.build_script_page)
+
+        # Create an instance of the test environment setup page
+        self.test_env_page = TestEnvPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.test_env_page)
+
+        self.last_known_phase = None
 
         self.connect_signals()
         self.update_ui_from_state()
@@ -62,7 +84,13 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionSettings.triggered.connect(self.show_settings_dialog)
         self.ui.actionExit.triggered.connect(self.close)
         self.ui.actionNew_Project.triggered.connect(self.on_new_project)
+
+        # --- Page Completion Signals ---
         self.env_setup_page.setup_complete.connect(self.update_ui_from_state)
+        self.spec_elaboration_page.spec_elaboration_complete.connect(self.update_ui_from_state)
+        self.tech_spec_page.tech_spec_complete.connect(self.update_ui_from_state)
+        self.build_script_page.build_script_setup_complete.connect(self.update_ui_from_state)
+        self.test_env_page.test_env_setup_complete.connect(self.update_ui_from_state)
 
     def on_new_project(self):
         """Handles the File -> New Project action with a check for duplicate names."""
@@ -104,18 +132,43 @@ class ASDFMainWindow(QMainWindow):
         self.update_ui_from_state()
 
     def update_ui_from_state(self):
-        """Updates the entire UI based on the orchestrator's current state."""
-        current_phase_name = self.orchestrator.current_phase.name
+        """
+        Updates the UI based on the orchestrator's current state, only resetting
+        pages upon a direct phase transition.
+        """
+        current_phase = self.orchestrator.current_phase
+        current_phase_name = current_phase.name
         logging.info(f"Updating UI for phase: {current_phase_name}")
 
+        # Detect if the phase has actually changed since the last update
+        if current_phase != self.last_known_phase:
+            logging.info(f"Phase transition detected: {self.last_known_phase} -> {current_phase}")
+            # Call the one-time reset/prepare method for the new page
+            if current_phase_name == "ENV_SETUP_TARGET_APP":
+                self.env_setup_page.prepare_for_new_project()
+            elif current_phase_name == "SPEC_ELABORATION":
+                self.spec_elaboration_page.prepare_for_new_project()
+            elif current_phase_name == "TECHNICAL_SPECIFICATION":
+                self.tech_spec_page.prepare_for_new_project()
+            self.last_known_phase = current_phase
+
+        # Now, just switch the visible widget without resetting it
         if not self.orchestrator.project_id:
             self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
             return
 
-        # --- Phase-based Page Switching ---
         if current_phase_name == "ENV_SETUP_TARGET_APP":
             self.ui.mainContentArea.setCurrentWidget(self.env_setup_page)
+        elif current_phase_name == "SPEC_ELABORATION":
+            self.ui.mainContentArea.setCurrentWidget(self.spec_elaboration_page)
+        elif current_phase_name == "TECHNICAL_SPECIFICATION":
+            self.ui.mainContentArea.setCurrentWidget(self.tech_spec_page)
+        elif current_phase_name == "BUILD_SCRIPT_SETUP":
+            self.build_script_page.prepare_for_new_project()
+            self.ui.mainContentArea.setCurrentWidget(self.build_script_page)
+        elif current_phase_name == "TEST_ENVIRONMENT_SETUP":
+            self.test_env_page.prepare_for_new_project()
+            self.ui.mainContentArea.setCurrentWidget(self.test_env_page)
         else:
-            # Fallback to a placeholder page for now
             self.ui.mainContentArea.setCurrentWidget(self.ui.phasePage)
             self.ui.phaseLabel.setText(f"UI for phase '{current_phase_name}' is not yet implemented.")

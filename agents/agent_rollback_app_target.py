@@ -8,7 +8,6 @@ application's repository, as directed by the MasterOrchestrator.
 (ASDF PRD v0.6, Section 3.6)
 """
 
-import git
 from pathlib import Path
 import logging
 
@@ -29,6 +28,8 @@ class RollbackAgent:
         Returns:
             A tuple containing a boolean for success/failure and a status message.
         """
+        import git
+
         logging.warning(f"Executing atomic rollback for repository at: {project_repo_path}")
         try:
             repo_path = Path(project_repo_path)

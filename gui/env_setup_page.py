@@ -28,6 +28,23 @@ class EnvSetupPage(QWidget):
         self.connect_signals()
         self.update_ui_from_state()
 
+    def prepare_for_new_project(self):
+        """Resets the page to its initial state for a new project."""
+        logging.info("Resetting EnvSetupPage for a new project.")
+        # On page load, enable the path selection and disable the rest.
+        self.ui.projectPathLineEdit.setEnabled(True)
+        self.ui.projectPathLineEdit.clear()
+        self.ui.confirmPathButton.setEnabled(True)
+        self.ui.initGitButton.setEnabled(False)
+        self.ui.proceedButton.setEnabled(False)
+        self.ui.gitLabel.setText("Git repository not initialized.")
+        self.ui.gitLabel.setStyleSheet("color: orange;")
+
+        # Set default text for path input from config
+        with self.orchestrator.db_manager as db:
+            default_path = db.get_config_value("DEFAULT_PROJECT_PATH") or ""
+        self.ui.projectPathLineEdit.setText(default_path)
+
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
         self.ui.confirmPathButton.clicked.connect(self.on_confirm_path_clicked)

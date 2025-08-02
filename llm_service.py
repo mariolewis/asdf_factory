@@ -8,9 +8,6 @@ to flexibly switch between different providers.
 
 import logging
 from abc import ABC, abstractmethod
-import google.generativeai as genai
-import openai
-import anthropic
 from asdf_db_manager import ASDFDBManager
 
 class LLMService(ABC):
@@ -39,17 +36,21 @@ class GeminiAdapter(LLMService):
     def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         """
         Initializes the GeminiAdapter.
-
-        Args:
-            api_key (str): The Google AI API key.
-            reasoning_model_name (str): The name of the model for complex tasks.
-            fast_model_name (str): The name of the model for simple tasks.
         """
+        import google.generativeai as genai
+        # FIX: Import the GenerationConfig type to be explicit
+        from google.generativeai.types import GenerationConfig
+
         if not api_key:
             raise ValueError("API key is required for the GeminiAdapter.")
         genai.configure(api_key=api_key)
-        self.reasoning_model = genai.GenerativeModel(reasoning_model_name)
-        self.fast_model = genai.GenerativeModel(fast_model_name)
+
+        # FIX: Create a stable, explicit generation configuration
+        # This prevents the SDK from using a problematic default for new models.
+        stable_config = GenerationConfig(candidate_count=1)
+
+        self.reasoning_model = genai.GenerativeModel(reasoning_model_name, generation_config=stable_config)
+        self.fast_model = genai.GenerativeModel(fast_model_name, generation_config=stable_config)
         logging.info(f"GeminiAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
@@ -62,13 +63,14 @@ class GeminiAdapter(LLMService):
 
             response = model_to_use.generate_content(prompt)
 
-            if not response.text:
+            if not hasattr(response, 'text') or not response.text:
+                # Add a check for empty or malformed responses
+                logging.warning(f"Gemini model returned an empty or malformed response: {response}")
                 raise ValueError("The Gemini model returned an empty response.")
 
             return response.text.strip()
         except Exception as e:
             logging.error(f"Gemini API call failed: {e}")
-            # Propagate a user-friendly error message
             return f"Error: The call to the Gemini API failed. Details: {e}"
 
 class OpenAIAdapter(LLMService):
@@ -78,12 +80,8 @@ class OpenAIAdapter(LLMService):
     def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         """
         Initializes the OpenAIAdapter.
-
-        Args:
-            api_key (str): The OpenAI API key.
-            reasoning_model_name (str): The name of the model for complex tasks.
-            fast_model_name (str): The name of the model for simple tasks.
         """
+        import openai
         if not api_key:
             raise ValueError("API key is required for the OpenAIAdapter.")
         self.client = openai.OpenAI(api_key=api_key)
@@ -95,6 +93,7 @@ class OpenAIAdapter(LLMService):
         """
         Generates text using the appropriate OpenAI model based on task complexity.
         """
+        import openai
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
             logging.debug(f"Using OpenAI model: {'Reasoning' if task_complexity == 'complex' else 'Fast'}")
@@ -122,12 +121,8 @@ class AnthropicAdapter(LLMService):
     def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         """
         Initializes the AnthropicAdapter.
-
-        Args:
-            api_key (str): The Anthropic API key.
-            reasoning_model_name (str): The name of the model for complex tasks.
-            fast_model_name (str): The name of the model for simple tasks.
         """
+        import anthropic
         if not api_key:
             raise ValueError("API key is required for the AnthropicAdapter.")
         self.client = anthropic.Anthropic(api_key=api_key)
@@ -145,7 +140,7 @@ class AnthropicAdapter(LLMService):
 
             message = self.client.messages.create(
                 model=model_to_use,
-                max_tokens=4096,  # Anthropic API requires max_tokens
+                max_tokens=4096,
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
@@ -163,16 +158,13 @@ class AnthropicAdapter(LLMService):
 class LocalPhi3Adapter(LLMService):
     """
     Concrete implementation of the LLMService for a local Phi-3 model via Ollama.
-    This adapter uses the OpenAI SDK to connect to the local Ollama endpoint.
     """
     def __init__(self, base_url: str = "http://localhost:11434/v1"):
         """
         Initializes the LocalPhi3Adapter.
-
-        Args:
-            base_url (str): The URL of the local Ollama server endpoint.
         """
-        self.client = openai.OpenAI(base_url=base_url, api_key="ollama") # api_key is required but not used by Ollama
+        import openai
+        self.client = openai.OpenAI(base_url=base_url, api_key="ollama")
         self.model = "phi3"
         logging.info(f"LocalPhi3Adapter initialized for model '{self.model}' at {base_url}.")
 
@@ -180,6 +172,7 @@ class LocalPhi3Adapter(LLMService):
         """
         Generates text using the local Phi-3 model. Task complexity is ignored.
         """
+        import openai
         try:
             logging.debug(f"Using local Phi-3 model (Task complexity '{task_complexity}' ignored).")
 
@@ -212,13 +205,8 @@ class CustomEndpointAdapter(LLMService):
     def __init__(self, base_url: str, api_key: str, reasoning_model_name: str, fast_model_name: str):
         """
         Initializes the CustomEndpointAdapter.
-
-        Args:
-            base_url (str): The base URL of the custom LLM endpoint.
-            api_key (str): The API key for the custom endpoint.
-            reasoning_model_name (str): The name of the model for complex tasks.
-            fast_model_name (str): The name of the model for simple tasks.
         """
+        import openai
         if not all([base_url, api_key, reasoning_model_name, fast_model_name]):
             raise ValueError("base_url, api_key, and both model names are required for the CustomEndpointAdapter.")
         self.client = openai.OpenAI(base_url=base_url, api_key=api_key)

@@ -2,7 +2,6 @@
 This module contains the BuildAndCommitAgentAppTarget class.
 """
 import subprocess
-import git
 from pathlib import Path
 import logging
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
@@ -26,6 +25,8 @@ class BuildAndCommitAgentAppTarget:
             FileNotFoundError: If the provided repository path does not exist.
             git.InvalidGitRepositoryError: If the path is not a valid Git repository.
         """
+        import git
+
         self.repo_path = Path(project_repo_path)
 
         if not self.repo_path.is_dir():
