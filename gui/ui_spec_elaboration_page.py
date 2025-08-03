@@ -118,10 +118,24 @@ class Ui_SpecElaborationPage(object):
 
         self.verticalLayout_5.addWidget(self.analysisResultTextEdit)
 
+        self.horizontalLayout_3 = QHBoxLayout()
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.cancelProjectButton = QPushButton(self.complexityReviewPage)
+        self.cancelProjectButton.setObjectName(u"cancelProjectButton")
+
+        self.horizontalLayout_3.addWidget(self.cancelProjectButton)
+
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_3.addItem(self.horizontalSpacer)
+
         self.confirmAnalysisButton = QPushButton(self.complexityReviewPage)
         self.confirmAnalysisButton.setObjectName(u"confirmAnalysisButton")
 
-        self.verticalLayout_5.addWidget(self.confirmAnalysisButton)
+        self.horizontalLayout_3.addWidget(self.confirmAnalysisButton)
+
+
+        self.verticalLayout_5.addLayout(self.horizontalLayout_3)
 
         self.stackedWidget.addWidget(self.complexityReviewPage)
         self.finalReviewPage = QWidget()
@@ -218,6 +232,7 @@ class Ui_SpecElaborationPage(object):
         self.processTextButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Process Brief Description", None))
         self.inputTabWidget.setTabText(self.inputTabWidget.indexOf(self.textInputTab), QCoreApplication.translate("SpecElaborationPage", u"Enter Brief Description", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Project Complexity & Risk Assessment", None))
+        self.cancelProjectButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Cancel Project", None))
         self.confirmAnalysisButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Confirm Assessment & Proceed to Final Review", None))
         self.finalReviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Final Specification Review", None))
         self.specDraftLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Specification Draft (Editable)", None))

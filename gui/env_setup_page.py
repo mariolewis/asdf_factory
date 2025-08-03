@@ -139,6 +139,31 @@ class EnvSetupPage(QWidget):
             logging.error(f"Failed to initialize Git repository: {e}")
             QMessageBox.critical(self, "Error", f"An unexpected error occurred:\n{e}")
 
+    def on_proceed_clicked(self):
+        """
+        Finalizes the setup, saves data, and signals completion.
+        """
+        project_path = getattr(self.orchestrator, 'project_root_path', None)
+        if not project_path:
+            QMessageBox.critical(self, "Error", "Project path is not set.")
+            return
+
+        try:
+            # Save the confirmed project root path to the database
+            with self.orchestrator.db_manager as db:
+                db.update_project_root_folder(self.orchestrator.project_id, project_path)
+                logging.info(f"Project root folder saved to database for project {self.orchestrator.project_id}")
+
+            # Transition the orchestrator to the next phase
+            self.orchestrator.set_phase("SPEC_ELABORATION")
+
+            # Emit the signal to notify the main window that this page is done
+            self.setup_complete.emit()
+
+        except Exception as e:
+            logging.error(f"Failed to finalize setup and proceed: {e}")
+            QMessageBox.critical(self, "Database Error", f"An error occurred while saving setup data:\n{e}")
+
     def update_ui_from_state(self):
         """Updates the UI elements based on the current state."""
         # On page load, enable the path selection and disable the rest.

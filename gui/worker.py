@@ -11,15 +11,16 @@ class WorkerSignals(QObject):
     - finished: No data
     - error:    tuple (exctype, value, traceback.format_exc())
     - result:   object data returned from processing, anything
+    - progress: str progress update
     """
     finished = Signal()
     error = Signal(tuple)
     result = Signal(object)
+    progress = Signal(str)
 
 class Worker(QRunnable):
     """
     Generic Worker thread.
-    Inherits from QRunnable to handle worker thread setup, signals, and wrap the execution of a function.
     """
     def __init__(self, fn, *args, **kwargs):
         super(Worker, self).__init__()
@@ -27,6 +28,9 @@ class Worker(QRunnable):
         self.args = args
         self.kwargs = kwargs
         self.signals = WorkerSignals()
+
+        # Add the progress callback to our kwargs to pass to the function
+        self.kwargs['progress_callback'] = self.signals.progress.emit
 
     def run(self):
         """

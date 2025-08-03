@@ -13,10 +13,6 @@
   <property name="windowTitle">
    <string>ASDF - Autonomous Software Development Factory</string>
   </property>
-  <property name="windowIcon">
-   <iconset>
-    </iconset>
-  </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">
     <property name="spacing">
@@ -58,9 +54,6 @@
        <layout class="QVBoxLayout" name="leftPanelLayout">
         <item>
          <widget class="QTabWidget" name="projectNavigationTabs">
-          <property name="currentIndex">
-           <number>0</number>
-          </property>
           <widget class="QWidget" name="filesTab">
            <attribute name="title">
             <string>Files</string>
@@ -86,9 +79,6 @@
        </layout>
       </widget>
       <widget class="QStackedWidget" name="mainContentArea">
-       <property name="currentIndex">
-        <number>0</number>
-       </property>
        <widget class="QWidget" name="welcomePage">
         <layout class="QVBoxLayout" name="verticalLayout_4">
          <item>
@@ -144,50 +134,38 @@
     <property name="title">
      <string>Edit</string>
     </property>
-    <addaction name="actionUndo"/>
-    <addaction name="actionRedo"/>
-    <addaction name="separator"/>
-    <addaction name="actionCut"/>
-    <addaction name="actionCopy"/>
-    <addaction name="actionPaste"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
      <string>View</string>
     </property>
-    <addaction name="actionToggle_Project_Panel"/>
-    <addaction name="actionToggle_Notification_Panel"/>
    </widget>
    <widget class="QMenu" name="menuProject">
     <property name="title">
      <string>Project</string>
     </property>
-    <addaction name="actionView_Documents"/>
-    <addaction name="actionView_Reports"/>
-    <addaction name="actionRun_Impact_Analysis"/>
-    <addaction name="actionRun_Risk_Assessment"/>
    </widget>
    <widget class="QMenu" name="menuRun">
     <property name="title">
      <string>Run</string>
     </property>
-    <addaction name="actionProceed"/>
-    <addaction name="actionRun_Full_Test_Suite"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
      <string>Help</string>
     </property>
-    <addaction name="actionView_Help"/>
-    <addaction name="actionCheck_for_Updates"/>
-    <addaction name="separator"/>
-    <addaction name="actionAbout_ASDF"/>
+   </widget>
+   <widget class="QMenu" name="menuDebug">
+    <property name="title">
+     <string>Debug</string>
+    </property>
    </widget>
    <addaction name="menuFile"/>
    <addaction name="menuEdit"/>
    <addaction name="menuView"/>
    <addaction name="menuProject"/>
    <addaction name="menuRun"/>
+   <addaction name="menuDebug"/>
    <addaction name="menuHelp"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
@@ -201,26 +179,15 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
-   <addaction name="actionProceed"/>
-   <addaction name="actionRun_Full_Test_Suite"/>
-   <addaction name="separator"/>
-   <addaction name="actionRaise_CR"/>
-   <addaction name="actionReport_Bug"/>
   </widget>
   <action name="actionNew_Project">
    <property name="text">
     <string>New Project...</string>
    </property>
-   <property name="shortcut">
-    <string>Ctrl+N</string>
-   </property>
   </action>
   <action name="actionLoad_Archived_Project">
    <property name="text">
     <string>Load Archived Project...</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+O</string>
    </property>
   </action>
   <action name="actionStop_Export_Project">
@@ -236,132 +203,6 @@
   <action name="actionExit">
    <property name="text">
     <string>Exit</string>
-   </property>
-  </action>
-  <action name="actionUndo">
-   <property name="text">
-    <string>Undo</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+Z</string>
-   </property>
-  </action>
-  <action name="actionRedo">
-   <property name="text">
-    <string>Redo</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+Shift+Z</string>
-   </property>
-  </action>
-  <action name="actionCut">
-   <property name="text">
-    <string>Cut</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+X</string>
-   </property>
-  </action>
-  <action name="actionCopy">
-   <property name="text">
-    <string>Copy</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+C</string>
-   </property>
-  </action>
-  <action name="actionPaste">
-   <property name="text">
-    <string>Paste</string>
-   </property>
-   <property name="shortcut">
-    <string>Ctrl+V</string>
-   </property>
-  </action>
-  <action name="actionToggle_Project_Panel">
-   <property name="text">
-    <string>Toggle Project Panel</string>
-   </property>
-  </action>
-  <action name="actionToggle_Notification_Panel">
-   <property name="text">
-    <string>Toggle Notification Panel</string>
-   </property>
-  </action>
-  <action name="actionView_Documents">
-   <property name="text">
-    <string>View Documents</string>
-   </property>
-  </action>
-  <action name="actionView_Reports">
-   <property name="text">
-    <string>View Reports</string>
-   </property>
-  </action>
-  <action name="actionRun_Impact_Analysis">
-   <property name="text">
-    <string>Run Impact Analysis...</string>
-   </property>
-  </action>
-  <action name="actionProceed">
-   <property name="text">
-    <string>Proceed with Next Step</string>
-   </property>
-   <property name="toolTip">
-    <string>Proceed with Next Step (F5)</string>
-   </property>
-   <property name="shortcut">
-    <string>F5</string>
-   </property>
-  </action>
-  <action name="actionRun_Full_Test_Suite">
-   <property name="text">
-    <string>Run Full Test Suite</string>
-   </property>
-   <property name="toolTip">
-    <string>Run Full Test Suite</string>
-   </property>
-  </action>
-  <action name="actionView_Help">
-   <property name="text">
-    <string>View Help</string>
-   </property>
-   <property name="shortcut">
-    <string>F1</string>
-   </property>
-  </action>
-  <action name="actionAbout_ASDF">
-   <property name="text">
-    <string>About ASDF</string>
-   </property>
-  </action>
-  <action name="actionCheck_for_Updates">
-   <property name="text">
-    <string>Check for Updates...</string>
-   </property>
-  </action>
-  <action name="actionRaise_CR">
-   <property name="text">
-    <string>Raise CR</string>
-   </property>
-   <property name="toolTip">
-    <string>Raise New Change Request</string>
-   </property>
-  </action>
-  <action name="actionReport_Bug">
-   <property name="text">
-    <string>Report Bug</string>
-   </property>
-   <property name="toolTip">
-    <string>Report Operational Bug</string>
-   </property>
-  </action>
-  <action name="actionRun_Risk_Assessment">
-   <property name="text">
-    <string>Run Execution Risk Assessment...</string>
-   </property>
-   <property name="toolTip">
-    <string>Run an on-demand risk assessment for the current project</string>
    </property>
   </action>
  </widget>
