@@ -13,6 +13,7 @@ class CodingStandardPage(QWidget):
     """
     The logic handler for the Coding Standard Generation page.
     """
+    state_changed = Signal()
     coding_standard_complete = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
@@ -66,6 +67,7 @@ class CodingStandardPage(QWidget):
             self.coding_standard_draft = standard_draft
             self.ui.standardTextEdit.setText(self.coding_standard_draft)
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 

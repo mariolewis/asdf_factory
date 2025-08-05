@@ -14,6 +14,7 @@ class PlanningPage(QWidget):
     """
     The logic handler for the Strategic Development Planning page.
     """
+    state_changed = Signal()
     planning_complete = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
@@ -70,6 +71,7 @@ class PlanningPage(QWidget):
             pretty_json = json.dumps(parsed_json, indent=4)
             self.ui.planTextEdit.setText(pretty_json)
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 

@@ -13,6 +13,7 @@ class TestEnvPage(QWidget):
     """
     The logic handler for the Test Environment Setup page.
     """
+    state_changed = Signal()
     test_env_setup_complete = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
@@ -85,6 +86,7 @@ class TestEnvPage(QWidget):
                 QMessageBox.warning(self, "No Tasks", "No specific test environment setup tasks were identified. Please confirm the test command manually.")
                 self.ui.stackedWidget.setCurrentWidget(self.ui.finalConfirmPage)
                 self._suggest_test_command()
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 
@@ -92,6 +94,7 @@ class TestEnvPage(QWidget):
         try:
             self.ui.helpTextEdit.setText(help_text)
             self.ui.helpTextEdit.setVisible(True)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 

@@ -234,6 +234,29 @@ class ASDFDBManager:
         logging.info(f"Created new project '{project_name}' with ID '{project_id}'.")
         return project_id
 
+    def delete_project_by_id(self, project_id: str):
+        """
+        Deletes a project record from the Projects table by its ID.
+        """
+        query = "DELETE FROM Projects WHERE project_id = ?"
+        self._execute_query(query, (project_id,))
+        logging.info(f"Deleted project record for project ID '{project_id}'.")
+
+    def create_or_update_project_record(self, project_data: dict):
+        """
+        Inserts a new project record or replaces an existing one using the
+        primary key (project_id). This is a robust "upsert" operation.
+        """
+        if 'project_id' not in project_data:
+            raise ValueError("project_data must contain 'project_id' for an upsert operation.")
+
+        columns = ', '.join(project_data.keys())
+        placeholders = ', '.join('?' * len(project_data))
+        query = f"INSERT OR REPLACE INTO Projects ({columns}) VALUES ({placeholders})"
+        params = tuple(project_data.values())
+        self._execute_query(query, params)
+        logging.info(f"Successfully upserted project record for project ID '{project_data['project_id']}'.")
+
     def get_project_by_id(self, project_id: str) -> sqlite3.Row | None:
         """
         Retrieves a single project record by its ID.
@@ -388,6 +411,34 @@ class ASDFDBManager:
         params = (is_gui_int, project_id)
         self._execute_query(query, params)
         logging.info(f"Set is_gui_project flag for project ID '{project_id}' to {is_gui}.")
+
+    def update_project_from_dict(self, project_id: str, project_data: dict):
+        """
+        Updates an existing project record from a dictionary of key-value pairs.
+        """
+        # Exclude keys that shouldn't be updated directly or don't exist in the table
+        valid_keys = [
+            "project_name", "target_os", "technology_stack", "project_root_folder",
+            "apex_executable_name", "project_brief_path", "complexity_assessment_text",
+            "ux_spec_text", "is_gui_project", "final_spec_text", "tech_spec_text",
+            "is_build_automated", "coding_standard_text", "development_plan_text",
+            "integration_plan_text", "ui_test_plan_text", "test_execution_command"
+        ]
+
+        # Filter the input dictionary to only include valid, non-null keys
+        update_data = {k: v for k, v in project_data.items() if k in valid_keys and v is not None}
+
+        if not update_data:
+            logging.warning(f"No valid data provided to update project {project_id}.")
+            return
+
+        set_clause = ", ".join([f"{key} = ?" for key in update_data.keys()])
+        params = list(update_data.values())
+        params.append(project_id)
+
+        query = f"UPDATE Projects SET {set_clause} WHERE project_id = ?"
+        self._execute_query(query, tuple(params))
+        logging.info(f"Successfully restored project-level data for project ID '{project_id}'.")
 
     # --- Artifact (RoWD) CRUD Operations ---
 

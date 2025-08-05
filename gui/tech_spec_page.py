@@ -13,6 +13,7 @@ class TechSpecPage(QWidget):
     """
     The logic handler for the Technical Specification page.
     """
+    state_changed = Signal()
     tech_spec_complete = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
@@ -97,6 +98,7 @@ class TechSpecPage(QWidget):
             self.ui.techSpecTextEdit.setText(self.tech_spec_draft)
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False) # Re-enable UI after processing the result
 
@@ -106,6 +108,7 @@ class TechSpecPage(QWidget):
             self.ui.techSpecTextEdit.setText(self.tech_spec_draft)
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "The technical specification has been refined.")
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False) # Re-enable UI after processing the result
 

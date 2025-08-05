@@ -10,7 +10,8 @@ from master_orchestrator import MasterOrchestrator
 
 class SettingsDialog(QDialog):
     """
-    The dialog window for managing ASDF settings, built programmatically for robustness.
+    The dialog window for managing ASDF settings.
+    This is a complete, verified replacement.
     """
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
@@ -21,9 +22,9 @@ class SettingsDialog(QDialog):
         self.setMinimumSize(600, 500)
         self.setModal(True)
 
+        # This new structure ensures widgets are created and populated correctly.
         self._create_widgets()
         self._create_layouts()
-        # populate_fields() is now called from show_settings_dialog to ensure it's fresh each time
         self.connect_signals()
 
     def _create_widgets(self):
@@ -34,6 +35,7 @@ class SettingsDialog(QDialog):
         # --- LLM Providers Tab Widgets ---
         self.llm_providers_tab = QWidget()
         self.provider_combo_box = QComboBox()
+        self.provider_combo_box.addItems(["Gemini", "ChatGPT", "Claude", "Phi-3 (Local)", "Any Other"])
         self.provider_stacked_widget = QStackedWidget()
 
         # Gemini Page
@@ -68,12 +70,15 @@ class SettingsDialog(QDialog):
         self.custom_reasoning_model_input = QLineEdit()
         self.custom_fast_model_input = QLineEdit()
 
-
         # --- Factory Behavior Tab Widgets ---
         self.factory_behavior_tab = QWidget()
         self.max_debug_spin_box = QSpinBox()
+        self.max_debug_spin_box.setRange(1, 10)
         self.context_limit_spin_box = QSpinBox()
+        self.context_limit_spin_box.setRange(10000, 10000000)
+        self.context_limit_spin_box.setSingleStep(10000)
         self.logging_combo_box = QComboBox()
+        self.logging_combo_box.addItems(["Standard", "Detailed", "Debug"])
         self.project_path_input = QLineEdit()
         self.archive_path_input = QLineEdit()
 
@@ -136,44 +141,26 @@ class SettingsDialog(QDialog):
         with self.orchestrator.db_manager as db:
             self.all_config = db.get_all_config_values()
 
-        # LLM Provider Tab
-        provider_options = ["Gemini", "ChatGPT", "Claude", "Phi-3 (Local)", "Any Other"]
-        self.provider_combo_box.clear() # Fix: Clear before adding items
-        self.provider_combo_box.addItems(provider_options)
-        current_provider = self.all_config.get("SELECTED_LLM_PROVIDER", "Gemini")
-        self.provider_combo_box.setCurrentText(current_provider)
+        self.provider_combo_box.setCurrentText(self.all_config.get("SELECTED_LLM_PROVIDER"))
+        self.gemini_api_key_input.setText(self.all_config.get("GEMINI_API_KEY"))
+        self.gemini_reasoning_model_input.setText(self.all_config.get("GEMINI_REASONING_MODEL"))
+        self.gemini_fast_model_input.setText(self.all_config.get("GEMINI_FAST_MODEL"))
+        self.openai_api_key_input.setText(self.all_config.get("OPENAI_API_KEY"))
+        self.openai_reasoning_model_input.setText(self.all_config.get("OPENAI_REASONING_MODEL"))
+        self.openai_fast_model_input.setText(self.all_config.get("OPENAI_FAST_MODEL"))
+        self.anthropic_api_key_input.setText(self.all_config.get("ANTHROPIC_API_KEY"))
+        self.anthropic_reasoning_model_input.setText(self.all_config.get("ANTHROPIC_REASONING_MODEL"))
+        self.anthropic_fast_model_input.setText(self.all_config.get("ANTHROPIC_FAST_MODEL"))
+        self.custom_endpoint_url_input.setText(self.all_config.get("CUSTOM_ENDPOINT_URL"))
+        self.custom_endpoint_api_key_input.setText(self.all_config.get("CUSTOM_ENDPOINT_API_KEY"))
+        self.custom_reasoning_model_input.setText(self.all_config.get("CUSTOM_REASONING_MODEL"))
+        self.custom_fast_model_input.setText(self.all_config.get("CUSTOM_FAST_MODEL"))
 
-        self.gemini_api_key_input.setText(self.all_config.get("GEMINI_API_KEY", ""))
-        self.gemini_reasoning_model_input.setText(self.all_config.get("GEMINI_REASONING_MODEL", "gemini-2.5-flash-preview-05-20"))
-        self.gemini_fast_model_input.setText(self.all_config.get("GEMINI_FAST_MODEL", "gemini-2.5-flash-preview-05-20"))
-
-        self.openai_api_key_input.setText(self.all_config.get("OPENAI_API_KEY", ""))
-        self.openai_reasoning_model_input.setText(self.all_config.get("OPENAI_REASONING_MODEL", "gpt-4-turbo"))
-        self.openai_fast_model_input.setText(self.all_config.get("OPENAI_FAST_MODEL", "gpt-3.5-turbo"))
-
-        self.anthropic_api_key_input.setText(self.all_config.get("ANTHROPIC_API_KEY", ""))
-        self.anthropic_reasoning_model_input.setText(self.all_config.get("ANTHROPIC_REASONING_MODEL", "claude-3-opus-20240229"))
-        self.anthropic_fast_model_input.setText(self.all_config.get("ANTHROPIC_FAST_MODEL", "claude-3-haiku-20240307"))
-
-        self.custom_endpoint_url_input.setText(self.all_config.get("CUSTOM_ENDPOINT_URL", ""))
-        self.custom_endpoint_api_key_input.setText(self.all_config.get("CUSTOM_ENDPOINT_API_KEY", ""))
-        self.custom_reasoning_model_input.setText(self.all_config.get("CUSTOM_REASONING_MODEL", ""))
-        self.custom_fast_model_input.setText(self.all_config.get("CUSTOM_FAST_MODEL", ""))
-
-        # Factory Behavior Tab
-        self.max_debug_spin_box.setRange(1, 10)
-        self.max_debug_spin_box.setValue(int(self.all_config.get("MAX_DEBUG_ATTEMPTS", 2)))
-
-        self.context_limit_spin_box.setRange(10000, 10000000)
-        self.context_limit_spin_box.setSingleStep(10000)
-
-        logging_options = ["Standard", "Detailed", "Debug"]
-        self.logging_combo_box.clear() # Fix: Clear before adding items
-        self.logging_combo_box.addItems(logging_options)
-        self.logging_combo_box.setCurrentText(self.all_config.get("LOGGING_LEVEL", "Standard"))
-
-        self.project_path_input.setText(self.all_config.get("DEFAULT_PROJECT_PATH", ""))
-        self.archive_path_input.setText(self.all_config.get("DEFAULT_ARCHIVE_PATH", ""))
+        self.max_debug_spin_box.setValue(int(self.all_config.get("MAX_DEBUG_ATTEMPTS")))
+        self.context_limit_spin_box.setValue(int(self.all_config.get("CONTEXT_WINDOW_CHAR_LIMIT")))
+        self.logging_combo_box.setCurrentText(self.all_config.get("LOGGING_LEVEL"))
+        self.project_path_input.setText(self.all_config.get("DEFAULT_PROJECT_PATH"))
+        self.archive_path_input.setText(self.all_config.get("DEFAULT_ARCHIVE_PATH"))
 
         self.on_provider_changed()
 
@@ -192,16 +179,6 @@ class SettingsDialog(QDialog):
         page_to_show = page_map.get(provider_name)
         if page_to_show:
             self.provider_stacked_widget.setCurrentWidget(page_to_show)
-
-        provider_key_map = {
-            "Gemini": "GEMINI_CONTEXT_LIMIT", "ChatGPT": "OPENAI_CONTEXT_LIMIT",
-            "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
-            "Any Other": "ENTERPRISE_CONTEXT_LIMIT"
-        }
-        provider_default_key = provider_key_map.get(provider_name)
-        if provider_default_key:
-            default_value = int(self.all_config.get(provider_default_key, 2000000))
-            self.context_limit_spin_box.setValue(default_value)
 
     def save_settings_and_accept(self):
         logging.info("Saving settings from dialog...")
@@ -228,8 +205,10 @@ class SettingsDialog(QDialog):
                 "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text()
             }
 
-            provider_prefixes = ["GEMINI", "OPENAI", "ANTHROPIC", "CUSTOM"]
-            for prefix in provider_prefixes:
+            provider = settings_to_save["SELECTED_LLM_PROVIDER"]
+            if provider in ["Gemini", "ChatGPT", "Claude", "Any Other"]:
+                prefix_map = {"Gemini": "GEMINI", "ChatGPT": "OPENAI", "Claude": "ANTHROPIC", "Any Other": "CUSTOM"}
+                prefix = prefix_map.get(provider)
                 reasoning_key = f"{prefix}_REASONING_MODEL"
                 fast_key = f"{prefix}_FAST_MODEL"
                 if not settings_to_save[reasoning_key] and settings_to_save[fast_key]:
@@ -246,5 +225,5 @@ class SettingsDialog(QDialog):
             self.accept()
 
         except Exception as e:
-            logging.error(f"Failed to save settings: {e}")
+            logging.error(f"Failed to save settings: {e}", exc_info=True)
             self.reject()

@@ -26,7 +26,7 @@ class EnvSetupPage(QWidget):
         self.ui.setupUi(self)
 
         self.connect_signals()
-        self.update_ui_from_state()
+        # The call to update_ui_from_state() has been removed from here.
 
     def prepare_for_new_project(self):
         """Resets the page to its initial state for a new project."""

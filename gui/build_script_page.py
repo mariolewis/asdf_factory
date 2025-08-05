@@ -14,6 +14,7 @@ class BuildScriptPage(QWidget):
     """
     The logic handler for the Build Script Generation page.
     """
+    state_changed = Signal()
     build_script_setup_complete = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
@@ -33,8 +34,40 @@ class BuildScriptPage(QWidget):
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
-        self.ui.autoGenerateButton.clicked.connect(self.run_auto_generate_task)
+        self.ui.autoGenerateButton.clicked.connect(self.on_auto_generate_clicked)
         self.ui.manualCreateButton.clicked.connect(self.on_manual_create_clicked)
+
+    def on_auto_generate_clicked(self):
+        """Handles the 'Auto-Generate Build Script' button click."""
+        try:
+            with self.orchestrator.db_manager as db:
+                project_details = db.get_project_by_id(self.orchestrator.project_id)
+                tech_spec_text = project_details['tech_spec_text']
+                target_os = project_details['target_os']
+                project_root = Path(project_details['project_root_folder'])
+
+            if not all([tech_spec_text, target_os, project_root]):
+                QMessageBox.critical(self, "Error", "Missing critical project data (Tech Spec, OS, or Root Folder).")
+                return
+
+            agent = BuildScriptGeneratorAgent(llm_service=self.orchestrator.llm_service)
+            script_info = agent.generate_script(tech_spec_text, target_os)
+
+            if script_info:
+                filename, content = script_info
+                (project_root / filename).write_text(content, encoding='utf-8')
+                with self.orchestrator.db_manager as db:
+                    db.update_project_build_automation_status(self.orchestrator.project_id, True)
+
+                QMessageBox.information(self, "Success", f"Generated and saved '{filename}' to the project root.")
+
+                self.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
+                self.build_script_setup_complete.emit()
+            else:
+                QMessageBox.critical(self, "Generation Failed", "The AI was unable to generate a build script. Please proceed manually.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred during script generation:\n{e}")
 
     def _set_ui_busy(self, is_busy):
         """Disables or enables the page while a background task runs."""
@@ -77,6 +110,7 @@ class BuildScriptPage(QWidget):
                 self.build_script_setup_complete.emit()
             else:
                 QMessageBox.critical(self, "Generation Failed", "The AI was unable to generate a build script. Please proceed manually.")
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 

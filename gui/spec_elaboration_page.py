@@ -14,6 +14,7 @@ from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_project_scoping import ProjectScopingAgent
 
 class SpecElaborationPage(QWidget):
+    state_changed = Signal()
     spec_elaboration_complete = Signal()
     project_cancelled = Signal()
 
@@ -111,6 +112,7 @@ class SpecElaborationPage(QWidget):
             footnote_text = "\n\nNote: This assessment is a point-in-time analysis."
             self.ui.analysisResultTextEdit.setText(analysis_for_display + footnote_text)
             self.ui.stackedWidget.setCurrentWidget(self.ui.complexityReviewPage)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False) # Re-enable UI after processing the result
 
@@ -121,6 +123,7 @@ class SpecElaborationPage(QWidget):
             self.ui.aiIssuesTextEdit.setText(self.ai_issues)
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False) # Re-enable UI after processing the result
 
@@ -131,6 +134,7 @@ class SpecElaborationPage(QWidget):
             self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version on the left.")
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Draft has been updated.")
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False) # Re-enable UI after processing the result
 
@@ -173,7 +177,7 @@ class SpecElaborationPage(QWidget):
         if "error" in analysis_result:
             raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
 
-        footnote = "\n\nNote: This assessment is a point-in-time analysis."
+        footnote = "\n\nNote: This assessment is a point-in-time analysis for the version of the specification that was provided."
         analysis_for_db = json.dumps(analysis_result) + footnote
         with self.orchestrator.db_manager as db:
             db.save_complexity_assessment(self.orchestrator.project_id, analysis_for_db)

@@ -6,9 +6,10 @@ import json
 import re
 from datetime import datetime, timezone
 from enum import Enum, auto
+from llm_service import LLMService
 from pathlib import Path
 
-from llm_service import LLMService, GeminiAdapter, OpenAIAdapter, AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter
+# from llm_service import LLMService, GeminiAdapter, OpenAIAdapter, AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter
 from agents.agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
@@ -79,16 +80,31 @@ class MasterOrchestrator:
     It coordinates agents, manages project state, and handles project lifecycle.
     """
 
-    def __init__(self, db_path: str):
+    def __init__(self, db_manager: ASDFDBManager):
         """
-        Initializes the MasterOrchestrator, now with self-aware state checking.
+        Initializes the MasterOrchestrator with a shared DB manager instance.
         """
-        self.db_manager = ASDFDBManager(db_path)
+        self.db_manager = db_manager # Use the provided instance
+        self.resumable_state = None
 
-        # Default empty state
-        self.project_id: str | None = None
-        self.project_name: str | None = None
-        self.current_phase: FactoryPhase = FactoryPhase.IDLE
+        # Check for a resumable state from a previous session
+        with self.db_manager as db:
+            self.resumable_state = db.get_any_paused_state()
+
+        if self.resumable_state:
+            self.project_id = self.resumable_state['project_id']
+            self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
+            with self.db_manager as db:
+                project_details = db.get_project_by_id(self.project_id)
+                if project_details:
+                    self.project_name = project_details['project_name']
+            logging.info(f"Orchestrator initialized into a resumable state for project: {self.project_name}")
+        else:
+            self.project_id: str | None = None
+            self.project_name: str | None = None
+            self.current_phase: FactoryPhase = FactoryPhase.IDLE
+
+        # Initialize remaining in-memory attributes
         self.active_plan = None
         self.active_plan_cursor = 0
         self.task_awaiting_approval = None
@@ -96,61 +112,44 @@ class MasterOrchestrator:
         self.debug_attempt_counter = 0
         self.resume_phase_after_load = None
         self.active_ux_spec = {}
+        self.is_project_dirty = False
 
-        # --- CORRECTED: Self-initialization from database ---
-        # Upon creation, immediately check the DB for a resumable state.
-        self.resumable_state = None
-        with self.db_manager as db:
-            db.create_tables()
-            self.resumable_state = db.get_any_paused_state()
-            if self.resumable_state:
-                # If a paused state exists, adopt its identity immediately.
-                self.project_id = self.resumable_state['project_id']
-                self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
-                project_details = db.get_project_by_id(self.project_id)
-                if project_details:
-                    self.project_name = project_details['project_name']
-                logging.info(f"Orchestrator initialized into a resumable state for project: {self.project_name}")
+        self._llm_service = None
+        logging.info("MasterOrchestrator instance created.")
 
-            # Configure logging based on DB settings
-            log_level_str = db.get_config_value("LOGGING_LEVEL") or "Standard"
-            if not db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT"):
-                db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", "2000000")
+    def reset(self):
+        """
+        Resets the orchestrator's state to its default, idle condition
+        without creating a new instance.
+        """
+        logging.info("Resetting MasterOrchestrator to idle state.")
+        self.project_id = None
+        self.project_name = None
+        self.current_phase = FactoryPhase.IDLE
+        self.active_plan = None
+        self.active_plan_cursor = 0
+        self.task_awaiting_approval = None
+        self.preflight_check_result = None
+        self.debug_attempt_counter = 0
+        self.resume_phase_after_load = None
+        self.active_ux_spec = {}
+        # The resumable_state is left untouched as it reflects the DB, which is correct.
+        self.is_project_dirty = False
 
-            # --- Populate default context limits if they don't exist ---
-            default_limits = {
-                "GEMINI_CONTEXT_LIMIT": "6000000",
-                "OPENAI_CONTEXT_LIMIT": "380000",
-                "ANTHROPIC_CONTEXT_LIMIT": "600000",
-                "LOCALPHI3_CONTEXT_LIMIT": "380000",
-                "ENTERPRISE_CONTEXT_LIMIT": "128000"
-            }
-            for key, value in default_limits.items():
-                if not db.get_config_value(key):
-                    db.set_config_value(key, value, f"Default context character limit for {key.split('_')[0]}.")
+    def close_active_project(self):
+        """
+        Closes the currently active project, returning the orchestrator to an idle state
+        and clearing any saved session state from the database.
+        """
+        logging.info(f"Closing active project: {self.project_name}")
 
-            # --- Ensure active context limit is correctly initialized on startup ---
-            if not db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT"):
-                logging.info("Active context limit not found. Initializing from provider default.")
-                current_provider = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini"
-                provider_key_map = {
-                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
-                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
-                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
-                }
-                default_key = provider_key_map.get(current_provider)
-                if default_key:
-                    default_value = db.get_config_value(default_key)
-                    if default_value:
-                        db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", default_value)
+        # Clear any resumable state from the database to ensure a clean start next time.
+        if self.project_id:
+            with self.db_manager as db:
+                db.delete_orchestration_state_for_project(self.project_id)
 
-        # log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
-        # log_level = log_level_map.get(log_level_str, logging.INFO)
-        # logging.basicConfig(level=log_level, format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s', force=True)
-
-        # --- Initialize the LLM Service (Deferred) ---
-        self._llm_service = None  # The actual service object, initially None
-        logging.info("MasterOrchestrator initialized. LLM service will be created on first use.")
+        # To "close" a project, we then reset the orchestrator's in-memory state.
+        self.reset()
 
     @property
     def llm_service(self) -> LLMService:
@@ -262,21 +261,17 @@ class MasterOrchestrator:
     def start_new_project(self, project_name: str):
         """
         Initializes a new project.
-        If a project is already active, it performs a 'safety export' to
-        [cite_start]archive the current work before starting the new one. [cite: 465, 466]
+        If a modified project is already active, it performs a 'safety export'
+        to archive the current work before starting the new one.
         """
-        if self.project_id and self.project_name:
+        if self.project_id and self.is_project_dirty:
             logging.warning(
-                f"An active project '{self.project_name}' was found. "
+                f"An active, modified project '{self.project_name}' was found. "
                 "Performing a safety export before starting the new project."
             )
-            # Define a default location and name for the safety archive.
-            safety_archive_path = Path("data/safety_archives")
-            archive_name = f"{self.project_name.replace(' ', '_')}_safety_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-
-            # Call the existing export method.
-            self.stop_and_export_project(safety_archive_path, archive_name)
-            logging.info(f"Safety export complete for '{self.project_name}'.")
+            archive_path = Path("data/archives")
+            archive_name = f"{self.project_name.replace(' ', '_')}_auto_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            self.stop_and_export_project(archive_path, archive_name)
 
         # Proceed with creating the new project.
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
@@ -288,67 +283,55 @@ class MasterOrchestrator:
             with self.db_manager as db:
                 db.create_project(self.project_id, self.project_name, timestamp)
             logging.info(f"Successfully started new project: '{self.project_name}' (ID: {self.project_id})")
+            self.is_project_dirty = True
         except Exception as e:
             logging.error(f"Failed to start new project '{self.project_name}': {e}")
-            # Reset state on failure
-            self.project_id = None
-            self.project_name = None
-            self.current_phase = FactoryPhase.IDLE
+            self.reset() # Reset state on failure
             raise
 
     def handle_ux_ui_brief_submission(self, brief_input):
         """
-        Handles the initial project brief submission from either text or a file,
-        saves the brief as a project artifact, stores its path, calls the
-        triage agent, and prepares for the PM's decision.
+        Handles the initial project brief submission, saves the brief as a physical
+        file, stores its path, calls the triage agent, and prepares for the PM's decision.
         """
-
-        import docx
-
         if not self.project_id:
             logging.error("Cannot handle brief submission; no active project.")
             return
 
         try:
-            # Create a dedicated directory for the project's internal documents
-            project_data_dir = Path(f"data/projects/{self.project_id}")
-            project_data_dir.mkdir(parents=True, exist_ok=True)
+            with self.db_manager as db:
+                project_details = db.get_project_by_id(self.project_id)
+                project_root = Path(project_details['project_root_folder'])
+
+            # Create a dedicated directory for project documents
+            docs_dir = project_root / "_docs"
+            docs_dir.mkdir(exist_ok=True)
 
             brief_content = ""
-            brief_file_path = ""
+            original_filename = "project_brief.md" # Default for text input
 
-            # --- Step 1: Process and Save the Brief ---
+            # --- Process and Save the Brief ---
             if isinstance(brief_input, str):
                 brief_content = brief_input
-                brief_file_path_obj = project_data_dir / "project_brief.md"
-                with open(brief_file_path_obj, "w", encoding="utf-8") as f:
-                    f.write(brief_content)
-                brief_file_path = str(brief_file_path_obj)
-                logging.info(f"Saved text brief to: {brief_file_path}")
-            else: # Assumes it's a Streamlit UploadedFile object
-                file_name = getattr(brief_input, 'name', 'project_brief_uploaded')
-                brief_file_path_obj = project_data_dir / file_name
-
-                # Read content for the agent
-                if file_name.endswith('.docx'):
+            else: # Assumes it's a Streamlit UploadedFile-like object
+                original_filename = getattr(brief_input, 'name', 'project_brief_uploaded.txt')
+                if original_filename.endswith('.docx'):
+                    import docx
                     doc = docx.Document(brief_input)
                     brief_content = "\n".join([p.text for p in doc.paragraphs])
-                    # Reset buffer after reading for the save operation below
-                    brief_input.seek(0)
                 else: # For .txt and .md
                     brief_content = brief_input.getvalue().decode("utf-8")
 
-                # Save the original file
-                with open(brief_file_path_obj, "wb") as f:
-                    f.write(brief_input.getvalue())
-                brief_file_path = str(brief_file_path_obj)
-                logging.info(f"Saved uploaded brief to: {brief_file_path}")
+            # Save the processed content as a markdown file
+            brief_file_path = docs_dir / original_filename.replace('.txt', '.md').replace('.docx', '.md')
+            brief_file_path.write_text(brief_content, encoding="utf-8")
+            logging.info(f"Saved project brief to physical file: {brief_file_path}")
 
-            # --- Step 2: Save the path to the database ---
+            # --- Save the path to the database ---
             with self.db_manager as db:
-                db.update_project_brief_path(self.project_id, brief_file_path)
+                db.update_project_brief_path(self.project_id, str(brief_file_path.relative_to(project_root)))
 
-            # --- Step 3: Proceed with Analysis using the llm_service ---
+            # --- Proceed with AI Analysis ---
             if not self.llm_service:
                 raise Exception("Cannot analyze brief: LLM Service is not configured.")
 
@@ -365,7 +348,7 @@ class MasterOrchestrator:
             self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
 
         except Exception as e:
-            logging.error(f"Failed to handle UX/UI brief submission: {e}")
+            logging.error(f"Failed to handle UX/UI brief submission: {e}", exc_info=True)
             self.task_awaiting_approval = {"analysis_error": str(e)}
             self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
 
@@ -743,13 +726,21 @@ class MasterOrchestrator:
     def set_phase(self, phase_name: str):
         """
         Sets the current project phase and automatically saves the new state.
+        Also handles setting the project's dirty flag based on the transition.
         """
         try:
             new_phase = FactoryPhase[phase_name]
 
-            # All phase transitions should be handled consistently.
-            # A project ID is required for state saving, but not for just setting
-            # the phase for UI navigation like viewing history.
+            # If a project is active, check if this phase transition should mark it as dirty.
+            # We don't mark as dirty for non-modifying states.
+            non_dirtying_phases = [
+                FactoryPhase.IDLE,
+                FactoryPhase.VIEWING_PROJECT_HISTORY,
+                FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION
+            ]
+            if self.project_id and new_phase not in non_dirtying_phases:
+                logging.info(f"Project marked as dirty due to phase transition to {new_phase.name}")
+
             self.current_phase = new_phase
             logging.info(f"Transitioning to phase: {self.current_phase.name}")
 
@@ -1080,28 +1071,36 @@ class MasterOrchestrator:
             # If for some reason project details don't exist, default to the start.
             return FactoryPhase.SPEC_ELABORATION
 
-        # Logic flows from latest phase to earliest.
-        # If a UI test plan exists, the project was in or past the final testing phase.
+        # Logic flows from latest phase to earliest, using correct dictionary-style access.
         if project_details['ui_test_plan_text']:
             logging.info("Resume point determined: MANUAL_UI_TESTING (UI test plan exists).")
             return FactoryPhase.MANUAL_UI_TESTING
 
-        # If an integration plan exists, it was in or past the integration phase.
         if project_details['integration_plan_text']:
             logging.info("Resume point determined: INTEGRATION_AND_VERIFICATION (Integration plan exists).")
             return FactoryPhase.INTEGRATION_AND_VERIFICATION
 
-        # If a development plan exists, it was in the development phase.
         if project_details['development_plan_text']:
             logging.info("Resume point determined: GENESIS (Development plan exists).")
             return FactoryPhase.GENESIS
 
-        # If a tech spec exists, but no dev plan, it was in the planning phase.
-        if project_details['tech_spec_text']:
-            logging.info("Resume point determined: PLANNING (Tech spec exists).")
+        if project_details['coding_standard_text']:
+            logging.info("Resume point determined: PLANNING (Coding standard exists).")
             return FactoryPhase.PLANNING
 
-        # Default to the earliest phase if only the app spec exists.
+        if project_details['tech_spec_text']:
+            logging.info("Resume point determined: CODING_STANDARD_GENERATION (Tech spec exists).")
+            return FactoryPhase.CODING_STANDARD_GENERATION
+
+        if project_details['final_spec_text']:
+            logging.info("Resume point determined: TECHNICAL_SPECIFICATION (App spec exists).")
+            return FactoryPhase.TECHNICAL_SPECIFICATION
+
+        if project_details['ux_spec_text']:
+            logging.info("Resume point determined: ENV_SETUP_TARGET_APP (UX spec exists).")
+            return FactoryPhase.ENV_SETUP_TARGET_APP
+
+        # Default to the spec elaboration page if no other documents exist.
         logging.info("Resume point determined: SPEC_ELABORATION (Default).")
         return FactoryPhase.SPEC_ELABORATION
 
@@ -1955,6 +1954,7 @@ class MasterOrchestrator:
         db.delete_all_artifacts_for_project(self.project_id)
         db.delete_all_change_requests_for_project(self.project_id)
         db.delete_orchestration_state_for_project(self.project_id)
+        db.delete_project_by_id(self.project_id)
         logging.info(f"Cleared all active data for project ID: {self.project_id}")
 
 
@@ -1962,14 +1962,6 @@ class MasterOrchestrator:
         """
         Exports all project data to files, adds a record to history,
         and clears the active project from the database.
-
-        Args:
-            archive_dir (str | Path): The base directory for the archive.
-            archive_name (str): The name for the archive files (without extension).
-
-        Returns:
-            str | None: The full path to the created RoWD archive file on success,
-                        or None on failure.
         """
         if not self.project_id:
             logging.warning("No active project to stop and export.")
@@ -1978,42 +1970,56 @@ class MasterOrchestrator:
         archive_dir = Path(archive_dir)
         archive_dir.mkdir(parents=True, exist_ok=True)
 
-        # Define the primary archive file path (for the RoWD)
+        # Define archive file paths
         rowd_file = archive_dir / f"{archive_name}_rowd.json"
         cr_file = archive_dir / f"{archive_name}_cr.json"
+        project_file = archive_dir / f"{archive_name}_project.json"
 
         try:
             with self.db_manager as db:
+                # 1. Get all data for the active project
                 artifacts = db.get_all_artifacts_for_project(self.project_id)
                 change_requests = db.get_all_change_requests_for_project(self.project_id)
-                project_details = db.get_project_by_id(self.project_id)
+                project_details_row = db.get_project_by_id(self.project_id)
 
+                # 2. Export Artifacts (RoWD)
                 artifacts_list = [dict(row) for row in artifacts]
                 with open(rowd_file, 'w', encoding='utf-8') as f:
                     json.dump(artifacts_list, f, indent=4)
 
+                # 3. Export Change Requests
                 cr_list = [dict(row) for row in change_requests]
                 with open(cr_file, 'w', encoding='utf-8') as f:
                     json.dump(cr_list, f, indent=4)
 
+                # 4. Export core Project data (the missing step)
+                if project_details_row:
+                    project_details_dict = dict(project_details_row)
+                    with open(project_file, 'w', encoding='utf-8') as f:
+                        json.dump(project_details_dict, f, indent=4)
+
+                # 5. Add/Update history record
+                root_folder_path = "N/A"
+                if project_details_row and project_details_row['project_root_folder']:
+                    root_folder_path = project_details_row['project_root_folder']
+
                 db.add_project_to_history(
                     project_id=self.project_id,
                     project_name=self.project_name,
-                    root_folder=project_details['project_root_folder'] if project_details else "N/A",
+                    root_folder=root_folder_path,
                     archive_path=str(rowd_file),
                     timestamp=datetime.now(timezone.utc).isoformat()
                 )
 
+                # 6. Clear active data from the database
                 self._clear_active_project_data(db)
 
-            self.project_id = None
-            self.project_name = None
-            self.current_phase = FactoryPhase.IDLE
+            self.reset() # Reset orchestrator's in-memory state
             logging.info(f"Successfully exported project '{self.project_name}' to {archive_dir}")
             return str(rowd_file)
 
         except Exception as e:
-            logging.error(f"Failed to stop and export project: {e}")
+            logging.error(f"Failed to stop and export project: {e}", exc_info=True)
             return None
 
     def _perform_preflight_checks(self, project_root_str: str) -> dict:
@@ -2149,61 +2155,69 @@ class MasterOrchestrator:
         """
         try:
             with self.db_manager as db:
-                if self.project_id:
-                    default_archive_path = Path("data/safety_archives")
-                    archive_name = f"{self.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                    self.stop_and_export_project(default_archive_path, archive_name)
+                # 1. Safety export any active, dirty project
+                if self.project_id and self.is_project_dirty:
+                    logging.warning(f"An active, modified project '{self.project_name}' was found. Performing a safety export.")
+                    archive_path = Path("data/archives")
+                    archive_name = f"{self.project_name.replace(' ', '_')}_auto_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                    self.stop_and_export_project(archive_path, archive_name)
 
+                # 2. Get the history record for the project to load
                 history_record = db.get_project_history_by_id(history_id)
                 if not history_record:
-                    error_msg = f"Error: No project history found for ID {history_id}"
-                    self.preflight_check_result = {"status": "ERROR", "message": error_msg}
-                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
-                    return
+                    raise FileNotFoundError(f"No project history found for ID {history_id}")
 
-                # Perform the checks BEFORE loading data
-                project_root_str = history_record['project_root_folder']
-                check_result = self._perform_preflight_checks(project_root_str)
-                self.preflight_check_result = check_result
-
-                # If checks fail fatally, we don't bother loading the data yet.
-                if check_result['status'] in ["PATH_NOT_FOUND", "GIT_MISSING", "STATE_DRIFT"]:
-                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
-                    logging.info(f"Pre-flight checks failed ({check_result['status']}). Pausing for user resolution.")
-                    return
-
-                # --- If checks pass, proceed to load data ---
+                # 3. Clear all data for any previously active project
                 self._clear_active_project_data(db)
 
+                # 4. Restore the Project Data from the archive files
+                project_id = history_record['project_id']
                 rowd_file_path = Path(history_record['archive_file_path'])
+                project_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_project.json"))
                 cr_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_cr.json"))
 
-                if not rowd_file_path.exists():
-                    raise FileNotFoundError(f"Archive file not found at path: {rowd_file_path}")
+                # Restore the main project record first (fixes the crash and resume bug)
+                if project_file_path.exists():
+                    with open(project_file_path, 'r', encoding='utf-8') as f:
+                        project_data_to_load = json.load(f)
+                    db.create_or_update_project_record(project_data_to_load)
+                else:
+                    # If there's no project file, create a placeholder record
+                    db.create_or_update_project_record({
+                        'project_id': project_id,
+                        'project_name': history_record['project_name'],
+                        'creation_timestamp': datetime.now(timezone.utc).isoformat()
+                    })
 
-                with open(rowd_file_path, 'r', encoding='utf-8') as f:
-                    artifacts_to_load = json.load(f)
-                if artifacts_to_load:
-                    db.bulk_insert_artifacts(artifacts_to_load)
+                # Restore RoWD and CRs
+                if rowd_file_path.exists():
+                    with open(rowd_file_path, 'r', encoding='utf-8') as f:
+                        artifacts_to_load = json.load(f)
+                    if artifacts_to_load: db.bulk_insert_artifacts(artifacts_to_load)
 
                 if cr_file_path.exists():
                     with open(cr_file_path, 'r', encoding='utf-8') as f:
                         crs_to_load = json.load(f)
-                    if crs_to_load:
-                        db.bulk_insert_change_requests(crs_to_load)
+                    if crs_to_load: db.bulk_insert_change_requests(crs_to_load)
 
-                self.project_id = history_record['project_id']
+                # 5. Set in-memory state and perform pre-flight checks
+                self.project_id = project_id
                 self.project_name = history_record['project_name']
+                check_result = self._perform_preflight_checks(history_record['project_root_folder'])
+                self.preflight_check_result = {**check_result, "history_id": history_id}
 
-                # Determine and store the correct resume phase before transitioning.
+                if check_result['status'] != "ALL_PASS":
+                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
+                    return
+
+                self.is_project_dirty = False
                 self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
                 self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
-                logging.info(f"Successfully loaded archived project '{self.project_name}'. Awaiting pre-flight resolution.")
 
         except Exception as e:
             error_msg = f"A critical error occurred while loading the project: {e}"
-            logging.error(error_msg)
-            self.preflight_check_result = {"status": "ERROR", "message": error_msg}
+            logging.error(error_msg, exc_info=True)
+            self.preflight_check_result = {"status": "ERROR", "message": error_msg, "history_id": history_id}
             self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
 
@@ -2596,6 +2610,33 @@ class MasterOrchestrator:
             logging.error(f"Could not retrieve latest commit timestamp: {e}")
             return None
 
+    def get_current_git_branch(self) -> str:
+        """
+        Safely retrieves the current Git branch name for the active project.
+        Returns 'N/A' if not applicable or on error.
+        """
+        import git
+        if not self.project_id:
+            return "N/A"
+
+        try:
+            with self.db_manager as db:
+                project_details = db.get_project_by_id(self.project_id)
+                if not project_details or not project_details['project_root_folder']:
+                    return "N/A"
+                project_root_path = str(project_details['project_root_folder'])
+
+            repo = git.Repo(project_root_path)
+            # This will correctly report the branch name even in a detached HEAD state
+            return repo.head.ref.name
+        except (TypeError, git.InvalidGitRepositoryError):
+            # TypeError if repo.head.ref is a commit object (detached HEAD)
+            # InvalidGitRepositoryError if it's not a git repo
+            return "detached"
+        except Exception as e:
+            logging.warning(f"Could not retrieve current git branch: {e}")
+            return "N/A"
+
     def _debug_jump_to_phase(self, phase_name: str):
         """
         A debug-only method to jump the application to a specific phase,
@@ -2639,61 +2680,53 @@ class MasterOrchestrator:
     def _create_llm_service(self) -> LLMService | None:
         """
         Factory method to create the appropriate LLM service adapter based on
-        the configuration stored in the database. Now uses new provider names.
+        the configuration stored in the database. Now with true lazy loading.
         """
+        # --- Lazy import all adapters inside this method ---
+        from llm_service import (LLMService, GeminiAdapter, OpenAIAdapter,
+                                 AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter)
+
         logging.info("Attempting to create and configure LLM service...")
         with self.db_manager as db:
-            # The database now stores the user-facing name, which we map back
-            # to the original key for creating the correct adapter.
             provider_name_from_db = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini"
 
-            provider_map = {
-                "Gemini": "Gemini",
-                "ChatGPT": "OpenAI",
-                "Claude": "Anthropic",
-                "Phi-3 (Local)": "LocalPhi3",
-                "Any Other": "Enterprise"
-            }
-            # Find the internal key (e.g., "OpenAI") from the name stored in the DB (e.g., "ChatGPT")
-            provider = provider_map.get(provider_name_from_db, "Gemini")
-
-            if provider == "Gemini":
+            if provider_name_from_db == "Gemini":
                 api_key = db.get_config_value("GEMINI_API_KEY")
-                reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL") or "gemini-2.5-pro"
-                fast_model = db.get_config_value("GEMINI_FAST_MODEL") or "gemini-2.5-flash-preview-05-20"
+                reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL")
+                fast_model = db.get_config_value("GEMINI_FAST_MODEL")
                 if not api_key:
                     logging.warning("Gemini is selected, but GEMINI_API_KEY is not set.")
                     return None
                 return GeminiAdapter(api_key, reasoning_model, fast_model)
 
-            elif provider == "OpenAI":
+            elif provider_name_from_db == "ChatGPT":
                 api_key = db.get_config_value("OPENAI_API_KEY")
-                reasoning_model = db.get_config_value("OPENAI_REASONING_MODEL") or "gpt-4-turbo"
-                fast_model = db.get_config_value("OPENAI_FAST_MODEL") or "gpt-3.5-turbo"
+                reasoning_model = db.get_config_value("OPENAI_REASONING_MODEL")
+                fast_model = db.get_config_value("OPENAI_FAST_MODEL")
                 if not api_key:
                     logging.warning("ChatGPT (OpenAI) is selected, but OPENAI_API_KEY is not set.")
                     return None
                 return OpenAIAdapter(api_key, reasoning_model, fast_model)
 
-            elif provider == "Anthropic":
+            elif provider_name_from_db == "Claude":
                 api_key = db.get_config_value("ANTHROPIC_API_KEY")
-                reasoning_model = db.get_config_value("ANTHROPIC_REASONING_MODEL") or "claude-3-opus-20240229"
-                fast_model = db.get_config_value("ANTHROPIC_FAST_MODEL") or "claude-3-haiku-20240307"
+                reasoning_model = db.get_config_value("ANTHROPIC_REASONING_MODEL")
+                fast_model = db.get_config_value("ANTHROPIC_FAST_MODEL")
                 if not api_key:
                     logging.warning("Claude (Anthropic) is selected, but ANTHROPIC_API_KEY is not set.")
                     return None
                 return AnthropicAdapter(api_key, reasoning_model, fast_model)
 
-            elif provider == "LocalPhi3":
+            elif provider_name_from_db == "Phi-3 (Local)":
                 return LocalPhi3Adapter()
 
-            elif provider == "Enterprise":
+            elif provider_name_from_db == "Any Other":
                 base_url = db.get_config_value("CUSTOM_ENDPOINT_URL")
                 api_key = db.get_config_value("CUSTOM_ENDPOINT_API_KEY")
                 reasoning_model = db.get_config_value("CUSTOM_REASONING_MODEL")
                 fast_model = db.get_config_value("CUSTOM_FAST_MODEL")
                 if not all([base_url, api_key, reasoning_model, fast_model]):
-                    logging.warning("Enterprise provider selected, but one or more required settings are missing.")
+                    logging.warning("Any Other provider selected, but one or more required settings are missing.")
                     return None
                 return CustomEndpointAdapter(base_url, api_key, reasoning_model, fast_model)
 

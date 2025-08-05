@@ -1,0 +1,224 @@
+/* ASDF Dark Theme Stylesheet v0.1 */
+
+/* ---- Main Window & General Widgets ---- */
+QMainWindow, QDialog {
+    background-color: #2B2B2B; /* A dark gray background */
+    color: #F0F0F0; /* A light gray for text */
+}
+
+QWidget {
+    font-family: "Segoe UI", "Inter", sans-serif; /* Modern, legible font */
+    color: #F0F0F0;
+}
+
+/* ---- Card-Based Layout for Content Sections ---- */
+QGroupBox {
+    background-color: #3C3F41; /* Slightly lighter gray for cards */
+    border: 1px solid #555555;
+    border-radius: 8px; /* Rounded corners for cards */
+    margin-top: 10px;
+    padding: 10px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    left: 10px;
+}
+
+/* ---- Text & Input Fields ---- */
+QLabel {
+    background-color: transparent;
+    padding: 2px;
+}
+
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
+    background-color: #2B2B2B;
+    border: 1px solid #555555;
+    border-radius: 4px; /* Rounded corners for input fields */
+    padding: 5px;
+    color: #F0F0F0; /* Explicitly set text color */
+}
+
+QLineEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {
+    border: 1px solid #007ACC; /* Accent color for focus */
+}
+
+/* ---- Buttons ---- */
+QPushButton {
+    background-color: #555555;
+    color: #F0F0F0;
+    border: 1px solid #666666;
+    padding: 8px 16px;
+    border-radius: 4px; /* Rounded corners for buttons */
+    font-weight: 500; /* Medium weight for button text */
+}
+
+QPushButton:hover {
+    background-color: #6A6A6A;
+    border: 1px solid #777777;
+}
+
+QPushButton:pressed {
+    background-color: #4A4A4A;
+}
+
+QPushButton:disabled {
+    background-color: #4A4A4A;
+    color: #888888;
+}
+
+/* Primary "call-to-action" button style */
+QPushButton[objectName^="proceedButton"],
+QPushButton[objectName^="approveButton"],
+QPushButton[objectName^="finalizeButton"],
+QPushButton[objectName^="confirmAnalysisButton"] {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #007ACC, stop:1 #005C99);
+    border: 1px solid #007ACC;
+    font-weight: bold;
+}
+
+QPushButton[objectName^="proceedButton"]:hover,
+QPushButton[objectName^="approveButton"]:hover,
+QPushButton[objectName^="finalizeButton"]:hover,
+QPushButton[objectName^="confirmAnalysisButton"]:hover {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #008AE6, stop:1 #006BB3);
+}
+
+QPushButton[objectName^="proceedButton"]:pressed,
+QPushButton[objectName^="approveButton"]:pressed,
+QPushButton[objectName^="finalizeButton"]:pressed,
+QPushButton[objectName^="confirmAnalysisButton"]:pressed {
+    background-color: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #005C99, stop:1 #004D80);
+}
+
+/* ---- Dialogs & Message Boxes ---- */
+QDialog {
+    background-color: #3C3F41; /* A distinct, lighter gray for dialogs */
+    border: 1px solid #555555;
+}
+
+QDialog QLabel {
+    color: #F0F0F0;
+    background-color: transparent; /* Ensure labels inside dialogs have no background */
+    border: none;
+}
+
+/* Ensure buttons inside dialogs use the standard button style */
+QDialog QPushButton {
+    background-color: #555555;
+    color: #F0F0F0;
+    border: 1px solid #666666;
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: 500;
+}
+
+QDialog QPushButton:hover {
+    background-color: #6A6A6A;
+    border: 1px solid #777777;
+}
+
+QDialog QPushButton:pressed {
+    background-color: #4A4A4A;
+}
+
+/* ---- ComboBox / Dropdowns & Input Field Text ---- */
+QComboBox {
+    background-color: #555555;
+    border: 1px solid #666666;
+    border-radius: 4px;
+    padding: 5px;
+}
+
+QComboBox:hover {
+    border: 1px solid #777777;
+}
+
+/* Style for the dropdown list that appears */
+QComboBox QAbstractItemView {
+    background-color: #3C3F41;
+    color: #F0F0F0; /* The critical fix for dropdown item text color */
+    border: 1px solid #555555;
+    selection-background-color: #007ACC; /* Fix for the highlight background */
+    selection-color: #F0F0F0; /* Fix for highlighted text color */
+}
+
+/* Re-assert the text color on all input fields to be safe */
+QLineEdit, QTextEdit, QPlainTextEdit, QSpinBox {
+    color: #F0F0F0;
+}
+
+/* ---- Menu Bar, ToolBar, and Tabs ---- */
+
+QTabWidget::pane {
+    border-top: 1px solid #555555;
+}
+
+QTabBar::tab {
+    background: #2B2B2B;
+    color: #A9B7C6;
+    border: 1px solid #2B2B2B;
+    border-bottom: none; /* Avoid double border */
+    padding: 8px 16px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+QTabBar::tab:selected, QTabBar::tab:hover {
+    background: #3C3F41;
+    color: #F0F0F0;
+}
+
+/* Style for the file tree and table views */
+QTreeView, QTableView {
+    background-color: #2B2B2B;
+    border: none;
+    alternate-background-color: #3C3F41;
+}
+
+QHeaderView::section {
+    background-color: #3C3F41;
+    color: #F0F0F0;
+    padding: 4px;
+    border: 1px solid #555555;
+}
+
+QMenuBar {
+    background-color: #3C3F41;
+    color: #F0F0F0;
+}
+
+QMenuBar::item:selected {
+    background-color: #555555;
+}
+
+QMenu {
+    background-color: #3C3F41;
+    color: #F0F0F0;
+    border: 1px solid #555555;
+}
+
+QMenu::item:selected {
+    background-color: #007ACC;
+}
+
+QToolBar {
+    background-color: #3C3F41;
+    border-bottom: 1px solid #555555;
+    padding: 2px;
+}
+
+/* ---- Headers & Labels ---- */
+QLabel[objectName^="headerLabel"] {
+    font-size: 18pt;
+    font-weight: bold;
+    padding-bottom: 5px;
+}
+
+QLabel[objectName^="reviewHeaderLabel"],
+QLabel[objectName^="checkpointHeaderLabel"],
+QLabel[objectName^="pmDefineHeaderLabel"] {
+    font-size: 14pt;
+}

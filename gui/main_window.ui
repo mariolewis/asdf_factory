@@ -123,6 +123,7 @@
      <string>File</string>
     </property>
     <addaction name="actionNew_Project"/>
+    <addaction name="actionClose_Project"/>
     <addaction name="actionLoad_Archived_Project"/>
     <addaction name="actionStop_Export_Project"/>
     <addaction name="separator"/>
@@ -144,16 +145,21 @@
     <property name="title">
      <string>Project</string>
     </property>
+    <addaction name="actionView_Documents"/>
+    <addaction name="actionView_Reports"/>
    </widget>
    <widget class="QMenu" name="menuRun">
     <property name="title">
      <string>Run</string>
     </property>
+    <addaction name="actionProceed"/>
+    <addaction name="actionRun_Tests"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
      <string>Help</string>
     </property>
+    <addaction name="actionAbout_ASDF"/>
    </widget>
    <widget class="QMenu" name="menuDebug">
     <property name="title">
@@ -179,10 +185,23 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
+   <addaction name="actionProceed"/>
+   <addaction name="actionRun_Tests"/>
+   <addaction name="separator"/>
+   <addaction name="actionRaise_CR"/>
+   <addaction name="actionReport_Bug"/>
+   <addaction name="separator"/>
+   <addaction name="actionView_Documents"/>
+   <addaction name="actionView_Reports"/>
   </widget>
   <action name="actionNew_Project">
    <property name="text">
     <string>New Project...</string>
+   </property>
+  </action>
+  <action name="actionClose_Project">
+   <property name="text">
+    <string>Close Project</string>
    </property>
   </action>
   <action name="actionLoad_Archived_Project">
@@ -203,6 +222,59 @@
   <action name="actionExit">
    <property name="text">
     <string>Exit</string>
+   </property>
+  </action>
+  <action name="actionAbout_ASDF">
+   <property name="text">
+    <string>About ASDF</string>
+   </property>
+  </action>
+  <action name="actionProceed">
+   <property name="text">
+    <string>Proceed</string>
+   </property>
+   <property name="toolTip">
+    <string>Proceed with the next step</string>
+   </property>
+  </action>
+  <action name="actionRun_Tests">
+   <property name="text">
+    <string>Run Tests</string>
+   </property>
+   <property name="toolTip">
+    <string>Run full test suite for the project</string>
+   </property>
+  </action>
+  <action name="actionRaise_CR">
+   <property name="text">
+    <string>Raise CR</string>
+   </property>
+   <property name="toolTip">
+    <string>Raise a new Change Request</string>
+   </property>
+  </action>
+  <action name="actionReport_Bug">
+   <property name="text">
+    <string>Report Bug</string>
+   </property>
+   <property name="toolTip">
+    <string>Report a new bug</string>
+   </property>
+  </action>
+  <action name="actionView_Documents">
+   <property name="text">
+    <string>View Documents</string>
+   </property>
+   <property name="toolTip">
+    <string>View project documents</string>
+   </property>
+  </action>
+  <action name="actionView_Reports">
+   <property name="text">
+    <string>View Reports</string>
+   </property>
+   <property name="toolTip">
+    <string>View project reports</string>
    </property>
   </action>
  </widget>

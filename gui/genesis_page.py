@@ -12,6 +12,7 @@ class GenesisPage(QWidget):
     """
     The logic handler for the Iterative Component Development (Genesis) page.
     """
+    state_changed = Signal()
     genesis_complete = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
@@ -73,6 +74,7 @@ class GenesisPage(QWidget):
         self.ui.logOutputTextEdit.append(f"\n--- SUCCESS ---\n{result}")
         self._set_ui_busy(False)
         self.update_checkpoint_display()
+        self.state_changed.emit()
         # Check if the orchestrator's phase has changed away from GENESIS
         if self.orchestrator.current_phase.name != "GENESIS":
             self.genesis_complete.emit()
