@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QSpacerItem, QStackedWidget,
-    QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout,
+    QLabel, QPushButton, QSizePolicy, QSpacerItem,
+    QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_PreflightCheckPage(object):
     def setupUi(self, PreflightCheckPage):
@@ -66,7 +66,7 @@ class Ui_PreflightCheckPage(object):
 
         self.horizontalLayout.addWidget(self.proceedButton)
 
-        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
 
@@ -81,20 +81,32 @@ class Ui_PreflightCheckPage(object):
 
         self.verticalLayout_2.addWidget(self.stateDriftLabel)
 
-        self.horizontalLayout_2 = QHBoxLayout()
-        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.gridLayout = QGridLayout()
+        self.gridLayout.setObjectName(u"gridLayout")
         self.manualResolveButton = QPushButton(self.stateDriftPage)
         self.manualResolveButton.setObjectName(u"manualResolveButton")
 
-        self.horizontalLayout_2.addWidget(self.manualResolveButton)
+        self.gridLayout.addWidget(self.manualResolveButton, 0, 0, 1, 1)
+
+        self.manualResolveLabel = QLabel(self.stateDriftPage)
+        self.manualResolveLabel.setObjectName(u"manualResolveLabel")
+        self.manualResolveLabel.setWordWrap(True)
+
+        self.gridLayout.addWidget(self.manualResolveLabel, 0, 1, 1, 1)
 
         self.discardButton = QPushButton(self.stateDriftPage)
         self.discardButton.setObjectName(u"discardButton")
 
-        self.horizontalLayout_2.addWidget(self.discardButton)
+        self.gridLayout.addWidget(self.discardButton, 1, 0, 1, 1)
+
+        self.discardLabel = QLabel(self.stateDriftPage)
+        self.discardLabel.setObjectName(u"discardLabel")
+        self.discardLabel.setWordWrap(True)
+
+        self.gridLayout.addWidget(self.discardLabel, 1, 1, 1, 1)
 
 
-        self.verticalLayout_2.addLayout(self.horizontalLayout_2)
+        self.verticalLayout_2.addLayout(self.gridLayout)
 
         self.actionStackedWidget.addWidget(self.stateDriftPage)
         self.errorPage = QWidget()
@@ -106,7 +118,7 @@ class Ui_PreflightCheckPage(object):
 
         self.horizontalLayout_3.addWidget(self.backButton)
 
-        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer_2 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_2)
 
@@ -114,7 +126,7 @@ class Ui_PreflightCheckPage(object):
 
         self.verticalLayout.addWidget(self.actionStackedWidget)
 
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.verticalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout.addItem(self.verticalSpacer)
 
@@ -126,12 +138,14 @@ class Ui_PreflightCheckPage(object):
 
     def retranslateUi(self, PreflightCheckPage):
         PreflightCheckPage.setWindowTitle(QCoreApplication.translate("PreflightCheckPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Pre-flight Check", None))
+        self.headerLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Continue Project", None))
         self.statusLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Status: Running checks...", None))
         self.proceedButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Proceed to Project", None))
-        self.stateDriftLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"<b>Action Required:</b> To prevent conflicts, please resolve the state of the repository. You have two options:", None))
-        self.manualResolveButton.setText(QCoreApplication.translate("PreflightCheckPage", u"I Will Resolve This Manually", None))
-        self.discardButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Discard All Local Changes", None))
+        self.stateDriftLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"<b>Action Required:</b> To prevent conflicts, please resolve the state of the repository.", None))
+        self.manualResolveButton.setText(QCoreApplication.translate("PreflightCheckPage", u"I Will Resolve Manually", None))
+        self.manualResolveLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Closes the project and returns to the main screen. You can then use external tools like 'git commit' before reloading.)", None))
+        self.discardButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Discard All Uncommitted Changes", None))
+        self.discardLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Deletes all local changes that have not been committed to Git. This action cannot be undone.)", None))
         self.backButton.setText(QCoreApplication.translate("PreflightCheckPage", u"<-- Back to Project List", None))
     # retranslateUi
 

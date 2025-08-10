@@ -1,23 +1,24 @@
 # gui/preflight_check_page.py
 
 import logging
-from PySide6.QtWidgets import QWidget, QMessageBox
+from PySide6.QtWidgets import QWidget, QMessageBox, QPushButton
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 
+from gui.ui_preflight_check_page import Ui_PreflightCheckPage
+from master_orchestrator import MasterOrchestrator
+
 class PreflightCheckPage(QWidget):
     """
-    The logic handler for the Pre-flight Check page.
+    The logic handler for the Project Resumption (Pre-flight Check) page.
     """
     project_load_finalized = Signal()
     project_load_failed = Signal()
 
-    def __init__(self, orchestrator, parent=None):
+    def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
-        # This import is done here to avoid circular dependency at the top level
-        from gui.ui_preflight_check_page import Ui_PreflightCheckPage
-        from PySide6.QtWidgets import QLabel, QTextEdit # Add this line for clarity
+
         self.ui = Ui_PreflightCheckPage()
         self.ui.setupUi(self)
         self.connect_signals()
@@ -34,7 +35,7 @@ class PreflightCheckPage(QWidget):
         result = self.orchestrator.preflight_check_result
         if not result:
             self.ui.statusLabel.setText("Status: Error")
-            self.ui.detailsTextEdit.setText("Could not retrieve pre-flight check results.")
+            self.ui.detailsTextEdit.setText("Could not retrieve project resumption check results.")
             self.ui.actionStackedWidget.setCurrentWidget(self.ui.errorPage)
             return
 
@@ -42,6 +43,7 @@ class PreflightCheckPage(QWidget):
         message = result.get("message")
 
         self.ui.detailsTextEdit.setText(message)
+        self.ui.headerLabel.setText("Continue Project") # Rename the page header
 
         if status == "ALL_PASS":
             self.ui.statusLabel.setText("Status: Success")
@@ -86,6 +88,5 @@ class PreflightCheckPage(QWidget):
             if history_id:
                 self.orchestrator.handle_discard_changes(history_id)
                 # The orchestrator will re-trigger the load, so this page will be updated automatically.
-                # No need to emit a signal here.
             else:
                 QMessageBox.critical(self, "Error", "Could not identify the project to discard changes for.")

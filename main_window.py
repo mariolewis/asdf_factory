@@ -299,6 +299,7 @@ class ASDFMainWindow(QMainWindow):
             "VIEWING_DOCUMENTS": self.documents_page,
             "VIEWING_REPORTS": self.reports_page,
             "MANUAL_UI_TESTING": self.manual_ui_testing_page,
+            "DEBUG_PM_ESCALATION": self.decision_page,
         }
 
         if current_phase_name in page_display_map:
@@ -309,6 +310,18 @@ class ASDFMainWindow(QMainWindow):
                 self.load_project_page.refresh_projects_list()
             elif current_phase_name == "AWAITING_PREFLIGHT_RESOLUTION":
                 self.preflight_check_page.update_and_display()
+            # --- Add this new block ---
+            elif current_phase_name == "DEBUG_PM_ESCALATION":
+                failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No failure details were captured.")
+                self.decision_page.configure(
+                    header="Debug Escalation",
+                    instruction="The factory has been unable to automatically fix a persistent bug. Please review the details and choose how to proceed.",
+                    details=failure_log,
+                    option1_text="Retry Automated Fix",
+                    option2_text="Pause for Manual Fix",
+                    option3_text="Ignore Bug & Proceed"
+                )
+            # --- End of new block ---
             elif hasattr(page_to_show, 'prepare_for_display'):
                 page_to_show.prepare_for_display()
             elif hasattr(page_to_show, 'prepare_for_new_project'):
@@ -381,9 +394,17 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator.set_phase(phase_name)
         self.update_ui_after_state_change()
 
-    def on_decision_option1(self): self.update_ui_after_state_change()
-    def on_decision_option2(self): self.update_ui_after_state_change()
-    def on_decision_option3(self): self.update_ui_after_state_change()
+    def on_decision_option1(self):
+        self.orchestrator.handle_pm_debug_choice("RETRY")
+        self.update_ui_after_state_change()
+
+    def on_decision_option2(self):
+        self.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
+        self.update_ui_after_state_change()
+
+    def on_decision_option3(self):
+        self.orchestrator.handle_pm_debug_choice("IGNORE")
+        self.update_ui_after_state_change()
 
     def on_proceed(self): QMessageBox.information(self, "Not Implemented", "The 'Proceed' action is not yet implemented.")
     def on_run_tests(self): QMessageBox.information(self, "Not Implemented", "The 'Run Tests' action is not yet implemented.")

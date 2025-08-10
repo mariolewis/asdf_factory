@@ -8,6 +8,7 @@ from enum import Enum, auto
 from llm_service import LLMService
 from pathlib import Path
 import textwrap
+import git
 
 from agents.agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
@@ -301,21 +302,16 @@ class MasterOrchestrator:
             raise
 
     def save_uploaded_brief_files(self, uploaded_files: list) -> list[str]:
-        """Copies uploaded brief files to the project's _docs/_uploads directory."""
-        if not self.project_id:
-            logging.error("Cannot save uploaded files; no active project.")
-            return []
-
-        saved_paths = []
+        """Copies uploaded brief files to the project's _docs/_uploads directory and commits them."""
+        if not self.project_id: return []
         project_details = self.db_manager.get_project_by_id(self.project_id)
-        if not project_details or not project_details['project_root_folder']:
-            logging.error(f"Could not find project root folder for project {self.project_id}.")
-            return []
+        if not project_details: return []
 
         project_root = Path(project_details['project_root_folder'])
         uploads_dir = project_root / "_docs" / "_uploads"
         uploads_dir.mkdir(parents=True, exist_ok=True)
 
+        saved_paths = []
         for uploaded_file_path in uploaded_files:
             try:
                 source_path = Path(uploaded_file_path)
@@ -323,30 +319,33 @@ class MasterOrchestrator:
                 import shutil
                 shutil.copy(source_path, destination_path)
                 saved_paths.append(str(destination_path))
-                logging.info(f"Copied uploaded brief file to: {destination_path}")
+
+                # Commit the new brief document
+                commit_message = f"docs: Add initial brief document '{source_path.name}'"
+                self._commit_document(destination_path, commit_message)
             except Exception as e:
-                logging.error(f"Failed to copy uploaded file {uploaded_file_path}: {e}")
+                logging.error(f"Failed to copy or commit uploaded file {uploaded_file_path}: {e}")
 
         return saved_paths
 
     def save_text_brief_as_file(self, brief_content: str) -> str | None:
-        """Saves a text-based project brief to a markdown file."""
-        if not self.project_id:
-            logging.error("Cannot save text brief; no active project.")
-            return None
+        """Saves a text-based project brief to a markdown file and commits it."""
+        if not self.project_id: return None
 
         try:
             project_details = self.db_manager.get_project_by_id(self.project_id)
-            if not project_details or not project_details['project_root_folder']:
-                logging.error(f"Could not find project root folder for project {self.project_id}.")
-                return None
+            if not project_details: return None
 
             project_root = Path(project_details['project_root_folder'])
             docs_dir = project_root / "_docs"
             docs_dir.mkdir(exist_ok=True)
             brief_file_path = docs_dir / "user_project_brief.md"
             brief_file_path.write_text(brief_content, encoding="utf-8")
-            logging.info(f"Saved text project brief to: {brief_file_path}")
+
+            # Commit the new brief document
+            commit_message = "docs: Add initial text-based project brief"
+            self._commit_document(brief_file_path, commit_message)
+
             return str(brief_file_path)
         except Exception as e:
             logging.error(f"Failed to save text brief as file: {e}")
@@ -654,7 +653,6 @@ class MasterOrchestrator:
             return False
 
         try:
-            # ... (Existing logic to compile the final document)
             final_spec_parts = []
             personas = self.active_ux_spec.get('confirmed_personas', [])
             if personas:
@@ -674,23 +672,24 @@ class MasterOrchestrator:
             if style_guide:
                 final_spec_parts.append("## 4. Theming & Style Guide\\n" + style_guide)
             final_spec_doc = "\\n\\n---\\n\\n".join(final_spec_parts)
-            # --- End of existing logic ---
 
             final_doc_with_header = self._prepend_standard_header(
                 document_content=final_spec_doc,
                 document_type="UX/UI Specification"
             )
 
-            self.db_manager.update_project_field(self.project_id, "ux_spec_text", final_doc_with_header)
-            project_details = self.db_manager.get_project_by_id(self.project_id)
-            if not project_details or not project_details['project_root_folder']:
-                raise FileNotFoundError("Project root folder not found after saving UX spec.")
-            project_root = Path(project_details['project_root_folder'])
+            db = self.db_manager
+            db.update_project_field(self.project_id, "ux_spec_text", final_doc_with_header)
 
-            docs_dir = project_root / "_docs"
-            ux_spec_file_path = docs_dir / "ux_ui_specification.md"
-            ux_spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
-            logging.info(f"Saved final UX/UI spec to file: {ux_spec_file_path}")
+            project_details = db.get_project_by_id(self.project_id)
+            if project_details and project_details['project_root_folder']:
+                project_root = Path(project_details['project_root_folder'])
+                docs_dir = project_root / "_docs"
+                ux_spec_file_path = docs_dir / "ux_ui_specification.md"
+                ux_spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
+
+                # Commit the new document
+                self._commit_document(ux_spec_file_path, "docs: Finalize UX/UI Specification")
 
             self.active_ux_spec = {}
             self.task_awaiting_approval = None
@@ -726,7 +725,9 @@ class MasterOrchestrator:
                 docs_dir = project_root / "_docs"
                 spec_file_path = docs_dir / "application_spec.md"
                 spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
-                logging.info(f"Saved final application spec to file: {spec_file_path}")
+
+                # Commit the new document
+                self._commit_document(spec_file_path, "docs: Finalize Application Specification")
 
             self.set_phase("TECHNICAL_SPECIFICATION")
 
@@ -751,19 +752,19 @@ class MasterOrchestrator:
                 document_type="Complexity & Risk Assessment"
             )
 
-            # Save the versioned doc to the database
             self.db_manager.update_project_field(self.project_id, "complexity_assessment_text", final_doc_with_header)
             logging.info(f"Successfully saved Complexity & Risk Assessment to database for project {self.project_id}")
 
-            # This is the new logic to save the file
+            # This is the new logic to save and commit the file
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
                 assessment_file_path = docs_dir / "complexity_and_risk_assessment.json"
-                # Save the raw JSON (without the header) to the file
                 assessment_file_path.write_text(assessment_json_str, encoding="utf-8")
-                logging.info(f"Saved complexity and risk assessment to file: {assessment_file_path}")
+
+                # Commit the new document
+                self._commit_document(assessment_file_path, "docs: Add Complexity and Risk Assessment")
 
         except Exception as e:
             logging.error(f"Failed to finalize and save complexity assessment: {e}")
@@ -793,7 +794,9 @@ class MasterOrchestrator:
                 docs_dir = project_root / "_docs"
                 spec_file_path = docs_dir / "technical_spec.md"
                 spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
-                logging.info(f"Saved final technical spec to file: {spec_file_path}")
+
+                # Commit the new document
+                self._commit_document(spec_file_path, "docs: Finalize Technical Specification")
 
             self._extract_and_save_primary_technology(final_doc_with_header)
             self.set_phase("BUILD_SCRIPT_SETUP")
@@ -825,7 +828,9 @@ class MasterOrchestrator:
                 docs_dir = project_root / "_docs"
                 standard_file_path = docs_dir / "coding_standard.md"
                 standard_file_path.write_text(final_doc_with_header, encoding="utf-8")
-                logging.info(f"Saved final coding standard to file: {standard_file_path}")
+
+                # Commit the new document
+                self._commit_document(standard_file_path, "docs: Finalize Coding Standard")
 
             self.set_phase("PLANNING")
 
@@ -855,7 +860,9 @@ class MasterOrchestrator:
                 docs_dir = project_root / "_docs"
                 plan_file_path = docs_dir / "development_plan.json"
                 plan_file_path.write_text(plan_json_string, encoding="utf-8")
-                logging.info(f"Saved final development plan to file: {plan_file_path}")
+
+                # Commit the new document
+                self._commit_document(plan_file_path, "docs: Finalize Development Plan")
 
             full_plan_data = json.loads(plan_json_string)
             dev_plan_list = full_plan_data.get("development_plan")
@@ -1228,7 +1235,7 @@ class MasterOrchestrator:
         phase to resume from.
         """
         logging.info("Analyzing loaded project state to determine the correct resume phase...")
-        project_details = db.get_project_by_id(self.project_id)
+        project_details = self.db_manager.get_project_by_id(self.project_id)
 
         if not project_details:
             return FactoryPhase.SPEC_ELABORATION
@@ -1260,8 +1267,8 @@ class MasterOrchestrator:
 
     def _run_integration_and_ui_testing_phase(self, progress_callback=None):
         """
-        Executes the full Integration and UI Testing workflow, now including
-        the generation and saving of the Integration Plan.
+        Executes the full Integration and UI Testing workflow, including planning,
+        execution, and final test plan generation.
         """
         logging.info("Starting Phase: Automated Integration & Verification.")
         if progress_callback:
@@ -1277,14 +1284,39 @@ class MasterOrchestrator:
             docs_dir = project_root_path / "_docs"
 
             if progress_callback: progress_callback("Analyzing project for integration points...")
-            new_artifacts_for_integration = []
+
+            # For this version, we assume all new artifacts are potential integration points
+            # A more advanced version could be more selective.
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            new_artifacts_for_integration = [dict(row) for row in all_artifacts]
+
+            # Determine which existing files are the most likely integration points
+            integration_files_to_load = self._get_integration_context_files(db, new_artifacts_for_integration)
+            existing_code_context = {}
+            for file_path in integration_files_to_load:
+                full_path = project_root_path / file_path
+                if full_path.exists():
+                    existing_code_context[file_path] = full_path.read_text(encoding='utf-8')
 
             if progress_callback: progress_callback("Generating Integration Plan...")
             integration_planner = IntegrationPlannerAgent(llm_service=self.llm_service)
-            existing_code_context = {}
             integration_plan_json = integration_planner.create_integration_plan(
                 json.dumps(new_artifacts_for_integration), existing_code_context
             )
+
+            # --- This is the new, crucial execution logic ---
+            if progress_callback: progress_callback("Executing Integration Plan...")
+            orchestration_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
+            integration_plan = json.loads(integration_plan_json)
+
+            for file_path_str, modifications in integration_plan.items():
+                target_file_path = project_root_path / file_path_str
+                original_code = target_file_path.read_text(encoding='utf-8') if target_file_path.exists() else ""
+
+                modified_code = orchestration_agent.apply_modifications(original_code, json.dumps(modifications))
+                target_file_path.write_text(modified_code, encoding='utf-8')
+                logging.info(f"Applied integration modifications to {file_path_str}")
+            # --- End of new logic ---
 
             final_integration_plan = self._prepend_standard_header(
                 document_content=integration_plan_json,
@@ -1294,7 +1326,7 @@ class MasterOrchestrator:
 
             integration_plan_file_path = docs_dir / "integration_plan.json"
             integration_plan_file_path.write_text(integration_plan_json, encoding="utf-8")
-            logging.info(f"Saved Integration Plan to file: {integration_plan_file_path}")
+            self._commit_document(integration_plan_file_path, "docs: Add Integration Plan")
 
             if progress_callback: progress_callback("Generating UI Test Plan...")
             functional_spec_text = project_details['final_spec_text']
@@ -1310,7 +1342,7 @@ class MasterOrchestrator:
 
             test_plan_file_path = docs_dir / "ui_test_plan.md"
             test_plan_file_path.write_text(final_ui_test_plan, encoding="utf-8")
-            logging.info(f"Saved UI Test Plan to file: {test_plan_file_path}")
+            self._commit_document(test_plan_file_path, "docs: Add UI Test Plan")
 
             self.set_phase("MANUAL_UI_TESTING")
 
@@ -2053,6 +2085,26 @@ class MasterOrchestrator:
         )
         return header + document_content
 
+    def _commit_document(self, file_path: Path, commit_message: str):
+        """A helper method to stage and commit a single document."""
+        if not self.project_id:
+            return
+        try:
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                logging.error(f"Cannot commit {file_path.name}: project root folder not found.")
+                return
+
+            project_root = Path(project_details['project_root_folder'])
+            repo = git.Repo(project_root)
+
+            relative_path = file_path.relative_to(project_root)
+            repo.index.add([str(relative_path)])
+            repo.index.commit(commit_message)
+            logging.info(f"Successfully committed document: {relative_path}")
+        except Exception as e:
+            logging.error(f"Failed to commit document {file_path.name}. Error: {e}")
+
     def _save_current_state(self):
         """
         Saves the currently active project's detailed operational state to the
@@ -2673,8 +2725,8 @@ class MasterOrchestrator:
             if not project_details:
                 raise Exception("Cannot generate UI test plan: Project Details not found.")
 
-            functional_spec_text = project_details.get('final_spec_text')
-            technical_spec_text = project_details.get('tech_spec_text')
+            functional_spec_text = project_details['final_spec_text']
+            technical_spec_text = project_details['tech_spec_text']
 
             if not functional_spec_text or not technical_spec_text:
                 raise Exception("Cannot generate UI test plan: Missing specifications.")
