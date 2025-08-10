@@ -3,6 +3,8 @@
 import logging
 import json
 from datetime import datetime
+import os
+from pathlib import Path
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog
 from PySide6.QtCore import Signal, QThreadPool
 
@@ -60,23 +62,25 @@ class SpecElaborationPage(QWidget):
         self._set_ui_busy(True)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
-        # FIX: The error handler will now also be responsible for re-enabling the UI
         worker.signals.error.connect(self._on_task_error)
-        # FIX: The finished signal is no longer used to control the UI state
         self.threadpool.start(worker)
 
     def _on_task_error(self, error_tuple):
-        error_msg = f"An error occurred in a background task:\n{error_tuple[2]}"
+        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
         QMessageBox.critical(self, "Error", error_msg)
-        self._set_ui_busy(False) # Re-enable UI on error
-
-    # --- Task Initiators ---
+        self._set_ui_busy(False)
 
     def on_browse_files_clicked(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select Specification Documents", "", "Documents (*.txt *.md *.pdf *.docx)")
-        if files:
-            self.selected_files = files
-            self.ui.uploadPathLineEdit.setText("; ".join(self.selected_files))
+        try:
+            default_path = self.orchestrator.db_manager.get_config_value("DEFAULT_PROJECT_PATH")
+            start_dir = default_path if default_path and os.path.isdir(default_path) else str(Path.home())
+
+            files, _ = QFileDialog.getOpenFileNames(self, "Select Specification Documents", start_dir, "Documents (*.txt *.md *.pdf *.docx)")
+            if files:
+                self.selected_files = files
+                self.ui.uploadPathLineEdit.setText("; ".join(self.selected_files))
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Could not open file browser:\n{e}")
 
     def run_generation_task(self):
         sender = self.sender()
@@ -103,18 +107,17 @@ class SpecElaborationPage(QWidget):
         self.spec_draft = self.ui.specDraftTextEdit.toPlainText()
         self._execute_task(self._task_refine_spec, self._handle_refinement_result, feedback)
 
-    # --- Result Handlers (Slots) ---
-
     def _handle_analysis_result(self, result_tuple):
         try:
             analysis_result, self.spec_draft = result_tuple
             analysis_for_display = json.dumps(analysis_result, indent=4)
-            footnote_text = "\n\nNote: This assessment is a point-in-time analysis."
+            footnote_text = "\n\nNote: This assessment applies to the current version of project specifications."
             self.ui.analysisResultTextEdit.setText(analysis_for_display + footnote_text)
             self.ui.stackedWidget.setCurrentWidget(self.ui.complexityReviewPage)
+            self.orchestrator.is_project_dirty = True
             self.state_changed.emit()
         finally:
-            self._set_ui_busy(False) # Re-enable UI after processing the result
+            self._set_ui_busy(False)
 
     def _handle_ai_analysis_result(self, ai_issues):
         try:
@@ -125,7 +128,7 @@ class SpecElaborationPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
             self.state_changed.emit()
         finally:
-            self._set_ui_busy(False) # Re-enable UI after processing the result
+            self._set_ui_busy(False)
 
     def _handle_refinement_result(self, new_draft):
         try:
@@ -136,35 +139,40 @@ class SpecElaborationPage(QWidget):
             QMessageBox.information(self, "Success", "Draft has been updated.")
             self.state_changed.emit()
         finally:
-            self._set_ui_busy(False) # Re-enable UI after processing the result
+            self._set_ui_busy(False)
 
     def on_cancel_project_clicked(self):
-        # ... (This method remains the same)
         reply = QMessageBox.question(self, "Cancel Project",
                                      "Are you sure you want to cancel and archive this project?",
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
             archive_name = f"{self.orchestrator.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            self.orchestrator.stop_and_export_project("data/archives", archive_name)
+            archive_path_from_db = self.orchestrator.db_manager.get_config_value("DEFAULT_ARCHIVE_PATH")
+            if not archive_path_from_db or not archive_path_from_db.strip():
+                QMessageBox.warning(self, "Configuration Error", "The Default Project Archive Path is not set.")
+                return
+            self.orchestrator.stop_and_export_project(archive_path_from_db, archive_name)
             self.project_cancelled.emit()
 
     def on_approve_spec_clicked(self):
-        # ... (This method remains the same)
         final_spec = self.ui.specDraftTextEdit.toPlainText()
         self.orchestrator.finalize_and_save_app_spec(final_spec)
         QMessageBox.information(self, "Success", "Specification approved and saved.")
+        self.orchestrator.is_project_dirty = True
         self.spec_elaboration_complete.emit()
 
-    # --- Backend Logic (to be run in worker threads) ---
-
     def _task_generate_and_analyze(self, input_data, **kwargs):
-        # ... (This method remains the same)
+        """
+        Saves the user's brief, generates the spec draft, and analyzes it.
+        """
         if isinstance(input_data, list):
+            self.orchestrator.save_uploaded_brief_files(input_data)
             bootstrap_agent = ProjectBootstrapAgent(self.orchestrator.db_manager)
             initial_text, _, error = bootstrap_agent.extract_text_from_file_paths(input_data)
             if error: raise Exception(error)
         else:
             initial_text = input_data
+            self.orchestrator.save_text_brief_as_file(initial_text)
 
         if not initial_text or not initial_text.strip():
             raise Exception("No text could be extracted from the provided input.")
@@ -177,19 +185,15 @@ class SpecElaborationPage(QWidget):
         if "error" in analysis_result:
             raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
 
-        footnote = "\n\nNote: This assessment is a point-in-time analysis for the version of the specification that was provided."
-        analysis_for_db = json.dumps(analysis_result) + footnote
-        with self.orchestrator.db_manager as db:
-            db.save_complexity_assessment(self.orchestrator.project_id, analysis_for_db)
+        analysis_json_str = json.dumps(analysis_result)
+        self.orchestrator.finalize_and_save_complexity_assessment(analysis_json_str)
 
         return analysis_result, spec_draft
 
     def _task_run_ai_analysis(self, **kwargs):
-        # ... (This method remains the same)
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
         return spec_agent.identify_potential_issues(self.spec_draft)
 
     def _task_refine_spec(self, feedback, **kwargs):
-        # ... (This method remains the same)
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
         return spec_agent.refine_specification(self.spec_draft, self.ai_issues, feedback)

@@ -1,6 +1,5 @@
 
 import logging
-# import docx
 import uuid
 import json
 import re
@@ -8,8 +7,8 @@ from datetime import datetime, timezone
 from enum import Enum, auto
 from llm_service import LLMService
 from pathlib import Path
+import textwrap
 
-# from llm_service import LLMService, GeminiAdapter, OpenAIAdapter, AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter
 from agents.agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
@@ -26,7 +25,6 @@ from agents.agent_integration_planner_app_target import IntegrationPlannerAgent
 from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 from agents.agent_triage_app_target import TriageAgent_AppTarget
 from agents.agent_code_review import CodeReviewAgent
-from agents.agent_orchestration_code_app_target import OrchestrationCodeAgent
 from agents.agent_ui_test_planner_app_target import UITestPlannerAgent_AppTarget
 from agents.agent_test_result_evaluation_app_target import TestResultEvaluationAgent_AppTarget
 from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
@@ -35,10 +33,8 @@ from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarge
 from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
+from agents.agent_project_scoping import ProjectScopingAgent
 
-
-## Configure basic logging
-#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class FactoryPhase(Enum):
     """Enumeration for the main factory F-Phases."""
@@ -68,11 +64,13 @@ class FactoryPhase(Enum):
     REPORTING_OPERATIONAL_BUG = auto()
     AWAITING_LINKED_DELETE_CONFIRMATION = auto()
     DEBUG_PM_ESCALATION = auto()
+    VIEWING_DOCUMENTS = auto()
+    VIEWING_REPORTS = auto()
     VIEWING_PROJECT_HISTORY = auto()
     AWAITING_CONTEXT_REESTABLISHMENT = auto()
     AWAITING_PM_TRIAGE_INPUT = auto()
     AWAITING_REASSESSMENT_CONFIRMATION = auto()
-    # Add other phases as they are developed
+
 
 class MasterOrchestrator:
     """
@@ -84,20 +82,19 @@ class MasterOrchestrator:
         """
         Initializes the MasterOrchestrator with a shared DB manager instance.
         """
-        self.db_manager = db_manager # Use the provided instance
+        self.db_manager = db_manager
         self.resumable_state = None
 
-        # Check for a resumable state from a previous session
-        with self.db_manager as db:
-            self.resumable_state = db.get_any_paused_state()
+        # Corrected: Direct call to the db_manager
+        self.resumable_state = self.db_manager.get_any_paused_state()
 
         if self.resumable_state:
             self.project_id = self.resumable_state['project_id']
             self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                if project_details:
-                    self.project_name = project_details['project_name']
+            # Corrected: Direct call to the db_manager
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if project_details:
+                self.project_name = project_details['project_name']
             logging.info(f"Orchestrator initialized into a resumable state for project: {self.project_name}")
         else:
             self.project_id: str | None = None
@@ -113,14 +110,12 @@ class MasterOrchestrator:
         self.resume_phase_after_load = None
         self.active_ux_spec = {}
         self.is_project_dirty = False
-
         self._llm_service = None
         logging.info("MasterOrchestrator instance created.")
 
     def reset(self):
         """
-        Resets the orchestrator's state to its default, idle condition
-        without creating a new instance.
+        Resets the orchestrator's state to its default, idle condition.
         """
         logging.info("Resetting MasterOrchestrator to idle state.")
         self.project_id = None
@@ -133,35 +128,26 @@ class MasterOrchestrator:
         self.debug_attempt_counter = 0
         self.resume_phase_after_load = None
         self.active_ux_spec = {}
-        # The resumable_state is left untouched as it reflects the DB, which is correct.
         self.is_project_dirty = False
 
     def close_active_project(self):
         """
-        Closes the currently active project, returning the orchestrator to an idle state
-        and clearing any saved session state from the database.
+        Closes the currently active project, returning to an idle state.
         """
         logging.info(f"Closing active project: {self.project_name}")
-
-        # Clear any resumable state from the database to ensure a clean start next time.
         if self.project_id:
-            with self.db_manager as db:
-                db.delete_orchestration_state_for_project(self.project_id)
-
-        # To "close" a project, we then reset the orchestrator's in-memory state.
+            self.db_manager.delete_orchestration_state_for_project(self.project_id)
         self.reset()
 
     @property
     def llm_service(self) -> LLMService:
         """
         Provides on-demand creation of the LLM service.
-        The service is only initialized the first time it is accessed.
         """
         if self._llm_service is None:
             logging.info("First use of LLM service detected, initializing now...")
             self._llm_service = self._create_llm_service()
             if not self._llm_service:
-                # This is a critical failure that should be reported
                 raise RuntimeError("Failed to initialize LLM service. Please check your settings.")
         return self._llm_service
 
@@ -192,6 +178,8 @@ class MasterOrchestrator:
         FactoryPhase.REPORTING_OPERATIONAL_BUG: "Report Operational Bug",
         FactoryPhase.AWAITING_LINKED_DELETE_CONFIRMATION: "Confirm Linked Deletion",
         FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
+        FactoryPhase.VIEWING_DOCUMENTS: "Viewing Project Documents",
+        FactoryPhase.VIEWING_REPORTS: "Viewing Project Reports",
         FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
         FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
         FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input",
@@ -260,34 +248,161 @@ class MasterOrchestrator:
 
     def start_new_project(self, project_name: str):
         """
-        Initializes a new project.
-        If a modified project is already active, it performs a 'safety export'
-        to archive the current work before starting the new one.
+        Initializes a new project, now with robust path handling and subdirectory creation.
         """
         if self.project_id and self.is_project_dirty:
             logging.warning(
                 f"An active, modified project '{self.project_name}' was found. "
                 "Performing a safety export before starting the new project."
             )
-            archive_path = Path("data/archives")
-            archive_name = f"{self.project_name.replace(' ', '_')}_auto_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-            self.stop_and_export_project(archive_path, archive_name)
+            archive_path_from_db = self.db_manager.get_config_value("DEFAULT_ARCHIVE_PATH")
+            if not archive_path_from_db or not archive_path_from_db.strip():
+                logging.error("Safety export failed: Default Project Archive Path is not set in Settings.")
+            else:
+                archive_path = Path(archive_path_from_db)
+                archive_name = f"{self.project_name.replace(' ', '_')}_auto_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                self.stop_and_export_project(archive_path, archive_name)
 
-        # Proceed with creating the new project.
+        base_path_str = self.db_manager.get_config_value("DEFAULT_PROJECT_PATH")
+
+        if not base_path_str or not base_path_str.strip():
+            base_path = Path().resolve() / "projects"
+            logging.warning(f"Default project path not set. Using fallback directory: {base_path}")
+        else:
+            base_path = Path(base_path_str)
+
+        project_root = base_path / project_name.replace(' ', '_').lower()
+        docs_dir = project_root / "_docs"
+        uploads_dir = docs_dir / "_uploads"
+
+        try:
+            project_root.mkdir(parents=True, exist_ok=True)
+            docs_dir.mkdir(exist_ok=True)
+            uploads_dir.mkdir(exist_ok=True)
+        except Exception as e:
+            logging.error(f"Failed to create project directory structure at {project_root}: {e}")
+            raise
+
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
         self.project_name = project_name
-        self.current_phase = FactoryPhase.ENV_SETUP_TARGET_APP
         timestamp = datetime.now(timezone.utc).isoformat()
 
         try:
-            with self.db_manager as db:
-                db.create_project(self.project_id, self.project_name, timestamp)
-            logging.info(f"Successfully started new project: '{self.project_name}' (ID: {self.project_id})")
+            self.db_manager.create_project(self.project_id, self.project_name, timestamp)
+            self.db_manager.update_project_field(self.project_id, "project_root_folder", str(project_root))
+            logging.info(f"Successfully started new project: '{self.project_name}' (ID: {self.project_id}) at {project_root}")
             self.is_project_dirty = True
+
+            self.set_phase("ENV_SETUP_TARGET_APP")
+
         except Exception as e:
             logging.error(f"Failed to start new project '{self.project_name}': {e}")
-            self.reset() # Reset state on failure
+            self.reset()
             raise
+
+    def save_uploaded_brief_files(self, uploaded_files: list) -> list[str]:
+        """Copies uploaded brief files to the project's _docs/_uploads directory."""
+        if not self.project_id:
+            logging.error("Cannot save uploaded files; no active project.")
+            return []
+
+        saved_paths = []
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        if not project_details or not project_details['project_root_folder']:
+            logging.error(f"Could not find project root folder for project {self.project_id}.")
+            return []
+
+        project_root = Path(project_details['project_root_folder'])
+        uploads_dir = project_root / "_docs" / "_uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+
+        for uploaded_file_path in uploaded_files:
+            try:
+                source_path = Path(uploaded_file_path)
+                destination_path = uploads_dir / source_path.name
+                import shutil
+                shutil.copy(source_path, destination_path)
+                saved_paths.append(str(destination_path))
+                logging.info(f"Copied uploaded brief file to: {destination_path}")
+            except Exception as e:
+                logging.error(f"Failed to copy uploaded file {uploaded_file_path}: {e}")
+
+        return saved_paths
+
+    def save_text_brief_as_file(self, brief_content: str) -> str | None:
+        """Saves a text-based project brief to a markdown file."""
+        if not self.project_id:
+            logging.error("Cannot save text brief; no active project.")
+            return None
+
+        try:
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                logging.error(f"Could not find project root folder for project {self.project_id}.")
+                return None
+
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "_docs"
+            docs_dir.mkdir(exist_ok=True)
+            brief_file_path = docs_dir / "user_project_brief.md"
+            brief_file_path.write_text(brief_content, encoding="utf-8")
+            logging.info(f"Saved text project brief to: {brief_file_path}")
+            return str(brief_file_path)
+        except Exception as e:
+            logging.error(f"Failed to save text brief as file: {e}")
+            return None
+
+    def save_uploaded_brief_files(self, uploaded_files: list) -> list[str]:
+        """Copies uploaded brief files to the project's _docs/_uploads directory."""
+        if not self.project_id:
+            logging.error("Cannot save uploaded files; no active project.")
+            return []
+
+        saved_paths = []
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        if not project_details or not project_details['project_root_folder']:
+            logging.error(f"Could not find project root folder for project {self.project_id}.")
+            return []
+
+        project_root = Path(project_details['project_root_folder'])
+        uploads_dir = project_root / "_docs" / "_uploads"
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+
+        for uploaded_file_path in uploaded_files:
+            try:
+                source_path = Path(uploaded_file_path)
+                destination_path = uploads_dir / source_path.name
+                import shutil
+                shutil.copy(source_path, destination_path)
+                saved_paths.append(str(destination_path))
+                logging.info(f"Copied uploaded brief file to: {destination_path}")
+            except Exception as e:
+                logging.error(f"Failed to copy uploaded file {uploaded_file_path}: {e}")
+
+        return saved_paths
+
+    def save_text_brief_as_file(self, brief_content: str) -> str | None:
+        """Saves a text-based project brief to a markdown file."""
+        if not self.project_id:
+            logging.error("Cannot save text brief; no active project.")
+            return None
+
+        try:
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                logging.error(f"Could not find project root folder for project {self.project_id}.")
+                return None
+
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "_docs"
+            docs_dir.mkdir(exist_ok=True)
+            brief_file_path = docs_dir / "user_project_brief.md"
+            brief_file_path.write_text(brief_content, encoding="utf-8")
+            logging.info(f"Saved text project brief to: {brief_file_path}")
+            return str(brief_file_path)
+        except Exception as e:
+            logging.error(f"Failed to save text brief as file: {e}")
+            return None
 
     def handle_ux_ui_brief_submission(self, brief_input):
         """
@@ -299,9 +414,10 @@ class MasterOrchestrator:
             return
 
         try:
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                project_root = Path(project_details['project_root_folder'])
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found in database.")
+            project_root = Path(project_details['project_root_folder'])
 
             # Create a dedicated directory for project documents
             docs_dir = project_root / "_docs"
@@ -328,8 +444,7 @@ class MasterOrchestrator:
             logging.info(f"Saved project brief to physical file: {brief_file_path}")
 
             # --- Save the path to the database ---
-            with self.db_manager as db:
-                db.update_project_brief_path(self.project_id, str(brief_file_path.relative_to(project_root)))
+            self.db_manager.update_project_field(self.project_id, "project_brief_path", str(brief_file_path.relative_to(project_root)))
 
             # --- Proceed with AI Analysis ---
             if not self.llm_service:
@@ -359,8 +474,7 @@ class MasterOrchestrator:
         # Persist the is_gui flag regardless of the decision, as it's now known.
         analysis_result = self.task_awaiting_approval.get("analysis", {})
         is_gui = analysis_result.get("requires_gui", False)
-        with self.db_manager as db:
-            db.update_project_is_gui_flag(self.project_id, is_gui)
+        self.db_manager.update_project_field(self.project_id, "is_gui_project", 1 if is_gui else 0)
 
         if decision == "START_UX_UI_PHASE":
             logging.info("PM chose to start the dedicated UX/UI Design phase.")
@@ -533,101 +647,130 @@ class MasterOrchestrator:
 
     def handle_ux_spec_completion(self) -> bool:
         """
-        Compiles the final UX/UI Specification from all collected parts,
-        saves it to the database, and transitions to the next main phase.
-
-        Returns:
-            bool: True on success, False on failure.
+        Compiles the final UX/UI Specification, saves it to the database and a file,
+        and transitions to the next main phase.
         """
         if not self.project_id:
-            logging.error("Cannot complete UX spec; no active project.")
             return False
 
         try:
-            # Part 1: Compile the final document
+            # ... (Existing logic to compile the final document)
             final_spec_parts = []
-
             personas = self.active_ux_spec.get('confirmed_personas', [])
             if personas:
-                final_spec_parts.append("## 1. User Personas\n- " + "\n- ".join(personas))
-
+                final_spec_parts.append("## 1. User Personas\\n- " + "\\n- ".join(personas))
             journeys = self.active_ux_spec.get('confirmed_user_journeys', '')
             if journeys:
-                final_spec_parts.append("## 2. Core User Journeys\n" + journeys)
-
+                final_spec_parts.append("## 2. Core User Journeys\\n" + journeys)
             blueprints = self.active_ux_spec.get('screen_blueprints', {})
             if blueprints:
                 blueprint_section = ["## 3. Structural Blueprint (JSON)"]
                 blueprint_section.append("```json")
-                # We need to load each JSON string before dumping the whole collection
                 parsed_blueprints = {k: json.loads(v) for k, v in blueprints.items()}
                 blueprint_section.append(json.dumps(parsed_blueprints, indent=2))
                 blueprint_section.append("```")
-                final_spec_parts.append("\n".join(blueprint_section))
-
+                final_spec_parts.append("\\n".join(blueprint_section))
             style_guide = self.active_ux_spec.get('style_guide', '')
             if style_guide:
-                final_spec_parts.append("## 4. Theming & Style Guide\n" + style_guide)
+                final_spec_parts.append("## 4. Theming & Style Guide\\n" + style_guide)
+            final_spec_doc = "\\n\\n---\\n\\n".join(final_spec_parts)
+            # --- End of existing logic ---
 
-            final_spec_doc = "\n\n---\n\n".join(final_spec_parts)
-
-            # Prepend the standard header before saving
             final_doc_with_header = self._prepend_standard_header(
                 document_content=final_spec_doc,
                 document_type="UX/UI Specification"
             )
 
-            # Part 2: Save to the database
-            with self.db_manager as db:
-                db.save_ux_specification(self.project_id, final_doc_with_header)
+            self.db_manager.update_project_field(self.project_id, "ux_spec_text", final_doc_with_header)
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found after saving UX spec.")
+            project_root = Path(project_details['project_root_folder'])
 
-            logging.info("Successfully compiled and saved the final UX/UI Specification.")
+            docs_dir = project_root / "_docs"
+            ux_spec_file_path = docs_dir / "ux_ui_specification.md"
+            ux_spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
+            logging.info(f"Saved final UX/UI spec to file: {ux_spec_file_path}")
 
-            # Part 3: Clean up and transition
-            self.active_ux_spec = {} # Clear the in-progress spec
-            self.task_awaiting_approval = None # Clear any leftover data
+            self.active_ux_spec = {}
+            self.task_awaiting_approval = None
             self.set_phase("ENV_SETUP_TARGET_APP")
-
             return True
 
         except Exception as e:
             logging.error(f"Failed to complete UX/UI Specification: {e}")
-            # Store error for the UI to potentially display
             if 'error' not in self.active_ux_spec:
                  self.active_ux_spec['error'] = str(e)
             return False
 
     def finalize_and_save_app_spec(self, spec_draft: str):
         """
-        Applies the standard header to the final application spec, saves it to
-        the database, and transitions to the next phase.
+        Applies the standard header, saves the final application spec to the
+        database and a file, and transitions to the next phase.
         """
         if not self.project_id:
             logging.error("Cannot save application spec; no active project.")
             return
 
         try:
-            # Prepend the standard header
             final_doc_with_header = self._prepend_standard_header(
                 document_content=spec_draft,
                 document_type="Application Specification"
             )
 
-            # Save to the database
-            with self.db_manager as db:
-                db.save_final_specification(self.project_id, final_doc_with_header)
+            self.db_manager.update_project_field(self.project_id, "final_spec_text", final_doc_with_header)
 
-            logging.info("Successfully finalized and saved the Application Specification.")
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if project_details and project_details['project_root_folder']:
+                project_root = Path(project_details['project_root_folder'])
+                docs_dir = project_root / "_docs"
+                spec_file_path = docs_dir / "application_spec.md"
+                spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
+                logging.info(f"Saved final application spec to file: {spec_file_path}")
 
-            # Transition to the next phase
             self.set_phase("TECHNICAL_SPECIFICATION")
 
         except Exception as e:
             logging.error(f"Failed to finalize and save application spec: {e}")
 
+    def finalize_and_save_complexity_assessment(self, assessment_json_str: str):
+        """
+        Applies the standard header, saves the complexity assessment to the DB,
+        and writes the raw assessment to a JSON file.
+        """
+        if not self.project_id:
+            logging.error("Cannot save complexity assessment; no active project.")
+            return
+
+        try:
+            footnote = "\n\nNote: This assessment applies to the current version of project specifications."
+            content_with_footnote = assessment_json_str + footnote
+
+            final_doc_with_header = self._prepend_standard_header(
+                document_content=content_with_footnote,
+                document_type="Complexity & Risk Assessment"
+            )
+
+            # Save the versioned doc to the database
+            self.db_manager.update_project_field(self.project_id, "complexity_assessment_text", final_doc_with_header)
+            logging.info(f"Successfully saved Complexity & Risk Assessment to database for project {self.project_id}")
+
+            # This is the new logic to save the file
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if project_details and project_details['project_root_folder']:
+                project_root = Path(project_details['project_root_folder'])
+                docs_dir = project_root / "_docs"
+                assessment_file_path = docs_dir / "complexity_and_risk_assessment.json"
+                # Save the raw JSON (without the header) to the file
+                assessment_file_path.write_text(assessment_json_str, encoding="utf-8")
+                logging.info(f"Saved complexity and risk assessment to file: {assessment_file_path}")
+
+        except Exception as e:
+            logging.error(f"Failed to finalize and save complexity assessment: {e}")
+
     def finalize_and_save_tech_spec(self, tech_spec_draft: str, target_os: str):
         """
-        Applies the standard header to the final technical spec, saves it,
+        Saves the final technical spec to the database and a file,
         extracts key info, and transitions to the next phase.
         """
         if not self.project_id:
@@ -635,23 +778,24 @@ class MasterOrchestrator:
             return
 
         try:
-            # Prepend the standard header
             final_doc_with_header = self._prepend_standard_header(
                 document_content=tech_spec_draft,
                 document_type="Technical Specification"
             )
 
-            # Save to the database and update related fields
-            with self.db_manager as db:
-                db.update_project_os(self.project_id, target_os)
-                db.save_tech_specification(self.project_id, final_doc_with_header)
+            db = self.db_manager
+            db.update_project_field(self.project_id, "target_os", target_os)
+            db.update_project_field(self.project_id, "tech_spec_text", final_doc_with_header)
 
-            # Extract and save the primary technology for agent use
+            project_details = db.get_project_by_id(self.project_id)
+            if project_details and project_details['project_root_folder']:
+                project_root = Path(project_details['project_root_folder'])
+                docs_dir = project_root / "_docs"
+                spec_file_path = docs_dir / "technical_spec.md"
+                spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
+                logging.info(f"Saved final technical spec to file: {spec_file_path}")
+
             self._extract_and_save_primary_technology(final_doc_with_header)
-
-            logging.info("Successfully finalized and saved the Technical Specification.")
-
-            # Transition to the next phase
             self.set_phase("BUILD_SCRIPT_SETUP")
 
         except Exception as e:
@@ -659,7 +803,7 @@ class MasterOrchestrator:
 
     def finalize_and_save_coding_standard(self, standard_draft: str):
         """
-        Applies the standard header to the final coding standard, saves it,
+        Saves the final coding standard to the database and a file,
         and transitions to the next phase.
         """
         if not self.project_id:
@@ -667,19 +811,22 @@ class MasterOrchestrator:
             return
 
         try:
-            # Prepend the standard header
             final_doc_with_header = self._prepend_standard_header(
                 document_content=standard_draft,
                 document_type="Coding Standard"
             )
 
-            # Save to the database
-            with self.db_manager as db:
-                db.save_coding_standard(self.project_id, final_doc_with_header)
+            db = self.db_manager
+            db.update_project_field(self.project_id, "coding_standard_text", final_doc_with_header)
 
-            logging.info("Successfully finalized and saved the Coding Standard.")
+            project_details = db.get_project_by_id(self.project_id)
+            if project_details and project_details['project_root_folder']:
+                project_root = Path(project_details['project_root_folder'])
+                docs_dir = project_root / "_docs"
+                standard_file_path = docs_dir / "coding_standard.md"
+                standard_file_path.write_text(final_doc_with_header, encoding="utf-8")
+                logging.info(f"Saved final coding standard to file: {standard_file_path}")
 
-            # Transition to the next phase
             self.set_phase("PLANNING")
 
         except Exception as e:
@@ -687,35 +834,35 @@ class MasterOrchestrator:
 
     def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
         """
-        Applies the standard header to the final dev plan, saves it,
+        Saves the final dev plan to the database and a file,
         loads it into the active state, and transitions to Genesis.
         """
         if not self.project_id:
-            logging.error("Cannot save development plan; no active project.")
             return False, "No active project."
 
         try:
-            # Prepend the standard header
             final_doc_with_header = self._prepend_standard_header(
                 document_content=plan_json_string,
                 document_type="Sequential Development Plan"
             )
 
-            # Save to the database
-            with self.db_manager as db:
-                db.save_development_plan(self.project_id, final_doc_with_header)
+            db = self.db_manager
+            db.update_project_field(self.project_id, "development_plan_text", final_doc_with_header)
 
-            # Load the plan for execution
+            project_details = db.get_project_by_id(self.project_id)
+            if project_details and project_details['project_root_folder']:
+                project_root = Path(project_details['project_root_folder'])
+                docs_dir = project_root / "_docs"
+                plan_file_path = docs_dir / "development_plan.json"
+                plan_file_path.write_text(plan_json_string, encoding="utf-8")
+                logging.info(f"Saved final development plan to file: {plan_file_path}")
+
             full_plan_data = json.loads(plan_json_string)
             dev_plan_list = full_plan_data.get("development_plan")
             if dev_plan_list is None:
                 raise ValueError("The plan JSON is missing the 'development_plan' key.")
 
             self.load_development_plan(json.dumps(dev_plan_list))
-
-            logging.info("Successfully finalized and saved the Development Plan.")
-
-            # Transition to the next phase
             self.set_phase("GENESIS")
             return True, "Plan approved! Starting development..."
 
@@ -759,13 +906,12 @@ class MasterOrchestrator:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
             return
 
-        with self.db_manager as db:
-            pm_behavior = db.get_config_value("PM_CHECKPOINT_BEHAVIOR") or "ALWAYS_ASK"
-            is_auto_proceed = (pm_behavior == "AUTO_PROCEED")
+        db = self.db_manager
+        pm_behavior = db.get_config_value("PM_CHECKPOINT_BEHAVIOR") or "ALWAYS_ASK"
+        is_auto_proceed = (pm_behavior == "AUTO_PROCEED")
 
         while True:
             if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
-                # This path is now only taken if the plan was empty to begin with.
                 if progress_callback: progress_callback("Development plan is empty or complete.")
                 return
 
@@ -776,29 +922,26 @@ class MasterOrchestrator:
                 progress_callback(f"Executing task {self.active_plan_cursor + 1}/{len(self.active_plan)} for component: {component_name}")
 
             try:
-                # The 'with' block is now scoped just to the development task
-                with self.db_manager as db:
-                    project_root_path = Path(db.get_project_by_id(self.project_id)['project_root_folder'])
-                    component_type = task.get("component_type", "CLASS")
-                    if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
-                        self._execute_declarative_modification_task(task, project_root_path, db, progress_callback)
-                    else:
-                        self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
+                project_details = db.get_project_by_id(self.project_id)
+                project_root_path = Path(project_details['project_root_folder'])
+                component_type = task.get("component_type", "CLASS")
+
+                if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
+                    self._execute_declarative_modification_task(task, project_root_path, db, progress_callback)
+                else:
+                    self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
 
                 self.active_plan_cursor += 1
 
-                # Check for completion of the entire plan
                 if self.active_plan_cursor >= len(self.active_plan):
                     if self.is_genesis_complete:
-                        # FIX: Call the self-contained doc update method
                         self._run_post_implementation_doc_update()
 
                     logging.info("Development plan is complete. Performing pre-integration check.")
                     if progress_callback: progress_callback("Development plan complete. Checking for issues...")
 
-                    with self.db_manager as db:
-                        non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
-                        known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
+                    non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
+                    known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
 
                     if known_issues:
                         self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
@@ -819,6 +962,16 @@ class MasterOrchestrator:
         """
         Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
         """
+        # --- DIAGNOSTIC STEP 1: Pre-Execution Check ---
+        component_name = task.get("component_name")
+        logging.info(f"--- GENESIS DIAGNOSTICS for component: {component_name} ---")
+        existing_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+        for art in existing_artifacts:
+            if art['artifact_name'] == component_name:
+                logging.warning(f"[!! DUPLICATE WARNING !!] An artifact named '{component_name}' already exists in the database before execution begins. Artifact ID: {art['artifact_id']}")
+        logging.info("--- Pre-Execution Check Complete ---")
+        # --- END DIAGNOSTIC ---
+
         component_name = task.get("component_name")
         if progress_callback: progress_callback(f"Executing source code generation for: {component_name}")
 
@@ -889,6 +1042,16 @@ class MasterOrchestrator:
             "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
             "micro_spec_id": task.get("micro_spec_id")
         })
+        # --- DIAGNOSTIC STEP 2: Post-Execution Log ---
+        logging.info(f"--- GENESIS DIAGNOSTICS for component: {component_name} (Post-Save) ---")
+        final_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+        count = 0
+        for art in final_artifacts:
+            if art['artifact_name'] == component_name:
+                count += 1
+        logging.info(f"Found {count} artifact(s) named '{component_name}' in the database after saving.")
+        logging.info("--------------------------------------------------")
+        # --- END DIAGNOSTIC ---
 
     def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
         """
@@ -905,7 +1068,6 @@ class MasterOrchestrator:
     def handle_declarative_checkpoint_decision(self, decision: str):
         """
         Processes the PM's decision from the declarative checkpoint.
-        This version is refactored to use the central llm_service.
         """
         if not self.task_awaiting_approval:
             logging.error("Received a checkpoint decision, but no task is awaiting approval.")
@@ -917,46 +1079,47 @@ class MasterOrchestrator:
         logging.info(f"PM made decision '{decision}' for component '{component_name}'.")
 
         try:
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                project_root_path = str(project_details['project_root_folder'])
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found for declarative checkpoint.")
 
-                if decision == "EXECUTE_AUTOMATICALLY":
-                    if not self.llm_service:
-                        raise Exception("Cannot execute declarative change: LLM Service is not configured.")
+            project_root_path = str(project_details['project_root_folder'])
 
-                    file_to_modify_path_str = task.get("component_file_path")
-                    change_snippet = task.get("task_description")
+            if decision == "EXECUTE_AUTOMATICALLY":
+                if not self.llm_service:
+                    raise Exception("Cannot execute declarative change: LLM Service is not configured.")
 
-                    if not file_to_modify_path_str or file_to_modify_path_str == "N/A":
-                        raise ValueError(f"Invalid file path for declarative task '{component_name}'.")
+                file_to_modify_path_str = task.get("component_file_path")
+                change_snippet = task.get("task_description")
 
-                    file_to_modify = Path(project_root_path) / file_to_modify_path_str
-                    original_code = ""
-                    if file_to_modify.exists():
-                        original_code = file_to_modify.read_text(encoding='utf-8')
-                    else:
-                        file_to_modify.parent.mkdir(parents=True, exist_ok=True)
-                        logging.warning(f"File '{file_to_modify_path_str}' did not exist. It will be created.")
+                if not file_to_modify_path_str or file_to_modify_path_str == "N/A":
+                    raise ValueError(f"Invalid file path for declarative task '{component_name}'.")
 
-                    # Use the OrchestrationCodeAgent with a more direct prompt for this task.
-                    # The 'modifications_json' here is a simple instruction for the agent.
-                    modifications_json = json.dumps({
-                        "instruction": "Apply the following snippet to the original code. If the snippet represents a dependency or a new entry, append it logically. If it represents an update to an existing value, replace the old value.",
-                        "snippet": change_snippet
-                    })
+                file_to_modify = Path(project_root_path) / file_to_modify_path_str
+                original_code = ""
+                if file_to_modify.exists():
+                    original_code = file_to_modify.read_text(encoding='utf-8')
+                else:
+                    file_to_modify.parent.mkdir(parents=True, exist_ok=True)
+                    logging.warning(f"File '{file_to_modify_path_str}' did not exist. It will be created.")
 
-                    orch_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
-                    modified_code = orch_agent.apply_modifications(original_code, modifications_json)
-                    file_to_modify.write_text(modified_code, encoding='utf-8')
+                modifications_json = json.dumps({
+                    "instruction": "Apply the following snippet to the original code. If the snippet represents a dependency or a new entry, append it logically. If it represents an update to an existing value, replace the old value.",
+                    "snippet": change_snippet
+                })
 
-                    build_agent = BuildAndCommitAgentAppTarget(project_root_path)
-                    commit_message = f"refactor: Apply approved modification to {component_name}"
-                    build_agent.commit_changes([file_to_modify_path_str], commit_message)
-                    logging.info(f"Automatically executed and committed modification for {component_name}.")
+                orch_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
+                modified_code = orch_agent.apply_modifications(original_code, modifications_json)
+                file_to_modify.write_text(modified_code, encoding='utf-8')
 
-                elif decision == "WILL_EXECUTE_MANUALLY":
-                    logging.info(f"Acknowledged that PM will manually execute change for {component_name}.")
+                build_agent = BuildAndCommitAgentAppTarget(project_root_path)
+                commit_message = f"refactor: Apply approved modification to {component_name}"
+                build_agent.commit_changes([file_to_modify_path_str], commit_message)
+                logging.info(f"Automatically executed and committed modification for {component_name}.")
+
+            elif decision == "WILL_EXECUTE_MANUALLY":
+                logging.info(f"Acknowledged that PM will manually execute change for {component_name}.")
 
         except Exception as e:
             logging.error(f"Failed to handle declarative checkpoint decision for {component_name}. Error: {e}")
@@ -975,47 +1138,47 @@ class MasterOrchestrator:
         """
         logging.info("Change implementation complete. Running post-implementation documentation update...")
         try:
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                if not project_details:
-                    logging.error("Could not run doc update; project details not found.")
-                    return
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details:
+                logging.error("Could not run doc update; project details not found.")
+                return
 
-                if not self.llm_service:
-                    logging.error("Could not run doc update; LLM Service is not configured.")
-                    return
+            if not self.llm_service:
+                logging.error("Could not run doc update; LLM Service is not configured.")
+                return
 
-                implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
-                doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
+            implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
+            doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
 
-                def update_document(doc_key: str, doc_name: str, save_func):
-                    original_doc = project_details[doc_key]
-                    if original_doc:
-                        logging.info(f"Checking for {doc_name} updates...")
-                        updated_content = doc_agent.update_specification_text(
-                            original_spec=original_doc,
-                            implementation_plan=implementation_plan_for_update
-                        )
-                        if updated_content != original_doc:
-                            doc_with_header = self._prepend_standard_header(updated_content, doc_name)
-                            save_func(self.project_id, doc_with_header)
-                            logging.info(f"Successfully updated and saved the {doc_name}.")
+            def update_document(doc_key: str, doc_name: str, save_func):
+                original_doc = project_details[doc_key]
+                if original_doc:
+                    logging.info(f"Checking for {doc_name} updates...")
+                    updated_content = doc_agent.update_specification_text(
+                        original_spec=original_doc,
+                        implementation_plan=implementation_plan_for_update
+                    )
+                    if updated_content != original_doc:
+                        doc_with_header = self._prepend_standard_header(updated_content, doc_name)
+                        # This uses a generic field update now
+                        db.update_project_field(self.project_id, doc_key, doc_with_header)
+                        logging.info(f"Successfully updated and saved the {doc_name}.")
 
-                update_document('final_spec_text', 'Application Specification', db.save_final_specification)
-                update_document('tech_spec_text', 'Technical Specification', db.save_tech_specification)
-                update_document('ux_spec_text', 'UX/UI Specification', db.save_ux_specification)
-                update_document('ui_test_plan_text', 'UI Test Plan', db.save_ui_test_plan)
+            update_document('final_spec_text', 'Application Specification', lambda pid, val: db.update_project_field(pid, 'final_spec_text', val))
+            update_document('tech_spec_text', 'Technical Specification', lambda pid, val: db.update_project_field(pid, 'tech_spec_text', val))
+            update_document('ux_spec_text', 'UX/UI Specification', lambda pid, val: db.update_project_field(pid, 'ux_spec_text', val))
+            update_document('ui_test_plan_text', 'UI Test Plan', lambda pid, val: db.update_project_field(pid, 'ui_test_plan_text', val))
         except Exception as e:
             logging.error(f"Failed during post-implementation doc update: {e}")
-            # We allow this to fail gracefully without crashing the whole pipeline
 
-    def _get_integration_context_files(self, db: ASDFDBManager, new_artifacts: list[dict]) -> list[str]:
+    def _get_integration_context_files(self, new_artifacts: list[dict]) -> list[str]:
         """
         Uses the LLM service to determine which existing files are the most
         likely integration points.
         """
         logging.info("AI is analyzing the project to identify relevant integration files...")
-        all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
+        all_artifacts_rows = self.db_manager.get_all_artifacts_for_project(self.project_id)
         if not all_artifacts_rows:
             return []
 
@@ -1068,59 +1231,96 @@ class MasterOrchestrator:
         project_details = db.get_project_by_id(self.project_id)
 
         if not project_details:
-            # If for some reason project details don't exist, default to the start.
             return FactoryPhase.SPEC_ELABORATION
 
-        # Logic flows from latest phase to earliest, using correct dictionary-style access.
         if project_details['ui_test_plan_text']:
             logging.info("Resume point determined: MANUAL_UI_TESTING (UI test plan exists).")
             return FactoryPhase.MANUAL_UI_TESTING
-
         if project_details['integration_plan_text']:
             logging.info("Resume point determined: INTEGRATION_AND_VERIFICATION (Integration plan exists).")
             return FactoryPhase.INTEGRATION_AND_VERIFICATION
-
         if project_details['development_plan_text']:
             logging.info("Resume point determined: GENESIS (Development plan exists).")
             return FactoryPhase.GENESIS
-
         if project_details['coding_standard_text']:
             logging.info("Resume point determined: PLANNING (Coding standard exists).")
             return FactoryPhase.PLANNING
-
         if project_details['tech_spec_text']:
             logging.info("Resume point determined: CODING_STANDARD_GENERATION (Tech spec exists).")
             return FactoryPhase.CODING_STANDARD_GENERATION
-
         if project_details['final_spec_text']:
             logging.info("Resume point determined: TECHNICAL_SPECIFICATION (App spec exists).")
             return FactoryPhase.TECHNICAL_SPECIFICATION
-
         if project_details['ux_spec_text']:
             logging.info("Resume point determined: ENV_SETUP_TARGET_APP (UX spec exists).")
             return FactoryPhase.ENV_SETUP_TARGET_APP
 
-        # Default to the spec elaboration page if no other documents exist.
         logging.info("Resume point determined: SPEC_ELABORATION (Default).")
         return FactoryPhase.SPEC_ELABORATION
 
     def _run_integration_and_ui_testing_phase(self, progress_callback=None):
         """
-        Executes the full Integration and UI Testing workflow.
+        Executes the full Integration and UI Testing workflow, now including
+        the generation and saving of the Integration Plan.
         """
         logging.info("Starting Phase: Automated Integration & Verification.")
         if progress_callback:
             progress_callback("Starting Phase: Automated Integration & Verification.")
-        self.set_phase("INTEGRATION_AND_VERIFICATION")
 
-        # The rest of this method's logic will be executed in a background thread
-        # in the PySide6 version, so we just set the phase here.
-        # A more detailed implementation would pass the progress_callback to the worker.
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found for integration phase.")
+
+            project_root_path = Path(project_details['project_root_folder'])
+            docs_dir = project_root_path / "_docs"
+
+            if progress_callback: progress_callback("Analyzing project for integration points...")
+            new_artifacts_for_integration = []
+
+            if progress_callback: progress_callback("Generating Integration Plan...")
+            integration_planner = IntegrationPlannerAgent(llm_service=self.llm_service)
+            existing_code_context = {}
+            integration_plan_json = integration_planner.create_integration_plan(
+                json.dumps(new_artifacts_for_integration), existing_code_context
+            )
+
+            final_integration_plan = self._prepend_standard_header(
+                document_content=integration_plan_json,
+                document_type="Integration Plan"
+            )
+            db.update_project_field(self.project_id, "integration_plan_text", final_integration_plan)
+
+            integration_plan_file_path = docs_dir / "integration_plan.json"
+            integration_plan_file_path.write_text(integration_plan_json, encoding="utf-8")
+            logging.info(f"Saved Integration Plan to file: {integration_plan_file_path}")
+
+            if progress_callback: progress_callback("Generating UI Test Plan...")
+            functional_spec_text = project_details['final_spec_text']
+            technical_spec_text = project_details['tech_spec_text']
+            ui_test_planner = UITestPlannerAgent_AppTarget(llm_service=self.llm_service)
+            ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
+
+            final_ui_test_plan = self._prepend_standard_header(
+                document_content=ui_test_plan_content,
+                document_type="UI Test Plan"
+            )
+            db.update_project_field(self.project_id, "ui_test_plan_text", final_ui_test_plan)
+
+            test_plan_file_path = docs_dir / "ui_test_plan.md"
+            test_plan_file_path.write_text(final_ui_test_plan, encoding="utf-8")
+            logging.info(f"Saved UI Test Plan to file: {test_plan_file_path}")
+
+            self.set_phase("MANUAL_UI_TESTING")
+
+        except Exception as e:
+            logging.error(f"Failed during integration and testing phase: {e}", exc_info=True)
+            self.escalate_for_manual_debug(str(e))
 
     def handle_ui_test_result_upload(self, test_result_content: str):
         """
         Orchestrates the evaluation of an uploaded UI test results file.
-        This version is refactored to use the central llm_service.
         """
         if not self.project_id:
             logging.error("Cannot handle test result upload; no active project.")
@@ -1131,15 +1331,17 @@ class MasterOrchestrator:
             if not self.llm_service:
                 raise Exception("Cannot evaluate test results: LLM Service is not configured.")
 
-            # 1. Evaluate the results using the dedicated agent.
+            # The project state is about to be changed, so we mark it as dirty.
+            self.is_project_dirty = True
+
             eval_agent = TestResultEvaluationAgent_AppTarget(llm_service=self.llm_service)
             failure_summary = eval_agent.evaluate_ui_test_results(test_result_content)
 
-            # 2. Check the agent's response for failures.
             if "ALL_TESTS_PASSED" in failure_summary:
                 logging.info("UI test result evaluation complete: All tests passed.")
+                # If everything passes, we can consider the project complete and idle.
+                self.set_phase("IDLE")
             else:
-                # 3. If failures are found, trigger the debug pipeline as a functional bug.
                 logging.warning("UI test result evaluation complete: Failures detected.")
                 self.escalate_for_manual_debug(failure_summary, is_functional_bug=True)
 
@@ -1163,18 +1365,14 @@ class MasterOrchestrator:
     def save_new_change_request(self, description: str, request_type: str = 'CHANGE_REQUEST'):
         """
         Saves a new, standard functional enhancement CR to the database.
-
-        Args:
-            description (str): The description of the change from the PM.
-            request_type (str): The type of CR being saved.
         """
         if not self.project_id:
             logging.error("Cannot save change request; no active project.")
             return
 
         try:
-            with self.db_manager as db:
-                db.add_change_request(self.project_id, description)
+            # Corrected: Direct call to the db_manager
+            self.db_manager.add_change_request(self.project_id, description, request_type)
             self.set_phase("AWAITING_INITIAL_IMPACT_ANALYSIS")
             logging.info("Successfully saved new Functional Enhancement CR.")
         except Exception as e:
@@ -1184,7 +1382,6 @@ class MasterOrchestrator:
         """
         Saves a 'Specification Correction' CR, runs an immediate impact analysis
         and auto-generates a linked CR for the required code changes.
-        This version is refactored to use the central llm_service.
         """
         if not self.project_id:
             logging.error("Cannot save spec correction; no active project.")
@@ -1194,64 +1391,55 @@ class MasterOrchestrator:
             if not self.llm_service:
                 raise Exception("Cannot run impact analysis: LLM Service is not configured.")
 
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                original_spec_text = project_details['final_spec_text']
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            original_spec_text = project_details['final_spec_text']
 
-                # 1. Save the primary "Specification Correction" CR
-                spec_cr_description = "Correction to Application Specification. See linked CR for code implementation."
-                spec_cr_id = db.add_change_request(
+            spec_cr_description = "Correction to Application Specification. See linked CR for code implementation."
+            spec_cr_id = db.add_change_request(
+                project_id=self.project_id,
+                description=spec_cr_description,
+                request_type='SPEC_CORRECTION'
+            )
+            db.update_cr_status(spec_cr_id, "COMPLETED")
+
+            db.update_project_field(self.project_id, "final_spec_text", new_spec_text)
+            logging.info(f"Saved new specification text for CR-{spec_cr_id}.")
+
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            rowd_json = json.dumps([dict(row) for row in all_artifacts])
+
+            cr_desc_for_agent = (
+                "Analyze the difference between the 'Original Specification' and the 'New Specification' "
+                "to identify the necessary code changes. The 'New Specification' is the source of truth."
+                f"\n\n--- Original Specification ---\n{original_spec_text}"
+                f"\n\n--- New Specification ---\n{new_spec_text}"
+            )
+
+            impact_agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
+            _, summary, impacted_ids = impact_agent.analyze_impact(
+                change_request_desc=cr_desc_for_agent,
+                final_spec_text=new_spec_text,
+                rowd_json=rowd_json
+            )
+
+            if summary:
+                code_cr_description = (
+                    f"Auto-generated CR to implement changes for Specification Correction CR-{spec_cr_id}.\n\n"
+                    f"Analysis Summary: {summary}"
+                )
+                db.add_linked_change_request(
                     project_id=self.project_id,
-                    description=spec_cr_description,
-                    request_type='SPEC_CORRECTION'
+                    description=code_cr_description,
+                    linked_cr_id=spec_cr_id
                 )
-                db.update_cr_status(spec_cr_id, "COMPLETED")
+                logging.info(f"Auto-generated linked code implementation CR for Spec CR-{spec_cr_id}.")
 
-                # 2. Update the specification text in the Projects table immediately
-                db.save_final_specification(self.project_id, new_spec_text)
-                logging.info(f"Saved new specification text for CR-{spec_cr_id}.")
-
-                # 3. Run impact analysis by comparing old and new specs
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                rowd_json = json.dumps([dict(row) for row in all_artifacts])
-
-                cr_desc_for_agent = (
-                    "Analyze the difference between the 'Original Specification' and the 'New Specification' "
-                    "to identify the necessary code changes. The 'New Specification' is the source of truth."
-                    f"\n\n--- Original Specification ---\n{original_spec_text}"
-                    f"\n\n--- New Specification ---\n{new_spec_text}"
-                )
-
-                impact_agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
-                _, summary, impacted_ids = impact_agent.analyze_impact(
-                    change_request_desc=cr_desc_for_agent,
-                    final_spec_text=new_spec_text, # Analyze against the new spec
-                    rowd_json=rowd_json
-                )
-
-                # 4. Auto-generate the linked "Code Implementation" CR
-                if summary:
-                    code_cr_description = (
-                        f"Auto-generated CR to implement changes for Specification Correction CR-{spec_cr_id}.\n\n"
-                        f"Analysis Summary: {summary}"
-                    )
-                    db.add_linked_change_request(
-                        project_id=self.project_id,
-                        description=code_cr_description,
-                        linked_cr_id=spec_cr_id
-                    )
-                    logging.info(f"Auto-generated linked code implementation CR for Spec CR-{spec_cr_id}.")
-
-            # 5. Return to the CR register to show the results
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
         except Exception as e:
             logging.error(f"Failed to process specification correction CR: {e}")
             self.set_phase("RAISING_CHANGE_REQUEST")
-
-        except Exception as e:
-            logging.error(f"Failed to process specification correction CR: {e}")
-            self.set_phase("RAISING_CHANGE_REQUEST") # Return to the previous screen on error
 
     def handle_report_bug_action(self):
         """
@@ -1266,13 +1454,6 @@ class MasterOrchestrator:
     def save_bug_report(self, description: str, severity: str) -> bool:
         """
         Saves a new bug report to the database via the DAO.
-
-        Args:
-            description (str): The description of the bug from the PM.
-            severity (str): The severity rating from the PM.
-
-        Returns:
-            bool: True if saving was successful, False otherwise.
         """
         if not self.project_id:
             logging.error("Cannot save bug report; no active project.")
@@ -1283,10 +1464,9 @@ class MasterOrchestrator:
             return False
 
         try:
-            with self.db_manager as db:
-                db.add_bug_report(self.project_id, description, severity)
+            # Corrected: Direct call to the db_manager
+            self.db_manager.add_bug_report(self.project_id, description, severity)
 
-            # After successfully saving, return to the main development checkpoint.
             self.set_phase("GENESIS")
             logging.info("Successfully saved new bug report and returned to Genesis phase.")
             return True
@@ -1308,7 +1488,6 @@ class MasterOrchestrator:
     def handle_implement_cr_action(self, cr_id: int):
         """
         Handles the logic for when the PM confirms a CR for implementation.
-        This version is refactored to use the central llm_service.
         """
         logging.info(f"PM has confirmed implementation for Change Request ID: {cr_id}.")
 
@@ -1316,62 +1495,61 @@ class MasterOrchestrator:
             if not self.llm_service:
                 raise Exception("Cannot implement CR: LLM Service is not configured.")
 
-            with self.db_manager as db:
-                cr_details = db.get_cr_by_id(cr_id)
-                if not cr_details:
-                    raise Exception(f"CR-{cr_id} not found in the database.")
+            db = self.db_manager
+            cr_details = db.get_cr_by_id(cr_id)
+            if not cr_details:
+                raise Exception(f"CR-{cr_id} not found in the database.")
 
-                analysis_timestamp_str = cr_details['last_modified_timestamp']
-                last_commit_timestamp = self.get_latest_commit_timestamp()
+            analysis_timestamp_str = cr_details['last_modified_timestamp']
+            last_commit_timestamp = self.get_latest_commit_timestamp()
 
-                if analysis_timestamp_str and last_commit_timestamp:
-                    analysis_time = datetime.fromisoformat(analysis_timestamp_str)
-                    if last_commit_timestamp > analysis_time:
-                        logging.warning(f"Impact analysis for CR-{cr_id} is stale. Awaiting PM confirmation.")
-                        self.task_awaiting_approval = {"cr_id_for_reanalysis": cr_id}
-                        self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
-                        return
+            if analysis_timestamp_str and last_commit_timestamp:
+                analysis_time = datetime.fromisoformat(analysis_timestamp_str)
+                if last_commit_timestamp > analysis_time:
+                    logging.warning(f"Impact analysis for CR-{cr_id} is stale. Awaiting PM confirmation.")
+                    self.task_awaiting_approval = {"cr_id_for_reanalysis": cr_id}
+                    self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
+                    return
 
-                project_details = db.get_project_by_id(self.project_id)
-                project_root_path = Path(project_details['project_root_folder'])
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found for CR implementation.")
 
-                impacted_ids = json.loads(cr_details['impacted_artifact_ids'] or '[]')
-                source_code_files = {}
-                for artifact_id in impacted_ids:
-                    artifact_record = db.get_artifact_by_id(artifact_id)
-                    if artifact_record and artifact_record['file_path']:
-                        try:
-                            source_path = project_root_path / artifact_record['file_path']
-                            if source_path.exists():
-                                source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
-                        except Exception:
-                            pass
+            project_root_path = Path(project_details['project_root_folder'])
+            impacted_ids = json.loads(cr_details['impacted_artifact_ids'] or '[]')
+            source_code_files = {}
+            for artifact_id in impacted_ids:
+                artifact_record = db.get_artifact_by_id(artifact_id)
+                if artifact_record and artifact_record['file_path']:
+                    try:
+                        source_path = project_root_path / artifact_record['file_path']
+                        if source_path.exists():
+                            source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
+                    except Exception:
+                        pass
 
-                core_docs = {"final_spec_text": project_details['final_spec_text']}
-                context_package = self._build_and_validate_context_package(db, core_docs, source_code_files)
+            core_docs = {"final_spec_text": project_details['final_spec_text']}
+            context_package = self._build_and_validate_context_package(db, core_docs, source_code_files)
 
-                if context_package.get("error"):
-                    raise Exception(f"Context Builder Error: {context_package['error']}")
+            if context_package.get("error"):
+                raise Exception(f"Context Builder Error: {context_package['error']}")
 
-                if context_package.get("was_trimmed"):
-                    logging.warning(f"Context for CR-{cr_id} was trimmed.")
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            rowd_json = json.dumps([dict(row) for row in all_artifacts])
+            db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
 
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                rowd_json = json.dumps([dict(row) for row in all_artifacts])
-                db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
+            planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
+            new_plan_str = planner_agent.create_refactoring_plan(
+                cr_details['description'], project_details['final_spec_text'], rowd_json, context_package["source_code"]
+            )
 
-                planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
-                new_plan_str = planner_agent.create_refactoring_plan(
-                    cr_details['description'], project_details['final_spec_text'], rowd_json, context_package["source_code"]
-                )
+            if "error" in new_plan_str:
+                raise Exception(f"RefactoringPlannerAgent failed: {new_plan_str}")
 
-                if "error" in new_plan_str:
-                    raise Exception(f"RefactoringPlannerAgent failed: {new_plan_str}")
-
-                self.active_plan = json.loads(new_plan_str)
-                self.active_plan_cursor = 0
-                logging.info("Successfully generated new development plan from Change Request.")
-                self.set_phase("GENESIS")
+            self.active_plan = json.loads(new_plan_str)
+            self.active_plan_cursor = 0
+            logging.info("Successfully generated new development plan from Change Request.")
+            self.set_phase("GENESIS")
 
         except Exception as e:
             logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
@@ -1398,32 +1576,31 @@ class MasterOrchestrator:
     def handle_run_impact_analysis_action(self, cr_id: int):
         """
         Orchestrates the running of an impact analysis for a specific CR.
-        This version is refactored to use the central llm_service.
         """
         logging.info(f"PM has requested to run impact analysis for CR ID: {cr_id}.")
         try:
             if not self.llm_service:
                 raise Exception("Cannot run impact analysis: LLM Service is not configured.")
 
-            with self.db_manager as db:
-                cr_details = db.get_cr_by_id(cr_id)
-                project_details = db.get_project_by_id(self.project_id)
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            db = self.db_manager
+            cr_details = db.get_cr_by_id(cr_id)
+            project_details = db.get_project_by_id(self.project_id)
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
 
-                rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
+            rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
 
-                agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
-                rating, summary, impacted_ids = agent.analyze_impact(
-                    change_request_desc=cr_details['description'],
-                    final_spec_text=project_details['final_spec_text'],
-                    rowd_json=rowd_json
-                )
+            agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
+            rating, summary, impacted_ids = agent.analyze_impact(
+                change_request_desc=cr_details['description'],
+                final_spec_text=project_details['final_spec_text'],
+                rowd_json=rowd_json
+            )
 
-                if rating is None:
-                    raise Exception(f"ImpactAnalysisAgent failed: {summary}")
+            if rating is None:
+                raise Exception(f"ImpactAnalysisAgent failed: {summary}")
 
-                db.update_cr_impact_analysis(cr_id, rating, summary, impacted_ids)
-                logging.info(f"Successfully ran and saved impact analysis for CR ID: {cr_id}.")
+            db.update_cr_impact_analysis(cr_id, rating, summary, impacted_ids)
+            logging.info(f"Successfully ran and saved impact analysis for CR ID: {cr_id}.")
 
         except Exception as e:
             logging.error(f"Failed to run impact analysis for CR ID {cr_id}: {e}")
@@ -1435,29 +1612,25 @@ class MasterOrchestrator:
         """
         logging.info(f"PM initiated delete for CR ID: {cr_id_to_delete}.")
         try:
-            with self.db_manager as db:
-                cr_to_delete = db.get_cr_by_id(cr_id_to_delete)
-                if not cr_to_delete:
-                    logging.error(f"Cannot delete CR-{cr_id_to_delete}: Not found.")
-                    return
+            db = self.db_manager
+            cr_to_delete = db.get_cr_by_id(cr_id_to_delete)
+            if not cr_to_delete:
+                logging.error(f"Cannot delete CR-{cr_id_to_delete}: Not found.")
+                return
 
-                # Check for links in either direction
-                linked_id = cr_to_delete['linked_cr_id']
-                other_cr_linking_to_this = db.get_cr_by_linked_id(cr_id_to_delete)
+            linked_id = cr_to_delete['linked_cr_id']
+            other_cr_linking_to_this = db.get_cr_by_linked_id(cr_id_to_delete)
 
-                if linked_id or other_cr_linking_to_this:
-                    # This is part of a linked pair. Pause for confirmation.
-                    logging.warning(f"CR-{cr_id_to_delete} is part of a linked pair. Awaiting PM confirmation for deletion.")
-                    self.task_awaiting_approval = {
-                        "primary_cr_id": cr_id_to_delete,
-                        "linked_cr_id": linked_id or other_cr_linking_to_this['cr_id']
-                    }
-                    self.set_phase("AWAITING_LINKED_DELETE_CONFIRMATION")
-                else:
-                    # This is a standalone CR, delete it directly.
-                    db.delete_change_request(cr_id_to_delete)
-                    logging.info(f"Successfully deleted standalone CR ID: {cr_id_to_delete}.")
-                    # The UI will rerun and show the updated list.
+            if linked_id or other_cr_linking_to_this:
+                logging.warning(f"CR-{cr_id_to_delete} is part of a linked pair. Awaiting PM confirmation for deletion.")
+                self.task_awaiting_approval = {
+                    "primary_cr_id": cr_id_to_delete,
+                    "linked_cr_id": linked_id or other_cr_linking_to_this['cr_id']
+                }
+                self.set_phase("AWAITING_LINKED_DELETE_CONFIRMATION")
+            else:
+                db.delete_change_request(cr_id_to_delete)
+                logging.info(f"Successfully deleted standalone CR ID: {cr_id_to_delete}.")
 
         except Exception as e:
             logging.error(f"Failed to process delete action for CR-{cr_id_to_delete}: {e}")
@@ -1468,22 +1641,18 @@ class MasterOrchestrator:
         """
         logging.info(f"PM confirmed deletion of linked pair: CR-{primary_cr_id} and CR-{linked_cr_id}.")
         try:
-            with self.db_manager as db:
-                # Add logic here to roll back the spec change if necessary
-                spec_cr = db.get_cr_by_id(linked_cr_id)
-                if spec_cr and spec_cr['request_type'] == 'SPEC_CORRECTION':
-                    # This is a placeholder for a more complex rollback logic
-                    logging.warning(f"Spec Correction CR-{linked_cr_id} is being deleted. A full implementation would roll back the spec text.")
+            db = self.db_manager
+            spec_cr = db.get_cr_by_id(linked_cr_id)
+            if spec_cr and spec_cr['request_type'] == 'SPEC_CORRECTION':
+                logging.warning(f"Spec Correction CR-{linked_cr_id} is being deleted. A full implementation would roll back the spec text.")
 
-                # Delete both records
-                db.delete_change_request(primary_cr_id)
-                db.delete_change_request(linked_cr_id)
+            db.delete_change_request(primary_cr_id)
+            db.delete_change_request(linked_cr_id)
 
             logging.info("Successfully deleted linked CR pair.")
         except Exception as e:
             logging.error(f"Failed to delete linked CR pair: {e}")
         finally:
-            # Always return to the register view
             self.task_awaiting_approval = None
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
@@ -1503,12 +1672,6 @@ class MasterOrchestrator:
         """
         Saves the updated description for the currently active change request
         and resets its impact analysis.
-
-        Args:
-            new_description (str): The new, edited description from the PM.
-
-        Returns:
-            bool: True if saving was successful, False otherwise.
         """
         if self.active_cr_id_for_edit is None:
             logging.error("Attempted to save an edited CR but no active_cr_id_for_edit is set.")
@@ -1520,10 +1683,8 @@ class MasterOrchestrator:
 
         try:
             cr_id_to_update = self.active_cr_id_for_edit
-            with self.db_manager as db:
-                db.update_change_request(cr_id_to_update, new_description)
+            self.db_manager.update_change_request(cr_id_to_update, new_description)
 
-            # After saving, reset the active edit ID and return to the register screen.
             self.active_cr_id_for_edit = None
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
             logging.info(f"Successfully saved edits for CR ID: {cr_id_to_update}")
@@ -1535,22 +1696,14 @@ class MasterOrchestrator:
     def get_active_cr_details_for_edit(self) -> dict | None:
         """
         Retrieves the full details for the CR currently marked for editing.
-
-        Returns:
-            A dictionary containing the CR's details, or None if no CR
-            is active for editing or if an error occurs.
         """
         if self.active_cr_id_for_edit is None:
             logging.warning("Attempted to get details for edit, but no CR is active for editing.")
             return None
 
         try:
-            with self.db_manager as db:
-                cr_row = db.get_cr_by_id(self.active_cr_id_for_edit)
-                if cr_row:
-                    # Convert the database row object to a standard dictionary for easier use in the UI
-                    return dict(cr_row)
-                return None
+            cr_row = self.db_manager.get_cr_by_id(self.active_cr_id_for_edit)
+            return dict(cr_row) if cr_row else None
         except Exception as e:
             logging.error(f"Failed to retrieve details for CR ID {self.active_cr_id_for_edit}: {e}")
             return None
@@ -1567,41 +1720,42 @@ class MasterOrchestrator:
     def get_all_change_requests(self) -> list:
         """
         Retrieves all change requests for the active project from the database.
-
-        Returns:
-            list: A list of change request records, or an empty list if no project
-                  is active or an error occurs.
         """
         if not self.project_id:
             logging.warning("Attempted to get change requests with no active project.")
             return []
 
         try:
-            with self.db_manager as db:
-                return db.get_all_change_requests_for_project(self.project_id)
+            return self.db_manager.get_all_change_requests_for_project(self.project_id)
         except Exception as e:
             logging.error(f"Failed to retrieve change requests for project {self.project_id}: {e}")
             return []
 
+    def get_cr_details_by_id(self, cr_id: int) -> dict | None:
+        """
+        Retrieves the full details for a single CR from the database.
+        """
+        if not self.project_id:
+            logging.warning("Attempted to get CR details with no active project.")
+            return None
+        try:
+            cr_row = self.db_manager.get_cr_by_id(cr_id)
+            return dict(cr_row) if cr_row else None
+        except Exception as e:
+            logging.error(f"Failed to retrieve details for CR ID {cr_id}: {e}")
+            return None
+
     def get_cr_and_bug_report_data(self, project_id: str, filter_type: str) -> list[dict]:
         """
         Fetches and consolidates data for the 'Change Requests & Bug Fixes' report.
-
-        Args:
-            project_id (str): The ID of the project to report on.
-            filter_type (str): The filter to apply ("Pending", "Closed", or "All").
-
-        Returns:
-            A list of dictionaries, each representing a CR or a bug fix.
         """
         report_data = []
+        db = self.db_manager
 
-        # Define status categories
         cr_pending_statuses = ["RAISED", "IMPACT_ANALYZED", "PLANNING_IN_PROGRESS", "IMPLEMENTATION_IN_PROGRESS"]
         cr_closed_statuses = ["COMPLETED", "CANCELLED"]
         bug_pending_statuses = ["UNIT_TESTS_FAILING", "DEBUG_IN_PROGRESS", "AWAITING_PM_TRIAGE_INPUT", "DEBUG_PM_ESCALATION", "KNOWN_ISSUE"]
 
-        # Determine which statuses to query based on the filter
         cr_statuses_to_query = []
         bug_statuses_to_query = []
 
@@ -1610,34 +1764,29 @@ class MasterOrchestrator:
             bug_statuses_to_query = bug_pending_statuses
         elif filter_type == "Closed":
             cr_statuses_to_query = cr_closed_statuses
-            # There isn't a "closed" state for bugs in the same way, so we fetch none.
-            bug_statuses_to_query = []
         elif filter_type == "All":
             cr_statuses_to_query = cr_pending_statuses + cr_closed_statuses
             bug_statuses_to_query = bug_pending_statuses
 
-        with self.db_manager as db:
-            # Fetch Change Requests
-            if cr_statuses_to_query:
-                change_requests = db.get_change_requests_by_statuses(project_id, cr_statuses_to_query)
-                for cr in change_requests:
-                    report_data.append({
-                        "id": f"CR-{cr['cr_id']}",
-                        "type": "CR",
-                        "status": cr['status'],
-                        "description": cr['description']
-                    })
+        if cr_statuses_to_query:
+            change_requests = db.get_change_requests_by_statuses(project_id, cr_statuses_to_query)
+            for cr in change_requests:
+                report_data.append({
+                    "id": f"CR-{cr['cr_id']}",
+                    "type": "CR",
+                    "status": cr['status'],
+                    "description": cr['description']
+                })
 
-            # Fetch Bug Fixes
-            if bug_statuses_to_query:
-                bug_artifacts = db.get_artifacts_by_statuses(project_id, bug_statuses_to_query)
-                for bug in bug_artifacts:
-                    report_data.append({
-                        "id": bug['artifact_id'],
-                        "type": "Bugfix",
-                        "status": bug['status'],
-                        "description": f"Failure in component: {bug['artifact_name']}"
-                    })
+        if bug_statuses_to_query:
+            bug_artifacts = db.get_artifacts_by_statuses(project_id, bug_statuses_to_query)
+            for bug in bug_artifacts:
+                report_data.append({
+                    "id": bug['artifact_id'],
+                    "type": "Bugfix",
+                    "status": bug['status'],
+                    "description": f"Failure in component: {bug['artifact_name']}"
+                })
 
         return sorted(report_data, key=lambda x: x['id'])
 
@@ -1661,10 +1810,8 @@ class MasterOrchestrator:
 
             logging.info(f"Project '{self.project_name}' resumed successfully.")
 
-            # CRITICAL: Delete the state from the DB after successfully resuming
-            # to prevent being stuck in a "resume loop".
-            with self.db_manager as db:
-                db.delete_orchestration_state_for_project(self.project_id)
+            # Corrected: Direct call to the db_manager
+            self.db_manager.delete_orchestration_state_for_project(self.project_id)
 
             self.resumable_state = None # Clear the in-memory flag
             return True
@@ -1676,7 +1823,6 @@ class MasterOrchestrator:
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
         Initiates the multi-tiered triage and debug process.
-        This version is refactored to use the central llm_service.
         """
         logging.info("A failure has triggered the debugging pipeline.")
 
@@ -1688,94 +1834,97 @@ class MasterOrchestrator:
         logging.info(f"Technical debug attempt counter is now: {self.debug_attempt_counter}")
 
         try:
-            with self.db_manager as db:
-                max_attempts_str = db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2"
-                max_attempts = int(max_attempts_str)
+            db = self.db_manager
+            max_attempts_str = db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2"
+            max_attempts = int(max_attempts_str)
 
-                if self.debug_attempt_counter > max_attempts:
-                    logging.warning(f"Automated debug attempts have exceeded the limit of {max_attempts}. Escalating to PM.")
-                    self.task_awaiting_approval = {"failure_log": failure_log}
-                    self.set_phase("DEBUG_PM_ESCALATION")
-                    return
+            if self.debug_attempt_counter > max_attempts:
+                logging.warning(f"Automated debug attempts have exceeded the limit of {max_attempts}. Escalating to PM.")
+                self.task_awaiting_approval = {"failure_log": failure_log}
+                self.set_phase("DEBUG_PM_ESCALATION")
+                return
 
-                if not self.llm_service:
-                    raise Exception("Cannot proceed with debugging: LLM Service is not configured.")
+            if not self.llm_service:
+                raise Exception("Cannot proceed with debugging: LLM Service is not configured.")
 
-                project_details = db.get_project_by_id(self.project_id)
-                project_root_path = Path(project_details['project_root_folder'])
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found for debugging.")
 
-                triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
-                context_package = {}
+            project_root_path = Path(project_details['project_root_folder'])
 
-                logging.info("Applying Adaptive Context Strategy for debugging...")
-                limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
-                context_limit = int(limit_str)
+            triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
+            context_package = {}
 
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                all_source_files = {}
-                total_chars = 0
+            logging.info("Applying Adaptive Context Strategy for debugging...")
+            limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
+            context_limit = int(limit_str)
 
-                for artifact in all_artifacts:
-                    file_path_str = artifact['file_path']
-                    if file_path_str and file_path_str.lower() != 'n/a':
-                        full_path = project_root_path / file_path_str
-                        if full_path.exists() and full_path.is_file():
-                            try:
-                                content = full_path.read_text(encoding='utf-8')
-                                all_source_files[file_path_str] = content
-                                total_chars += len(content)
-                            except Exception as e:
-                                logging.warning(f"Could not read file for debug context: {full_path}. Error: {e}")
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            all_source_files = {}
+            total_chars = 0
 
-                if total_chars > 0 and total_chars < context_limit:
-                    logging.info(f"Full project source code ({total_chars:,} chars) fits within the context limit ({context_limit:,} chars). Using rich context for triage.")
-                    context_package = all_source_files
-                else:
-                    if total_chars > 0:
-                         logging.warning(f"Full project source ({total_chars:,} chars) exceeds limit ({context_limit:,} chars). Falling back to heuristic triage.")
+            for artifact in all_artifacts:
+                file_path_str = artifact['file_path']
+                if file_path_str and file_path_str.lower() != 'n/a':
+                    full_path = project_root_path / file_path_str
+                    if full_path.exists() and full_path.is_file():
+                        try:
+                            content = full_path.read_text(encoding='utf-8')
+                            all_source_files[file_path_str] = content
+                            total_chars += len(content)
+                        except Exception as e:
+                            logging.warning(f"Could not read file for debug context: {full_path}. Error: {e}")
 
-                    logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
-                    file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
+            if total_chars > 0 and total_chars < context_limit:
+                logging.info(f"Full project source code ({total_chars:,} chars) fits within the context limit ({context_limit:,} chars). Using rich context for triage.")
+                context_package = all_source_files
+            else:
+                if total_chars > 0:
+                     logging.warning(f"Full project source ({total_chars:,} chars) exceeds limit ({context_limit:,} chars). Falling back to heuristic triage.")
 
-                    if file_paths_from_trace:
-                        logging.info(f"Tier 1 Success: Found {len(file_paths_from_trace)} files in stack trace.")
-                        for file_path in file_paths_from_trace:
-                            full_path = project_root_path / file_path
-                            if full_path.exists():
-                                context_package[file_path] = full_path.read_text(encoding='utf-8')
-                            else:
-                                logging.warning(f"File '{file_path}' from stack trace not found at '{full_path}'.")
+                logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
+                file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
 
-                    if not context_package:
-                        logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
-                        apex_file_name = project_details['apex_executable_name'] if 'apex_executable_name' in project_details else None
-                        failing_task = self.get_current_task_details()
-                        failing_component_name = failing_task.get('component_name') if failing_task else None
-
-                        if apex_file_name and failing_component_name:
-                            all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
-                            file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
-                            file_paths_from_trace = json.loads(file_paths_from_trace_json)
-
-                            if file_paths_from_trace:
-                                logging.info(f"Tier 2 Success: Found {len(file_paths_from_trace)} files in apex trace.")
-                                for file_path in file_paths_from_trace:
-                                    full_path = project_root_path / file_path
-                                    if full_path.exists():
-                                        context_package[file_path] = full_path.read_text(encoding='utf-8')
-                                    else:
-                                        logging.warning(f"File '{file_path}' from apex trace not found at '{full_path}'.")
+                if file_paths_from_trace:
+                    logging.info(f"Tier 1 Success: Found {len(file_paths_from_trace)} files in stack trace.")
+                    for file_path in file_paths_from_trace:
+                        full_path = project_root_path / file_path
+                        if full_path.exists():
+                            context_package[file_path] = full_path.read_text(encoding='utf-8')
                         else:
-                            logging.warning("Tier 2 skipped: Apex executable name or failing component name not available.")
+                            logging.warning(f"File '{file_path}' from stack trace not found at '{full_path}'.")
 
-                if context_package:
-                    logging.info("Automated Triage Success: Context gathered. Proceeding to plan a fix.")
-                    self._plan_and_execute_fix(failure_log, context_package)
-                    return
-                else:
-                    logging.warning("Automated Triage (Tiers 1 & 2) failed to gather context. Escalating to PM for Tier 3.")
-                    self.task_awaiting_approval = {"failure_log": failure_log}
-                    self.set_phase("AWAITING_PM_TRIAGE_INPUT")
+                if not context_package:
+                    logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
+                    apex_file_name = project_details.get('apex_executable_name')
+                    failing_task = self.get_current_task_details()
+                    failing_component_name = failing_task.get('component_name') if failing_task else None
+
+                    if apex_file_name and failing_component_name:
+                        all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
+                        file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
+                        file_paths_from_trace = json.loads(file_paths_from_trace_json)
+
+                        if file_paths_from_trace:
+                            logging.info(f"Tier 2 Success: Found {len(file_paths_from_trace)} files in apex trace.")
+                            for file_path in file_paths_from_trace:
+                                full_path = project_root_path / file_path
+                                if full_path.exists():
+                                    context_package[file_path] = full_path.read_text(encoding='utf-8')
+                                else:
+                                    logging.warning(f"File '{file_path}' from apex trace not found at '{full_path}'.")
+                    else:
+                        logging.warning("Tier 2 skipped: Apex executable name or failing component name not available.")
+
+            if context_package:
+                logging.info("Automated Triage Success: Context gathered. Proceeding to plan a fix.")
+                self._plan_and_execute_fix(failure_log, context_package)
+                return
+            else:
+                logging.warning("Automated Triage (Tiers 1 & 2) failed to gather context. Escalating to PM for Tier 3.")
+                self.task_awaiting_approval = {"failure_log": failure_log}
+                self.set_phase("AWAITING_PM_TRIAGE_INPUT")
 
         except Exception as e:
             logging.error(f"A critical error occurred during the triage process: {e}")
@@ -1843,25 +1992,20 @@ class MasterOrchestrator:
     def handle_pm_debug_choice(self, choice: str):
         """
         Handles the decision made by the PM during a debug escalation.
-        This version correctly preserves context during a manual pause.
         """
         logging.info(f"PM selected debug escalation option: {choice}")
 
-        # This method should only be called when task_awaiting_approval is set.
-        # The logic is now moved inside each choice block.
         if choice == "RETRY":
             if self.task_awaiting_approval:
                 self.debug_attempt_counter = 0
                 failure_log_from_state = self.task_awaiting_approval.get('failure_log', "PM-initiated retry after escalation.")
-                self.task_awaiting_approval = None # Clean up context
+                self.task_awaiting_approval = None
                 self.escalate_for_manual_debug(failure_log_from_state)
             else:
                 logging.warning("Retry clicked, but no failure context found. Returning to GENESIS.")
                 self.set_phase("GENESIS")
 
         elif choice == "MANUAL_PAUSE":
-            # The orchestrator now saves its state automatically when the phase is set.
-            # We just need to log the action and set the phase to idle for the user.
             self.set_phase("IDLE")
             logging.info("Project paused for manual PM investigation. State has been saved.")
 
@@ -1871,21 +2015,20 @@ class MasterOrchestrator:
                 if self.task_awaiting_approval:
                     failing_artifact_id = self.task_awaiting_approval.get('failing_artifact_id')
                     if failing_artifact_id:
-                        with self.db_manager as db:
-                            timestamp = datetime.now(timezone.utc).isoformat()
-                            db.update_artifact_status(failing_artifact_id, "KNOWN_ISSUE", timestamp)
+                        timestamp = datetime.now(timezone.utc).isoformat()
+                        self.db_manager.update_artifact_status(failing_artifact_id, "KNOWN_ISSUE", timestamp)
                         logging.info(f"Status of artifact {failing_artifact_id} set to KNOWN_ISSUE.")
                     else:
                         logging.error("Could not identify the specific failing artifact to mark as 'KNOWN_ISSUE'.")
 
-                self.set_phase("GENESIS") # Proceed to next task
+                self.set_phase("GENESIS")
                 self.active_plan_cursor += 1
-                self.task_awaiting_approval = None # Clean up context
+                self.task_awaiting_approval = None
 
             except Exception as e:
                 logging.error(f"Failed to update artifact status to 'KNOWN_ISSUE': {e}")
                 self.set_phase("GENESIS")
-                self.task_awaiting_approval = None # Clean up context
+                self.task_awaiting_approval = None
 
     def _prepend_standard_header(self, document_content: str, document_type: str) -> str:
         """
@@ -1916,13 +2059,11 @@ class MasterOrchestrator:
         database. This is called automatically on phase transitions.
         """
         if not self.project_id:
-            # This can happen during initial phase transitions, which is normal.
             return
 
         try:
-            # First, delete any pre-existing state to ensure atomicity.
-            with self.db_manager as db:
-                db.delete_orchestration_state_for_project(self.project_id)
+            db = self.db_manager
+            db.delete_orchestration_state_for_project(self.project_id)
 
             state_details_dict = {
                 "active_plan": self.active_plan,
@@ -1932,15 +2073,13 @@ class MasterOrchestrator:
             }
             state_details_json = json.dumps(state_details_dict)
 
-            # Save the new state to the database
-            with self.db_manager as db:
-                db.save_orchestration_state(
-                    project_id=self.project_id,
-                    current_phase=self.current_phase.name,
-                    current_step="auto_saved_state",
-                    state_details=state_details_json,
-                    timestamp=datetime.now(timezone.utc).isoformat()
-                )
+            db.save_orchestration_state(
+                project_id=self.project_id,
+                current_phase=self.current_phase.name,
+                current_step="auto_saved_state",
+                state_details=state_details_json,
+                timestamp=datetime.now(timezone.utc).isoformat()
+            )
             logging.info(f"Project '{self.project_name}' state automatically saved.")
 
         except Exception as e:
@@ -1970,51 +2109,44 @@ class MasterOrchestrator:
         archive_dir = Path(archive_dir)
         archive_dir.mkdir(parents=True, exist_ok=True)
 
-        # Define archive file paths
         rowd_file = archive_dir / f"{archive_name}_rowd.json"
         cr_file = archive_dir / f"{archive_name}_cr.json"
         project_file = archive_dir / f"{archive_name}_project.json"
 
         try:
-            with self.db_manager as db:
-                # 1. Get all data for the active project
-                artifacts = db.get_all_artifacts_for_project(self.project_id)
-                change_requests = db.get_all_change_requests_for_project(self.project_id)
-                project_details_row = db.get_project_by_id(self.project_id)
+            db = self.db_manager
+            artifacts = db.get_all_artifacts_for_project(self.project_id)
+            change_requests = db.get_all_change_requests_for_project(self.project_id)
+            project_details_row = db.get_project_by_id(self.project_id)
 
-                # 2. Export Artifacts (RoWD)
-                artifacts_list = [dict(row) for row in artifacts]
-                with open(rowd_file, 'w', encoding='utf-8') as f:
-                    json.dump(artifacts_list, f, indent=4)
+            artifacts_list = [dict(row) for row in artifacts]
+            with open(rowd_file, 'w', encoding='utf-8') as f:
+                json.dump(artifacts_list, f, indent=4)
 
-                # 3. Export Change Requests
-                cr_list = [dict(row) for row in change_requests]
-                with open(cr_file, 'w', encoding='utf-8') as f:
-                    json.dump(cr_list, f, indent=4)
+            cr_list = [dict(row) for row in change_requests]
+            with open(cr_file, 'w', encoding='utf-8') as f:
+                json.dump(cr_list, f, indent=4)
 
-                # 4. Export core Project data (the missing step)
-                if project_details_row:
-                    project_details_dict = dict(project_details_row)
-                    with open(project_file, 'w', encoding='utf-8') as f:
-                        json.dump(project_details_dict, f, indent=4)
+            if project_details_row:
+                project_details_dict = dict(project_details_row)
+                with open(project_file, 'w', encoding='utf-8') as f:
+                    json.dump(project_details_dict, f, indent=4)
 
-                # 5. Add/Update history record
-                root_folder_path = "N/A"
-                if project_details_row and project_details_row['project_root_folder']:
-                    root_folder_path = project_details_row['project_root_folder']
+            root_folder_path = "N/A"
+            if project_details_row and project_details_row['project_root_folder']:
+                root_folder_path = project_details_row['project_root_folder']
 
-                db.add_project_to_history(
-                    project_id=self.project_id,
-                    project_name=self.project_name,
-                    root_folder=root_folder_path,
-                    archive_path=str(rowd_file),
-                    timestamp=datetime.now(timezone.utc).isoformat()
-                )
+            db.add_project_to_history(
+                project_id=self.project_id,
+                project_name=self.project_name,
+                root_folder=root_folder_path,
+                archive_path=str(rowd_file),
+                timestamp=datetime.now(timezone.utc).isoformat()
+            )
 
-                # 6. Clear active data from the database
-                self._clear_active_project_data(db)
+            self._clear_active_project_data(db)
 
-            self.reset() # Reset orchestrator's in-memory state
+            self.reset()
             logging.info(f"Successfully exported project '{self.project_name}' to {archive_dir}")
             return str(rowd_file)
 
@@ -2077,22 +2209,21 @@ class MasterOrchestrator:
         """
         logging.warning(f"Executing 'git reset --hard' for project history ID: {history_id}")
         try:
-            with self.db_manager as db:
-                history_record = db.get_project_history_by_id(history_id)
-                if not history_record:
-                    raise Exception(f"Could not find history record for ID {history_id} to get path.")
+            db = self.db_manager
+            history_record = db.get_project_history_by_id(history_id)
+            if not history_record:
+                raise Exception(f"Could not find history record for ID {history_id} to get path.")
 
-                project_root = Path(history_record['project_root_folder'])
-                agent = RollbackAgent()
-                success, message = agent.discard_local_changes(project_root)
+            project_root = Path(history_record['project_root_folder'])
+            agent = RollbackAgent()
+            success, message = agent.discard_local_changes(project_root)
 
-                if not success:
-                    raise Exception(f"RollbackAgent failed: {message}")
+            if not success:
+                raise Exception(f"RollbackAgent failed: {message}")
 
-                logging.info(f"Successfully discarded changes at {project_root}")
+            logging.info(f"Successfully discarded changes at {project_root}")
 
             # After successfully discarding changes, re-trigger the load process
-            # to re-run checks and correctly load the project into state.
             self.load_archived_project(history_id)
 
         except Exception as e:
@@ -2103,49 +2234,41 @@ class MasterOrchestrator:
         """
         Permanently deletes an archived project's history record and its
         associated archive files from the filesystem.
-
-        Args:
-            history_id (int): The history_id of the project to delete.
-
-        Returns:
-            A tuple containing a success/failure boolean and a status message.
         """
         logging.info(f"Attempting to delete archived project with history_id: {history_id}.")
         try:
-            with self.db_manager as db:
-                # 1. Fetch the record to get the archive file path
-                history_record = db.get_project_history_by_id(history_id)
-                if not history_record:
-                    error_msg = f"No project history found for ID {history_id}."
-                    logging.error(error_msg)
-                    return False, error_msg
+            db = self.db_manager
+            history_record = db.get_project_history_by_id(history_id)
+            if not history_record:
+                error_msg = f"No project history found for ID {history_id}."
+                logging.error(error_msg)
+                return False, error_msg
 
-                archive_path_str = history_record['archive_file_path']
+            archive_path_str = history_record['archive_file_path']
+            rowd_file = Path(archive_path_str)
+            cr_file = rowd_file.with_name(rowd_file.name.replace("_rowd.json", "_cr.json"))
+            project_file = rowd_file.with_name(rowd_file.name.replace("_rowd.json", "_project.json"))
 
-                # 2. Delete the associated archive files
-                rowd_file = Path(archive_path_str)
-                cr_file = rowd_file.with_name(rowd_file.name.replace("_rowd.json", "_cr.json"))
-
-                if rowd_file.exists():
-                    rowd_file.unlink()
-                    logging.info(f"Deleted archive file: {rowd_file}")
+            for file_to_delete in [rowd_file, cr_file, project_file]:
+                if file_to_delete.exists():
+                    file_to_delete.unlink()
+                    logging.info(f"Deleted archive file: {file_to_delete}")
                 else:
-                    logging.warning(f"Could not find archive file to delete at: {rowd_file}")
+                    logging.warning(f"Could not find archive file to delete at: {file_to_delete}")
 
-                if cr_file.exists():
-                    cr_file.unlink()
-                    logging.info(f"Deleted CR archive file: {cr_file}")
-
-                # 3. Delete the record from the database
-                db.delete_project_from_history(history_id)
-
-                success_msg = f"Successfully deleted archived project (History ID: {history_id})."
-                logging.info(success_msg)
-                return True, success_msg
+            db.delete_project_from_history(history_id)
+            success_msg = f"Successfully deleted archived project (History ID: {history_id})."
+            logging.info(success_msg)
+            return True, success_msg
 
         except Exception as e:
             error_msg = f"An unexpected error occurred while deleting project history {history_id}: {e}"
-            logging.error(error_msg)
+            logging.error(error_msg, exc_info=True)
+            return False, error_msg
+
+        except Exception as e:
+            error_msg = f"An unexpected error occurred while deleting project history {history_id}: {e}"
+            logging.error(error_msg, exc_info=True)
             return False, error_msg
 
     def load_archived_project(self, history_id: int):
@@ -2154,65 +2277,56 @@ class MasterOrchestrator:
         and sets the appropriate phase for UI resolution.
         """
         try:
-            with self.db_manager as db:
-                # 1. Safety export any active, dirty project
-                if self.project_id and self.is_project_dirty:
-                    logging.warning(f"An active, modified project '{self.project_name}' was found. Performing a safety export.")
-                    archive_path = Path("data/archives")
+            db = self.db_manager
+            if self.project_id and self.is_project_dirty:
+                logging.warning(f"An active, modified project '{self.project_name}' was found. Performing a safety export.")
+                archive_path_from_db = db.get_config_value("DEFAULT_ARCHIVE_PATH")
+                if not archive_path_from_db or not archive_path_from_db.strip():
+                    logging.error("Safety export failed: Default Project Archive Path is not set in Settings.")
+                else:
+                    archive_path = Path(archive_path_from_db)
                     archive_name = f"{self.project_name.replace(' ', '_')}_auto_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                     self.stop_and_export_project(archive_path, archive_name)
 
-                # 2. Get the history record for the project to load
-                history_record = db.get_project_history_by_id(history_id)
-                if not history_record:
-                    raise FileNotFoundError(f"No project history found for ID {history_id}")
+            history_record = db.get_project_history_by_id(history_id)
+            if not history_record:
+                raise FileNotFoundError(f"No project history found for ID {history_id}")
 
-                # 3. Clear all data for any previously active project
-                self._clear_active_project_data(db)
+            project_id_to_load = history_record['project_id']
+            logging.info(f"Preparing to load project {project_id_to_load}. Clearing any lingering active data for this ID first.")
+            self._clear_active_project_data(db) # Pass the db instance
 
-                # 4. Restore the Project Data from the archive files
-                project_id = history_record['project_id']
-                rowd_file_path = Path(history_record['archive_file_path'])
-                project_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_project.json"))
-                cr_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_cr.json"))
+            rowd_file_path = Path(history_record['archive_file_path'])
+            project_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_project.json"))
+            cr_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_cr.json"))
 
-                # Restore the main project record first (fixes the crash and resume bug)
-                if project_file_path.exists():
-                    with open(project_file_path, 'r', encoding='utf-8') as f:
-                        project_data_to_load = json.load(f)
-                    db.create_or_update_project_record(project_data_to_load)
-                else:
-                    # If there's no project file, create a placeholder record
-                    db.create_or_update_project_record({
-                        'project_id': project_id,
-                        'project_name': history_record['project_name'],
-                        'creation_timestamp': datetime.now(timezone.utc).isoformat()
-                    })
+            if project_file_path.exists():
+                with open(project_file_path, 'r', encoding='utf-8') as f:
+                    project_data_to_load = json.load(f)
+                db.create_or_update_project_record(project_data_to_load)
 
-                # Restore RoWD and CRs
-                if rowd_file_path.exists():
-                    with open(rowd_file_path, 'r', encoding='utf-8') as f:
-                        artifacts_to_load = json.load(f)
-                    if artifacts_to_load: db.bulk_insert_artifacts(artifacts_to_load)
+            if rowd_file_path.exists():
+                with open(rowd_file_path, 'r', encoding='utf-8') as f:
+                    artifacts_to_load = json.load(f)
+                if artifacts_to_load: db.bulk_insert_artifacts(artifacts_to_load)
 
-                if cr_file_path.exists():
-                    with open(cr_file_path, 'r', encoding='utf-8') as f:
-                        crs_to_load = json.load(f)
-                    if crs_to_load: db.bulk_insert_change_requests(crs_to_load)
+            if cr_file_path.exists():
+                with open(cr_file_path, 'r', encoding='utf-8') as f:
+                    crs_to_load = json.load(f)
+                if crs_to_load: db.bulk_insert_change_requests(crs_to_load)
 
-                # 5. Set in-memory state and perform pre-flight checks
-                self.project_id = project_id
-                self.project_name = history_record['project_name']
-                check_result = self._perform_preflight_checks(history_record['project_root_folder'])
-                self.preflight_check_result = {**check_result, "history_id": history_id}
+            self.project_id = project_id_to_load
+            self.project_name = history_record['project_name']
+            check_result = self._perform_preflight_checks(history_record['project_root_folder'])
+            self.preflight_check_result = {**check_result, "history_id": history_id}
 
-                if check_result['status'] != "ALL_PASS":
-                    self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
-                    return
-
-                self.is_project_dirty = False
-                self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
+            if check_result['status'] != "ALL_PASS":
                 self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
+                return
+
+            self.is_project_dirty = False
+            self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
+            self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
         except Exception as e:
             error_msg = f"A critical error occurred while loading the project: {e}"
@@ -2224,8 +2338,7 @@ class MasterOrchestrator:
     def get_project_history(self):
         """Retrieves all records from the ProjectHistory table."""
         try:
-            with self.db_manager as db:
-                return db.get_project_history()
+            return self.db_manager.get_project_history()
         except Exception as e:
             logging.error(f"Failed to retrieve project history: {e}")
             return []
@@ -2265,38 +2378,27 @@ class MasterOrchestrator:
         except (json.JSONDecodeError, TypeError) as e:
             raise Exception(f"FixPlannerAgent returned invalid JSON. Error: {e}. Response was: {fix_plan_str}")
 
-    def _build_and_validate_context_package(self, db: ASDFDBManager, core_documents: dict, source_code_files: dict) -> dict:
+    def _build_and_validate_context_package(self, core_documents: dict, source_code_files: dict) -> dict:
         """
         Gathers context, checks size, trims if necessary by prioritizing core
         documents and smaller source files, and reports on any excluded files.
-
-        Args:
-            db (ASDFDBManager): The active database manager instance.
-            core_documents (dict): A dict of essential documents (e.g., specs).
-            source_code_files (dict): A dict of file_path: content for source code.
-
-        Returns:
-            A dictionary containing the final context, status flags, and a list of any excluded files.
         """
         final_context = {}
         excluded_files = []
         context_was_trimmed = False
 
-        limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "200000"
+        limit_str = self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "200000"
         char_limit = int(limit_str)
 
-        # 1. Add core documents and calculate their size.
         core_doc_chars = 0
         for name, content in core_documents.items():
             final_context[name] = content
-            core_doc_chars += len(content)
+            core_doc_chars += len(content) if content else 0
 
-        # 2. Check if essential docs alone are too large.
         if core_doc_chars > char_limit:
             logging.error(f"Context Builder: Core documents ({core_doc_chars} chars) alone exceed the context limit of {char_limit}. Cannot proceed.")
             return {"source_code": {}, "was_trimmed": True, "error": "Core documents are too large for the context window.", "excluded_files": list(source_code_files.keys())}
 
-        # 3. Calculate remaining budget and add source files until it's full.
         remaining_chars = char_limit - core_doc_chars
         sorted_source_files = sorted(source_code_files.items(), key=lambda item: len(item[1]))
 
@@ -2305,7 +2407,6 @@ class MasterOrchestrator:
                 final_context[file_path] = content
                 remaining_chars -= len(content)
             else:
-                # Flag that we couldn't include all files and track which one was excluded.
                 context_was_trimmed = True
                 excluded_files.append(file_path)
 
@@ -2365,14 +2466,56 @@ class MasterOrchestrator:
 
     def handle_pm_triage_input(self, pm_error_description: str):
         """
-        Handles the text input provided by the PM during interactive triage (Tier 3)
-        by calling the reusable fix-planning helper method.
-
-        Args:
-            pm_error_description (str): The PM's description of the error.
+        Handles the text input provided by the PM during interactive triage (Tier 3).
         """
-        logging.info("Tier 3: Received manual error description from PM. Routing to fix-planning.")
-        self._plan_fix_from_description(pm_error_description)
+        logging.info("Tier 3: Received manual error description from PM. Attempting to generate fix plan.")
+
+        try:
+            if not self.llm_service:
+                raise Exception("Cannot proceed with triage: LLM Service is not configured.")
+
+            triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
+            hypothesis = triage_agent.analyze_and_hypothesize(
+                error_logs=pm_error_description,
+                relevant_code="No specific code context available; base analysis on user description.",
+                test_report=""
+            )
+
+            if "An error occurred" in hypothesis:
+                 raise Exception(f"TriageAgent failed to form a hypothesis: {hypothesis}")
+
+            logging.info(f"TriageAgent formed hypothesis: {hypothesis}")
+
+            planner_agent = FixPlannerAgent_AppTarget(llm_service=self.llm_service)
+            fix_plan_str = planner_agent.create_fix_plan(
+                root_cause_hypothesis=hypothesis,
+                relevant_code="No specific code context was automatically identified. Base the fix on the TriageAgent's hypothesis."
+            )
+
+            if "error" in fix_plan_str.lower():
+                raise Exception(f"FixPlannerAgent failed to generate a plan: {fix_plan_str}")
+
+            fix_plan = json.loads(fix_plan_str)
+            if not fix_plan:
+                 raise Exception("FixPlannerAgent returned an empty plan.")
+
+            learning_agent = LearningCaptureAgent(self.db_manager)
+            tags = self._extract_tags_from_text(hypothesis)
+            learning_agent.add_learning_entry(
+                context=f"During interactive triage (Tier 3) for project: {self.project_name}",
+                problem=pm_error_description,
+                solution=fix_plan_str,
+                tags=tags
+            )
+
+            self.active_plan = fix_plan
+            self.active_plan_cursor = 0
+            self.set_phase("GENESIS")
+            logging.info("Successfully generated a fix plan from PM description. Transitioning to GENESIS phase.")
+
+        except Exception as e:
+            logging.error(f"Tier 3 interactive triage failed. Error: {e}")
+            self.set_phase("DEBUG_PM_ESCALATION")
 
     def _extract_tags_from_text(self, text: str) -> list[str]:
         """A simple helper to extract potential search tags from text."""
@@ -2412,23 +2555,26 @@ class MasterOrchestrator:
             # We don't want to halt the main flow if learning capture fails.
             logging.warning(f"Could not capture learning entry for spec clarification: {e}")
 
-    def start_test_environment_setup(self):
+    def start_test_environment_setup(self, progress_callback=None):
         """
         Calls the advisor agent to get a list of test environment setup tasks.
-        This version is refactored to use the central llm_service.
         """
         logging.info("Initiating test environment setup guidance.")
         try:
             if not self.llm_service:
                 raise Exception("Cannot get setup tasks: LLM Service is not configured.")
 
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                tech_spec_text = project_details['tech_spec_text']
-                target_os = project_details['target_os'] if project_details and 'target_os' in project_details else 'Linux'
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details:
+                raise Exception("Cannot get setup tasks: Project details not found.")
 
-                if not tech_spec_text:
-                    raise Exception("Cannot get setup tasks: Technical Specification is missing.")
+            tech_spec_text = project_details['tech_spec_text']
+            # Corrected to handle missing key gracefully
+            target_os = project_details['target_os'] if 'target_os' in project_details.keys() and project_details['target_os'] else 'Linux'
+
+            if not tech_spec_text:
+                raise Exception("Cannot get setup tasks: Technical Specification is missing.")
 
             agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
             tasks = agent.get_setup_tasks(tech_spec_text, target_os)
@@ -2441,16 +2587,18 @@ class MasterOrchestrator:
     def get_help_for_setup_task(self, task_instructions: str):
         """
         Calls the advisor agent to get detailed help for a specific setup task.
-        This version is refactored to use the central llm_service.
         """
         logging.info("Getting help for a test environment setup task.")
         try:
             if not self.llm_service:
                 raise Exception("Cannot get help: LLM Service is not configured.")
 
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                target_os = project_details['target_os'] if project_details and 'target_os' in project_details else 'Linux'
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details:
+                raise Exception("Cannot get help: Project details not found.")
+
+            target_os = project_details.get('target_os', 'Linux')
 
             agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
             help_text = agent.get_help_for_task(task_instructions, target_os)
@@ -2469,8 +2617,7 @@ class MasterOrchestrator:
         """
         logging.info(f"Finalizing test environment setup. Confirmed command: '{test_command}'")
         try:
-            with self.db_manager as db:
-                db.update_project_test_command(self.project_id, test_command)
+            self.db_manager.update_project_field(self.project_id, "test_execution_command", test_command)
 
             self.set_phase("CODING_STANDARD_GENERATION")
             logging.info("Test environment setup complete. Transitioning to Coding Standard Generation.")
@@ -2482,10 +2629,6 @@ class MasterOrchestrator:
     def handle_ignore_setup_task(self, task: dict):
         """
         Creates a 'KNOWN_ISSUE' artifact to record a skipped setup task.
-        This makes the decision persistent and trackable as per the PRD.
-
-        Args:
-            task (dict): A dictionary containing the details of the skipped task.
         """
         if not self.project_id:
             logging.error("Cannot log ignored setup task; no active project.")
@@ -2493,28 +2636,27 @@ class MasterOrchestrator:
 
         logging.warning(f"PM chose to ignore setup task: {task.get('tool_name')}. Logging as KNOWN_ISSUE.")
         try:
-            with self.db_manager as db:
-                # Use the DocUpdateAgent to create the new artifact record
-                doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
-                artifact_name = f"Skipped Setup Task: {task.get('tool_name', 'Unnamed Step')}"
-                description = f"The PM chose to ignore the setup/installation for the following tool or step: {task.get('instructions', 'No instructions provided.')}"
+            db = self.db_manager
+            doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
+            artifact_name = f"Skipped Setup Task: {task.get('tool_name', 'Unnamed Step')}"
+            description = f"The PM chose to ignore the setup/installation for the following tool or step: {task.get('instructions', 'No instructions provided.')}"
 
-                doc_agent.add_or_update_artifact({
-                    "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
-                    "project_id": self.project_id,
-                    "file_path": "N/A",
-                    "artifact_name": artifact_name,
-                    "artifact_type": "ENVIRONMENT_SETUP",
-                    "signature": "N/A",
-                    "short_description": description,
-                    "version": 1,
-                    "status": "KNOWN_ISSUE",
-                    "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
-                    "commit_hash": None,
-                    "micro_spec_id": None,
-                    "dependencies": None,
-                    "unit_test_status": "NOT_APPLICABLE"
-                })
+            doc_agent.add_or_update_artifact({
+                "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                "project_id": self.project_id,
+                "file_path": "N/A",
+                "artifact_name": artifact_name,
+                "artifact_type": "ENVIRONMENT_SETUP",
+                "signature": "N/A",
+                "short_description": description,
+                "version": 1,
+                "status": "KNOWN_ISSUE",
+                "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+                "commit_hash": None,
+                "micro_spec_id": None,
+                "dependencies": None,
+                "unit_test_status": "NOT_APPLICABLE"
+            })
             logging.info(f"Successfully created KNOWN_ISSUE artifact for '{artifact_name}'.")
         except Exception as e:
             logging.error(f"Failed to create KNOWN_ISSUE artifact for skipped setup task. Error: {e}")
@@ -2522,42 +2664,41 @@ class MasterOrchestrator:
     def handle_acknowledge_integration_failure(self):
         """
         Handles the PM's acknowledgment of a system-level integration failure.
-
-        This method generates the UI test plan and transitions the state to
-        MANUAL_UI_TESTING, allowing the workflow to proceed.
         """
         logging.warning("PM acknowledged a system-level integration failure. Proceeding to manual testing.")
         try:
-            with self.db_manager as db:
-                api_key = db.get_config_value("LLM_API_KEY")
-                project_details = db.get_project_by_id(self.project_id)
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
 
-                if not api_key or not project_details:
-                    raise Exception("Cannot generate UI test plan: Missing API Key or Project Details.")
+            if not project_details:
+                raise Exception("Cannot generate UI test plan: Project Details not found.")
 
-                # Generate the UI Test Plan, as this step was previously skipped.
-                functional_spec_text = project_details['final_spec_text']
-                technical_spec_text = project_details['tech_spec_text']
-                ui_test_planner = UITestPlannerAgent_AppTarget(api_key=api_key)
-                ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
+            functional_spec_text = project_details.get('final_spec_text')
+            technical_spec_text = project_details.get('tech_spec_text')
 
-                db.save_ui_test_plan(self.project_id, ui_test_plan_content)
+            if not functional_spec_text or not technical_spec_text:
+                raise Exception("Cannot generate UI test plan: Missing specifications.")
+
+            ui_test_planner = UITestPlannerAgent_AppTarget(llm_service=self.llm_service)
+            ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
+
+            final_ui_test_plan = self._prepend_standard_header(
+                document_content=ui_test_plan_content,
+                document_type="UI Test Plan"
+            )
+            db.update_project_field(self.project_id, "ui_test_plan_text", final_ui_test_plan)
 
             self.task_awaiting_approval = None
             self.set_phase("MANUAL_UI_TESTING")
 
         except Exception as e:
             logging.error(f"Failed to handle integration failure acknowledgment. Error: {e}")
-            # If even this fails, escalate to prevent getting stuck
             self.set_phase("DEBUG_PM_ESCALATION")
 
     def _extract_and_save_primary_technology(self, tech_spec_text: str):
         """
         Uses the LLM service to extract the primary programming language from the
         technical specification text and saves it to the database.
-
-        Args:
-            tech_spec_text (str): The full text of the approved technical spec.
         """
         logging.info("Extracting primary technology from technical specification...")
         try:
@@ -2579,15 +2720,12 @@ class MasterOrchestrator:
             primary_technology = self.llm_service.generate_text(prompt, task_complexity="simple").strip()
 
             if primary_technology and not primary_technology.startswith("Error:"):
-                with self.db_manager as db:
-                    db.update_project_technology(self.project_id, primary_technology)
+                self.db_manager.update_project_field(self.project_id, "technology_stack", primary_technology)
                 logging.info(f"Successfully extracted and saved primary technology: {primary_technology}")
             else:
                 raise ValueError(f"LLM service returned an empty or error response for technology extraction: {primary_technology}")
 
         except Exception as e:
-            # Log the error but don't halt the entire process.
-            # A potential manual correction might be needed if this fails.
             logging.error(f"Failed to extract and save primary technology: {e}")
 
     def get_latest_commit_timestamp(self) -> datetime | None:
@@ -2596,12 +2734,15 @@ class MasterOrchestrator:
         """
         import git
         try:
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                project_root_path = str(project_details['project_root_folder'])
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                logging.warning("Cannot get latest commit timestamp: project root folder not found.")
+                return None
 
+            project_root_path = str(project_details['project_root_folder'])
             repo = git.Repo(project_root_path)
-            if not repo.heads: # Check if there are any commits
+
+            if not repo.heads or not repo.head.is_valid():
                 return None
 
             latest_commit = repo.head.commit
@@ -2620,42 +2761,47 @@ class MasterOrchestrator:
             return "N/A"
 
         try:
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                if not project_details or not project_details['project_root_folder']:
-                    return "N/A"
-                project_root_path = str(project_details['project_root_folder'])
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                return "N/A"
+
+            project_root_path = str(project_details['project_root_folder'])
+
+            if not (Path(project_root_path) / '.git').exists():
+                return "Not a Git repository"
 
             repo = git.Repo(project_root_path)
-            # This will correctly report the branch name even in a detached HEAD state
-            return repo.head.ref.name
-        except (TypeError, git.InvalidGitRepositoryError):
-            # TypeError if repo.head.ref is a commit object (detached HEAD)
-            # InvalidGitRepositoryError if it's not a git repo
-            return "detached"
+
+            if repo.head.is_detached:
+                return "detached"
+            else:
+                return repo.active_branch.name
+        except git.InvalidGitRepositoryError:
+            return "Invalid repository"
         except Exception as e:
             logging.warning(f"Could not retrieve current git branch: {e}")
             return "N/A"
 
     def _debug_jump_to_phase(self, phase_name: str):
         """
-        A debug-only method to jump the application to a specific phase,
-        setting up a minimal valid state.
+        A debug-only method to jump the application to a specific phase.
+        It will create a new project only if no project is currently active.
         """
         logging.warning(f"--- DEBUG: Jumping to phase: {phase_name} ---")
 
-        # Ensure a project exists for any phase other than IDLE
-        if phase_name != "IDLE" and not self.project_id:
-            self.start_new_project("Debug Project")
-            with self.db_manager as db:
-                db.update_project_root_folder(self.project_id, "data/debug_project")
-                # Pre-populate required data for later phases
-                db.save_final_specification(self.project_id, "Debug final spec.")
-                db.save_tech_specification(self.project_id, "Debug tech spec using Python.")
-                db.update_project_technology(self.project_id, "Python")
+        db = self.db_manager
 
-        # Load a dummy plan if jumping directly to Genesis
+        # This is the fix: Only create a new project if one isn't already active.
+        if not self.project_id:
+            logging.info("No active project found, creating a new 'Debug Project'.")
+            self.start_new_project("Debug Project")
+            db.update_project_field(self.project_id, "project_root_folder", "data/debug_project")
+            db.update_project_field(self.project_id, "final_spec_text", "Debug final spec.")
+            db.update_project_field(self.project_id, "tech_spec_text", "Debug tech spec using Python.")
+            db.update_project_field(self.project_id, "technology_stack", "Python")
+
         if phase_name == "GENESIS":
+            # The rest of the logic for a direct jump to Genesis remains the same.
             dummy_plan_str = """
             {
                 "main_executable_file": "main.py",
@@ -2672,7 +2818,6 @@ class MasterOrchestrator:
             }
             """
             self.finalize_and_save_dev_plan(dummy_plan_str)
-            # finalize_and_save_dev_plan already sets the phase, so we can return early
             return
 
         self.set_phase(phase_name)
@@ -2680,65 +2825,63 @@ class MasterOrchestrator:
     def _create_llm_service(self) -> LLMService | None:
         """
         Factory method to create the appropriate LLM service adapter based on
-        the configuration stored in the database. Now with true lazy loading.
+        the configuration stored in the database.
         """
-        # --- Lazy import all adapters inside this method ---
         from llm_service import (LLMService, GeminiAdapter, OpenAIAdapter,
                                  AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter)
 
         logging.info("Attempting to create and configure LLM service...")
-        with self.db_manager as db:
-            provider_name_from_db = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini"
+        db = self.db_manager
+        provider_name_from_db = db.get_config_value("SELECTED_LLM_PROVIDER") or "Gemini"
 
-            if provider_name_from_db == "Gemini":
-                api_key = db.get_config_value("GEMINI_API_KEY")
-                reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL")
-                fast_model = db.get_config_value("GEMINI_FAST_MODEL")
-                if not api_key:
-                    logging.warning("Gemini is selected, but GEMINI_API_KEY is not set.")
-                    return None
-                return GeminiAdapter(api_key, reasoning_model, fast_model)
-
-            elif provider_name_from_db == "ChatGPT":
-                api_key = db.get_config_value("OPENAI_API_KEY")
-                reasoning_model = db.get_config_value("OPENAI_REASONING_MODEL")
-                fast_model = db.get_config_value("OPENAI_FAST_MODEL")
-                if not api_key:
-                    logging.warning("ChatGPT (OpenAI) is selected, but OPENAI_API_KEY is not set.")
-                    return None
-                return OpenAIAdapter(api_key, reasoning_model, fast_model)
-
-            elif provider_name_from_db == "Claude":
-                api_key = db.get_config_value("ANTHROPIC_API_KEY")
-                reasoning_model = db.get_config_value("ANTHROPIC_REASONING_MODEL")
-                fast_model = db.get_config_value("ANTHROPIC_FAST_MODEL")
-                if not api_key:
-                    logging.warning("Claude (Anthropic) is selected, but ANTHROPIC_API_KEY is not set.")
-                    return None
-                return AnthropicAdapter(api_key, reasoning_model, fast_model)
-
-            elif provider_name_from_db == "Phi-3 (Local)":
-                return LocalPhi3Adapter()
-
-            elif provider_name_from_db == "Any Other":
-                base_url = db.get_config_value("CUSTOM_ENDPOINT_URL")
-                api_key = db.get_config_value("CUSTOM_ENDPOINT_API_KEY")
-                reasoning_model = db.get_config_value("CUSTOM_REASONING_MODEL")
-                fast_model = db.get_config_value("CUSTOM_FAST_MODEL")
-                if not all([base_url, api_key, reasoning_model, fast_model]):
-                    logging.warning("Any Other provider selected, but one or more required settings are missing.")
-                    return None
-                return CustomEndpointAdapter(base_url, api_key, reasoning_model, fast_model)
-
-            else:
-                logging.error(f"Invalid LLM provider configured: {provider_name_from_db}")
+        if provider_name_from_db == "Gemini":
+            api_key = db.get_config_value("GEMINI_API_KEY")
+            reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL")
+            fast_model = db.get_config_value("GEMINI_FAST_MODEL")
+            if not api_key:
+                logging.warning("Gemini is selected, but GEMINI_API_KEY is not set.")
                 return None
+            return GeminiAdapter(api_key, reasoning_model, fast_model)
+
+        elif provider_name_from_db == "ChatGPT":
+            api_key = db.get_config_value("OPENAI_API_KEY")
+            reasoning_model = db.get_config_value("OPENAI_REASONING_MODEL")
+            fast_model = db.get_config_value("OPENAI_FAST_MODEL")
+            if not api_key:
+                logging.warning("ChatGPT (OpenAI) is selected, but OPENAI_API_KEY is not set.")
+                return None
+            return OpenAIAdapter(api_key, reasoning_model, fast_model)
+
+        elif provider_name_from_db == "Claude":
+            api_key = db.get_config_value("ANTHROPIC_API_KEY")
+            reasoning_model = db.get_config_value("ANTHROPIC_REASONING_MODEL")
+            fast_model = db.get_config_value("ANTHROPIC_FAST_MODEL")
+            if not api_key:
+                logging.warning("Claude (Anthropic) is selected, but ANTHROPIC_API_KEY is not set.")
+                return None
+            return AnthropicAdapter(api_key, reasoning_model, fast_model)
+
+        elif provider_name_from_db == "Phi-3 (Local)":
+            return LocalPhi3Adapter()
+
+        elif provider_name_from_db == "Any Other":
+            base_url = db.get_config_value("CUSTOM_ENDPOINT_URL")
+            api_key = db.get_config_value("CUSTOM_ENDPOINT_API_KEY")
+            reasoning_model = db.get_config_value("CUSTOM_REASONING_MODEL")
+            fast_model = db.get_config_value("CUSTOM_FAST_MODEL")
+            if not all([base_url, api_key, reasoning_model, fast_model]):
+                logging.warning("Any Other provider selected, but one or more required settings are missing.")
+                return None
+            return CustomEndpointAdapter(base_url, api_key, reasoning_model, fast_model)
+
+        else:
+            logging.error(f"Invalid LLM provider configured: {provider_name_from_db}")
+            return None
 
     def run_mid_project_reassessment(self):
         """
         Calculates the remaining work in a project and invokes the
         ProjectScopingAgent to perform a new risk and complexity analysis.
-        (F-Dev 12.2)
         """
         logging.info(f"Running mid-project re-assessment for project: {self.project_name}")
         if not self.project_id:
@@ -2747,97 +2890,67 @@ class MasterOrchestrator:
 
         remaining_work_spec = ""
         try:
-            with self.db_manager as db:
-                project_details = db.get_project_by_id(self.project_id)
-                dev_plan_text = project_details['development_plan_text'] if 'development_plan_text' in project_details else None
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details:
+                raise Exception("Project details not found for re-assessment.")
 
-                if not dev_plan_text:
-                    # If no dev plan exists, the 'remaining work' is the entire spec
-                    remaining_work_spec = project_details['final_spec_text'] if 'final_spec_text' in project_details else ''
-                    logging.info("No development plan found. Using full application spec for re-assessment.")
+            dev_plan_text = project_details.get('development_plan_text')
+
+            if not dev_plan_text:
+                remaining_work_spec = project_details.get('final_spec_text', '')
+            else:
+                dev_plan = json.loads(dev_plan_text).get("development_plan", [])
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
+                remaining_tasks = [task for task in dev_plan if task.get('micro_spec_id') not in completed_spec_ids]
+
+                if not remaining_tasks:
+                    remaining_work_spec = "Project development is complete. Assess risk of any final integration or bug fixing."
                 else:
-                    # If a dev plan exists, find uncompleted tasks
-                    dev_plan = json.loads(dev_plan_text).get("development_plan", [])
-                    all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-
-                    completed_spec_ids = {
-                        artifact['micro_spec_id'] for artifact in all_artifacts
-                        if artifact['micro_spec_id']
-                    }
-
-                    remaining_tasks = [
-                        task for task in dev_plan
-                        if task.get('micro_spec_id') not in completed_spec_ids
-                    ]
-
-                    if not remaining_tasks:
-                        logging.info("No remaining tasks found in the development plan.")
-                        remaining_work_spec = "Project development is complete. Assess risk of any final integration or bug fixing."
-                    else:
-                        remaining_work_descriptions = [
-                            task['task_description'] for task in remaining_tasks
-                            if 'task_description' in task
-                        ]
-                        remaining_work_spec = "\n\n".join(remaining_work_descriptions)
-                        logging.info(f"Found {len(remaining_tasks)} remaining tasks for re-assessment.")
+                    remaining_work_spec = "\n\n".join([task['task_description'] for task in remaining_tasks if 'task_description' in task])
 
             if not remaining_work_spec.strip():
-                logging.warning("Remaining work specification is empty. Cannot perform re-assessment.")
-                self.task_awaiting_approval = {
-                    "reassessment_result": {"error": "Could not determine remaining work."}
-                }
+                self.task_awaiting_approval = {"reassessment_result": {"error": "Could not determine remaining work."}}
                 return
 
-            # Invoke the scoping agent
             scoping_agent = ProjectScopingAgent(llm_service=self.llm_service)
             analysis_result = scoping_agent.analyze_complexity(remaining_work_spec)
-
-            # Store the result for the UI to display
             self.task_awaiting_approval = {"reassessment_result": analysis_result}
             logging.info("Successfully completed mid-project re-assessment.")
 
         except Exception as e:
             logging.error(f"An error occurred during mid-project re-assessment: {e}")
-            self.task_awaiting_approval = {
-                "reassessment_result": {"error": f"An unexpected error occurred: {e}"}
-            }
+            self.task_awaiting_approval = {"reassessment_result": {"error": f"An unexpected error occurred: {e}"}}
 
     def commit_pending_llm_change(self, new_provider: str) -> tuple[bool, str]:
         """
         Finalizes a pending LLM provider change after a successful
         re-assessment by saving it to the database and re-initializing
         the LLM service.
-        (F-Dev 12.3)
-
-        Args:
-            new_provider (str): The name of the new provider to commit.
-
-        Returns:
-            A tuple containing a success boolean and a status message.
         """
         logging.info(f"Committing pending LLM change to: {new_provider}")
         try:
-            with self.db_manager as db:
-                # Save the new provider selection
-                db.set_config_value("SELECTED_LLM_PROVIDER", new_provider)
+            db = self.db_manager
+            db.set_config_value("SELECTED_LLM_PROVIDER", new_provider)
 
-                # Update the active context limit to the new provider's default
-                provider_key_map = {
-                    "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
-                    "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
-                    "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
-                }
-                provider_default_key = provider_key_map.get(new_provider)
-                if provider_default_key:
-                    provider_default_value = db.get_config_value(provider_default_key)
-                    if provider_default_value:
-                        db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", provider_default_value)
-                        logging.info(f"Active context limit updated to default for {new_provider}: {provider_default_value} chars.")
+            provider_key_map = {
+                "Gemini": "GEMINI_CONTEXT_LIMIT", "OpenAI": "OPENAI_CONTEXT_LIMIT",
+                "Anthropic": "ANTHROPIC_CONTEXT_LIMIT", "LocalPhi3": "LOCALPHI3_CONTEXT_LIMIT",
+                "Enterprise": "ENTERPRISE_CONTEXT_LIMIT"
+            }
+            provider_default_key = provider_key_map.get(new_provider)
+            if provider_default_key:
+                provider_default_value = db.get_config_value(provider_default_key)
+                if provider_default_value:
+                    db.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", provider_default_value)
+                    logging.info(f"Active context limit updated to default for {new_provider}: {provider_default_value} chars.")
 
-            # Re-initialize the LLM service with the new settings
-            self.llm_service = self._create_llm_service()
+            self._llm_service = None # Clear the cached service to force re-initialization
+
+            # Immediately try to re-initialize to catch any configuration errors
             if not self.llm_service:
-                 raise Exception("Failed to re-initialize LLM service with new provider.")
+                 raise Exception("Failed to re-initialize LLM service with new provider. Check API keys.")
 
             return True, f"Successfully switched to {new_provider}."
         except Exception as e:

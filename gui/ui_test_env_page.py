@@ -15,10 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QGroupBox, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QSizePolicy,
-    QSpacerItem, QStackedWidget, QTextEdit, QVBoxLayout,
-    QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QSizePolicy, QSpacerItem,
+    QStackedWidget, QVBoxLayout, QWidget)
 
 class Ui_TestEnvPage(object):
     def setupUi(self, TestEnvPage):
@@ -43,45 +42,60 @@ class Ui_TestEnvPage(object):
 
         self.stackedWidget = QStackedWidget(TestEnvPage)
         self.stackedWidget.setObjectName(u"stackedWidget")
+        self.standbyPage = QWidget()
+        self.standbyPage.setObjectName(u"standbyPage")
+        self.verticalLayout_2 = QVBoxLayout(self.standbyPage)
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.standbyLabel = QLabel(self.standbyPage)
+        self.standbyLabel.setObjectName(u"standbyLabel")
+        self.standbyLabel.setWordWrap(True)
+
+        self.verticalLayout_2.addWidget(self.standbyLabel)
+
+        self.startButton = QPushButton(self.standbyPage)
+        self.startButton.setObjectName(u"startButton")
+
+        self.verticalLayout_2.addWidget(self.startButton)
+
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_2.addItem(self.verticalSpacer)
+
+        self.stackedWidget.addWidget(self.standbyPage)
         self.checklistPage = QWidget()
         self.checklistPage.setObjectName(u"checklistPage")
-        self.verticalLayout_2 = QVBoxLayout(self.checklistPage)
-        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.instructionLabel = QLabel(self.checklistPage)
-        self.instructionLabel.setObjectName(u"instructionLabel")
-        self.instructionLabel.setWordWrap(True)
-
-        self.verticalLayout_2.addWidget(self.instructionLabel)
-
-        self.taskGroupBox = QGroupBox(self.checklistPage)
-        self.taskGroupBox.setObjectName(u"taskGroupBox")
-        self.verticalLayout_3 = QVBoxLayout(self.taskGroupBox)
+        self.verticalLayout_3 = QVBoxLayout(self.checklistPage)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.taskInstructionsTextEdit = QTextEdit(self.taskGroupBox)
-        self.taskInstructionsTextEdit.setObjectName(u"taskInstructionsTextEdit")
-        self.taskInstructionsTextEdit.setReadOnly(True)
+        self.checklistHeaderLabel = QLabel(self.checklistPage)
+        self.checklistHeaderLabel.setObjectName(u"checklistHeaderLabel")
 
-        self.verticalLayout_3.addWidget(self.taskInstructionsTextEdit)
+        self.verticalLayout_3.addWidget(self.checklistHeaderLabel)
 
-        self.helpTextEdit = QTextEdit(self.taskGroupBox)
-        self.helpTextEdit.setObjectName(u"helpTextEdit")
-        self.helpTextEdit.setReadOnly(True)
+        self.stepsStackedWidget = QStackedWidget(self.checklistPage)
+        self.stepsStackedWidget.setObjectName(u"stepsStackedWidget")
 
-        self.verticalLayout_3.addWidget(self.helpTextEdit)
+        self.verticalLayout_3.addWidget(self.stepsStackedWidget)
+
+        self.line_2 = QFrame(self.checklistPage)
+        self.line_2.setObjectName(u"line_2")
+        self.line_2.setFrameShape(QFrame.Shape.HLine)
+        self.line_2.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.verticalLayout_3.addWidget(self.line_2)
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.doneButton = QPushButton(self.taskGroupBox)
+        self.doneButton = QPushButton(self.checklistPage)
         self.doneButton.setObjectName(u"doneButton")
 
         self.horizontalLayout.addWidget(self.doneButton)
 
-        self.helpButton = QPushButton(self.taskGroupBox)
+        self.helpButton = QPushButton(self.checklistPage)
         self.helpButton.setObjectName(u"helpButton")
 
         self.horizontalLayout.addWidget(self.helpButton)
 
-        self.ignoreButton = QPushButton(self.taskGroupBox)
+        self.ignoreButton = QPushButton(self.checklistPage)
         self.ignoreButton.setObjectName(u"ignoreButton")
 
         self.horizontalLayout.addWidget(self.ignoreButton)
@@ -89,47 +103,40 @@ class Ui_TestEnvPage(object):
 
         self.verticalLayout_3.addLayout(self.horizontalLayout)
 
-        self.verticalLayout_3.setStretch(0, 1)
-
-        self.verticalLayout_2.addWidget(self.taskGroupBox)
-
         self.stackedWidget.addWidget(self.checklistPage)
-        self.finalConfirmPage = QWidget()
-        self.finalConfirmPage.setObjectName(u"finalConfirmPage")
-        self.verticalLayout_4 = QVBoxLayout(self.finalConfirmPage)
+        self.finalizePage = QWidget()
+        self.finalizePage.setObjectName(u"finalizePage")
+        self.verticalLayout_4 = QVBoxLayout(self.finalizePage)
         self.verticalLayout_4.setObjectName(u"verticalLayout_4")
-        self.successLabel = QLabel(self.finalConfirmPage)
-        self.successLabel.setObjectName(u"successLabel")
-        self.successLabel.setStyleSheet(u"font-size: 14pt;")
+        self.finalizeLabel = QLabel(self.finalizePage)
+        self.finalizeLabel.setObjectName(u"finalizeLabel")
+        self.finalizeLabel.setWordWrap(True)
 
-        self.verticalLayout_4.addWidget(self.successLabel)
+        self.verticalLayout_4.addWidget(self.finalizeLabel)
 
-        self.finalInstructionLabel = QLabel(self.finalConfirmPage)
-        self.finalInstructionLabel.setObjectName(u"finalInstructionLabel")
-        self.finalInstructionLabel.setWordWrap(True)
-
-        self.verticalLayout_4.addWidget(self.finalInstructionLabel)
-
-        self.testCommandLineEdit = QLineEdit(self.finalConfirmPage)
+        self.testCommandLineEdit = QLineEdit(self.finalizePage)
         self.testCommandLineEdit.setObjectName(u"testCommandLineEdit")
 
         self.verticalLayout_4.addWidget(self.testCommandLineEdit)
 
-        self.finalizeButton = QPushButton(self.finalConfirmPage)
+        self.finalizeButton = QPushButton(self.finalizePage)
         self.finalizeButton.setObjectName(u"finalizeButton")
 
         self.verticalLayout_4.addWidget(self.finalizeButton)
 
-        self.verticalSpacer_2 = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout_4.addItem(self.verticalSpacer_2)
 
-        self.stackedWidget.addWidget(self.finalConfirmPage)
+        self.stackedWidget.addWidget(self.finalizePage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
 
 
         self.retranslateUi(TestEnvPage)
+
+        self.stackedWidget.setCurrentIndex(0)
+
 
         QMetaObject.connectSlotsByName(TestEnvPage)
     # setupUi
@@ -137,13 +144,17 @@ class Ui_TestEnvPage(object):
     def retranslateUi(self, TestEnvPage):
         TestEnvPage.setWindowTitle(QCoreApplication.translate("TestEnvPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("TestEnvPage", u"Test Environment Setup", None))
-        self.instructionLabel.setText(QCoreApplication.translate("TestEnvPage", u"Please follow the steps below to set up the necessary testing frameworks for your project's technology stack.", None))
-        self.taskGroupBox.setTitle(QCoreApplication.translate("TestEnvPage", u"Step X of Y: Task Name", None))
+        self.standbyLabel.setText(QCoreApplication.translate("TestEnvPage", u"The system will now analyze the project's Technical Specification to generate a step-by-step guide for setting up the required testing environment.\n"
+"\n"
+"Click 'Start Analysis' to proceed.", None))
+        self.startButton.setText(QCoreApplication.translate("TestEnvPage", u"Start Analysis", None))
+        self.checklistHeaderLabel.setText(QCoreApplication.translate("TestEnvPage", u"Please follow the steps below to set up the testing environment:", None))
         self.doneButton.setText(QCoreApplication.translate("TestEnvPage", u"Done, Next Step", None))
         self.helpButton.setText(QCoreApplication.translate("TestEnvPage", u"I Need Help", None))
         self.ignoreButton.setText(QCoreApplication.translate("TestEnvPage", u"Ignore & Continue", None))
-        self.successLabel.setText(QCoreApplication.translate("TestEnvPage", u"All setup steps have been actioned.", None))
-        self.finalInstructionLabel.setText(QCoreApplication.translate("TestEnvPage", u"Please confirm the final command that should be used to run all automated tests for this project (e.g., 'pytest', 'mvn test').", None))
+        self.finalizeLabel.setText(QCoreApplication.translate("TestEnvPage", u"All setup steps have been actioned.\n"
+"\n"
+"Please confirm the final command that should be used to run all automated tests for this project (e.g., 'pytest', 'mvn test').", None))
         self.finalizeButton.setText(QCoreApplication.translate("TestEnvPage", u"Finalize Test Environment Setup", None))
     # retranslateUi
 

@@ -34,6 +34,7 @@ class PlanningPage(QWidget):
         self.development_plan_json = ""
         self.ui.planTextEdit.clear()
         self.ui.stackedWidget.setCurrentWidget(self.ui.generatePage)
+        self.setEnabled(True)
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
@@ -55,7 +56,7 @@ class PlanningPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[2]}"
+        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
         QMessageBox.critical(self, "Error", error_msg)
         self._set_ui_busy(False)
 
@@ -68,10 +69,15 @@ class PlanningPage(QWidget):
         try:
             self.development_plan_json = plan_json_str
             parsed_json = json.loads(plan_json_str)
-            pretty_json = json.dumps(parsed_json, indent=4)
-            self.ui.planTextEdit.setText(pretty_json)
-            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
-            self.state_changed.emit()
+
+            if "error" in parsed_json:
+                QMessageBox.warning(self, "Plan Generation Failed",
+                                    "There was a temporary issue generating the development plan. This may be due to a transient error.\n\nPlease try again by clicking 'Generate Plan'.")
+            else:
+                pretty_json = json.dumps(parsed_json, indent=4)
+                self.ui.planTextEdit.setText(pretty_json)
+                self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+                self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 
@@ -84,18 +90,17 @@ class PlanningPage(QWidget):
         success, message = self.orchestrator.finalize_and_save_dev_plan(self.development_plan_json)
         if success:
             QMessageBox.information(self, "Success", "Development Plan approved and saved.")
+            self.orchestrator.is_project_dirty = True
             self.planning_complete.emit()
         else:
             QMessageBox.critical(self, "Error", f"Failed to save the development plan:\n{message}")
 
-    # --- Backend Logic (to be run in worker thread) ---
-
     def _task_generate_plan(self, **kwargs):
         """The actual function that runs in the background."""
-        with self.orchestrator.db_manager as db:
-            project_details = db.get_project_by_id(self.orchestrator.project_id)
-            final_spec = project_details['final_spec_text']
-            tech_spec = project_details['tech_spec_text']
+        db = self.orchestrator.db_manager
+        project_details = db.get_project_by_id(self.orchestrator.project_id)
+        final_spec = project_details['final_spec_text']
+        tech_spec = project_details['tech_spec_text']
 
         if not all([final_spec, tech_spec]):
             raise Exception("Missing Final or Technical Specification. Cannot generate a plan.")
@@ -109,7 +114,6 @@ class PlanningPage(QWidget):
         response_data = json.loads(response_json_str)
         main_executable = response_data.get("main_executable_file")
         if main_executable:
-            with self.orchestrator.db_manager as db:
-                db.update_project_apex_file(self.orchestrator.project_id, main_executable)
+            db.update_project_field(self.orchestrator.project_id, "apex_executable_name", main_executable)
 
         return response_json_str

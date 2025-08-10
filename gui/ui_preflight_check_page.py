@@ -16,8 +16,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QSizePolicy, QSpacerItem, QStackedWidget, QTextEdit,
-    QVBoxLayout, QWidget)
+    QPushButton, QSizePolicy, QSpacerItem, QStackedWidget,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_PreflightCheckPage(object):
     def setupUi(self, PreflightCheckPage):
@@ -40,47 +40,83 @@ class Ui_PreflightCheckPage(object):
 
         self.verticalLayout.addWidget(self.line)
 
-        self.stackedWidget = QStackedWidget(PreflightCheckPage)
-        self.stackedWidget.setObjectName(u"stackedWidget")
+        self.statusLabel = QLabel(PreflightCheckPage)
+        self.statusLabel.setObjectName(u"statusLabel")
+        self.statusLabel.setWordWrap(True)
+
+        self.verticalLayout.addWidget(self.statusLabel)
+
+        self.detailsTextEdit = QTextEdit(PreflightCheckPage)
+        self.detailsTextEdit.setObjectName(u"detailsTextEdit")
+        self.detailsTextEdit.setReadOnly(True)
+
+        self.verticalLayout.addWidget(self.detailsTextEdit)
+
+        self.actionStackedWidget = QStackedWidget(PreflightCheckPage)
+        self.actionStackedWidget.setObjectName(u"actionStackedWidget")
         self.loadingPage = QWidget()
         self.loadingPage.setObjectName(u"loadingPage")
-        self.verticalLayout_2 = QVBoxLayout(self.loadingPage)
+        self.actionStackedWidget.addWidget(self.loadingPage)
+        self.successPage = QWidget()
+        self.successPage.setObjectName(u"successPage")
+        self.horizontalLayout = QHBoxLayout(self.successPage)
+        self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.proceedButton = QPushButton(self.successPage)
+        self.proceedButton.setObjectName(u"proceedButton")
+
+        self.horizontalLayout.addWidget(self.proceedButton)
+
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout.addItem(self.horizontalSpacer)
+
+        self.actionStackedWidget.addWidget(self.successPage)
+        self.stateDriftPage = QWidget()
+        self.stateDriftPage.setObjectName(u"stateDriftPage")
+        self.verticalLayout_2 = QVBoxLayout(self.stateDriftPage)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.loadingLabel = QLabel(self.loadingPage)
-        self.loadingLabel.setObjectName(u"loadingLabel")
-        self.loadingLabel.setAlignment(Qt.AlignCenter)
+        self.stateDriftLabel = QLabel(self.stateDriftPage)
+        self.stateDriftLabel.setObjectName(u"stateDriftLabel")
+        self.stateDriftLabel.setWordWrap(True)
 
-        self.verticalLayout_2.addWidget(self.loadingLabel)
+        self.verticalLayout_2.addWidget(self.stateDriftLabel)
 
-        self.stackedWidget.addWidget(self.loadingPage)
-        self.resultsPage = QWidget()
-        self.resultsPage.setObjectName(u"resultsPage")
-        self.verticalLayout_3 = QVBoxLayout(self.resultsPage)
-        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.statusLabel = QLabel(self.resultsPage)
-        self.statusLabel.setObjectName(u"statusLabel")
-        self.statusLabel.setStyleSheet(u"font-size: 14pt;")
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.manualResolveButton = QPushButton(self.stateDriftPage)
+        self.manualResolveButton.setObjectName(u"manualResolveButton")
 
-        self.verticalLayout_3.addWidget(self.statusLabel)
+        self.horizontalLayout_2.addWidget(self.manualResolveButton)
 
-        self.messageTextEdit = QTextEdit(self.resultsPage)
-        self.messageTextEdit.setObjectName(u"messageTextEdit")
-        self.messageTextEdit.setReadOnly(True)
+        self.discardButton = QPushButton(self.stateDriftPage)
+        self.discardButton.setObjectName(u"discardButton")
 
-        self.verticalLayout_3.addWidget(self.messageTextEdit)
+        self.horizontalLayout_2.addWidget(self.discardButton)
 
-        self.buttonLayout = QHBoxLayout()
-        self.buttonLayout.setObjectName(u"buttonLayout")
 
-        self.verticalLayout_3.addLayout(self.buttonLayout)
+        self.verticalLayout_2.addLayout(self.horizontalLayout_2)
 
-        self.verticalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.actionStackedWidget.addWidget(self.stateDriftPage)
+        self.errorPage = QWidget()
+        self.errorPage.setObjectName(u"errorPage")
+        self.horizontalLayout_3 = QHBoxLayout(self.errorPage)
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.backButton = QPushButton(self.errorPage)
+        self.backButton.setObjectName(u"backButton")
 
-        self.verticalLayout_3.addItem(self.verticalSpacer)
+        self.horizontalLayout_3.addWidget(self.backButton)
 
-        self.stackedWidget.addWidget(self.resultsPage)
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.verticalLayout.addWidget(self.stackedWidget)
+        self.horizontalLayout_3.addItem(self.horizontalSpacer_2)
+
+        self.actionStackedWidget.addWidget(self.errorPage)
+
+        self.verticalLayout.addWidget(self.actionStackedWidget)
+
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout.addItem(self.verticalSpacer)
 
 
         self.retranslateUi(PreflightCheckPage)
@@ -90,8 +126,12 @@ class Ui_PreflightCheckPage(object):
 
     def retranslateUi(self, PreflightCheckPage):
         PreflightCheckPage.setWindowTitle(QCoreApplication.translate("PreflightCheckPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Pre-flight Check Resolution", None))
-        self.loadingLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Running pre-flight checks...", None))
-        self.statusLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Status: All Checks Passed", None))
+        self.headerLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Pre-flight Check", None))
+        self.statusLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Status: Running checks...", None))
+        self.proceedButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Proceed to Project", None))
+        self.stateDriftLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"<b>Action Required:</b> To prevent conflicts, please resolve the state of the repository. You have two options:", None))
+        self.manualResolveButton.setText(QCoreApplication.translate("PreflightCheckPage", u"I Will Resolve This Manually", None))
+        self.discardButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Discard All Local Changes", None))
+        self.backButton.setText(QCoreApplication.translate("PreflightCheckPage", u"<-- Back to Project List", None))
     # retranslateUi
 

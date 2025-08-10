@@ -1,31 +1,16 @@
 # llm_service.py
 
-"""
-This module contains the abstraction layer for LLM services, allowing ASDF
-to flexibly switch between different providers.
-(ASDF Flexi Model Change, F-Dev 10.1)
-"""
-
 import logging
 from abc import ABC, abstractmethod
-from asdf_db_manager import ASDFDBManager
 
 class LLMService(ABC):
     """
     An abstract base class that defines the standard interface for an LLM service.
-    All concrete LLM adapters must implement this interface.
     """
     @abstractmethod
     def generate_text(self, prompt: str, task_complexity: str) -> str:
         """
         Generates text using the configured LLM.
-
-        Args:
-            prompt (str): The full prompt to send to the LLM.
-            task_complexity (str): A hint for model selection, either "complex" or "simple".
-
-        Returns:
-            str: The text response from the LLM.
         """
         pass
 
@@ -34,23 +19,12 @@ class GeminiAdapter(LLMService):
     Concrete implementation of the LLMService for Google's Gemini models.
     """
     def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
-        """
-        Initializes the GeminiAdapter.
-        """
         import google.generativeai as genai
-        # FIX: Import the GenerationConfig type to be explicit
-        from google.generativeai.types import GenerationConfig
-
         if not api_key:
             raise ValueError("API key is required for the GeminiAdapter.")
         genai.configure(api_key=api_key)
-
-        # FIX: Create a stable, explicit generation configuration
-        # This prevents the SDK from using a problematic default for new models.
-        stable_config = GenerationConfig(candidate_count=1)
-
-        self.reasoning_model = genai.GenerativeModel(reasoning_model_name, generation_config=stable_config)
-        self.fast_model = genai.GenerativeModel(fast_model_name, generation_config=stable_config)
+        self.reasoning_model = genai.GenerativeModel(reasoning_model_name)
+        self.fast_model = genai.GenerativeModel(fast_model_name)
         logging.info(f"GeminiAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
@@ -59,18 +33,13 @@ class GeminiAdapter(LLMService):
         """
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-            logging.debug(f"Using Gemini model: {'Reasoning' if task_complexity == 'complex' else 'Fast'}")
-
             response = model_to_use.generate_content(prompt)
-
             if not hasattr(response, 'text') or not response.text:
-                # Add a check for empty or malformed responses
-                logging.warning(f"Gemini model returned an empty or malformed response: {response}")
-                raise ValueError("The Gemini model returned an empty response.")
-
+                logging.warning(f"Gemini model returned an empty or malformed response.")
+                return "Error: The Gemini model returned an empty response."
             return response.text.strip()
         except Exception as e:
-            logging.error(f"Gemini API call failed: {e}")
+            logging.error(f"Gemini API call failed: {e}", exc_info=True)
             return f"Error: The call to the Gemini API failed. Details: {e}"
 
 class OpenAIAdapter(LLMService):
@@ -78,9 +47,6 @@ class OpenAIAdapter(LLMService):
     Concrete implementation of the LLMService for OpenAI's models (e.g., GPT-4).
     """
     def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
-        """
-        Initializes the OpenAIAdapter.
-        """
         import openai
         if not api_key:
             raise ValueError("API key is required for the OpenAIAdapter.")
@@ -90,25 +56,16 @@ class OpenAIAdapter(LLMService):
         logging.info(f"OpenAIAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
-        """
-        Generates text using the appropriate OpenAI model based on task complexity.
-        """
         import openai
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-            logging.debug(f"Using OpenAI model: {'Reasoning' if task_complexity == 'complex' else 'Fast'}")
-
             completion = self.client.chat.completions.create(
                 model=model_to_use,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                messages=[{"role": "user", "content": prompt}]
             )
-
             response_text = completion.choices[0].message.content
             if not response_text:
                 raise ValueError("The OpenAI model returned an empty response.")
-
             return response_text.strip()
         except Exception as e:
             logging.error(f"OpenAI API call failed: {e}")
@@ -119,9 +76,6 @@ class AnthropicAdapter(LLMService):
     Concrete implementation of the LLMService for Anthropic's Claude models.
     """
     def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
-        """
-        Initializes the AnthropicAdapter.
-        """
         import anthropic
         if not api_key:
             raise ValueError("API key is required for the AnthropicAdapter.")
@@ -131,25 +85,16 @@ class AnthropicAdapter(LLMService):
         logging.info(f"AnthropicAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
-        """
-        Generates text using the appropriate Claude model based on task complexity.
-        """
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-            logging.debug(f"Using Anthropic model: {'Reasoning' if task_complexity == 'complex' else 'Fast'}")
-
             message = self.client.messages.create(
                 model=model_to_use,
                 max_tokens=4096,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                messages=[{"role": "user", "content": prompt}]
             )
-
             response_text = message.content[0].text
             if not response_text:
                 raise ValueError("The Anthropic model returned an empty response.")
-
             return response_text.strip()
         except Exception as e:
             logging.error(f"Anthropic API call failed: {e}")
@@ -160,40 +105,25 @@ class LocalPhi3Adapter(LLMService):
     Concrete implementation of the LLMService for a local Phi-3 model via Ollama.
     """
     def __init__(self, base_url: str = "http://localhost:11434/v1"):
-        """
-        Initializes the LocalPhi3Adapter.
-        """
         import openai
         self.client = openai.OpenAI(base_url=base_url, api_key="ollama")
         self.model = "phi3"
         logging.info(f"LocalPhi3Adapter initialized for model '{self.model}' at {base_url}.")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
-        """
-        Generates text using the local Phi-3 model. Task complexity is ignored.
-        """
         import openai
         try:
-            logging.debug(f"Using local Phi-3 model (Task complexity '{task_complexity}' ignored).")
-
             completion = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                messages=[{"role": "user", "content": prompt}]
             )
-
             response_text = completion.choices[0].message.content
             if not response_text:
                 raise ValueError("The local Phi-3 model returned an empty response.")
-
             return response_text.strip()
         except openai.APIConnectionError as e:
             logging.error(f"Local Phi-3 (Ollama) API call failed: {e}")
-            return (
-                "Error: Could not connect to the local Ollama server. "
-                "Please ensure Ollama is running and the model is available. Details: " + str(e)
-            )
+            return f"Error: Could not connect to the local Ollama server. Details: {e}"
         except Exception as e:
             logging.error(f"Local Phi-3 (Ollama) API call failed: {e}")
             return f"Error: The call to the local Phi-3 (Ollama) API failed. Details: {e}"
@@ -203,36 +133,24 @@ class CustomEndpointAdapter(LLMService):
     Concrete implementation for a generic, OpenAI-compatible custom endpoint.
     """
     def __init__(self, base_url: str, api_key: str, reasoning_model_name: str, fast_model_name: str):
-        """
-        Initializes the CustomEndpointAdapter.
-        """
         import openai
         if not all([base_url, api_key, reasoning_model_name, fast_model_name]):
-            raise ValueError("base_url, api_key, and both model names are required for the CustomEndpointAdapter.")
+            raise ValueError("All parameters are required for the CustomEndpointAdapter.")
         self.client = openai.OpenAI(base_url=base_url, api_key=api_key)
         self.reasoning_model = reasoning_model_name
         self.fast_model = fast_model_name
         logging.info(f"CustomEndpointAdapter initialized for endpoint at {base_url}.")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
-        """
-        Generates text using the configured custom model.
-        """
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-            logging.debug(f"Using Custom Endpoint model: {'Reasoning' if task_complexity == 'complex' else 'Fast'}")
-
             completion = self.client.chat.completions.create(
                 model=model_to_use,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
+                messages=[{"role": "user", "content": prompt}]
             )
-
             response_text = completion.choices[0].message.content
             if not response_text:
                 raise ValueError("The custom endpoint model returned an empty response.")
-
             return response_text.strip()
         except Exception as e:
             logging.error(f"Custom Endpoint API call failed: {e}")

@@ -65,7 +65,6 @@ class Ui_MainWindow(object):
         self.leftPanelWidget = QWidget(self.mainSplitter)
         self.leftPanelWidget.setObjectName(u"leftPanelWidget")
         self.leftPanelWidget.setMinimumSize(QSize(250, 0))
-        self.leftPanelWidget.setMaximumSize(QSize(400, 16777215))
         self.leftPanelLayout = QVBoxLayout(self.leftPanelWidget)
         self.leftPanelLayout.setObjectName(u"leftPanelLayout")
         self.projectNavigationTabs = QTabWidget(self.leftPanelWidget)

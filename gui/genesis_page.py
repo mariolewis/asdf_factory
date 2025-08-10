@@ -99,4 +99,5 @@ class GenesisPage(QWidget):
         """The actual function that runs in the background."""
         progress_callback = kwargs.get('progress_callback')
         self.orchestrator.handle_proceed_action(progress_callback=progress_callback)
+        self.orchestrator.is_project_dirty = True
         return "Step complete."

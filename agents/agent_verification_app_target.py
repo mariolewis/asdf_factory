@@ -26,37 +26,37 @@ class VerificationAgent_AppTarget:
         self.llm_service = llm_service
         logging.info("VerificationAgent initialized.")
 
-    def _get_test_execution_details(self, tech_spec_text: str) -> Optional[Dict[str, any]]:
+    def _get_test_execution_details(self, tech_spec_text: str) -> dict:
         """
-        Determines the test command and required tools based on the tech spec.
+        Analyzes the tech spec to determine the test command and required tools.
+        Returns a dictionary with 'command' and 'required_tools' keys.
         """
         prompt = textwrap.dedent(f"""
-            You are a build engineering expert. Based on the provided technical specification, determine the standard command-line instruction to run the project's test suite and the tools required.
+            Analyze the following Technical Specification to determine the command needed to run unit tests and a list of any required testing libraries or frameworks.
 
-            Your response MUST be a single, valid JSON object with two keys:
-            - "command": A string containing the single, standard, non-interactive command to run all tests from the repository root (e.g., "pytest", "mvn test", "gradlew test").
-            - "required_tools": A JSON array of human-readable strings listing the necessary tools (e.g., ["pytest"], ["Java JDK", "Maven"], ["Go"]).
-
-            Do not include any other text or explanations outside of the raw JSON object.
+            **MANDATORY INSTRUCTIONS:**
+            1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
+            2.  **Structure:** The JSON object must have two keys: "command" (a string with the exact test command, e.g., "pytest") and "required_tools" (a JSON array of strings, e.g., ["pytest", "pytest-cov"]).
+            3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object.
 
             **--- Technical Specification ---**
             {tech_spec_text}
-            **--- End of Specification ---**
+            **--- End Specification ---**
 
-            **JSON Output:**
+            **--- JSON Output ---**
         """)
-
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            result = json.loads(cleaned_response)
-            if result.get("command") and isinstance(result.get("required_tools"), list):
-                return result
-            logging.error("LLM output was missing 'command' or 'required_tools' keys.")
-            return None
+            details = json.loads(cleaned_response)
+            if "command" in details and "required_tools" in details:
+                return details
+            else:
+                logging.error("LLM output was missing 'command' or 'required_tools' keys.")
+                return {"command": "pytest", "required_tools": []}
         except Exception as e:
-            logging.error(f"LLM call failed to determine test command details: {e}.")
-            return None
+            logging.error(f"Failed to get test execution details from LLM: {e}")
+            return {"command": "pytest", "required_tools": []}
 
     def run_all_tests(self, project_root: str | Path, test_command_str: str) -> tuple[str, str]:
         """

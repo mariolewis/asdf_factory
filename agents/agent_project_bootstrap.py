@@ -1,10 +1,9 @@
-# agent_project_bootstrap.py
+# agents/agent_project_bootstrap.py
 
 """
 This module contains the ProjectBootstrapAgent class.
 """
 
-# import docx
 import logging
 from typing import List, Tuple, Optional
 from asdf_db_manager import ASDFDBManager
@@ -37,7 +36,6 @@ class ProjectBootstrapAgent:
                     for para in document.paragraphs:
                         all_text.append(para.text)
                 elif doc.name.endswith('.pdf'):
-                    # Lazy-load pypdf only when a PDF is actually processed
                     from pypdf import PdfReader
                     try:
                         pdf_reader = PdfReader(doc)
@@ -55,8 +53,7 @@ class ProjectBootstrapAgent:
         concatenated_text = "\n\n---\n\n".join(all_text)
 
         try:
-            with self.db_manager as db:
-                limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
+            limit_str = self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
             spec_max_char_limit = int(limit_str)
         except Exception as e:
             logging.error(f"Could not read CONTEXT_WINDOW_CHAR_LIMIT from DB, using default. Error: {e}")
@@ -75,8 +72,8 @@ class ProjectBootstrapAgent:
     def extract_text_from_file_paths(self, file_paths: list[str]) -> tuple[str | None, list[str], str | None]:
         """
         Extracts text content from a list of local file paths and checks size limits.
-        This is the new method for the PySide6 GUI.
         """
+        import docx
         all_text = []
         messages = []
         for path_str in file_paths:
@@ -104,14 +101,12 @@ class ProjectBootstrapAgent:
                 else:
                     messages.append(f"Warning: Unsupported file type '{path.name}' was skipped.")
             except Exception as e:
-                # CORRECTED: Use path_str instead of path.name in the error message
                 messages.append(f"Error: Could not process file '{path_str}'. Reason: {e}")
 
         concatenated_text = "\n\n---\n\n".join(all_text)
 
         try:
-            with self.db_manager as db:
-                limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
+            limit_str = self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
             spec_max_char_limit = int(limit_str)
         except Exception as e:
             logging.error(f"Could not read CONTEXT_WINDOW_CHAR_LIMIT from DB, using default. Error: {e}")

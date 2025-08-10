@@ -1,7 +1,7 @@
 /* ASDF Dark Theme Stylesheet v0.1 */
 
 /* ---- Main Window & General Widgets ---- */
-QMainWindow, QDialog {
+QMainWindow, QDialog, QWidget {
     background-color: #2B2B2B; /* A dark gray background */
     color: #F0F0F0; /* A light gray for text */
 }

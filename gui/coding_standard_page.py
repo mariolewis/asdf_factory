@@ -33,6 +33,7 @@ class CodingStandardPage(QWidget):
         self.coding_standard_draft = ""
         self.ui.standardTextEdit.clear()
         self.ui.stackedWidget.setCurrentWidget(self.ui.generatePage)
+        self.setEnabled(True)
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
@@ -53,7 +54,7 @@ class CodingStandardPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[2]}"
+        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
         QMessageBox.critical(self, "Error", error_msg)
         self._set_ui_busy(False)
 
@@ -80,15 +81,14 @@ class CodingStandardPage(QWidget):
 
         self.orchestrator.finalize_and_save_coding_standard(final_standard)
         QMessageBox.information(self, "Success", "Coding Standard approved and saved.")
+        self.orchestrator.is_project_dirty = True
         self.coding_standard_complete.emit()
-
-    # --- Backend Logic (to be run in worker thread) ---
 
     def _task_generate_standard(self, **kwargs):
         """The actual function that runs in the background."""
-        with self.orchestrator.db_manager as db:
-            project_details = db.get_project_by_id(self.orchestrator.project_id)
-            tech_spec_text = project_details['tech_spec_text']
+        db = self.orchestrator.db_manager
+        project_details = db.get_project_by_id(self.orchestrator.project_id)
+        tech_spec_text = project_details['tech_spec_text']
 
         if not tech_spec_text:
             raise Exception("Could not retrieve the Technical Specification. Cannot generate a coding standard.")

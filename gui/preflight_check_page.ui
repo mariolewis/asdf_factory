@@ -29,7 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>Pre-flight Check Resolution</string>
+      <string>Pre-flight Check</string>
      </property>
      <property name="styleSheet">
       <string notr="true">font-size: 18pt; font-weight: bold;</string>
@@ -44,56 +44,119 @@
     </widget>
    </item>
    <item>
-    <widget class="QStackedWidget" name="stackedWidget">
-     <widget class="QWidget" name="loadingPage">
-      <layout class="QVBoxLayout" name="verticalLayout_2">
+    <widget class="QLabel" name="statusLabel">
+     <property name="text">
+      <string>Status: Running checks...</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTextEdit" name="detailsTextEdit">
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QStackedWidget" name="actionStackedWidget">
+     <widget class="QWidget" name="loadingPage"/>
+     <widget class="QWidget" name="successPage">
+      <layout class="QHBoxLayout" name="horizontalLayout">
        <item>
-        <widget class="QLabel" name="loadingLabel">
+        <widget class="QPushButton" name="proceedButton">
          <property name="text">
-          <string>Running pre-flight checks...</string>
-         </property>
-         <property name="alignment">
-          <set>Qt::AlignCenter</set>
+          <string>Proceed to Project</string>
          </property>
         </widget>
+       </item>
+       <item>
+        <spacer name="horizontalSpacer">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
+         </property>
+        </spacer>
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="resultsPage">
-      <layout class="QVBoxLayout" name="verticalLayout_3">
+     <widget class="QWidget" name="stateDriftPage">
+      <layout class="QVBoxLayout" name="verticalLayout_2">
        <item>
-        <widget class="QLabel" name="statusLabel">
+        <widget class="QLabel" name="stateDriftLabel">
          <property name="text">
-          <string>Status: All Checks Passed</string>
+          <string>&lt;b&gt;Action Required:&lt;/b&gt; To prevent conflicts, please resolve the state of the repository. You have two options:</string>
          </property>
-         <property name="styleSheet">
-          <string notr="true">font-size: 14pt;</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QTextEdit" name="messageTextEdit">
-         <property name="readOnly">
+         <property name="wordWrap">
           <bool>true</bool>
          </property>
         </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="buttonLayout"/>
+        <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <item>
+          <widget class="QPushButton" name="manualResolveButton">
+           <property name="text">
+            <string>I Will Resolve This Manually</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="discardButton">
+           <property name="text">
+            <string>Discard All Local Changes</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="errorPage">
+      <layout class="QHBoxLayout" name="horizontalLayout_3">
+       <item>
+        <widget class="QPushButton" name="backButton">
+         <property name="text">
+          <string>&lt;-- Back to Project List</string>
+         </property>
+        </widget>
        </item>
        <item>
-        <spacer name="verticalSpacer">
+        <spacer name="horizontalSpacer_2">
          <property name="orientation">
-          <enum>Qt::Vertical</enum>
+          <enum>Qt::Horizontal</enum>
          </property>
-         <property name="sizeType">
-          <enum>QSizePolicy::Expanding</enum>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>40</width>
+           <height>20</height>
+          </size>
          </property>
         </spacer>
        </item>
       </layout>
      </widget>
     </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
    </item>
   </layout>
  </widget>

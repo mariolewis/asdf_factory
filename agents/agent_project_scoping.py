@@ -35,13 +35,6 @@ class ProjectScopingAgent:
         """
         Performs a detailed complexity and risk analysis on the specification text.
         Returns a structured dictionary with the full analysis.
-        (ASDF Change Request CR-ASDF-004, Stage 2: Complexity Analysis Filter)
-
-        Args:
-            spec_text: The full text of the specification.
-
-        Returns:
-            A dictionary containing the full analysis, or an error dictionary on failure.
         """
         import re
 
@@ -81,29 +74,31 @@ class ProjectScopingAgent:
             JSON OUTPUT:
         """)
 
-        response_text = "" # Initialize for the except block
+        response_text = ""
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
 
-            # More robustly find the JSON block, even with leading/trailing text or markdown
+            # More robustly find the JSON block
             json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
             if not json_match:
                 raise ValueError("No JSON object found in the LLM response.")
 
-            cleaned_response_text = json_match.group(0)
-            result = json.loads(cleaned_response_text)
-            logging.info(f"Successfully received and parsed complexity and risk analysis.")
+            json_str = json_match.group(0)
+
+            # This is the new fix: Remove trailing commas that cause parsing errors
+            json_str = re.sub(r',\s*([\}\]])', r'\1', json_str)
+
+            result = json.loads(json_str)
+            logging.info("Successfully received and parsed complexity and risk analysis.")
             return result
         except json.JSONDecodeError as e:
-            logging.error(f"ProjectScopingAgent failed to parse LLM response: {e}\\nResponse was: {response_text}")
-            # Corrected error handling syntax
+            logging.error(f"ProjectScopingAgent failed to parse LLM response: {e}\nResponse was: {response_text}")
             return {
                 "error": "Failed to get a valid analysis from the AI model.",
                 "details": response_text
             }
         except Exception as e:
             logging.error(f"ProjectScopingAgent API call failed: {e}")
-            # Corrected error handling syntax
             return {
                 "error": "An unexpected error occurred during analysis.",
                 "details": str(e)

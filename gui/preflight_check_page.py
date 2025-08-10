@@ -1,97 +1,91 @@
 # gui/preflight_check_page.py
 
 import logging
-from PySide6.QtWidgets import QWidget, QMessageBox, QPushButton
+from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal
-
-# We will create this file in the next step
-from gui.ui_preflight_check_page import Ui_PreflightCheckPage
-from master_orchestrator import MasterOrchestrator
+from PySide6.QtGui import QColor
 
 class PreflightCheckPage(QWidget):
     """
-    The logic handler for the Pre-flight Check Resolution page.
+    The logic handler for the Pre-flight Check page.
     """
     project_load_finalized = Signal()
     project_load_failed = Signal()
 
-    def __init__(self, orchestrator: MasterOrchestrator, parent=None):
+    def __init__(self, orchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
-
+        # This import is done here to avoid circular dependency at the top level
+        from gui.ui_preflight_check_page import Ui_PreflightCheckPage
+        from PySide6.QtWidgets import QLabel, QTextEdit # Add this line for clarity
         self.ui = Ui_PreflightCheckPage()
         self.ui.setupUi(self)
+        self.connect_signals()
+
+    def connect_signals(self):
+        """Connects UI element signals to Python methods."""
+        self.ui.proceedButton.clicked.connect(self.on_proceed_clicked)
+        self.ui.manualResolveButton.clicked.connect(self.on_manual_resolve_clicked)
+        self.ui.discardButton.clicked.connect(self.on_discard_clicked)
+        self.ui.backButton.clicked.connect(self.project_load_failed.emit)
 
     def update_and_display(self):
-        """
-        Updates the page with the results from the orchestrator's
-        pre-flight check and configures the appropriate action buttons.
-        """
+        """Updates the page content based on the pre-flight check result."""
         result = self.orchestrator.preflight_check_result
         if not result:
-            self.ui.statusLabel.setText("Error")
-            self.ui.messageTextEdit.setText("Pre-flight check result not found in the orchestrator.")
+            self.ui.statusLabel.setText("Status: Error")
+            self.ui.detailsTextEdit.setText("Could not retrieve pre-flight check results.")
+            self.ui.actionStackedWidget.setCurrentWidget(self.ui.errorPage)
             return
 
         status = result.get("status")
         message = result.get("message")
 
-        self.ui.statusLabel.setText(f"Status: {status.replace('_', ' ').title()}")
-        self.ui.messageTextEdit.setText(message)
+        self.ui.detailsTextEdit.setText(message)
 
-        # Clear any existing buttons from the layout
-        while self.ui.buttonLayout.count():
-            child = self.ui.buttonLayout.takeAt(0)
-            if child.widget():
-                child.widget().deleteLater()
-
-        # Add buttons based on the status
         if status == "ALL_PASS":
-            proceed_button = QPushButton("▶️ Proceed to Project")
-            proceed_button.clicked.connect(self.on_proceed_clicked)
-            self.ui.buttonLayout.addWidget(proceed_button)
-
-        elif status in ["PATH_NOT_FOUND", "GIT_MISSING"]:
-            resolve_button = QPushButton("Go to Environment Setup to Resolve")
-            resolve_button.clicked.connect(self.on_resolve_manually_clicked)
-            self.ui.buttonLayout.addWidget(resolve_button)
-
+            self.ui.statusLabel.setText("Status: Success")
+            self.ui.statusLabel.setStyleSheet("color: green; font-weight: bold;")
+            self.ui.actionStackedWidget.setCurrentWidget(self.ui.successPage)
         elif status == "STATE_DRIFT":
-            manual_button = QPushButton("I Will Resolve Manually")
-            discard_button = QPushButton("Discard All Local Changes (Expert)")
-            manual_button.clicked.connect(self.on_manual_resolve_drift_clicked)
-            discard_button.clicked.connect(self.on_discard_changes_clicked)
-            self.ui.buttonLayout.addWidget(manual_button)
-            self.ui.buttonLayout.addWidget(discard_button)
-
-        self.ui.stackedWidget.setCurrentWidget(self.ui.resultsPage)
+            self.ui.statusLabel.setText("Status: Action Required")
+            self.ui.statusLabel.setStyleSheet("color: orange; font-weight: bold;")
+            self.ui.actionStackedWidget.setCurrentWidget(self.ui.stateDriftPage)
+        else: # Covers PATH_NOT_FOUND, GIT_MISSING, ERROR
+            self.ui.statusLabel.setText("Status: Failed")
+            self.ui.statusLabel.setStyleSheet("color: red; font-weight: bold;")
+            self.ui.actionStackedWidget.setCurrentWidget(self.ui.errorPage)
 
     def on_proceed_clicked(self):
-        """Finalizes the project load and signals completion."""
-        self.orchestrator.set_phase(self.orchestrator.resume_phase_after_load.name)
-        self.orchestrator.resume_phase_after_load = None
-        self.project_load_finalized.emit()
-
-    def on_resolve_manually_clicked(self):
-        """Handles fatal errors by guiding the user back to the setup phase."""
-        self.project_load_failed.emit() # Signal to main window to reset
-        self.orchestrator.set_phase("ENV_SETUP_TARGET_APP")
-        self.project_load_finalized.emit() # Re-signal to trigger UI update
-
-    def on_manual_resolve_drift_clicked(self):
-        """Acknowledges manual resolution and returns to the welcome screen."""
-        self.orchestrator.project_id = None
-        self.orchestrator.set_phase("IDLE")
-        self.project_load_finalized.emit()
-
-    def on_discard_changes_clicked(self):
-        """Triggers the orchestrator to discard local git changes."""
-        reply = QMessageBox.warning(
-            self, "Confirm Discard",
-            "This will permanently delete all uncommitted changes in your local repository. This cannot be undone.\n\nAre you sure you want to proceed?",
-            QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-        )
-        if reply == QMessageBox.Yes:
-            # The orchestrator handles the git logic and re-triggers the load
-            self.orchestrator.handle_discard_changes(self.orchestrator.preflight_check_result['history_id'])
+        """Finalizes the project load and signals the main window."""
+        resume_phase = self.orchestrator.resume_phase_after_load
+        if resume_phase:
+            self.orchestrator.set_phase(resume_phase.name)
+            self.orchestrator.resume_phase_after_load = None
             self.project_load_finalized.emit()
+        else:
+            QMessageBox.critical(self, "Error", "Could not determine the project's resume phase.")
+            self.project_load_failed.emit()
+
+    def on_manual_resolve_clicked(self):
+        """Instructs the user to resolve manually and returns to the project list."""
+        QMessageBox.information(self, "Manual Resolution",
+                                "The application will now return to the main screen. "
+                                "Please use your own tools (e.g., git commit, git stash) to clean the repository, "
+                                "then try loading the project again.")
+        self.project_load_failed.emit()
+
+    def on_discard_clicked(self):
+        """Shows a final confirmation before discarding all local changes."""
+        reply = QMessageBox.warning(self, "Confirm Discard",
+                                    "<b>This will permanently delete all uncommitted changes in your local repository.</b>"
+                                    "<br><br>This action cannot be undone. Are you sure you want to proceed?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            history_id = self.orchestrator.preflight_check_result.get("history_id")
+            if history_id:
+                self.orchestrator.handle_discard_changes(history_id)
+                # The orchestrator will re-trigger the load, so this page will be updated automatically.
+                # No need to emit a signal here.
+            else:
+                QMessageBox.critical(self, "Error", "Could not identify the project to discard changes for.")

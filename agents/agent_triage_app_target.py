@@ -7,26 +7,14 @@ import textwrap
 import json
 from llm_service import LLMService
 
-"""
-This module contains the TriageAgent_AppTarget class.
-"""
-
-# Configure basic logging
-#logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
 class TriageAgent_AppTarget:
     """
     Agent responsible for analyzing failures and hypothesizing the root cause.
-    ...
     """
 
     def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
         """
         Initializes the TriageAgent_AppTarget.
-
-        Args:
-            llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
-            db_manager (ASDFDBManager): An instance of the database manager for KB access.
         """
         if not llm_service:
             raise ValueError("llm_service cannot be empty.")
@@ -38,23 +26,14 @@ class TriageAgent_AppTarget:
 
     def _extract_tags_from_error(self, error_logs: str) -> list[str]:
         """A simple helper to extract potential search tags from error logs."""
-        # Find potential keywords like exceptions (e.g., NullPointerException, ValueError)
         keywords = re.findall(r'([A-Z]\w*Exception|\b[A-Z]\w*Error\b)', error_logs)
-        # Find file names (e.g., some_file.py)
         files = re.findall(r'(\w+\.py|\w+\.kt)', error_logs)
-        # Combine, lowercase, and get unique tags
         tags = set(kw.lower() for kw in keywords + files)
         return list(tags)
 
     def parse_stack_trace(self, stack_trace_log: str) -> list[str]:
         """
         Uses an LLM to parse a raw stack trace and extract a list of file paths.
-
-        Args:
-            stack_trace_log (str): The raw text of the error log containing the stack trace.
-
-        Returns:
-            A list of file paths identified in the stack trace, or an empty list if none are found.
         """
         logging.info("TriageAgent: Performing Tier 1 Analysis - Parsing stack trace.")
 
@@ -89,28 +68,14 @@ class TriageAgent_AppTarget:
     def analyze_and_hypothesize(self, error_logs: str, relevant_code: str, test_report: str = "") -> str:
         """
         Analyzes failure data and returns a root cause hypothesis.
-
-        It first checks the Knowledge Base. If no solution is found, it calls the LLM.
-
-        Args:
-            error_logs (str): The raw error logs from the failed build or test execution.
-            relevant_code (str): The source code of the component(s) suspected
-                                 to be involved in the failure.
-            test_report (str, optional): The summary of failed tests. Defaults to "".
-
-        Returns:
-            str: A concise, structured hypothesis about the root cause of the failure.
         """
-        # --- Step 1: Query the Knowledge Base ---
         logging.info("TriageAgent: Querying Knowledge Base for known solutions.")
         tags = self._extract_tags_from_error(error_logs)
         if tags:
             try:
-                with self.db_manager as db:
-                    kb_results = db.query_kb_by_tags(tags)
+                # Corrected: Direct call to the db_manager
+                kb_results = self.db_manager.query_kb_by_tags(tags)
                 if kb_results:
-                    # For now, return the solution from the first match.
-                    # A more advanced implementation could rank results.
                     solution = kb_results[0]['solution']
                     logging.info(f"TriageAgent: Found relevant solution in Knowledge Base (ID: {kb_results[0]['entry_id']}).")
                     return f"[From Knowledge Base] Hypothesis: The issue matches a previously solved problem. Recommended solution: {solution}"
@@ -119,7 +84,6 @@ class TriageAgent_AppTarget:
         else:
             logging.info("TriageAgent: No specific tags extracted from error log for KB query.")
 
-        # --- Step 2: If no KB result, proceed with LLM analysis ---
         logging.info("TriageAgent: No solution found in Knowledge Base. Proceeding with LLM analysis.")
         try:
             prompt = f"""
@@ -164,14 +128,6 @@ class TriageAgent_AppTarget:
         """
         Performs a guided dependency trace using the RoWD to find a likely
         execution path from the main executable to a failing component.
-
-        Args:
-            rowd_json (str): A JSON string of all artifacts in the RoWD.
-            apex_file_name (str): The name of the main starting executable file.
-            failing_component_name (str): The name of the component where failure is suspected.
-
-        Returns:
-            A string containing a JSON array of file paths representing the likely call stack.
         """
         logging.info(f"TriageAgent: Performing Tier 2 Apex Trace Analysis from '{apex_file_name}' to '{failing_component_name}'.")
 
@@ -197,13 +153,11 @@ class TriageAgent_AppTarget:
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip()
-            # Basic validation to ensure we got a list-like string
             if cleaned_response.startswith('[') and cleaned_response.endswith(']'):
-                # The orchestrator will handle the final JSON parsing
                 return cleaned_response
             else:
                 logging.error(f"Apex Trace Analysis returned invalid format: {cleaned_response}")
-                return "[]" # Return empty list on format error
+                return "[]"
         except Exception as e:
             logging.error(f"Apex Trace Analysis API call failed: {e}")
-            return "[]" # Return empty list on failure
+            return "[]"

@@ -36,6 +36,7 @@ class TechSpecPage(QWidget):
         self.ui.pmGuidelinesTextEdit.clear()
         self.ui.osComboBox.setCurrentIndex(0)
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+        self.setEnabled(True)
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
@@ -55,16 +56,13 @@ class TechSpecPage(QWidget):
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
-        # CORRECTED: The finished signal is NOT used to control the UI.
         self.threadpool.start(worker)
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[2]}"
+        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
         QMessageBox.critical(self, "Error", error_msg)
-        self._set_ui_busy(False) # Re-enable UI on error
-
-    # --- Task Initiators ---
+        self._set_ui_busy(False)
 
     def run_propose_stack_task(self):
         target_os = self.ui.osComboBox.currentText()
@@ -90,8 +88,6 @@ class TechSpecPage(QWidget):
         target_os = self.ui.osComboBox.currentText()
         self._execute_task(self._task_refine_spec, self._handle_refinement_result, feedback, target_os)
 
-    # --- Result Handlers (Slots) ---
-
     def _handle_generation_result(self, tech_spec_draft):
         try:
             self.tech_spec_draft = tech_spec_draft
@@ -100,7 +96,7 @@ class TechSpecPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
         finally:
-            self._set_ui_busy(False) # Re-enable UI after processing the result
+            self._set_ui_busy(False)
 
     def _handle_refinement_result(self, new_draft):
         try:
@@ -110,7 +106,7 @@ class TechSpecPage(QWidget):
             QMessageBox.information(self, "Success", "The technical specification has been refined.")
             self.state_changed.emit()
         finally:
-            self._set_ui_busy(False) # Re-enable UI after processing the result
+            self._set_ui_busy(False)
 
     def on_approve_clicked(self):
         final_tech_spec = self.ui.techSpecTextEdit.toPlainText()
@@ -120,31 +116,30 @@ class TechSpecPage(QWidget):
         target_os = self.ui.osComboBox.currentText()
         self.orchestrator.finalize_and_save_tech_spec(final_tech_spec, target_os)
         QMessageBox.information(self, "Success", "Technical Specification approved and saved.")
+        self.orchestrator.is_project_dirty = True
         self.tech_spec_complete.emit()
 
-    # --- Backend Logic (to be run in worker threads) ---
-
     def _task_propose_stack(self, target_os, **kwargs):
-        with self.orchestrator.db_manager as db:
-            project_details = db.get_project_by_id(self.orchestrator.project_id)
-            final_spec_text = project_details['final_spec_text']
+        db = self.orchestrator.db_manager
+        project_details = db.get_project_by_id(self.orchestrator.project_id)
+        final_spec_text = project_details['final_spec_text']
         if not final_spec_text:
             raise Exception("Could not retrieve the application specification.")
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
         return agent.propose_stack(final_spec_text, target_os)
 
     def _task_generate_from_guidelines(self, guidelines, target_os, **kwargs):
-        with self.orchestrator.db_manager as db:
-            project_details = db.get_project_by_id(self.orchestrator.project_id)
-            final_spec_text = project_details['final_spec_text']
+        db = self.orchestrator.db_manager
+        project_details = db.get_project_by_id(self.orchestrator.project_id)
+        final_spec_text = project_details['final_spec_text']
         context = f"{final_spec_text}\n\n--- PM Directive for Technology Stack ---\n{guidelines}"
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
         return agent.propose_stack(context, target_os)
 
     def _task_refine_spec(self, feedback, target_os, **kwargs):
-        with self.orchestrator.db_manager as db:
-            project_details = db.get_project_by_id(self.orchestrator.project_id)
-            final_spec_text = project_details['final_spec_text']
+        db = self.orchestrator.db_manager
+        project_details = db.get_project_by_id(self.orchestrator.project_id)
+        final_spec_text = project_details['final_spec_text']
         context = (
             f"{final_spec_text}\n\n"
             f"--- Current Draft to Refine ---\n{self.tech_spec_draft}\n\n"

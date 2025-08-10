@@ -45,12 +45,17 @@
    </item>
    <item>
     <widget class="QStackedWidget" name="stackedWidget">
-     <widget class="QWidget" name="checklistPage">
+     <property name="currentIndex">
+      <number>0</number>
+     </property>
+     <widget class="QWidget" name="standbyPage">
       <layout class="QVBoxLayout" name="verticalLayout_2">
        <item>
-        <widget class="QLabel" name="instructionLabel">
+        <widget class="QLabel" name="standbyLabel">
          <property name="text">
-          <string>Please follow the steps below to set up the necessary testing frameworks for your project's technology stack.</string>
+          <string>The system will now analyze the project's Technical Specification to generate a step-by-step guide for setting up the required testing environment.
+
+Click 'Start Analysis' to proceed.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
@@ -58,71 +63,81 @@
         </widget>
        </item>
        <item>
-        <widget class="QGroupBox" name="taskGroupBox">
-         <property name="title">
-          <string>Step X of Y: Task Name</string>
+        <widget class="QPushButton" name="startButton">
+         <property name="text">
+          <string>Start Analysis</string>
          </property>
-         <layout class="QVBoxLayout" name="verticalLayout_3" stretch="1,0,0">
-          <item>
-           <widget class="QTextEdit" name="taskInstructionsTextEdit">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QTextEdit" name="helpTextEdit">
-            <property name="readOnly">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <layout class="QHBoxLayout" name="horizontalLayout">
-            <item>
-             <widget class="QPushButton" name="doneButton">
-              <property name="text">
-               <string>Done, Next Step</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="helpButton">
-              <property name="text">
-               <string>I Need Help</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="ignoreButton">
-              <property name="text">
-               <string>Ignore &amp; Continue</string>
-              </property>
-             </widget>
-            </item>
-           </layout>
-          </item>
-         </layout>
         </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="finalConfirmPage">
-      <layout class="QVBoxLayout" name="verticalLayout_4">
+     <widget class="QWidget" name="checklistPage">
+      <layout class="QVBoxLayout" name="verticalLayout_3">
        <item>
-        <widget class="QLabel" name="successLabel">
+        <widget class="QLabel" name="checklistHeaderLabel">
          <property name="text">
-          <string>All setup steps have been actioned.</string>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">font-size: 14pt;</string>
+          <string>Please follow the steps below to set up the testing environment:</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QLabel" name="finalInstructionLabel">
+        <widget class="QStackedWidget" name="stepsStackedWidget"/>
+       </item>
+       <item>
+        <widget class="Line" name="line_2">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout">
+         <item>
+          <widget class="QPushButton" name="doneButton">
+           <property name="text">
+            <string>Done, Next Step</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="helpButton">
+           <property name="text">
+            <string>I Need Help</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="ignoreButton">
+           <property name="text">
+            <string>Ignore &amp; Continue</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="finalizePage">
+      <layout class="QVBoxLayout" name="verticalLayout_4">
+       <item>
+        <widget class="QLabel" name="finalizeLabel">
          <property name="text">
-          <string>Please confirm the final command that should be used to run all automated tests for this project (e.g., 'pytest', 'mvn test').</string>
+          <string>All setup steps have been actioned.
+
+Please confirm the final command that should be used to run all automated tests for this project (e.g., 'pytest', 'mvn test').</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
@@ -144,8 +159,11 @@
          <property name="orientation">
           <enum>Qt::Vertical</enum>
          </property>
-         <property name="sizeType">
-          <enum>QSizePolicy::Expanding</enum>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
          </property>
         </spacer>
        </item>
