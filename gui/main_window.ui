@@ -271,6 +271,14 @@
     <string>View project reports</string>
    </property>
   </action>
+  <action name="actionManage_CRs_Bugs">
+   <property name="text">
+    <string>Manage CRs / Bugs</string>
+   </property>
+   <property name="toolTip">
+    <string>View and manage the CR/Bug register</string>
+   </property>
+  </action>
  </widget>
  <resources/>
  <connections/>

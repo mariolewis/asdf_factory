@@ -120,7 +120,7 @@ class BuildAndCommitAgentAppTarget:
             error_message = f"An unexpected error occurred in build_and_commit_component: {e}"
             logging.error(error_message)
             return False, error_message
-def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[bool, str]:
+    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[bool, str]:
         """
         Writes the component and its tests, runs all tests using the
         VerificationAgent, and commits on success.

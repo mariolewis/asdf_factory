@@ -1511,11 +1511,9 @@ class MasterOrchestrator:
         Transitions the factory into the state for viewing and selecting a CR
         from the register.
         """
-        if self.current_phase == FactoryPhase.GENESIS:
-            logging.info("PM chose to 'Implement CR'. Transitioning to CR selection screen.")
-            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
-        else:
-            logging.warning(f"Received 'Implement CR' action in an unexpected phase: {self.current_phase.name}")
+        # This action is allowed from any post-genesis phase.
+        logging.info("PM chose to 'Manage CRs / Bugs'. Transitioning to selection screen.")
+        self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
     def handle_implement_cr_action(self, cr_id: int):
         """

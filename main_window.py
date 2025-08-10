@@ -32,6 +32,7 @@ from gui.documents_page import DocumentsPage
 from gui.reports_page import ReportsPage
 from gui.manual_ui_testing_page import ManualUITestingPage
 from gui.project_complete_page import ProjectCompletePage
+from gui.cr_management_page import CRManagementPage
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -87,6 +88,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.manual_ui_testing_page)
         self.project_complete_page = ProjectCompletePage(self)
         self.ui.mainContentArea.addWidget(self.project_complete_page)
+        self.cr_management_page = CRManagementPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.cr_management_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -119,7 +122,11 @@ class ASDFMainWindow(QMainWindow):
         self.ui.crTableView.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
     def _create_menus_and_toolbar(self):
-        """Programmatically creates dynamic menus."""
+        """Programmatically creates dynamic menus and toolbar actions."""
+        self.actionManage_CRs_Bugs = QAction("Manage CRs / Bugs", self)
+        self.actionManage_CRs_Bugs.setToolTip("View and manage the CR/Bug register")
+        self.ui.toolBar.addAction(self.actionManage_CRs_Bugs)
+
         for phase in FactoryPhase:
             if phase.name == "IDLE": continue
             action = QAction(phase.name.replace("_", " ").title(), self)
@@ -176,6 +183,12 @@ class ASDFMainWindow(QMainWindow):
         self.manual_ui_testing_page.testing_complete.connect(self.update_ui_after_state_change)
         self.project_complete_page.back_to_main.connect(self.on_close_project)
         self.project_complete_page.export_project.connect(self.on_stop_export_project)
+        self.cr_management_page.back_to_workflow.connect(self.on_back_to_workflow)
+        self.cr_management_page.edit_cr.connect(self.on_cr_edit_action)
+        self.cr_management_page.delete_cr.connect(self.on_cr_delete_action)
+        self.cr_management_page.analyze_cr.connect(self.on_cr_analyze_action)
+        self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
+        self.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
 
     def update_static_ui_elements(self):
         """
@@ -192,6 +205,9 @@ class ASDFMainWindow(QMainWindow):
         self.status_git_label.setText(f"Branch: {git_branch}")
         self.ui.actionClose_Project.setEnabled(is_project_active and not is_project_dirty)
         self.ui.actionStop_Export_Project.setEnabled(is_project_active)
+        genesis_complete = self.orchestrator.is_genesis_complete
+        self.ui.actionManage_CRs_Bugs.setEnabled(is_project_active and genesis_complete)
+        self.ui.actionManage_CRs_Bugs.setToolTip("Enabled after initial development is complete.")
 
         project_root = ""
         if is_project_active:
@@ -274,6 +290,26 @@ class ASDFMainWindow(QMainWindow):
         except (ValueError, TypeError) as e:
             logging.error(f"Could not process CR selection: {e}")
 
+    def on_cr_edit_action(self, cr_id: int):
+        """Handles the signal to edit a CR."""
+        QMessageBox.information(self, "Action Triggered", f"Received signal to EDIT Change Request: {cr_id}")
+        # In the future, this will call: self.orchestrator.handle_edit_cr_action(cr_id)
+
+    def on_cr_delete_action(self, cr_id: int):
+        """Handles the signal to delete a CR."""
+        QMessageBox.information(self, "Action Triggered", f"Received signal to DELETE Change Request: {cr_id}")
+        # In the future, this will call: self.orchestrator.handle_delete_cr_action(cr_id)
+
+    def on_cr_analyze_action(self, cr_id: int):
+        """Handles the signal to run impact analysis on a CR."""
+        QMessageBox.information(self, "Action Triggered", f"Received signal to RUN IMPACT ANALYSIS for Change Request: {cr_id}")
+        # In the future, this will call: self.orchestrator.handle_run_impact_analysis_action(cr_id)
+
+    def on_cr_implement_action(self, cr_id: int):
+        """Handles the signal to implement a CR."""
+        QMessageBox.information(self, "Action Triggered", f"Received signal to IMPLEMENT Change Request: {cr_id}")
+        # In the future, this will call: self.orchestrator.handle_implement_cr_action(cr_id)
+
     def update_ui_after_state_change(self):
         """
         Performs a full UI refresh. This is called only after a phase transition.
@@ -300,6 +336,7 @@ class ASDFMainWindow(QMainWindow):
             "VIEWING_REPORTS": self.reports_page,
             "MANUAL_UI_TESTING": self.manual_ui_testing_page,
             "DEBUG_PM_ESCALATION": self.decision_page,
+            "IMPLEMENTING_CHANGE_REQUEST": self.cr_management_page,
         }
 
         if current_phase_name in page_display_map:
@@ -441,6 +478,15 @@ class ASDFMainWindow(QMainWindow):
                 self.update_cr_register_view() # Refresh the Changes table
             else:
                 QMessageBox.critical(self, "Error", f"Failed to save the {request_type.replace('_', ' ').title()}.")
+
+    def on_manage_crs(self):
+        """Switches to the CR Management page."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "Please create or load a project to manage requests.")
+            return
+
+        self.orchestrator.handle_view_cr_register_action()
+        self.update_ui_after_state_change()
 
     def on_report_bug(self): QMessageBox.information(self, "Not Implemented", "The 'Report Bug' action is not yet implemented.")
 
