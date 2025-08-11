@@ -331,9 +331,27 @@ class ASDFMainWindow(QMainWindow):
         self.update_cr_register_view() # Also update the side panel view
 
     def on_cr_implement_action(self, cr_id: int):
-        """Handles the signal to implement a CR."""
-        QMessageBox.information(self, "Action Triggered", f"Received signal to IMPLEMENT Change Request: {cr_id}")
-        # In the future, this will call: self.orchestrator.handle_implement_cr_action(cr_id)
+        """Handles the signal to implement a CR in a background thread."""
+        self.setEnabled(False)
+        self.statusBar().showMessage(f"Generating implementation plan for CR-{cr_id}...")
+
+        worker = Worker(self.orchestrator.handle_implement_cr_action, cr_id)
+        worker.signals.result.connect(lambda: self._handle_implementation_result(cr_id, True))
+        worker.signals.error.connect(lambda err: self._handle_implementation_result(cr_id, False, err))
+        self.threadpool.start(worker)
+
+    def _handle_implementation_result(self, cr_id: int, success: bool, error=None):
+        """Handles the result of the background implementation planning task."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+
+        if success:
+            QMessageBox.information(self, "Success", f"Implementation plan for CR-{cr_id} created. Transitioning to development phase.")
+            # The orchestrator has changed the phase to GENESIS, so a full UI update is needed
+            self.update_ui_after_state_change()
+        else:
+            error_msg = str(error[1]) if error else "An unknown error occurred."
+            QMessageBox.critical(self, "Implementation Failed", f"Failed to create an implementation plan for CR-{cr_id}:\n{error_msg}")
 
     def update_ui_after_state_change(self):
         """

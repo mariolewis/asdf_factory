@@ -1515,7 +1515,7 @@ class MasterOrchestrator:
         logging.info("PM chose to 'Manage CRs / Bugs'. Transitioning to selection screen.")
         self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
-    def handle_implement_cr_action(self, cr_id: int):
+    def handle_implement_cr_action(self, cr_id: int, **kwargs):
         """
         Handles the logic for when the PM confirms a CR for implementation.
         """
