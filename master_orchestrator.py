@@ -1603,7 +1603,7 @@ class MasterOrchestrator:
             # where they can re-trigger the implementation.
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
-    def handle_run_impact_analysis_action(self, cr_id: int):
+    def handle_run_impact_analysis_action(self, cr_id: int, **kwargs):
         """
         Orchestrates the running of an impact analysis for a specific CR.
         """

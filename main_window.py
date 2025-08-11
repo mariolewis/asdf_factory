@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu, QVBoxLayout, QHeaderView, QAbstractItemView)
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
 from PySide6.QtCore import QFile, Signal, Qt, QDir
+from PySide6.QtCore import QThreadPool
 
 from gui.ui_main_window import Ui_MainWindow
 from master_orchestrator import MasterOrchestrator, FactoryPhase
@@ -33,6 +34,7 @@ from gui.reports_page import ReportsPage
 from gui.manual_ui_testing_page import ManualUITestingPage
 from gui.project_complete_page import ProjectCompletePage
 from gui.cr_management_page import CRManagementPage
+from gui.worker import Worker
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -41,6 +43,7 @@ class ASDFMainWindow(QMainWindow):
     """
     def __init__(self, orchestrator: MasterOrchestrator):
         super().__init__()
+        self.threadpool = QThreadPool()
         self.orchestrator = orchestrator
         self.last_known_phase = None
         self.previous_phase = FactoryPhase.IDLE
@@ -301,9 +304,31 @@ class ASDFMainWindow(QMainWindow):
         # In the future, this will call: self.orchestrator.handle_delete_cr_action(cr_id)
 
     def on_cr_analyze_action(self, cr_id: int):
-        """Handles the signal to run impact analysis on a CR."""
-        QMessageBox.information(self, "Action Triggered", f"Received signal to RUN IMPACT ANALYSIS for Change Request: {cr_id}")
-        # In the future, this will call: self.orchestrator.handle_run_impact_analysis_action(cr_id)
+        """Handles the signal to run impact analysis on a CR in a background thread."""
+        self.setEnabled(False) # Disable the main window to prevent user interaction
+        self.statusBar().showMessage(f"Running impact analysis for CR-{cr_id}...")
+
+        # Create and start the worker thread
+        worker = Worker(self.orchestrator.handle_run_impact_analysis_action, cr_id)
+        worker.signals.result.connect(lambda: self._handle_analysis_result(cr_id, True))
+        worker.signals.error.connect(lambda err: self._handle_analysis_result(cr_id, False, err))
+        self.threadpool.start(worker) # Assuming self.threadpool exists from another page
+
+    def _handle_analysis_result(self, cr_id: int, success: bool, error=None):
+        """Handles the result of the background analysis task."""
+        self.setEnabled(True) # Re-enable the main window
+        self.statusBar().clearMessage()
+
+        if success:
+            QMessageBox.information(self, "Success", f"Impact analysis for CR-{cr_id} completed successfully.")
+        else:
+            error_msg = str(error[1]) if error else "An unknown error occurred."
+            QMessageBox.critical(self, "Analysis Failed", f"Failed to run impact analysis for CR-{cr_id}:\n{error_msg}")
+
+        # Refresh the CR table to show the updated status and summary
+        if self.ui.mainContentArea.currentWidget() == self.cr_management_page:
+            self.cr_management_page.update_cr_table()
+        self.update_cr_register_view() # Also update the side panel view
 
     def on_cr_implement_action(self, cr_id: int):
         """Handles the signal to implement a CR."""

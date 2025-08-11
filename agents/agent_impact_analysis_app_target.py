@@ -37,15 +37,15 @@ class ImpactAnalysisAgent_AppTarget:
         """
         try:
             prompt = f"""
-            You are a seasoned Software Architect. Your task is to perform a high-level impact analysis of a proposed change request.
+            You are a seasoned Software Architect. Your task is to perform a high-level impact analysis of a proposed change request. Your role is to determine WHAT needs to change, not to critique the validity of the request.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analysis:** Analyze the Change Request Description, the full Application Specification, and the Record-of-Work-Done (RoWD) JSON to determine the impact.
+            1.  **Objective Analysis:** Analyze the inputs to determine the technical scope of the change. DO NOT provide opinions on whether the change request is good or bad. Your summary must focus on the implementation scope.
             2.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
             3.  **JSON Schema:** The JSON object MUST have three keys:
-                - `impact_rating`: Your assessment of the impact ("Minor", "Medium", or "Major").
-                - `impact_summary`: A brief, one-paragraph summary explaining your reasoning.
-                - `impacted_artifact_ids`: A JSON array of strings, where each string is the `artifact_id` from the RoWD for a component you believe will be directly created, modified, or deleted by this change. This is the most critical output.
+                - `impact_rating`: Your assessment of the change's scope ("Minor", "Medium", or "Major").
+                - `impact_summary`: A brief, one-paragraph TECHNICAL summary describing the required changes (e.g., "This will require modifying the User class to add a new property, updating the database schema with a new column, and adding a new field to the user profile UI.").
+                - `impacted_artifact_ids`: A JSON array of strings, where each string is the `artifact_id` from the RoWD for a component you believe will be directly created or modified by this change.
             4.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
 
             **--- INPUTS ---**

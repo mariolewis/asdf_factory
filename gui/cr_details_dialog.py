@@ -31,7 +31,8 @@ class CRDetailsDialog(QDialog):
         request_type = cr_details.get('request_type', 'REQUEST').replace('_', ' ').title()
         status = cr_details.get('status', 'N/A')
         description = cr_details.get('description', 'No description provided.')
-        analysis = cr_details.get('impact_analysis_details', '')
+        impact_rating = cr_details.get('impact_rating') # Get the impact rating
+        analysis = cr_details.get('impact_analysis_details', '') # Get the analysis text
 
         # Set the main header
         self.ui.headerLabel.setText(f"{request_type} (CR-{cr_id})")
@@ -41,8 +42,12 @@ class CRDetailsDialog(QDialog):
         full_details += "--- Description ---\n"
         full_details += f"{description}\n"
 
-        if analysis:
+        # If impact rating or analysis text exists, add them to the display
+        if impact_rating or analysis:
             full_details += "\n--- Impact Analysis ---\n"
-            full_details += analysis
+            if impact_rating:
+                full_details += f"Severity/Impact Rating: {impact_rating}\n\n"
+            if analysis:
+                full_details += f"Summary:\n{analysis}"
 
         self.ui.detailsTextEdit.setText(full_details)
