@@ -30,7 +30,7 @@ class LoadProjectPage(QWidget):
 
         self.connect_signals()
 
-    def refresh_projects_list(self):
+    def prepare_for_display(self):
         """Fetches the project history and populates the table view."""
         logging.info("Refreshing archived projects list.")
         self.model.clear()
@@ -99,6 +99,6 @@ class LoadProjectPage(QWidget):
             success, message = self.orchestrator.delete_archived_project(history_id)
             if success:
                 QMessageBox.information(self, "Success", message)
-                self.refresh_projects_list() # Refresh the table
+                self.prepare_for_display()
             else:
                 QMessageBox.critical(self, "Error", message)

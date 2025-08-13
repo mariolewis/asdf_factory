@@ -83,10 +83,21 @@ class Ui_PreflightCheckPage(object):
 
         self.gridLayout = QGridLayout()
         self.gridLayout.setObjectName(u"gridLayout")
+        self.continueButton = QPushButton(self.stateDriftPage)
+        self.continueButton.setObjectName(u"continueButton")
+
+        self.gridLayout.addWidget(self.continueButton, 0, 0, 1, 1)
+
+        self.continueLabel = QLabel(self.stateDriftPage)
+        self.continueLabel.setObjectName(u"continueLabel")
+        self.continueLabel.setWordWrap(True)
+
+        self.gridLayout.addWidget(self.continueLabel, 0, 1, 1, 1)
+
         self.manualResolveButton = QPushButton(self.stateDriftPage)
         self.manualResolveButton.setObjectName(u"manualResolveButton")
 
-        self.gridLayout.addWidget(self.manualResolveButton, 0, 0, 1, 1)
+        self.gridLayout.addWidget(self.manualResolveButton, 1, 0, 1, 1)
 
         self.manualResolveLabel = QLabel(self.stateDriftPage)
         self.manualResolveLabel.setObjectName(u"manualResolveLabel")
@@ -97,7 +108,7 @@ class Ui_PreflightCheckPage(object):
         self.discardButton = QPushButton(self.stateDriftPage)
         self.discardButton.setObjectName(u"discardButton")
 
-        self.gridLayout.addWidget(self.discardButton, 1, 0, 1, 1)
+        self.gridLayout.addWidget(self.discardButton, 2, 0, 1, 1)
 
         self.discardLabel = QLabel(self.stateDriftPage)
         self.discardLabel.setObjectName(u"discardLabel")
@@ -142,6 +153,8 @@ class Ui_PreflightCheckPage(object):
         self.statusLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"Status: Running checks...", None))
         self.proceedButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Proceed to Project", None))
         self.stateDriftLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"<b>Action Required:</b> To prevent conflicts, please resolve the state of the repository.", None))
+        self.continueButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Continue Project", None))
+        self.continueLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Primary option: Stages and commits all uncommitted changes, then resumes the project. Use this after a manual fix.)", None))
         self.manualResolveButton.setText(QCoreApplication.translate("PreflightCheckPage", u"I Will Resolve Manually", None))
         self.manualResolveLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Closes the project and returns to the main screen. You can then use external tools like 'git commit' before reloading.)", None))
         self.discardButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Discard All Uncommitted Changes", None))

@@ -146,7 +146,7 @@ class ASDFMainWindow(QMainWindow):
     def _connect_signals(self):
         """Connects all UI signals to their corresponding slots."""
         self.ui.actionNew_Project.triggered.connect(self.on_new_project)
-        self.ui.actionLoad_Archived_Project.triggered.connect(self.on_load_project)
+        self.ui.actionLoad_Exported_Project.triggered.connect(self.on_load_project)
         self.ui.actionClose_Project.triggered.connect(self.on_close_project)
         self.ui.actionStop_Export_Project.triggered.connect(self.on_stop_export_project)
         self.ui.actionSettings.triggered.connect(self.show_settings_dialog)
@@ -203,14 +203,18 @@ class ASDFMainWindow(QMainWindow):
         current_phase_enum = self.orchestrator.current_phase
         display_phase_name = self.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
         git_branch = self.orchestrator.get_current_git_branch()
+
+        # Access is_genesis_complete as a property (no parentheses)
+        genesis_complete = self.orchestrator.is_genesis_complete
+
         self.status_project_label.setText(f"Project: {project_name}")
         self.status_phase_label.setText(f"Phase: {display_phase_name}")
         self.status_git_label.setText(f"Branch: {git_branch}")
         self.ui.actionClose_Project.setEnabled(is_project_active and not is_project_dirty)
         self.ui.actionStop_Export_Project.setEnabled(is_project_active)
-        genesis_complete = self.orchestrator.is_genesis_complete
-        self.ui.actionManage_CRs_Bugs.setEnabled(is_project_active and genesis_complete)
-        self.ui.actionManage_CRs_Bugs.setToolTip("Enabled after initial development is complete.")
+
+        self.actionManage_CRs_Bugs.setEnabled(is_project_active) # Now always enabled if project is active
+        self.actionManage_CRs_Bugs.setToolTip("View and manage the CR/Bug register")
 
         project_root = ""
         if is_project_active:
@@ -220,21 +224,15 @@ class ASDFMainWindow(QMainWindow):
 
         if project_root and Path(project_root).exists():
             root_path_obj = Path(project_root)
-            # This is the fix: Reset the model to ensure a clean refresh
-            self.file_system_model.setRootPath("") # Clear the old root
+            self.file_system_model.setRootPath("")
             self.file_system_model.setRootPath(str(root_path_obj.parent))
             self.ui.projectFilesTreeView.setRootIndex(self.file_system_model.index(project_root))
-
             self.ui.projectFilesTreeView.setVisible(True)
             self.treeViewInfoLabel.setVisible(False)
         else:
             self.ui.projectFilesTreeView.setVisible(False)
             self.treeViewInfoLabel.setVisible(True)
-            default_path = self.orchestrator.db_manager.get_config_value("DEFAULT_PROJECT_PATH")
-            if default_path:
-                self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or load an archive.")
-            else:
-                self.treeViewInfoLabel.setText("No active project.\n\nPlease go to Files -> Settings to set a default project path.")
+            self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or load an archive.")
 
     def update_cr_register_view(self):
         """
@@ -330,6 +328,12 @@ class ASDFMainWindow(QMainWindow):
             self.cr_management_page.update_cr_table()
         self.update_cr_register_view() # Also update the side panel view
 
+    def _handle_integration_result(self):
+        """Called when the integration worker is finished. Triggers a final UI update."""
+        self.statusBar().showMessage("Integration phase complete.", 5000)
+        # The orchestrator's phase will have been updated, so a full UI refresh will show the correct next page.
+        self.update_ui_after_state_change()
+
     def on_cr_implement_action(self, cr_id: int):
         """Handles the signal to implement a CR in a background thread."""
         self.setEnabled(False)
@@ -378,53 +382,87 @@ class ASDFMainWindow(QMainWindow):
             "VIEWING_DOCUMENTS": self.documents_page,
             "VIEWING_REPORTS": self.reports_page,
             "MANUAL_UI_TESTING": self.manual_ui_testing_page,
-            "DEBUG_PM_ESCALATION": self.decision_page,
             "IMPLEMENTING_CHANGE_REQUEST": self.cr_management_page,
         }
 
+        try:
+            self.decision_page.option1_selected.disconnect()
+            self.decision_page.option2_selected.disconnect()
+            self.decision_page.option3_selected.disconnect()
+        except (RuntimeError, TypeError):
+            pass
+
         if current_phase_name in page_display_map:
             page_to_show = page_display_map[current_phase_name]
-
-            # This is the corrected, explicit logic that prevents regressions.
-            if current_phase_name == "VIEWING_PROJECT_HISTORY":
-                self.load_project_page.refresh_projects_list()
-            elif current_phase_name == "AWAITING_PREFLIGHT_RESOLUTION":
-                self.preflight_check_page.update_and_display()
-            # --- Add this new block ---
-            elif current_phase_name == "DEBUG_PM_ESCALATION":
-                failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No failure details were captured.")
-                self.decision_page.configure(
-                    header="Debug Escalation",
-                    instruction="The factory has been unable to automatically fix a persistent bug. Please review the details and choose how to proceed.",
-                    details=failure_log,
-                    option1_text="Retry Automated Fix",
-                    option2_text="Pause for Manual Fix",
-                    option3_text="Ignore Bug & Proceed"
-                )
-            # --- End of new block ---
-            elif hasattr(page_to_show, 'prepare_for_display'):
+            if hasattr(page_to_show, 'prepare_for_display'):
                 page_to_show.prepare_for_display()
-            elif hasattr(page_to_show, 'prepare_for_new_project'):
-                page_to_show.prepare_for_new_project()
-
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
+        elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
+            self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+            self.genesis_page.ui.processingLabel.setText("Running Integration & Verification...")
+            self.genesis_page.ui.logOutputTextEdit.clear()
+            self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
+            worker = Worker(self.orchestrator.run_integration_and_verification_phase)
+            worker.signals.progress.connect(self.genesis_page.on_progress_update)
+            worker.signals.result.connect(self._handle_integration_result)
+            worker.signals.error.connect(self._handle_integration_result)
+            self.threadpool.start(worker)
+
+        elif current_phase_name == "DEBUG_PM_ESCALATION":
+            failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No details.")
+            details_text = (
+                "The automated debug procedure could not resolve the following issue:\n\n"
+                f"{failure_log}\n\n"
+                "--- How to proceed ---\n"
+                "• Retry Automated Fix: Runs the entire analysis and fix cycle again.\n"
+                "• Pause for Manual Fix: Exports the project's current state and closes it, allowing you to fix the code in an external editor. You can then reload the project to commit your fix.\n"
+                "• Ignore Bug & Proceed: Marks the failing component as a 'KNOWN_ISSUE' in the CR/Bug register and continues with the next task in the plan."
+            )
+            self.decision_page.configure(
+                header="Debug Escalation",
+                instruction="The factory has been unable to fix a persistent bug. Please choose how to proceed.",
+                details=details_text,
+                option1_text="Retry Automated Fix",
+                option2_text="Pause for Manual Fix",
+                option3_text="Ignore Bug & Proceed"
+            )
+            self.decision_page.option1_selected.connect(self.on_decision_option1)
+            self.decision_page.option2_selected.connect(self.on_decision_option2)
+            self.decision_page.option3_selected.connect(self.on_decision_option3)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
+            self.decision_page.configure(
+                header="Stale Impact Analysis",
+                instruction="The project's code has changed since the impact analysis was last run for this item. Proceeding with an outdated analysis is not recommended.",
+                details="Do you want to re-run the analysis before creating an implementation plan, or proceed with the existing (stale) analysis?",
+                option1_text="Re-run Analysis and Review",
+                option2_text="Proceed Anyway (Not Recommended)"
+            )
+            self.decision_page.option1_selected.connect(self.on_stale_analysis_rerun)
+            self.decision_page.option2_selected.connect(self.on_stale_analysis_proceed)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif not is_project_active:
             self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
-
         elif current_phase_name == "IDLE" and is_project_active:
-            # Use our new dedicated page for the "Project Complete" screen
             self.project_complete_page.set_project_name(self.orchestrator.project_name)
             self.ui.mainContentArea.setCurrentWidget(self.project_complete_page)
-
-        else: # Fallback for other unimplemented phases
+        else:
             self.ui.mainContentArea.setCurrentWidget(self.ui.phasePage)
             self.ui.phaseLabel.setText(f"UI for phase '{current_phase_name}' is not yet implemented.")
 
     def on_new_project(self):
         project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
         if ok and project_name:
-            self.orchestrator.start_new_project(project_name)
+            # The orchestrator now returns the suggested path
+            suggested_path = self.orchestrator.start_new_project(project_name)
+
+            # We now explicitly tell the setup page what path to display
+            self.env_setup_page.set_initial_path(suggested_path)
+
+            # This call will now show the page with the pre-populated path
             self.update_ui_after_state_change()
 
     def on_load_project(self):
@@ -485,6 +523,22 @@ class ASDFMainWindow(QMainWindow):
     def on_decision_option3(self):
         self.orchestrator.handle_pm_debug_choice("IGNORE")
         self.update_ui_after_state_change()
+
+    def on_stale_analysis_rerun(self):
+        """Handles the user's choice to re-run a stale analysis."""
+        cr_id = self.orchestrator.task_awaiting_approval.get("cr_id_for_reanalysis")
+        if cr_id:
+            self.orchestrator.handle_stale_analysis_choice("RE-RUN", cr_id)
+            # After re-running, the orchestrator flow will continue, so we just update the UI
+            self.update_ui_after_state_change()
+
+    def on_stale_analysis_proceed(self):
+        """Handles the user's choice to proceed with a stale analysis."""
+        cr_id = self.orchestrator.task_awaiting_approval.get("cr_id_for_reanalysis")
+        if cr_id:
+            self.orchestrator.handle_stale_analysis_choice("PROCEED", cr_id)
+            # The orchestrator will set the phase back to the CR manager, so we update the UI
+            self.update_ui_after_state_change()
 
     def on_proceed(self): QMessageBox.information(self, "Not Implemented", "The 'Proceed' action is not yet implemented.")
     def on_run_tests(self): QMessageBox.information(self, "Not Implemented", "The 'Run Tests' action is not yet implemented.")

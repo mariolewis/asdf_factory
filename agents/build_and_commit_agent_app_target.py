@@ -4,6 +4,7 @@ This module contains the BuildAndCommitAgentAppTarget class.
 import subprocess
 from pathlib import Path
 import logging
+import git
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from llm_service import LLMService
 
@@ -63,63 +64,6 @@ class BuildAndCommitAgentAppTarget:
 
         return path
 
-    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[bool, str]:
-        """
-        Writes the component and its tests, runs all tests using the
-        VerificationAgent, and commits on success.
-        """
-        try:
-            # Sanitize the file paths before use
-            sanitized_component_path = self._sanitize_path(component_path_str)
-            sanitized_test_path = self._sanitize_path(test_path_str)
-
-            files_to_commit = []
-
-            # Write component file if the sanitized path is valid
-            if sanitized_component_path:
-                component_path = self.repo_path / sanitized_component_path
-                component_path.parent.mkdir(parents=True, exist_ok=True)
-                component_path.write_text(component_code, encoding='utf-8')
-                files_to_commit.append(sanitized_component_path)
-                logging.info(f"Wrote source code to {component_path}")
-
-            # Write test file if the sanitized path is valid
-            if sanitized_test_path:
-                test_path = self.repo_path / sanitized_test_path
-                test_path.parent.mkdir(parents=True, exist_ok=True)
-                test_path.write_text(test_code, encoding='utf-8')
-                files_to_commit.append(sanitized_test_path)
-                logging.info(f"Wrote unit tests to {test_path}")
-
-            # Use the dedicated VerificationAgent to run the test suite
-            logging.info(f"Running test suite with command: '{test_command}'")
-            verification_agent = VerificationAgent_AppTarget(llm_service=llm_service)
-            tests_passed, test_output = verification_agent.run_all_tests(self.repo_path, test_command)
-
-            if not tests_passed:
-                logging.error("Unit tests failed for new component. Aborting commit.")
-                # Return the detailed test output for better debugging
-                return False, f"Unit tests failed:\n{test_output}"
-
-            # Only commit if there are files to commit and tests passed
-            if not files_to_commit:
-                logging.warning("No files were written to disk for this component, but tests passed. Skipping commit.")
-                return True, "Tests passed, but no files were generated to commit."
-
-            component_name = Path(files_to_commit[0]).name
-            commit_message = f"feat: Add component {component_name} and unit tests"
-            commit_success, commit_result = self.commit_changes(files_to_commit, commit_message)
-
-            if not commit_success:
-                raise Exception(f"Git commit failed after tests passed: {commit_result}")
-
-            logging.info(f"Successfully tested and committed component {component_name}.")
-            return True, commit_result
-
-        except Exception as e:
-            error_message = f"An unexpected error occurred in build_and_commit_component: {e}"
-            logging.error(error_message)
-            return False, error_message
     def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[bool, str]:
         """
         Writes the component and its tests, runs all tests using the
@@ -234,3 +178,4 @@ class BuildAndCommitAgentAppTarget:
         except Exception as e:
             error_message = f"An unexpected error occurred during commit: {e}"
             return False, error_message
+

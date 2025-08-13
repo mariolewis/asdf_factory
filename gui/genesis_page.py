@@ -12,22 +12,22 @@ class GenesisPage(QWidget):
     """
     The logic handler for the Iterative Component Development (Genesis) page.
     """
-    state_changed = Signal()
     genesis_complete = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
-
         self.ui = Ui_GenesisPage()
         self.ui.setupUi(self)
-
         self.threadpool = QThreadPool()
         self.connect_signals()
 
-    def prepare_for_new_project(self):
-        """Resets the page to its initial state."""
-        logging.info("Resetting GenesisPage for a new project.")
+    def prepare_for_display(self):
+        """
+        This is the standard refresh method called by the main window before the
+        page is shown. It ensures the UI is always up-to-date.
+        """
+        logging.info("Preparing GenesisPage for display.")
         self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
         self.update_checkpoint_display()
 
@@ -43,16 +43,6 @@ class GenesisPage(QWidget):
         else:
             self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
 
-    def _execute_task(self, task_function, on_result, *args):
-        """Generic method to run a task in the background."""
-        self.ui.logOutputTextEdit.clear()
-        self._set_ui_busy(True)
-        worker = Worker(task_function, *args)
-        worker.signals.progress.connect(self.on_progress_update)
-        worker.signals.result.connect(on_result)
-        worker.signals.error.connect(self._on_task_error)
-        self.threadpool.start(worker)
-
     def on_progress_update(self, message):
         """Appends a progress message to the log."""
         self.ui.logOutputTextEdit.append(message)
@@ -67,15 +57,19 @@ class GenesisPage(QWidget):
 
     def run_development_step(self):
         """Initiates the background task to run the next development step."""
-        self._execute_task(self._task_run_development_step, self._handle_development_result)
+        worker = Worker(self.orchestrator.handle_proceed_action)
+        worker.signals.progress.connect(self.on_progress_update)
+        worker.signals.result.connect(self._handle_development_result)
+        worker.signals.error.connect(self._on_task_error)
+        self._set_ui_busy(True)
+        self.ui.logOutputTextEdit.clear()
+        self.threadpool.start(worker)
 
     def _handle_development_result(self, result):
         """Handles the successful completion of the development step."""
         self.ui.logOutputTextEdit.append(f"\n--- SUCCESS ---\n{result}")
         self._set_ui_busy(False)
         self.update_checkpoint_display()
-        self.state_changed.emit()
-        # Check if the orchestrator's phase has changed away from GENESIS
         if self.orchestrator.current_phase.name != "GENESIS":
             self.genesis_complete.emit()
 
@@ -92,12 +86,3 @@ class GenesisPage(QWidget):
         else:
             self.ui.progressBar.setValue(100)
             self.ui.nextTaskLabel.setText("All development tasks are complete. Click 'Proceed' to begin integration.")
-
-    # --- Backend Logic (to be run in worker thread) ---
-
-    def _task_run_development_step(self, **kwargs):
-        """The actual function that runs in the background."""
-        progress_callback = kwargs.get('progress_callback')
-        self.orchestrator.handle_proceed_action(progress_callback=progress_callback)
-        self.orchestrator.is_project_dirty = True
-        return "Step complete."

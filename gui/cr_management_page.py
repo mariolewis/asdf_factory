@@ -34,13 +34,11 @@ class CRManagementPage(QWidget):
     def prepare_for_display(self):
         """Called by the main window to refresh the data."""
         self.update_cr_table()
-        # Ensure buttons are in a reasonable default state
         is_project_active = self.orchestrator.project_id is not None
         self.ui.editButton.setEnabled(is_project_active)
         self.ui.deleteButton.setEnabled(is_project_active)
         self.ui.analyzeButton.setEnabled(is_project_active)
         self.ui.implementButton.setEnabled(is_project_active)
-
 
     def connect_signals(self):
         """Connects widget signals to the appropriate slots."""
@@ -82,73 +80,74 @@ class CRManagementPage(QWidget):
             logging.error(f"Failed to update CR management table: {e}")
             QMessageBox.critical(self, "Error", f"Failed to load change requests: {e}")
 
-    def _get_selected_cr_id_and_details(self):
-        """Gets the ID and full details of the selected row. Returns (None, None) if no selection."""
+    def _get_selected_cr_details(self):
+        """Gets the full details of the selected row. Returns None if no valid selection."""
         selection_model = self.ui.crTableView.selectionModel()
         if not selection_model.hasSelection():
             QMessageBox.warning(self, "No Selection", "Please select an item from the table first.")
-            return None, None
+            return None
 
         selected_index = selection_model.selectedRows()[0]
         id_item = self.model.item(selected_index.row(), 0)
         if not id_item:
-            return None, None
+            return None
 
         try:
             cr_id = int(id_item.text())
-            details = self.orchestrator.get_cr_details_by_id(cr_id)
-            return cr_id, details
+            return self.orchestrator.get_cr_details_by_id(cr_id)
         except (ValueError, TypeError):
-            return None, None
+            return None
 
     def on_cr_double_clicked(self, index):
         """Handles double-clicking a row to show the details dialog."""
         if not index.isValid():
             return
 
-        cr_id, cr_details = self._get_selected_cr_id_and_details()
+        cr_details = self._get_selected_cr_details()
         if cr_details:
             dialog = CRDetailsDialog(cr_details, self)
             dialog.exec()
 
     def on_edit_clicked(self):
-        cr_id, details = self._get_selected_cr_id_and_details()
-        if not cr_id:
+        details = self._get_selected_cr_details()
+        if not details:
             return
         if details.get('status') == 'RAISED':
-            self.edit_cr.emit(cr_id)
+            self.edit_cr.emit(details['cr_id'])
         else:
             QMessageBox.warning(self, "Action Not Allowed", "Items can only be edited when their status is 'RAISED'.")
 
     def on_delete_clicked(self):
-        cr_id, details = self._get_selected_cr_id_and_details()
-        if not cr_id:
+        details = self._get_selected_cr_details()
+        if not details:
             return
         if details.get('status') == 'RAISED':
-            self.delete_cr.emit(cr_id)
+            self.delete_cr.emit(details['cr_id'])
         else:
             QMessageBox.warning(self, "Action Not Allowed", "Items can only be deleted when their status is 'RAISED'.")
 
     def on_analyze_clicked(self):
-        cr_id, details = self._get_selected_cr_id_and_details()
-        if not cr_id:
+        details = self._get_selected_cr_details()
+        if not details:
             return
         if details.get('status') == 'RAISED':
-            self.analyze_cr.emit(cr_id)
+            self.analyze_cr.emit(details['cr_id'])
         else:
             QMessageBox.warning(self, "Action Not Allowed", "Impact analysis can only be run on items with a 'RAISED' status.")
 
     def on_implement_clicked(self):
-        cr_id, details = self._get_selected_cr_id_and_details()
-        if not cr_id:
+        details = self._get_selected_cr_details()
+        if not details:
             return
 
+        # Correctly access is_genesis_complete as a property (no parentheses)
         genesis_complete = self.orchestrator.is_genesis_complete
+
         if not genesis_complete:
             QMessageBox.warning(self, "Action Not Allowed", "Implementation is only available after the main development plan is complete.")
             return
 
         if details.get('status') == 'IMPACT_ANALYZED':
-            self.implement_cr.emit(cr_id)
+            self.implement_cr.emit(details['cr_id'])
         else:
             QMessageBox.warning(self, "Action Not Allowed", "Items can only be implemented when their status is 'IMPACT_ANALYZED'.")

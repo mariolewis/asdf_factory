@@ -222,3 +222,8 @@ QLabel[objectName^="checkpointHeaderLabel"],
 QLabel[objectName^="pmDefineHeaderLabel"] {
     font-size: 14pt;
 }
+
+/* ---- Splitter Handle ---- */
+QSplitter::handle {
+    background-color: #555555; /* A visible mid-gray for the divider */
+}

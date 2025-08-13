@@ -29,8 +29,9 @@ class PreflightCheckPage(QWidget):
         self.ui.manualResolveButton.clicked.connect(self.on_manual_resolve_clicked)
         self.ui.discardButton.clicked.connect(self.on_discard_clicked)
         self.ui.backButton.clicked.connect(self.project_load_failed.emit)
+        self.ui.continueButton.clicked.connect(self.on_continue_clicked)
 
-    def update_and_display(self):
+    def prepare_for_display(self):
         """Updates the page content based on the pre-flight check result."""
         result = self.orchestrator.preflight_check_result
         if not result:
@@ -90,3 +91,13 @@ class PreflightCheckPage(QWidget):
                 # The orchestrator will re-trigger the load, so this page will be updated automatically.
             else:
                 QMessageBox.critical(self, "Error", "Could not identify the project to discard changes for.")
+
+    def on_continue_clicked(self):
+        """Handles the primary action for state drift: committing changes and resuming."""
+        history_id = self.orchestrator.preflight_check_result.get("history_id")
+        if history_id:
+            # We will create this orchestrator method in the next step
+            self.orchestrator.handle_continue_with_uncommitted_changes(history_id)
+            self.project_load_finalized.emit()
+        else:
+            QMessageBox.critical(self, "Error", "Could not identify the project to continue.")

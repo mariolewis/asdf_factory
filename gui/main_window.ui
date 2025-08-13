@@ -118,7 +118,7 @@
     </property>
     <addaction name="actionNew_Project"/>
     <addaction name="actionClose_Project"/>
-    <addaction name="actionLoad_Archived_Project"/>
+    <addaction name="actionLoad_Exported_Project"/>
     <addaction name="actionStop_Export_Project"/>
     <addaction name="separator"/>
     <addaction name="actionSettings"/>
@@ -198,9 +198,9 @@
     <string>Close Project</string>
    </property>
   </action>
-  <action name="actionLoad_Archived_Project">
+  <action name="actionLoad_Exported_Project">
    <property name="text">
-    <string>Load Archived Project...</string>
+    <string>Load Exported Project...</string>
    </property>
   </action>
   <action name="actionStop_Export_Project">

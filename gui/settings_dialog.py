@@ -121,7 +121,7 @@ class SettingsDialog(QDialog):
         factory_tab_layout.addRow("Context Window Limit:", self.context_limit_spin_box)
         factory_tab_layout.addRow("Logging Level:", self.logging_combo_box)
         factory_tab_layout.addRow("Default Project Path:", self.project_path_input)
-        factory_tab_layout.addRow("Default Archive Path:", self.archive_path_input)
+        factory_tab_layout.addRow("Default Export Path:", self.archive_path_input)
 
         self.tab_widget.addTab(self.llm_providers_tab, "LLM Providers")
         self.tab_widget.addTab(self.factory_behavior_tab, "Factory Behavior")

@@ -80,29 +80,30 @@ class MasterOrchestrator:
     """
 
     def __init__(self, db_manager: ASDFDBManager):
-        """
-        Initializes the MasterOrchestrator with a shared DB manager instance.
-        """
         self.db_manager = db_manager
-        self.resumable_state = None
-
-        # Corrected: Direct call to the db_manager
         self.resumable_state = self.db_manager.get_any_paused_state()
 
-        if self.resumable_state:
-            self.project_id = self.resumable_state['project_id']
-            self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
-            # Corrected: Direct call to the db_manager
-            project_details = self.db_manager.get_project_by_id(self.project_id)
-            if project_details:
-                self.project_name = project_details['project_name']
-            logging.info(f"Orchestrator initialized into a resumable state for project: {self.project_name}")
-        else:
-            self.project_id: str | None = None
-            self.project_name: str | None = None
-            self.current_phase: FactoryPhase = FactoryPhase.IDLE
+        # Default initial state
+        self.project_id: str | None = None
+        self.project_name: str | None = None
+        self.current_phase: FactoryPhase = FactoryPhase.IDLE
 
-        # Initialize remaining in-memory attributes
+        if self.resumable_state:
+            project_id_from_state = self.resumable_state['project_id']
+            project_details = self.db_manager.get_project_by_id(project_id_from_state)
+
+            # Only resume if the corresponding project record also exists
+            if project_details:
+                self.project_id = project_id_from_state
+                self.project_name = project_details['project_name']
+                self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
+                logging.info(f"Orchestrator initialized into a resumable state for project: {self.project_name}")
+            else:
+                # If project record is gone, the state is orphaned and should be deleted.
+                logging.warning(f"Found orphaned resumable state for non-existent project ID {project_id_from_state}. Deleting it.")
+                self.db_manager.delete_orchestration_state_for_project(project_id_from_state)
+                self.resumable_state = None # Clear the invalid state
+
         self.active_plan = None
         self.active_plan_cursor = 0
         self.task_awaiting_approval = None
@@ -120,6 +121,7 @@ class MasterOrchestrator:
         """
         logging.info("Resetting MasterOrchestrator to idle state.")
         self.project_id = None
+        self.project_root_path = None
         self.project_name = None
         self.current_phase = FactoryPhase.IDLE
         self.active_plan = None
@@ -133,11 +135,12 @@ class MasterOrchestrator:
 
     def close_active_project(self):
         """
-        Closes the currently active project, returning to an idle state.
+        Closes the currently active project by clearing all its data and
+        returning to an idle state.
         """
         logging.info(f"Closing active project: {self.project_name}")
         if self.project_id:
-            self.db_manager.delete_orchestration_state_for_project(self.project_id)
+            self._clear_active_project_data(self.db_manager, self.project_id)
         self.reset()
 
     @property
@@ -200,16 +203,22 @@ class MasterOrchestrator:
         """
         A helper property that returns True if the main development plan is finished.
         """
-        # Main development is complete if we are at the GENESIS checkpoint with no tasks left,
-        # or if we have already moved on to a later phase.
         if self.current_phase == FactoryPhase.GENESIS and (not self.active_plan or self.active_plan_cursor >= len(self.active_plan)):
             return True
 
-        # List of phases that occur after Genesis is complete
+        # List of ALL phases that can occur after the initial development plan is complete.
         post_genesis_phases = [
             FactoryPhase.AWAITING_INTEGRATION_CONFIRMATION,
             FactoryPhase.INTEGRATION_AND_VERIFICATION,
-            FactoryPhase.MANUAL_UI_TESTING
+            FactoryPhase.AWAITING_INTEGRATION_RESOLUTION,
+            FactoryPhase.MANUAL_UI_TESTING,
+            FactoryPhase.DEBUG_PM_ESCALATION,
+            FactoryPhase.AWAITING_PM_TRIAGE_INPUT,
+            FactoryPhase.RAISING_CHANGE_REQUEST,
+            FactoryPhase.IMPLEMENTING_CHANGE_REQUEST,
+            FactoryPhase.EDITING_CHANGE_REQUEST,
+            FactoryPhase.REPORTING_OPERATIONAL_BUG,
+            FactoryPhase.IDLE
         ]
         if self.current_phase in post_genesis_phases:
             return True
@@ -247,15 +256,14 @@ class MasterOrchestrator:
             return self.active_plan[self.active_plan_cursor]
         return None
 
-    def start_new_project(self, project_name: str):
+    def start_new_project(self, project_name: str) -> str:
         """
-        Initializes a new project, now with robust path handling and subdirectory creation.
+        Prepares a new project in the database and calculates a suggested root path,
+        but does NOT create directories on the filesystem.
+        Returns the suggested project root path.
         """
         if self.project_id and self.is_project_dirty:
-            logging.warning(
-                f"An active, modified project '{self.project_name}' was found. "
-                "Performing a safety export before starting the new project."
-            )
+            logging.warning(f"An active, modified project '{self.project_name}' was found. Performing a safety export.")
             archive_path_from_db = self.db_manager.get_config_value("DEFAULT_ARCHIVE_PATH")
             if not archive_path_from_db or not archive_path_from_db.strip():
                 logging.error("Safety export failed: Default Project Archive Path is not set in Settings.")
@@ -264,37 +272,32 @@ class MasterOrchestrator:
                 archive_name = f"{self.project_name.replace(' ', '_')}_auto_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
                 self.stop_and_export_project(archive_path, archive_name)
 
+        # Calculate the suggested path
         base_path_str = self.db_manager.get_config_value("DEFAULT_PROJECT_PATH")
-
         if not base_path_str or not base_path_str.strip():
             base_path = Path().resolve() / "projects"
-            logging.warning(f"Default project path not set. Using fallback directory: {base_path}")
         else:
             base_path = Path(base_path_str)
 
-        project_root = base_path / project_name.replace(' ', '_').lower()
-        docs_dir = project_root / "_docs"
-        uploads_dir = docs_dir / "_uploads"
+        sanitized_name = project_name.lower().replace(' ', '_')
+        suggested_root = base_path / sanitized_name
 
-        try:
-            project_root.mkdir(parents=True, exist_ok=True)
-            docs_dir.mkdir(exist_ok=True)
-            uploads_dir.mkdir(exist_ok=True)
-        except Exception as e:
-            logging.error(f"Failed to create project directory structure at {project_root}: {e}")
-            raise
-
+        # Create the project in the database
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
         self.project_name = project_name
         timestamp = datetime.now(timezone.utc).isoformat()
 
         try:
+            # Create the project record in the DB, but DO NOT save the root folder yet.
             self.db_manager.create_project(self.project_id, self.project_name, timestamp)
-            self.db_manager.update_project_field(self.project_id, "project_root_folder", str(project_root))
-            logging.info(f"Successfully started new project: '{self.project_name}' (ID: {self.project_id}) at {project_root}")
-            self.is_project_dirty = True
 
+            # Store the SUGGESTED path in memory for the UI to use.
+            self.project_root_path = str(suggested_root)
+
+            logging.info(f"Initialized new project '{self.project_name}' in database. Awaiting path confirmation from UI.")
+            self.is_project_dirty = True
             self.set_phase("ENV_SETUP_TARGET_APP")
+            return str(suggested_root)
 
         except Exception as e:
             logging.error(f"Failed to start new project '{self.project_name}': {e}")
@@ -869,7 +872,6 @@ class MasterOrchestrator:
             if dev_plan_list is None:
                 raise ValueError("The plan JSON is missing the 'development_plan' key.")
 
-            self.load_development_plan(json.dumps(dev_plan_list))
             self.set_phase("GENESIS")
             return True, "Plan approved! Starting development..."
 
@@ -880,25 +882,62 @@ class MasterOrchestrator:
     def set_phase(self, phase_name: str):
         """
         Sets the current project phase and automatically saves the new state.
-        Also handles setting the project's dirty flag based on the transition.
+        Also handles loading the active plan when entering the GENESIS phase.
         """
         try:
             new_phase = FactoryPhase[phase_name]
 
-            # If a project is active, check if this phase transition should mark it as dirty.
-            # We don't mark as dirty for non-modifying states.
+            # This block is the corrected logic.
+            # It now runs EVERY time the phase is set to GENESIS to ensure the plan is loaded.
+            if new_phase == FactoryPhase.GENESIS and self.project_id:
+                logging.info("Entering GENESIS phase. Loading development plan from database.")
+                self.active_plan = None # Reset plan by default
+                self.active_plan_cursor = 0
+
+                project_details = self.db_manager.get_project_by_id(self.project_id)
+                plan_text_from_db = project_details['development_plan_text'] if project_details else None
+
+                if plan_text_from_db:
+                    json_content_str = plan_text_from_db
+                    header_delimiter = f"\n{'-' * 50}\n\n"
+
+                    if header_delimiter in json_content_str:
+                        parts = json_content_str.split(header_delimiter, 1)
+                        if len(parts) > 1:
+                            json_content_str = parts[1]
+
+                    try:
+                        full_plan_data = json.loads(json_content_str)
+                        dev_plan_list = full_plan_data.get("development_plan")
+                        if dev_plan_list:
+                            self.active_plan = dev_plan_list
+                            all_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+                            completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
+
+                            last_completed_index = -1
+                            for i, task in enumerate(self.active_plan):
+                                if task.get('micro_spec_id') in completed_spec_ids:
+                                    last_completed_index = i
+
+                            self.active_plan_cursor = last_completed_index + 1
+                            logging.info(f"Successfully loaded development plan. Resuming at task {self.active_plan_cursor + 1}/{len(self.active_plan)}.")
+
+                    except json.JSONDecodeError:
+                        logging.error(f"Failed to decode development plan for project {self.project_id}. The stored plan is not valid JSON.")
+                        self.active_plan = None
+
             non_dirtying_phases = [
                 FactoryPhase.IDLE,
                 FactoryPhase.VIEWING_PROJECT_HISTORY,
                 FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION
             ]
             if self.project_id and new_phase not in non_dirtying_phases:
+                self.is_project_dirty = True
                 logging.info(f"Project marked as dirty due to phase transition to {new_phase.name}")
 
             self.current_phase = new_phase
             logging.info(f"Transitioning to phase: {self.current_phase.name}")
 
-            # If a project is active, save its new state to the database.
             if self.project_id:
                 self._save_current_state()
 
@@ -911,59 +950,66 @@ class MasterOrchestrator:
         """
         if self.current_phase != FactoryPhase.GENESIS:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
-            return
+            return "No action taken."
 
-        db = self.db_manager
-        pm_behavior = db.get_config_value("PM_CHECKPOINT_BEHAVIOR") or "ALWAYS_ASK"
-        is_auto_proceed = (pm_behavior == "AUTO_PROCEED")
+        if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
+            logging.info("Development plan is complete. Transitioning to integration phase.")
+            if progress_callback: progress_callback("Development plan complete.")
 
-        while True:
-            if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
-                if progress_callback: progress_callback("Development plan is empty or complete.")
+            # This is the fix: Simply set the phase and let the UI handle the next step.
+            self.set_phase("INTEGRATION_AND_VERIFICATION")
+            return "Development complete. Ready for Integration."
+
+        task = self.active_plan[self.active_plan_cursor]
+        component_name = task.get('component_name')
+        logging.info(f"Executing task {self.active_plan_cursor + 1} for component: {component_name}")
+        if progress_callback:
+            progress_callback(f"Executing task {self.active_plan_cursor + 1}/{len(self.active_plan)} for component: {component_name}")
+
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            project_root_path = Path(project_details['project_root_folder'])
+            component_type = task.get("component_type", "CLASS")
+
+            if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
+                self._execute_declarative_modification_task(task, project_root_path, db, progress_callback)
+            else:
+                self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
+
+            self.active_plan_cursor += 1
+            return "Step complete."
+
+        except Exception as e:
+            logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}")
+            self.escalate_for_manual_debug(str(e))
+            return f"Error during development: {e}"
+
+    def run_integration_and_verification_phase(self, progress_callback=None):
+        """
+        Runs the full integration and verification process. This is designed to be
+        called in a background thread by the UI.
+        """
+        logging.info("Starting integration and verification phase...")
+        try:
+            db = self.db_manager
+            # Check for known issues before proceeding
+            non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
+            known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
+
+            if known_issues:
+                if progress_callback: progress_callback("Integration paused: Found components with known issues.")
+                self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
+                self.set_phase("AWAITING_INTEGRATION_CONFIRMATION")
                 return
 
-            task = self.active_plan[self.active_plan_cursor]
-            component_name = task.get('component_name')
-            logging.info(f"Executing task {self.active_plan_cursor + 1} for component: {component_name}")
-            if progress_callback:
-                progress_callback(f"Executing task {self.active_plan_cursor + 1}/{len(self.active_plan)} for component: {component_name}")
+            # If no issues, proceed with the actual integration task
+            if progress_callback: progress_callback("Running integration and UI testing phase logic...")
+            self._run_integration_and_ui_testing_phase(progress_callback=progress_callback)
 
-            try:
-                project_details = db.get_project_by_id(self.project_id)
-                project_root_path = Path(project_details['project_root_folder'])
-                component_type = task.get("component_type", "CLASS")
-
-                if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
-                    self._execute_declarative_modification_task(task, project_root_path, db, progress_callback)
-                else:
-                    self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
-
-                self.active_plan_cursor += 1
-
-                if self.active_plan_cursor >= len(self.active_plan):
-                    if self.is_genesis_complete:
-                        self._run_post_implementation_doc_update()
-
-                    logging.info("Development plan is complete. Performing pre-integration check.")
-                    if progress_callback: progress_callback("Development plan complete. Checking for issues...")
-
-                    non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
-                    known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
-
-                    if known_issues:
-                        self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
-                        self.set_phase("AWAITING_INTEGRATION_CONFIRMATION")
-                    else:
-                        self._run_integration_and_ui_testing_phase(progress_callback=progress_callback)
-                    return
-
-                if not is_auto_proceed:
-                    break
-
-            except Exception as e:
-                logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}")
-                self.escalate_for_manual_debug(str(e))
-                return
+        except Exception as e:
+            logging.error(f"Integration and verification phase failed: {e}", exc_info=True)
+            self.escalate_for_manual_debug(str(e))
 
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
         """
@@ -1291,7 +1337,7 @@ class MasterOrchestrator:
             new_artifacts_for_integration = [dict(row) for row in all_artifacts]
 
             # Determine which existing files are the most likely integration points
-            integration_files_to_load = self._get_integration_context_files(db, new_artifacts_for_integration)
+            integration_files_to_load = self._get_integration_context_files(new_artifacts_for_integration)
             existing_code_context = {}
             for file_path in integration_files_to_load:
                 full_path = project_root_path / file_path
@@ -1522,9 +1568,6 @@ class MasterOrchestrator:
         logging.info(f"PM has confirmed implementation for Change Request ID: {cr_id}.")
 
         try:
-            if not self.llm_service:
-                raise Exception("Cannot implement CR: LLM Service is not configured.")
-
             db = self.db_manager
             cr_details = db.get_cr_by_id(cr_id)
             if not cr_details:
@@ -1559,7 +1602,7 @@ class MasterOrchestrator:
                         pass
 
             core_docs = {"final_spec_text": project_details['final_spec_text']}
-            context_package = self._build_and_validate_context_package(db, core_docs, source_code_files)
+            context_package = self._build_and_validate_context_package(core_docs, source_code_files)
 
             if context_package.get("error"):
                 raise Exception(f"Context Builder Error: {context_package['error']}")
@@ -1569,14 +1612,21 @@ class MasterOrchestrator:
             db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
 
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
+
+            # This is the corrected line that now passes the tech_spec_text
             new_plan_str = planner_agent.create_refactoring_plan(
-                cr_details['description'], project_details['final_spec_text'], rowd_json, context_package["source_code"]
+                cr_details['description'],
+                project_details['final_spec_text'],
+                project_details['tech_spec_text'], # Added this argument
+                rowd_json,
+                context_package["source_code"]
             )
 
-            if "error" in new_plan_str:
-                raise Exception(f"RefactoringPlannerAgent failed: {new_plan_str}")
+            response_data = json.loads(new_plan_str)
+            if "error" in response_data:
+                raise Exception(f"RefactoringPlannerAgent failed: {response_data['error']}")
 
-            self.active_plan = json.loads(new_plan_str)
+            self.active_plan = response_data
             self.active_plan_cursor = 0
             logging.info("Successfully generated new development plan from Change Request.")
             self.set_phase("GENESIS")
@@ -1589,19 +1639,16 @@ class MasterOrchestrator:
         """
         Handles the PM's choice on how to proceed with a stale impact analysis.
         """
-        self.task_awaiting_approval = None # Always clear the approval task
+        self.task_awaiting_approval = None
 
         if choice == "RE-RUN":
             logging.info(f"PM chose to re-run stale impact analysis for CR-{cr_id}.")
-            # Trigger the analysis and then immediately try to implement again.
             self.handle_run_impact_analysis_action(cr_id)
-            self.handle_implement_cr_action(cr_id)
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
         elif choice == "PROCEED":
-            logging.warning(f"PM chose to proceed with a stale impact analysis for CR-{cr_id}. Returning to CR Register.")
-            # This is the pragmatic choice: return the user to the register,
-            # where they can re-trigger the implementation.
-            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+            logging.warning(f"PM chose to proceed with a stale impact analysis for CR-{cr_id}.")
+            self.handle_implement_cr_action(cr_id)
 
     def handle_run_impact_analysis_action(self, cr_id: int, **kwargs):
         """
@@ -1927,7 +1974,7 @@ class MasterOrchestrator:
 
                 if not context_package:
                     logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
-                    apex_file_name = project_details.get('apex_executable_name')
+                    apex_file_name = project_details['apex_executable_name'] if 'apex_executable_name' in project_details.keys() and project_details['apex_executable_name'] else None
                     failing_task = self.get_current_task_details()
                     failing_component_name = failing_task.get('component_name') if failing_task else None
 
@@ -2066,20 +2113,19 @@ class MasterOrchestrator:
         extracted from the content, to a given document.
         """
         if not self.project_id:
-            return document_content # Cannot add header without a project ID
+            return document_content
 
-        # Attempt to find a version number like vX.X or Version X.X in the content
-        version_number = "1.0" # Default to 1.0 if not found
-        # Regex to find patterns like v0.7, v1.0, Version 1.2, etc., case-insensitively
+        version_number = "1.0"
         match = re.search(r'(?:v|Version\s)(\d+\.\d+)', document_content, re.IGNORECASE)
         if match:
             version_number = match.group(1)
 
+        # This is the corrected block with proper \n newlines
         header = (
-            f"PROJECT NUMBER: {self.project_id}\\n"
-            f"{document_type.upper()}\\n"
-            f"Version number: {version_number}\\n"
-            f"{'-' * 50}\\n\\n"
+            f"PROJECT NUMBER: {self.project_id}\n"
+            f"{document_type.upper()}\n"
+            f"Version number: {version_number}\n"
+            f"{'-' * 50}\n\n"
         )
         return header + document_content
 
@@ -2136,15 +2182,15 @@ class MasterOrchestrator:
             logging.error(f"Failed to auto-save state for project {self.project_id}: {e}")
 
 
-    def _clear_active_project_data(self, db):
-        """Helper method to clear all data for the current project."""
-        if not self.project_id:
+    def _clear_active_project_data(self, db, project_id: str):
+        """Helper method to clear all data for a specific project."""
+        if not project_id:
             return
-        db.delete_all_artifacts_for_project(self.project_id)
-        db.delete_all_change_requests_for_project(self.project_id)
-        db.delete_orchestration_state_for_project(self.project_id)
-        db.delete_project_by_id(self.project_id)
-        logging.info(f"Cleared all active data for project ID: {self.project_id}")
+        db.delete_all_artifacts_for_project(project_id)
+        db.delete_all_change_requests_for_project(project_id)
+        db.delete_orchestration_state_for_project(project_id)
+        db.delete_project_by_id(project_id)
+        logging.info(f"Cleared all active data for project ID: {project_id}")
 
 
     def stop_and_export_project(self, archive_dir: str | Path, archive_name: str) -> str | None:
@@ -2194,7 +2240,7 @@ class MasterOrchestrator:
                 timestamp=datetime.now(timezone.utc).isoformat()
             )
 
-            self._clear_active_project_data(db)
+            self._clear_active_project_data(db, self.project_id)
 
             self.reset()
             logging.info(f"Successfully exported project '{self.project_name}' to {archive_dir}")
@@ -2280,6 +2326,39 @@ class MasterOrchestrator:
             logging.error(f"Failed to discard changes for project history ID {history_id}: {e}")
             self.preflight_check_result = {"status": "ERROR", "message": str(e)}
 
+    def handle_continue_with_uncommitted_changes(self, history_id: int):
+        """
+        Handles the 'Continue Project' action for a project with state drift.
+        Stages and commits all local changes, then resumes the project.
+        """
+        logging.info(f"Committing manual changes for project history ID: {history_id}")
+        try:
+            db = self.db_manager
+            history_record = db.get_project_history_by_id(history_id)
+            if not history_record:
+                raise Exception(f"Could not find history record for ID {history_id}.")
+
+            project_root = history_record['project_root_folder']
+            from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
+            build_agent = BuildAndCommitAgentAppTarget(project_root)
+
+            commit_message = "feat: Apply and commit manual bug fix"
+            # We will create the 'commit_all_changes' method in the next step.
+            success, message = build_agent.commit_all_changes(commit_message)
+
+            if not success:
+                raise Exception(f"Failed to commit changes: {message}")
+
+            logging.info("Manual changes committed successfully. Resuming project.")
+            resume_phase = self._determine_resume_phase_from_rowd(db)
+            self.set_phase(resume_phase.name)
+
+        except Exception as e:
+            logging.error(f"Failed to continue project for history ID {history_id}: {e}")
+            self.preflight_check_result = {"status": "ERROR", "message": str(e)}
+            # Fallback to the preflight check page on error
+            self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
+
     def delete_archived_project(self, history_id: int) -> tuple[bool, str]:
         """
         Permanently deletes an archived project's history record and its
@@ -2344,7 +2423,7 @@ class MasterOrchestrator:
 
             project_id_to_load = history_record['project_id']
             logging.info(f"Preparing to load project {project_id_to_load}. Clearing any lingering active data for this ID first.")
-            self._clear_active_project_data(db) # Pass the db instance
+            self._clear_active_project_data(db, project_id_to_load) # Pass the db instance
 
             rowd_file_path = Path(history_record['archive_file_path'])
             project_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_project.json"))
@@ -2367,6 +2446,7 @@ class MasterOrchestrator:
 
             self.project_id = project_id_to_load
             self.project_name = history_record['project_name']
+            self.project_root_path = history_record['project_root_folder']
             check_result = self._perform_preflight_checks(history_record['project_root_folder'])
             self.preflight_check_result = {**check_result, "history_id": history_id}
 

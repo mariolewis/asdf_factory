@@ -35,7 +35,7 @@ def initialize_database(db_manager: ASDFDBManager):
         "CONTEXT_WINDOW_CHAR_LIMIT": ("2500000", "Max characters for complex analysis context."),
         "LOGGING_LEVEL": ("Standard", "Verbosity of ASDF's internal logs."),
         "DEFAULT_PROJECT_PATH": ("", "Default parent directory for new target projects."),
-        "DEFAULT_ARCHIVE_PATH": ("", "Default folder for saving project archives."),
+        "DEFAULT_EXPORT_PATH": ("", "Default folder for saving project exports."),
         "GEMINI_CONTEXT_LIMIT": ("2500000", "Default context limit for Gemini."),
         "OPENAI_CONTEXT_LIMIT": ("380000", "Default context limit for OpenAI."),
         "ANTHROPIC_CONTEXT_LIMIT": ("600000", "Default context limit for Anthropic."),
