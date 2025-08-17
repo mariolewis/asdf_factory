@@ -10,7 +10,6 @@ from pathlib import Path
 import textwrap
 import git
 
-from agents.agent_environment_setup_app_target import EnvironmentSetupAgent_AppTarget
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_ux_triage import UX_Triage_Agent
@@ -35,6 +34,7 @@ from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
 from agents.agent_project_scoping import ProjectScopingAgent
+from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
 
 
 class FactoryPhase(Enum):
@@ -71,6 +71,7 @@ class FactoryPhase(Enum):
     AWAITING_CONTEXT_REESTABLISHMENT = auto()
     AWAITING_PM_TRIAGE_INPUT = auto()
     AWAITING_REASSESSMENT_CONFIRMATION = auto()
+    PROJECT_COMPLETED = auto()
 
 
 class MasterOrchestrator:
@@ -187,7 +188,8 @@ class MasterOrchestrator:
         FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
         FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
         FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input",
-        FactoryPhase.AWAITING_REASSESSMENT_CONFIRMATION: "LLM Re-assessment Confirmation"
+        FactoryPhase.AWAITING_REASSESSMENT_CONFIRMATION: "LLM Re-assessment Confirmation",
+        FactoryPhase.PROJECT_COMPLETED: "Project Completed"
     }
 
     def get_status(self) -> dict:
@@ -1275,41 +1277,87 @@ class MasterOrchestrator:
             logging.error(f"Failed to identify integration context files via AI: {e}")
             return []
 
+    def _get_json_from_document(self, doc_text: str) -> dict:
+        """Extracts the JSON content from a document that may have a standard text header."""
+        if not doc_text:
+            return {}
+        # The header is separated by a consistent line of 50 hyphens
+        header_delimiter = f"\n{'-' * 50}\n\n"
+        if header_delimiter in doc_text:
+            parts = doc_text.split(header_delimiter, 1)
+            if len(parts) > 1:
+                return json.loads(parts[1])
+        # If no header, assume the whole content is JSON
+        return json.loads(doc_text)
+
     def _determine_resume_phase_from_rowd(self, db: ASDFDBManager) -> FactoryPhase:
         """
-        Analyzes the loaded project documents to determine the correct logical
-        phase to resume from.
+        Analyzes the loaded project documents and artifact statuses to determine
+        the correct logical phase to resume from, checking from the latest phase backwards.
         """
         logging.info("Analyzing loaded project state to determine the correct resume phase...")
         project_details = self.db_manager.get_project_by_id(self.project_id)
+        project_keys = project_details.keys() if project_details else []
 
         if not project_details:
-            return FactoryPhase.SPEC_ELABORATION
-
-        if project_details['ui_test_plan_text']:
-            logging.info("Resume point determined: MANUAL_UI_TESTING (UI test plan exists).")
-            return FactoryPhase.MANUAL_UI_TESTING
-        if project_details['integration_plan_text']:
-            logging.info("Resume point determined: INTEGRATION_AND_VERIFICATION (Integration plan exists).")
-            return FactoryPhase.INTEGRATION_AND_VERIFICATION
-        if project_details['development_plan_text']:
-            logging.info("Resume point determined: GENESIS (Development plan exists).")
-            return FactoryPhase.GENESIS
-        if project_details['coding_standard_text']:
-            logging.info("Resume point determined: PLANNING (Coding standard exists).")
-            return FactoryPhase.PLANNING
-        if project_details['tech_spec_text']:
-            logging.info("Resume point determined: CODING_STANDARD_GENERATION (Tech spec exists).")
-            return FactoryPhase.CODING_STANDARD_GENERATION
-        if project_details['final_spec_text']:
-            logging.info("Resume point determined: TECHNICAL_SPECIFICATION (App spec exists).")
-            return FactoryPhase.TECHNICAL_SPECIFICATION
-        if project_details['ux_spec_text']:
-            logging.info("Resume point determined: ENV_SETUP_TARGET_APP (UX spec exists).")
             return FactoryPhase.ENV_SETUP_TARGET_APP
 
-        logging.info("Resume point determined: SPEC_ELABORATION (Default).")
-        return FactoryPhase.SPEC_ELABORATION
+        # --- Check from latest phase backwards ---
+
+        if 'ui_test_plan_text' in project_keys and project_details['ui_test_plan_text']:
+            logging.info("Resume point: MANUAL_UI_TESTING (UI test plan exists).")
+            return FactoryPhase.MANUAL_UI_TESTING
+
+        if 'integration_plan_text' in project_keys and project_details['integration_plan_text']:
+            logging.info("Resume point: INTEGRATION_AND_VERIFICATION (Integration plan exists).")
+            return FactoryPhase.INTEGRATION_AND_VERIFICATION
+
+        if 'development_plan_text' in project_keys and project_details['development_plan_text']:
+            try:
+                plan_json = self._get_json_from_document(project_details['development_plan_text'])
+                plan_tasks = plan_json.get("development_plan", [])
+                total_plan_tasks = len(plan_tasks)
+
+                if total_plan_tasks > 0:
+                    all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                    completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
+
+                    completed_tasks = 0
+                    for task in plan_tasks:
+                        if task.get('micro_spec_id') in completed_spec_ids:
+                            completed_tasks += 1
+
+                    if completed_tasks >= total_plan_tasks:
+                        logging.info("Resume point: INTEGRATION_AND_VERIFICATION (Development plan is complete).")
+                        return FactoryPhase.INTEGRATION_AND_VERIFICATION
+            except Exception as e:
+                logging.error(f"Could not parse development plan during resume check: {e}")
+
+            logging.info("Resume point: GENESIS (Development plan is incomplete).")
+            return FactoryPhase.GENESIS
+
+        if 'coding_standard_text' in project_keys and project_details['coding_standard_text']:
+            logging.info("Resume point: PLANNING (Coding standard exists).")
+            return FactoryPhase.PLANNING
+
+        if 'test_execution_command' in project_keys and project_details['test_execution_command']:
+            logging.info("Resume point: CODING_STANDARD_GENERATION (Test command exists).")
+            return FactoryPhase.CODING_STANDARD_GENERATION
+
+        if 'tech_spec_text' in project_keys and project_details['tech_spec_text']:
+            logging.info("Resume point: BUILD_SCRIPT_SETUP (Tech spec exists).")
+            return FactoryPhase.BUILD_SCRIPT_SETUP
+
+        if 'final_spec_text' in project_keys and project_details['final_spec_text']:
+            logging.info("Resume point: TECHNICAL_SPECIFICATION (App spec exists).")
+            return FactoryPhase.TECHNICAL_SPECIFICATION
+
+        if 'project_root_folder' in project_keys and project_details['project_root_folder']:
+            logging.info("Resume point: SPEC_ELABORATION (Project folder exists).")
+            return FactoryPhase.SPEC_ELABORATION
+
+        logging.info("Resume point: Defaulting to ENV_SETUP_TARGET_APP.")
+        return FactoryPhase.ENV_SETUP_TARGET_APP
 
     def _run_integration_and_ui_testing_phase(self, progress_callback=None):
         """
@@ -1418,7 +1466,7 @@ class MasterOrchestrator:
             if "ALL_TESTS_PASSED" in failure_summary:
                 logging.info("UI test result evaluation complete: All tests passed.")
                 # If everything passes, we can consider the project complete and idle.
-                self.set_phase("IDLE")
+                self.set_phase("PROJECT_COMPLETED")
             else:
                 logging.warning("UI test result evaluation complete: Failures detected.")
                 self.escalate_for_manual_debug(failure_summary, is_functional_bug=True)
@@ -2107,6 +2155,39 @@ class MasterOrchestrator:
                 self.set_phase("GENESIS")
                 self.task_awaiting_approval = None
 
+    def run_full_test_suite(self, progress_callback=None):
+        """
+        Triggers a full run of the project's automated test suite.
+
+        Returns:
+            A tuple (success: bool, output: str) with the test results.
+        """
+        if not self.project_id:
+            raise Exception("Cannot run tests: No active project.")
+
+        db = self.db_manager
+        project_details = db.get_project_by_id(self.project_id)
+        if not project_details:
+            raise Exception("Cannot run tests: Project details not found.")
+
+        project_root = project_details.get('project_root_folder')
+        test_command = project_details.get('test_execution_command')
+
+        if not project_root or not test_command:
+            raise Exception("Cannot run tests: Project root or test command is not configured.")
+
+        if progress_callback:
+            progress_callback(f"Executing test command: '{test_command}'...")
+
+        agent = BuildAndCommitAgentAppTarget(project_root)
+        # We will create this 'run_test_suite_only' method in the next step.
+        success, output = agent.run_test_suite_only(test_command)
+
+        if progress_callback:
+            progress_callback("Test run complete.")
+
+        return success, output
+
     def _prepend_standard_header(self, document_content: str, document_type: str) -> str:
         """
         Prepends a standard project header, including a version number
@@ -2329,7 +2410,7 @@ class MasterOrchestrator:
     def handle_continue_with_uncommitted_changes(self, history_id: int):
         """
         Handles the 'Continue Project' action for a project with state drift.
-        Stages and commits all local changes, then resumes the project.
+        Loads the plan, commits changes, creates the RoWD record, and resumes.
         """
         logging.info(f"Committing manual changes for project history ID: {history_id}")
         try:
@@ -2338,16 +2419,51 @@ class MasterOrchestrator:
             if not history_record:
                 raise Exception(f"Could not find history record for ID {history_id}.")
 
+            # --- CORRECTED BLOCK STARTS HERE ---
+            project_details = db.get_project_by_id(self.project_id)
+            if project_details and 'development_plan_text' in project_details.keys() and project_details['development_plan_text']:
+                plan_json = self._get_json_from_document(project_details['development_plan_text'])
+                self.active_plan = plan_json.get("development_plan", [])
+
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
+                last_completed_index = -1
+                for i, task in enumerate(self.active_plan):
+                    if task.get('micro_spec_id') in completed_spec_ids:
+                        last_completed_index = i
+                self.active_plan_cursor = last_completed_index + 1
+            # --- CORRECTED BLOCK ENDS HERE ---
+
             project_root = history_record['project_root_folder']
             from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
             build_agent = BuildAndCommitAgentAppTarget(project_root)
 
             commit_message = "feat: Apply and commit manual bug fix"
-            # We will create the 'commit_all_changes' method in the next step.
             success, message = build_agent.commit_all_changes(commit_message)
 
             if not success:
                 raise Exception(f"Failed to commit changes: {message}")
+
+            if self.active_plan and self.active_plan_cursor < len(self.active_plan):
+                task_just_fixed = self.active_plan[self.active_plan_cursor]
+                commit_hash = message.split(":")[-1].strip() if "New commit hash:" in message else "N/A"
+
+                logging.info(f"Creating RoWD success record for manually fixed component: {task_just_fixed.get('component_name')}")
+                doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
+                doc_agent.update_artifact_record({
+                    "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                    "project_id": self.project_id,
+                    "file_path": task_just_fixed.get("component_file_path"),
+                    "artifact_name": task_just_fixed.get("component_name"),
+                    "artifact_type": task_just_fixed.get("component_type"),
+                    "short_description": task_just_fixed.get("task_description"),
+                    "status": "UNIT_TESTS_PASSING",
+                    "unit_test_status": "TESTS_PASSING",
+                    "commit_hash": commit_hash,
+                    "version": 1,
+                    "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+                    "micro_spec_id": task_just_fixed.get("micro_spec_id")
+                })
 
             logging.info("Manual changes committed successfully. Resuming project.")
             resume_phase = self._determine_resume_phase_from_rowd(db)
@@ -2356,7 +2472,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to continue project for history ID {history_id}: {e}")
             self.preflight_check_result = {"status": "ERROR", "message": str(e)}
-            # Fallback to the preflight check page on error
             self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
     def delete_archived_project(self, history_id: int) -> tuple[bool, str]:
