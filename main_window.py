@@ -155,6 +155,9 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionRaise_CR.triggered.connect(self.on_raise_cr)
         self.ui.actionView_Documents.triggered.connect(self.on_view_documents)
         self.ui.actionView_Reports.triggered.connect(self.on_view_reports)
+        self.ui.actionProceed.triggered.connect(self.on_proceed)
+        self.ui.actionRun_Tests.triggered.connect(self.on_run_tests)
+        self.ui.actionReport_Bug.triggered.connect(self.on_report_bug)
 
         # Connect signals that trigger a FULL UI refresh and page transition
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page]:
@@ -184,7 +187,6 @@ class ASDFMainWindow(QMainWindow):
         self.reports_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.manual_ui_testing_page.go_to_documents.connect(self.on_view_documents)
         self.manual_ui_testing_page.testing_complete.connect(self.update_ui_after_state_change)
-        self.project_complete_page.back_to_main.connect(self.on_close_project)
         self.project_complete_page.export_project.connect(self.on_stop_export_project)
         self.cr_management_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.cr_management_page.edit_cr.connect(self.on_cr_edit_action)
@@ -409,6 +411,27 @@ class ASDFMainWindow(QMainWindow):
             worker.signals.error.connect(self._handle_integration_result)
             self.threadpool.start(worker)
 
+        elif current_phase_name == "AWAITING_PM_TRIAGE_INPUT":
+            failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No details provided.")
+            details_text = (
+                "The automated triage system could not gather enough context to identify the root cause of the following failure:\n\n"
+                f"{failure_log}\n\n"
+                "You can retry the automated analysis, or pause to investigate and fix the issue manually."
+            )
+            self.decision_page.configure(
+                header="Triage Escalation",
+                instruction="Automated analysis failed. Please choose how to proceed.",
+                details=details_text,
+                option1_text="Retry Automated Triage",
+                option2_text="Pause for Manual Fix",
+                option3_text="Ignore Failure & Proceed"
+            )
+            # Re-use the same handlers as the other debug escalation
+            self.decision_page.option1_selected.connect(self.on_decision_option1)
+            self.decision_page.option2_selected.connect(self.on_decision_option2)
+            self.decision_page.option3_selected.connect(self.on_decision_option3)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
         elif current_phase_name == "DEBUG_PM_ESCALATION":
             failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No details.")
             details_text = (
@@ -444,11 +467,11 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.option2_selected.connect(self.on_stale_analysis_proceed)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
-        elif not is_project_active:
-            self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
-        elif current_phase_name == "IDLE" and is_project_active:
+        elif current_phase_name == "PROJECT_COMPLETED":
             self.project_complete_page.set_project_name(self.orchestrator.project_name)
             self.ui.mainContentArea.setCurrentWidget(self.project_complete_page)
+        elif current_phase_name == "IDLE" or not is_project_active:
+            self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
         else:
             self.ui.mainContentArea.setCurrentWidget(self.ui.phasePage)
             self.ui.phaseLabel.setText(f"UI for phase '{current_phase_name}' is not yet implemented.")
@@ -540,8 +563,51 @@ class ASDFMainWindow(QMainWindow):
             # The orchestrator will set the phase back to the CR manager, so we update the UI
             self.update_ui_after_state_change()
 
-    def on_proceed(self): QMessageBox.information(self, "Not Implemented", "The 'Proceed' action is not yet implemented.")
-    def on_run_tests(self): QMessageBox.information(self, "Not Implemented", "The 'Run Tests' action is not yet implemented.")
+    def on_proceed(self):
+        """Triggers the primary 'proceed' action for the active page, if applicable."""
+        if self.orchestrator.current_phase == FactoryPhase.GENESIS:
+            # The genesis page has its own logic to run the step in a background thread
+            self.genesis_page.run_development_step()
+        else:
+            QMessageBox.information(self, "Action Not Applicable", "The 'Proceed' action is not applicable in the current phase.")
+
+    def on_run_tests(self):
+        """Runs the full test suite for the active project in a background thread."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "Please create or load a project to run tests.")
+            return
+
+        self.setEnabled(False)
+        self.statusBar().showMessage("Running full test suite...")
+
+        # We will create the 'run_full_test_suite' method in the orchestrator next.
+        worker = Worker(self.orchestrator.run_full_test_suite)
+        worker.signals.result.connect(self._handle_test_run_result)
+        worker.signals.error.connect(self._handle_test_run_error)
+        self.threadpool.start(worker)
+
+    def _handle_test_run_result(self, result):
+        """Handles the result of the background test run task."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        success, output = result
+        if success:
+            QMessageBox.information(self, "Tests Passed", "The full test suite passed successfully.")
+        else:
+            # Use a detailed text message box for long error logs
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Warning)
+            msg_box.setWindowTitle("Test Run Failed")
+            msg_box.setText("One or more tests failed. See details below.")
+            msg_box.setDetailedText(output)
+            msg_box.exec()
+
+    def _handle_test_run_error(self, error_tuple):
+        """Handles a system error from the test run worker."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        error_msg = f"An unexpected error occurred while running tests:\n{error_tuple[1]}"
+        QMessageBox.critical(self, "Error", error_msg)
 
     def on_raise_cr(self):
         """Opens the Raise Request dialog and processes the result."""
@@ -549,7 +615,7 @@ class ASDFMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Project", "Please create or load a project before raising a request.")
             return
 
-        dialog = RaiseRequestDialog(self)
+        dialog = RaiseRequestDialog(self, initial_request_type="CHANGE_REQUEST")
         if dialog.exec():  # This is true if the user clicks "Save" and validation passes
             data = dialog.get_data()
             request_type = data["request_type"]
@@ -585,7 +651,21 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator.handle_view_cr_register_action()
         self.update_ui_after_state_change()
 
-    def on_report_bug(self): QMessageBox.information(self, "Not Implemented", "The 'Report Bug' action is not yet implemented.")
+    def on_report_bug(self):
+        """Opens the Raise Request dialog with the Bug Report option pre-selected."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "Please create or load a project before reporting a bug.")
+            return
+
+        dialog = RaiseRequestDialog(self, initial_request_type="BUG_REPORT")
+        if dialog.exec():
+            data = dialog.get_data()
+            success = self.orchestrator.save_bug_report(data["description"], data["severity"])
+            if success:
+                QMessageBox.information(self, "Success", "Bug Report has been successfully logged.")
+                self.update_cr_register_view()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save the Bug Report.")
 
     def on_view_documents(self):
         if not self.orchestrator.project_id:
