@@ -13,6 +13,7 @@ import git
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_ux_triage import UX_Triage_Agent
+from agents.agent_report_generator import ReportGeneratorAgent
 from agents.agent_ux_spec import UX_Spec_Agent
 from asdf_db_manager import ASDFDBManager
 from agents.logic_agent_app_target import LogicAgent_AppTarget
@@ -766,34 +767,35 @@ class MasterOrchestrator:
 
     def finalize_and_save_complexity_assessment(self, assessment_json_str: str):
         """
-        Applies the standard header, saves the complexity assessment to the DB,
-        and writes the raw assessment to a JSON file.
+        Saves the complexity assessment to the DB, and now generates and saves
+        a formatted .docx report to the filesystem.
         """
         if not self.project_id:
             logging.error("Cannot save complexity assessment; no active project.")
             return
 
         try:
-            footnote = "\n\nNote: This assessment applies to the current version of project specifications."
-            content_with_footnote = assessment_json_str + footnote
-
-            final_doc_with_header = self._prepend_standard_header(
-                document_content=content_with_footnote,
-                document_type="Complexity & Risk Assessment"
-            )
-
-            self.db_manager.update_project_field(self.project_id, "complexity_assessment_text", final_doc_with_header)
+            # Save the raw data to the database as before
+            self.db_manager.update_project_field(self.project_id, "complexity_assessment_text", assessment_json_str)
             logging.info(f"Successfully saved Complexity & Risk Assessment to database for project {self.project_id}")
 
-            # This is the new logic to save and commit the file
+            # Now, generate and save the formatted .docx report
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                assessment_file_path = docs_dir / "complexity_and_risk_assessment.json"
-                assessment_file_path.write_text(assessment_json_str, encoding="utf-8")
+                # Change the output filename to .docx
+                assessment_file_path = docs_dir / "complexity_and_risk_assessment.docx"
 
-                # Commit the new document
+                # Use the new agent method
+                report_generator = ReportGeneratorAgent()
+                assessment_data = json.loads(assessment_json_str)
+                docx_bytes = report_generator.generate_assessment_docx(assessment_data, self.project_name)
+
+                with open(assessment_file_path, 'wb') as f:
+                    f.write(docx_bytes.getbuffer())
+
+                # Commit the new .docx document
                 self._commit_document(assessment_file_path, "docs: Add Complexity and Risk Assessment")
 
         except Exception as e:

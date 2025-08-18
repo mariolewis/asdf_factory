@@ -92,6 +92,64 @@ class ReportGeneratorAgent:
         doc_buffer.seek(0)
         return doc_buffer
 
+    def generate_assessment_docx(self, analysis_data: dict, project_name: str) -> BytesIO:
+        """
+        Generates a formatted .docx file for the Complexity & Risk Assessment report.
+
+        Args:
+            analysis_data (dict): The structured data from the ProjectScopingAgent.
+            project_name (str): The name of the project for the report title.
+
+        Returns:
+            BytesIO: An in-memory byte stream of the generated .docx file.
+        """
+        document = Document()
+        document.add_heading(f"Complexity & Risk Assessment: {project_name}", level=1)
+
+        if not analysis_data or "complexity_analysis" not in analysis_data:
+            document.add_paragraph("Could not parse the analysis result.")
+        else:
+            # --- Complexity Analysis Section ---
+            document.add_heading('Complexity Analysis', level=2)
+            comp_analysis = analysis_data.get("complexity_analysis", {})
+            for key, value in comp_analysis.items():
+                title = key.replace('_', ' ').title()
+                rating = value.get('rating', 'N/A')
+                justification = value.get('justification', 'No details provided.')
+
+                p = document.add_paragraph()
+                p.add_run(f"{title}: ").bold = True
+                p.add_run(rating)
+                document.add_paragraph(justification, style='Intense Quote')
+
+            # --- Risk Assessment Section ---
+            document.add_heading('Risk Assessment', level=2)
+            risk_assessment = analysis_data.get("risk_assessment", {})
+
+            p_risk = document.add_paragraph()
+            p_risk.add_run("Overall Risk Level: ").bold = True
+            p_risk.add_run(risk_assessment.get('overall_risk_level', 'N/A'))
+
+            p_summary = document.add_paragraph()
+            p_summary.add_run("Summary: ").bold = True
+            p_summary.add_run(risk_assessment.get('summary', 'No summary provided.'))
+
+            p_token = document.add_paragraph()
+            p_token.add_run("Token Consumption Outlook: ").bold = True
+            p_token.add_run(risk_assessment.get('token_consumption_outlook', 'N/A'))
+
+            recommendations = risk_assessment.get('recommendations', [])
+            if recommendations:
+                document.add_paragraph("Recommendations:", style='Heading 3')
+                for rec in recommendations:
+                    document.add_paragraph(rec, style='List Bullet')
+
+        # Save document to an in-memory buffer
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer
+
     def generate_text_document_docx(self, title: str, content: str, is_code: bool = False) -> BytesIO:
         """
         Generates a generic .docx file for text-based project documents.

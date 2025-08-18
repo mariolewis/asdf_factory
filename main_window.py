@@ -239,6 +239,7 @@ class ASDFMainWindow(QMainWindow):
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page]:
             if hasattr(page, 'setup_complete'): page.setup_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'spec_elaboration_complete'): page.spec_elaboration_complete.connect(self.update_ui_after_state_change)
+            if hasattr(page, 'project_cancelled'): page.project_cancelled.connect(self.update_ui_after_state_change)
             if hasattr(page, 'tech_spec_complete'): page.tech_spec_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'build_script_setup_complete'): page.build_script_setup_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'test_env_setup_complete'): page.test_env_setup_complete.connect(self.update_ui_after_state_change)

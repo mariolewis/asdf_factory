@@ -70,6 +70,46 @@ class SpecElaborationPage(QWidget):
         QMessageBox.critical(self, "Error", error_msg)
         self._set_ui_busy(False)
 
+    def _format_assessment_for_display(self, analysis_data: dict) -> str:
+        """Converts the JSON assessment data into a formatted HTML string for display."""
+        if not analysis_data or "complexity_analysis" not in analysis_data:
+            return "<p>Could not parse the analysis result.</p>"
+
+        html = []
+
+        # --- Complexity Analysis Section ---
+        html.append("<h3>Complexity Analysis</h3>")
+        comp_analysis = analysis_data.get("complexity_analysis", {})
+
+        for key, value in comp_analysis.items():
+            title = key.replace('_', ' ').title()
+            rating = value.get('rating', 'N/A')
+            justification = value.get('justification', 'No details provided.')
+            html.append(f"<p><b>{title}:</b> {rating}<br/><i>{justification}</i></p>")
+
+        html.append("<hr>")
+
+        # --- Risk Assessment Section ---
+        html.append("<h3>Risk Assessment</h3>")
+        risk_assessment = analysis_data.get("risk_assessment", {})
+
+        overall_risk = risk_assessment.get('overall_risk_level', 'N/A')
+        summary = risk_assessment.get('summary', 'No summary provided.')
+        token_outlook = risk_assessment.get('token_consumption_outlook', 'N/A')
+        recommendations = risk_assessment.get('recommendations', [])
+
+        html.append(f"<p><b>Overall Risk Level:</b> {overall_risk}</p>")
+        html.append(f"<p><b>Summary:</b> {summary}</p>")
+        html.append(f"<p><b>Token Consumption Outlook:</b> {token_outlook}</p>")
+
+        if recommendations:
+            html.append("<p><b>Recommendations:</b></p><ul>")
+            for rec in recommendations:
+                html.append(f"<li>{rec}</li>")
+            html.append("</ul>")
+
+        return "".join(html)
+
     def on_browse_files_clicked(self):
         try:
             default_path = self.orchestrator.db_manager.get_config_value("DEFAULT_PROJECT_PATH")
@@ -108,11 +148,16 @@ class SpecElaborationPage(QWidget):
         self._execute_task(self._task_refine_spec, self._handle_refinement_result, feedback)
 
     def _handle_analysis_result(self, result_tuple):
+        """Handles the result of the initial spec generation and complexity analysis."""
         try:
             analysis_result, self.spec_draft = result_tuple
-            analysis_for_display = json.dumps(analysis_result, indent=4)
-            footnote_text = "\n\nNote: This assessment applies to the current version of project specifications."
-            self.ui.analysisResultTextEdit.setText(analysis_for_display + footnote_text)
+
+            # This is the changed part: Call the new formatting method
+            analysis_for_display = self._format_assessment_for_display(analysis_result)
+
+            # The QTextEdit widget will render this HTML
+            self.ui.analysisResultTextEdit.setHtml(analysis_for_display)
+
             self.ui.stackedWidget.setCurrentWidget(self.ui.complexityReviewPage)
             self.orchestrator.is_project_dirty = True
             self.state_changed.emit()
