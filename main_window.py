@@ -8,9 +8,9 @@ import subprocess
 import sys
 
 from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
-                               QInputDialog, QMessageBox, QFileSystemModel, QMenu, QVBoxLayout, QHeaderView, QAbstractItemView)
-from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem
-from PySide6.QtCore import QFile, Signal, Qt, QDir
+                               QInputDialog, QMessageBox, QFileSystemModel, QMenu, QVBoxLayout, QHeaderView, QAbstractItemView, QStyle, QToolButton, QButtonGroup)
+from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem, QIcon
+from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize
 from PySide6.QtCore import QThreadPool
 
 from gui.ui_main_window import Ui_MainWindow
@@ -50,6 +50,11 @@ class ASDFMainWindow(QMainWindow):
 
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+
+        # Force the layout stretch factors programmatically
+        self.ui.centralwidget.layout().setStretch(0, 0) # Index 0 is verticalActionBar (no stretch)
+        self.ui.centralwidget.layout().setStretch(1, 1) # Index 1 is mainSplitter (takes all stretch)
+        self.ui.verticalLayout_actionBar.setContentsMargins(2, 8, 2, 8) # left, top, right, bottom
 
         self._create_pages()
         self._setup_file_tree()
@@ -126,16 +131,62 @@ class ASDFMainWindow(QMainWindow):
 
     def _create_menus_and_toolbar(self):
         """Programmatically creates dynamic menus and toolbar actions."""
-        self.actionManage_CRs_Bugs = QAction("Manage CRs / Bugs", self)
-        self.actionManage_CRs_Bugs.setToolTip("View and manage the CR/Bug register")
-        self.ui.toolBar.addAction(self.actionManage_CRs_Bugs)
+        # Define the path to the custom icons directory
+        icons_path = Path(__file__).parent / "gui" / "icons"
 
+        # Add custom icons to top toolbar actions
+        self.ui.actionProceed.setIcon(QIcon(str(icons_path / "proceed.png")))
+        self.ui.actionRun_Tests.setIcon(QIcon(str(icons_path / "run_tests.png")))
+        # The other top toolbar actions will remain without icons for now
+
+        # Create QToolButtons with custom icons for the Vertical Action Bar
+        self.button_group_sidebar = QButtonGroup(self)
+        self.button_group_sidebar.setExclusive(True)
+
+        self.button_view_explorer = QToolButton()
+        self.button_view_explorer.setToolTip("Show Project Explorer")
+        self.button_view_explorer.setIcon(QIcon(str(icons_path / "explorer.png")))
+        self.button_view_explorer.setCheckable(True)
+        self.button_view_explorer.setChecked(True)
+        self.ui.verticalLayout_actionBar.addWidget(self.button_view_explorer)
+        self.button_group_sidebar.addButton(self.button_view_explorer)
+
+        self.button_raise_request = QToolButton()
+        self.button_raise_request.setToolTip("Raise a new Change Request or Bug Report")
+        self.button_raise_request.setIcon(QIcon(str(icons_path / "add_request.png")))
+        self.ui.verticalLayout_actionBar.addWidget(self.button_raise_request)
+
+        self.button_view_reports = QToolButton()
+        self.button_view_reports.setToolTip("View Project Reports")
+        self.button_view_reports.setIcon(QIcon(str(icons_path / "reports.png")))
+        self.button_view_reports.setCheckable(True)
+        self.ui.verticalLayout_actionBar.addWidget(self.button_view_reports)
+        self.button_group_sidebar.addButton(self.button_view_reports)
+
+        self.button_view_documents = QToolButton()
+        self.button_view_documents.setToolTip("View Project Documents")
+        self.button_view_documents.setIcon(QIcon(str(icons_path / "documents.png")))
+        self.button_view_documents.setCheckable(True)
+        self.ui.verticalLayout_actionBar.addWidget(self.button_view_documents)
+        self.button_group_sidebar.addButton(self.button_view_documents)
+
+        self.ui.verticalLayout_actionBar.addStretch()
+
+        # Configure the existing "Manage CRs / Bugs" action, add it to the menu and toolbar
+        icon = QIcon(str(icons_path / "manage_crs.png"))
+        icon.addFile(str(icons_path / "manage_crs.png"), QSize(), QIcon.Normal, QIcon.Off) # Ensure color is preserved
+        self.ui.actionManage_CRs_Bugs.setIcon(icon)
+        self.ui.menuProject.addAction(self.ui.actionManage_CRs_Bugs)
+        self.ui.toolBar.addAction(self.ui.actionManage_CRs_Bugs)
+
+        # Debug menu setup
         for phase in FactoryPhase:
             if phase.name == "IDLE": continue
             action = QAction(phase.name.replace("_", " ").title(), self)
             action.triggered.connect(lambda checked=False, p=phase.name: self.on_debug_jump_to_phase(p))
             self.ui.menuDebug.addAction(action)
 
+        # Status bar setup
         self.status_project_label = QLabel("Project: N/A")
         self.status_phase_label = QLabel("Phase: Idle")
         self.status_git_label = QLabel("Branch: N/A")
@@ -145,19 +196,44 @@ class ASDFMainWindow(QMainWindow):
 
     def _connect_signals(self):
         """Connects all UI signals to their corresponding slots."""
+        # File Menu & Top Toolbar Actions
         self.ui.actionNew_Project.triggered.connect(self.on_new_project)
         self.ui.actionLoad_Exported_Project.triggered.connect(self.on_load_project)
         self.ui.actionClose_Project.triggered.connect(self.on_close_project)
         self.ui.actionStop_Export_Project.triggered.connect(self.on_stop_export_project)
         self.ui.actionSettings.triggered.connect(self.show_settings_dialog)
         self.ui.actionExit.triggered.connect(self.close)
-        self.ui.actionAbout_ASDF.triggered.connect(self.on_about)
-        self.ui.actionRaise_CR.triggered.connect(self.on_raise_cr)
+
+        # Edit Menu Connections
+        self.ui.actionUndo.triggered.connect(self.on_undo)
+        self.ui.actionRedo.triggered.connect(self.on_redo)
+        self.ui.actionCut.triggered.connect(self.on_cut)
+        self.ui.actionCopy.triggered.connect(self.on_copy)
+        self.ui.actionPaste.triggered.connect(self.on_paste)
+
+        # --- NEW: View Menu Connections ---
+        self.ui.actionToggleProjectPanel.triggered.connect(self.on_view_explorer) # Re-uses existing handler
+        self.ui.actionToggleNotificationPanel.triggered.connect(self.on_toggle_notification_panel)
+        # --- End of New Section ---
+
+        # Project Menu Actions
         self.ui.actionView_Documents.triggered.connect(self.on_view_documents)
         self.ui.actionView_Reports.triggered.connect(self.on_view_reports)
+
+        # Run Menu & Top Toolbar Actions
         self.ui.actionProceed.triggered.connect(self.on_proceed)
         self.ui.actionRun_Tests.triggered.connect(self.on_run_tests)
         self.ui.actionReport_Bug.triggered.connect(self.on_report_bug)
+
+        # Help Menu
+        self.ui.actionAbout_ASDF.triggered.connect(self.on_about)
+
+        # --- CORRECTED: Vertical Action Bar Connections ---
+        self.button_view_explorer.clicked.connect(self.on_view_explorer)
+        self.button_raise_request.clicked.connect(self.on_raise_cr)
+        self.button_view_reports.clicked.connect(self.on_view_reports)
+        self.button_view_documents.clicked.connect(self.on_view_documents)
+        # --- End of Corrected Section ---
 
         # Connect signals that trigger a FULL UI refresh and page transition
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page]:
@@ -193,7 +269,49 @@ class ASDFMainWindow(QMainWindow):
         self.cr_management_page.delete_cr.connect(self.on_cr_delete_action)
         self.cr_management_page.analyze_cr.connect(self.on_cr_analyze_action)
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
-        self.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
+        self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
+
+    def on_view_explorer(self):
+        """Toggles the visibility of the left project/navigation panel."""
+        self.ui.leftPanelWidget.setVisible(not self.ui.leftPanelWidget.isVisible())
+
+    def _get_focused_text_widget(self):
+        """Helper to get the currently focused text input widget."""
+        widget = QApplication.focusWidget()
+        if isinstance(widget, (QTextEdit, QLineEdit, QPlainTextEdit)):
+            return widget
+        return None
+
+    def on_undo(self):
+        widget = self._get_focused_text_widget()
+        if widget:
+            widget.undo()
+
+    def on_redo(self):
+        widget = self._get_focused_text_widget()
+        if widget:
+            widget.redo()
+
+    def on_cut(self):
+        widget = self._get_focused_text_widget()
+        if widget:
+            widget.cut()
+
+    def on_copy(self):
+        widget = self._get_focused_text_widget()
+        if widget:
+            widget.copy()
+
+    def on_paste(self):
+        widget = self._get_focused_text_widget()
+        if widget:
+            widget.paste()
+
+    def on_toggle_notification_panel(self):
+        """Toggles the visibility of the bottom notification/log panel."""
+        # The actual panel does not exist yet and will be added in a future task.
+        # This handler serves as a placeholder.
+        QMessageBox.information(self, "Not Implemented", "The notification panel will be implemented in a future update.")
 
     def update_static_ui_elements(self):
         """
@@ -215,8 +333,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionClose_Project.setEnabled(is_project_active and not is_project_dirty)
         self.ui.actionStop_Export_Project.setEnabled(is_project_active)
 
-        self.actionManage_CRs_Bugs.setEnabled(is_project_active) # Now always enabled if project is active
-        self.actionManage_CRs_Bugs.setToolTip("View and manage the CR/Bug register")
+        self.ui.actionManage_CRs_Bugs.setEnabled(is_project_active) # Now always enabled if project is active
+        self.ui.actionManage_CRs_Bugs.setToolTip("View and manage the CR/Bug register")
 
         project_root = ""
         if is_project_active:

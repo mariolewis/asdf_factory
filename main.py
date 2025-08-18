@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import Qt
 import logging
 
 from asdf_db_manager import ASDFDBManager
@@ -35,7 +36,7 @@ def initialize_database(db_manager: ASDFDBManager):
         "CONTEXT_WINDOW_CHAR_LIMIT": ("2500000", "Max characters for complex analysis context."),
         "LOGGING_LEVEL": ("Standard", "Verbosity of ASDF's internal logs."),
         "DEFAULT_PROJECT_PATH": ("", "Default parent directory for new target projects."),
-        "DEFAULT_EXPORT_PATH": ("", "Default folder for saving project exports."),
+        "DEFAULT_ARCHIVE_PATH": ("", "Default folder for saving project exports."),
         "GEMINI_CONTEXT_LIMIT": ("2500000", "Default context limit for Gemini."),
         "OPENAI_CONTEXT_LIMIT": ("380000", "Default context limit for OpenAI."),
         "ANTHROPIC_CONTEXT_LIMIT": ("600000", "Default context limit for Anthropic."),
@@ -50,6 +51,7 @@ def initialize_database(db_manager: ASDFDBManager):
             logging.info(f"Initialized missing config key '{key}' with default value.")
 
 if __name__ == "__main__":
+    QApplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
     app = QApplication(sys.argv)
     db_dir = Path("data")
     db_dir.mkdir(exist_ok=True)

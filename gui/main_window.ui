@@ -14,22 +14,30 @@
    <string>ASDF - Autonomous Software Development Factory</string>
   </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QVBoxLayout" name="verticalLayout">
-    <property name="spacing">
-     <number>0</number>
-    </property>
-    <property name="leftMargin">
-     <number>0</number>
-    </property>
-    <property name="topMargin">
-     <number>0</number>
-    </property>
-    <property name="rightMargin">
-     <number>0</number>
-    </property>
-    <property name="bottomMargin">
-     <number>0</number>
-    </property>
+   <layout class="QHBoxLayout" name="horizontalLayout" stretch="0,1">
+    <item>
+     <widget class="QWidget" name="verticalActionBar" native="true">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+        <horstretch>0</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="minimumSize">
+       <size>
+        <width>50</width>
+        <height>0</height>
+       </size>
+      </property>
+      <property name="maximumSize">
+       <size>
+        <width>50</width>
+        <height>16777215</height>
+       </size>
+      </property>
+      <layout class="QVBoxLayout" name="verticalLayout_actionBar"/>
+     </widget>
+    </item>
     <item>
      <widget class="QSplitter" name="mainSplitter">
       <property name="orientation">
@@ -48,6 +56,9 @@
        <layout class="QVBoxLayout" name="leftPanelLayout">
         <item>
          <widget class="QTabWidget" name="projectNavigationTabs">
+          <property name="currentIndex">
+           <number>0</number>
+          </property>
           <widget class="QWidget" name="filesTab">
            <attribute name="title">
             <string>Files</string>
@@ -109,7 +120,7 @@
      <x>0</x>
      <y>0</y>
      <width>1200</width>
-     <height>21</height>
+     <height>18</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -117,8 +128,8 @@
      <string>File</string>
     </property>
     <addaction name="actionNew_Project"/>
-    <addaction name="actionClose_Project"/>
     <addaction name="actionLoad_Exported_Project"/>
+    <addaction name="actionClose_Project"/>
     <addaction name="actionStop_Export_Project"/>
     <addaction name="separator"/>
     <addaction name="actionSettings"/>
@@ -129,16 +140,26 @@
     <property name="title">
      <string>Edit</string>
     </property>
+    <addaction name="actionUndo"/>
+    <addaction name="actionRedo"/>
+    <addaction name="separator"/>
+    <addaction name="actionCut"/>
+    <addaction name="actionCopy"/>
+    <addaction name="actionPaste"/>
+    <addaction name="separator"/>
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
      <string>View</string>
     </property>
+    <addaction name="actionToggleProjectPanel"/>
+    <addaction name="actionToggleNotificationPanel"/>
    </widget>
    <widget class="QMenu" name="menuProject">
     <property name="title">
      <string>Project</string>
     </property>
+    <addaction name="actionManage_CRs_Bugs"/>
     <addaction name="actionView_Documents"/>
     <addaction name="actionView_Reports"/>
    </widget>
@@ -179,14 +200,14 @@
    <attribute name="toolBarBreak">
     <bool>false</bool>
    </attribute>
+   <addaction name="actionNew_Project"/>
+   <addaction name="actionLoad_Exported_Project"/>
+   <addaction name="actionStop_Export_Project"/>
+   <addaction name="actionSettings"/>
+   <addaction name="separator"/>
    <addaction name="actionProceed"/>
    <addaction name="actionRun_Tests"/>
    <addaction name="separator"/>
-   <addaction name="actionRaise_CR"/>
-   <addaction name="actionReport_Bug"/>
-   <addaction name="separator"/>
-   <addaction name="actionView_Documents"/>
-   <addaction name="actionView_Reports"/>
   </widget>
   <action name="actionNew_Project">
    <property name="text">
@@ -277,6 +298,46 @@
    </property>
    <property name="toolTip">
     <string>View and manage the CR/Bug register</string>
+   </property>
+  </action>
+  <action name="actionUndo">
+   <property name="text">
+    <string>&amp;Undo</string>
+   </property>
+  </action>
+  <action name="actionRedo">
+   <property name="text">
+    <string>&amp;Redo</string>
+   </property>
+  </action>
+  <action name="actionCut">
+   <property name="text">
+    <string>Cu&amp;t</string>
+   </property>
+  </action>
+  <action name="actionCopy">
+   <property name="text">
+    <string>&amp;Copy</string>
+   </property>
+  </action>
+  <action name="actionPaste">
+   <property name="text">
+    <string>&amp;Paste</string>
+   </property>
+  </action>
+  <action name="actiontemp">
+   <property name="text">
+    <string>temp</string>
+   </property>
+  </action>
+  <action name="actionToggleProjectPanel">
+   <property name="text">
+    <string>Toggle Project Panel</string>
+   </property>
+  </action>
+  <action name="actionToggleNotificationPanel">
+   <property name="text">
+    <string>Toggle Notification Panel</string>
    </property>
   </action>
  </widget>
