@@ -69,8 +69,10 @@ class BuildScriptPage(QWidget):
                 project_root = Path(project_details['project_root_folder'])
 
                 (project_root / filename).write_text(content, encoding='utf-8')
-                # This is the corrected line:
+
+                # Save the choice and the generated filename to the database
                 db.update_project_field(self.orchestrator.project_id, "is_build_automated", 1)
+                db.update_project_field(self.orchestrator.project_id, "build_script_file_name", filename)
 
                 QMessageBox.information(self, "Success", f"Generated and saved '{filename}' to the project root.")
                 self.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
@@ -86,7 +88,7 @@ class BuildScriptPage(QWidget):
         """Handles the 'I Will Create It Manually' button click."""
         try:
             db = self.orchestrator.db_manager
-            db.update_project_build_automation_status(self.orchestrator.project_id, False)
+            db.update_project_field(self.orchestrator.project_id, "is_build_automated", 0)
             QMessageBox.information(self, "Acknowledged", "You will be responsible for creating and maintaining the project's build script.")
             self.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
             self.orchestrator.is_project_dirty = True

@@ -2538,7 +2538,7 @@ class MasterOrchestrator:
 
             project_id_to_load = history_record['project_id']
             logging.info(f"Preparing to load project {project_id_to_load}. Clearing any lingering active data for this ID first.")
-            self._clear_active_project_data(db, project_id_to_load) # Pass the db instance
+            self._clear_active_project_data(db, project_id_to_load)
 
             rowd_file_path = Path(history_record['archive_file_path'])
             project_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_project.json"))
@@ -2562,15 +2562,15 @@ class MasterOrchestrator:
             self.project_id = project_id_to_load
             self.project_name = history_record['project_name']
             self.project_root_path = history_record['project_root_folder']
+
+            # --- THIS IS THE FIX ---
+            # Determine the resume phase right after loading data, before any checks.
+            self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
+
             check_result = self._perform_preflight_checks(history_record['project_root_folder'])
             self.preflight_check_result = {**check_result, "history_id": history_id}
 
-            if check_result['status'] != "ALL_PASS":
-                self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
-                return
-
             self.is_project_dirty = False
-            self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
             self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
         except Exception as e:

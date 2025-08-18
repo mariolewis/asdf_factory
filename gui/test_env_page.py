@@ -24,6 +24,14 @@ class TestEnvPage(QWidget):
         self.threadpool = QThreadPool()
         self.connect_signals()
 
+    def prepare_for_display(self):
+        """Checks if a manual build script name is needed before showing the page."""
+        project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
+        if project_details and project_details['is_build_automated'] == 0:
+            self.ui.stackedWidget.setCurrentWidget(self.ui.manualBuildScriptPage)
+        else:
+            self.ui.stackedWidget.setCurrentWidget(self.ui.standbyPage)
+
     def prepare_for_new_project(self):
         self.setup_tasks = []
         self.current_step_index = 0
@@ -36,6 +44,23 @@ class TestEnvPage(QWidget):
         self.ui.helpButton.clicked.connect(self.on_help_clicked)
         self.ui.ignoreButton.clicked.connect(self.on_ignore_clicked)
         self.ui.finalizeButton.clicked.connect(self.on_finalize_clicked)
+        self.ui.confirmBuildScriptButton.clicked.connect(self.on_confirm_build_script_clicked)
+
+    def on_confirm_build_script_clicked(self):
+        """Saves the manually entered build script filename and proceeds."""
+        filename = self.ui.manualBuildScriptLineEdit.text().strip()
+        if not filename:
+            QMessageBox.warning(self, "Input Required", "Please enter the filename for your build script.")
+            return
+
+        try:
+            db = self.orchestrator.db_manager
+            db.update_project_field(self.orchestrator.project_id, "build_script_file_name", filename)
+            self.orchestrator.is_project_dirty = True
+            # Proceed to the next logical step in this page's workflow
+            self.ui.stackedWidget.setCurrentWidget(self.ui.standbyPage)
+        except Exception as e:
+            QMessageBox.critical(self, "Database Error", f"Failed to save build script filename:\n{e}")
 
     def run_analysis_task(self):
         self.ui.startButton.setText("Analyzing Specifications...")

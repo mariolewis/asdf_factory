@@ -169,6 +169,43 @@ Please confirm the final command that should be used to run all automated tests 
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="manualBuildScriptPage">
+      <layout class="QVBoxLayout" name="verticalLayout_5">
+       <item>
+        <widget class="QLabel" name="manualBuildScriptLabel">
+         <property name="text">
+          <string>&lt;b&gt;Action Required&lt;/b&gt;&lt;br&gt;You previously chose to create the build script manually. Please enter the exact filename of the script you created (e.g., requirements.txt, build.gradle). This is required for the test environment setup.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLineEdit" name="manualBuildScriptLineEdit"/>
+       </item>
+       <item>
+        <widget class="QPushButton" name="confirmBuildScriptButton">
+         <property name="text">
+          <string>Confirm Filename and Continue</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_3">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>

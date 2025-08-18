@@ -44,23 +44,18 @@ class Ui_ProjectCompletePage(object):
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.horizontalLayout.addItem(self.horizontalSpacer)
-
-        self.backButton = QPushButton(ProjectCompletePage)
-        self.backButton.setObjectName(u"backButton")
-
-        self.horizontalLayout.addWidget(self.backButton)
+        self.horizontalLayout.addItem(self.horizontalSpacer_3)
 
         self.exportButton = QPushButton(ProjectCompletePage)
         self.exportButton.setObjectName(u"exportButton")
 
         self.horizontalLayout.addWidget(self.exportButton)
 
-        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer_4 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.horizontalLayout.addItem(self.horizontalSpacer_2)
+        self.horizontalLayout.addItem(self.horizontalSpacer_4)
 
 
         self.verticalLayout.addLayout(self.horizontalLayout)
@@ -79,7 +74,6 @@ class Ui_ProjectCompletePage(object):
         ProjectCompletePage.setWindowTitle(QCoreApplication.translate("ProjectCompletePage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("ProjectCompletePage", u"Project Complete", None))
         self.projectNameLabel.setText(QCoreApplication.translate("ProjectCompletePage", u"Project 'Project Name' has been completed successfully.", None))
-        self.backButton.setText(QCoreApplication.translate("ProjectCompletePage", u"<-- Back to Main Window", None))
-        self.exportButton.setText(QCoreApplication.translate("ProjectCompletePage", u"Close & Export Project", None))
+        self.exportButton.setText(QCoreApplication.translate("ProjectCompletePage", u"Finish & Export Project", None))
     # retranslateUi
 

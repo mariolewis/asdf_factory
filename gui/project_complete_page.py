@@ -6,7 +6,6 @@ from PySide6.QtCore import Signal
 from gui.ui_project_complete_page import Ui_ProjectCompletePage
 
 class ProjectCompletePage(QWidget):
-    back_to_main = Signal()
     export_project = Signal()
 
     def __init__(self, parent=None):
@@ -19,5 +18,4 @@ class ProjectCompletePage(QWidget):
         self.ui.projectNameLabel.setText(f"Project '{name}' has been completed successfully.")
 
     def connect_signals(self):
-        self.ui.backButton.clicked.connect(self.back_to_main.emit)
         self.ui.exportButton.clicked.connect(self.export_project.emit)

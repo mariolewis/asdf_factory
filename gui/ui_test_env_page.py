@@ -129,6 +129,31 @@ class Ui_TestEnvPage(object):
         self.verticalLayout_4.addItem(self.verticalSpacer_2)
 
         self.stackedWidget.addWidget(self.finalizePage)
+        self.manualBuildScriptPage = QWidget()
+        self.manualBuildScriptPage.setObjectName(u"manualBuildScriptPage")
+        self.verticalLayout_5 = QVBoxLayout(self.manualBuildScriptPage)
+        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
+        self.manualBuildScriptLabel = QLabel(self.manualBuildScriptPage)
+        self.manualBuildScriptLabel.setObjectName(u"manualBuildScriptLabel")
+        self.manualBuildScriptLabel.setWordWrap(True)
+
+        self.verticalLayout_5.addWidget(self.manualBuildScriptLabel)
+
+        self.manualBuildScriptLineEdit = QLineEdit(self.manualBuildScriptPage)
+        self.manualBuildScriptLineEdit.setObjectName(u"manualBuildScriptLineEdit")
+
+        self.verticalLayout_5.addWidget(self.manualBuildScriptLineEdit)
+
+        self.confirmBuildScriptButton = QPushButton(self.manualBuildScriptPage)
+        self.confirmBuildScriptButton.setObjectName(u"confirmBuildScriptButton")
+
+        self.verticalLayout_5.addWidget(self.confirmBuildScriptButton)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_5.addItem(self.verticalSpacer_3)
+
+        self.stackedWidget.addWidget(self.manualBuildScriptPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
 
@@ -156,5 +181,7 @@ class Ui_TestEnvPage(object):
 "\n"
 "Please confirm the final command that should be used to run all automated tests for this project (e.g., 'pytest', 'mvn test').", None))
         self.finalizeButton.setText(QCoreApplication.translate("TestEnvPage", u"Finalize Test Environment Setup", None))
+        self.manualBuildScriptLabel.setText(QCoreApplication.translate("TestEnvPage", u"<b>Action Required</b><br>You previously chose to create the build script manually. Please enter the exact filename of the script you created (e.g., requirements.txt, build.gradle). This is required for the test environment setup.", None))
+        self.confirmBuildScriptButton.setText(QCoreApplication.translate("TestEnvPage", u"Confirm Filename and Continue", None))
     # retranslateUi
 

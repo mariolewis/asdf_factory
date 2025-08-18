@@ -2,6 +2,7 @@
 This module contains the BuildAndCommitAgentAppTarget class.
 """
 import subprocess
+import os
 from pathlib import Path
 import logging
 import git
@@ -178,4 +179,80 @@ class BuildAndCommitAgentAppTarget:
         except Exception as e:
             error_message = f"An unexpected error occurred during commit: {e}"
             return False, error_message
+
+    def run_test_suite_only(self, test_command: str) -> tuple[bool, str]:
+        """
+        Runs the provided test command and captures the output.
+
+        Args:
+            test_command (str): The command to execute to run the test suite.
+
+        Returns:
+            A tuple containing a boolean for success and the captured output.
+        """
+        try:
+            logging.info(f"Running test suite with command: '{test_command}'")
+            # For Windows, create a startupinfo object to hide the console window
+            startupinfo = None
+            if os.name == 'nt':
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+            result = subprocess.run(
+                test_command.split(),
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=False, # We handle the success/failure check manually
+                startupinfo=startupinfo
+            )
+
+            if result.returncode == 0:
+                logging.info("Test suite passed.")
+                return True, result.stdout
+            else:
+                logging.warning("Test suite failed.")
+                # Combine stdout and stderr for a complete failure log
+                failure_output = f"--- STDOUT ---\n{result.stdout}\n\n--- STDERR ---\n{result.stderr}"
+                return False, failure_output
+
+        except FileNotFoundError:
+            error_msg = f"Error: The command '{test_command.split()[0]}' was not found. Please ensure it is installed and in your system's PATH."
+            logging.error(error_msg)
+            return False, error_msg
+        except Exception as e:
+            logging.error(f"An unexpected error occurred while running the test suite: {e}")
+            return False, f"An unexpected error occurred: {e}"
+
+    def commit_all_changes(self, commit_message: str) -> tuple[bool, str]:
+        """
+        Stages all changes in the repository (new, modified, deleted) and commits them.
+
+        Args:
+            commit_message (str): The message to use for the commit.
+
+        Returns:
+            A tuple containing a boolean for success and a status message.
+        """
+        try:
+            repo = git.Repo(self.repo_path)
+
+            # Stage all changes, including untracked files
+            repo.git.add(A=True)
+
+            # Check if there is anything to commit after staging
+            if not repo.index.diff("HEAD"):
+                logging.info("No changes to commit after staging.")
+                return True, "No changes detected to commit."
+
+            commit = repo.index.commit(commit_message)
+            logging.info(f"Successfully committed all changes. New commit hash: {commit.hexsha}")
+            return True, f"New commit hash: {commit.hexsha}"
+
+        except git.GitCommandError as e:
+            logging.error(f"Failed to commit all changes: {e}")
+            return False, str(e)
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during commit: {e}")
+            return False, f"An unexpected error occurred: {e}"
 

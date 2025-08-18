@@ -103,7 +103,7 @@ class Ui_PreflightCheckPage(object):
         self.manualResolveLabel.setObjectName(u"manualResolveLabel")
         self.manualResolveLabel.setWordWrap(True)
 
-        self.gridLayout.addWidget(self.manualResolveLabel, 0, 1, 1, 1)
+        self.gridLayout.addWidget(self.manualResolveLabel, 1, 1, 1, 1)
 
         self.discardButton = QPushButton(self.stateDriftPage)
         self.discardButton.setObjectName(u"discardButton")
@@ -114,7 +114,18 @@ class Ui_PreflightCheckPage(object):
         self.discardLabel.setObjectName(u"discardLabel")
         self.discardLabel.setWordWrap(True)
 
-        self.gridLayout.addWidget(self.discardLabel, 1, 1, 1, 1)
+        self.gridLayout.addWidget(self.discardLabel, 2, 1, 1, 1)
+
+        self.ignoreButton = QPushButton(self.stateDriftPage)
+        self.ignoreButton.setObjectName(u"ignoreButton")
+
+        self.gridLayout.addWidget(self.ignoreButton, 3, 0, 1, 1)
+
+        self.ignoreLabel = QLabel(self.stateDriftPage)
+        self.ignoreLabel.setObjectName(u"ignoreLabel")
+        self.ignoreLabel.setWordWrap(True)
+
+        self.gridLayout.addWidget(self.ignoreLabel, 3, 1, 1, 1)
 
 
         self.verticalLayout_2.addLayout(self.gridLayout)
@@ -159,6 +170,8 @@ class Ui_PreflightCheckPage(object):
         self.manualResolveLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Closes the project and returns to the main screen. You can then use external tools like 'git commit' before reloading.)", None))
         self.discardButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Discard All Uncommitted Changes", None))
         self.discardLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Deletes all local changes that have not been committed to Git. This action cannot be undone.)", None))
+        self.ignoreButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Ignore Uncommitted Changes & Continue", None))
+        self.ignoreLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Proceeds with loading the project, leaving any uncommitted changes in the local repository untouched for you to manage manually later.)", None))
         self.backButton.setText(QCoreApplication.translate("PreflightCheckPage", u"<-- Back to Project List", None))
     # retranslateUi
 

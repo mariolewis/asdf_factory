@@ -7,13 +7,20 @@ class RaiseRequestDialog(QDialog):
     """
     The logic handler for the Raise Request dialog.
     """
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, initial_request_type="CHANGE_REQUEST"):
         super().__init__(parent)
         self.ui = Ui_RaiseRequestDialog()
         self.ui.setupUi(self)
 
+        if initial_request_type == "BUG_REPORT":
+            self.ui.bugRadioButton.setChecked(True)
+        elif initial_request_type == "SPEC_CORRECTION":
+            self.ui.specRadioButton.setChecked(True)
+        else: # Default to Change Request
+            self.ui.crRadioButton.setChecked(True)
+
         self.connect_signals()
-        # Initial UI state setup
+        # Initial UI state setup is now handled by the logic above
         self._update_ui_for_type()
 
     def connect_signals(self):

@@ -271,6 +271,27 @@ class ASDFMainWindow(QMainWindow):
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
         self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
 
+    def _reset_all_pages_for_new_project(self):
+        """Iterates through all page widgets and calls their reset method if it exists."""
+        logging.info("Resetting all UI pages for new project.")
+        pages = [
+            self.env_setup_page,
+            self.spec_elaboration_page,
+            self.tech_spec_page,
+            self.build_script_page,
+            self.test_env_page,
+            self.coding_standard_page,
+            self.planning_page,
+            self.genesis_page,
+            self.preflight_check_page,
+            self.decision_page,
+            self.manual_ui_testing_page,
+            self.cr_management_page
+        ]
+        for page in pages:
+            if hasattr(page, 'prepare_for_new_project'):
+                page.prepare_for_new_project()
+
     def on_view_explorer(self):
         """Toggles the visibility of the left project/navigation panel."""
         self.ui.leftPanelWidget.setVisible(not self.ui.leftPanelWidget.isVisible())
@@ -599,6 +620,9 @@ class ASDFMainWindow(QMainWindow):
         if ok and project_name:
             # The orchestrator now returns the suggested path
             suggested_path = self.orchestrator.start_new_project(project_name)
+
+            # This is the new line that fixes the state bug
+            self._reset_all_pages_for_new_project()
 
             # We now explicitly tell the setup page what path to display
             self.env_setup_page.set_initial_path(suggested_path)

@@ -119,7 +119,7 @@
            </property>
           </widget>
          </item>
-         <item row="0" column="1">
+         <item row="1" column="1">
           <widget class="QLabel" name="manualResolveLabel">
            <property name="text">
             <string>(Closes the project and returns to the main screen. You can then use external tools like 'git commit' before reloading.)</string>
@@ -136,10 +136,27 @@
            </property>
           </widget>
          </item>
-         <item row="1" column="1">
+         <item row="2" column="1">
           <widget class="QLabel" name="discardLabel">
            <property name="text">
             <string>(Deletes all local changes that have not been committed to Git. This action cannot be undone.)</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="0">
+          <widget class="QPushButton" name="ignoreButton">
+           <property name="text">
+            <string>Ignore Uncommitted Changes &amp; Continue</string>
+           </property>
+          </widget>
+         </item>
+         <item row="3" column="1">
+          <widget class="QLabel" name="ignoreLabel">
+           <property name="text">
+            <string>(Proceeds with loading the project, leaving any uncommitted changes in the local repository untouched for you to manage manually later.)</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>

@@ -22,6 +22,15 @@ class GenesisPage(QWidget):
         self.threadpool = QThreadPool()
         self.connect_signals()
 
+    def prepare_for_new_project(self):
+        """Resets the page to its initial state for a new project."""
+        logging.info("Resetting GenesisPage for a new project.")
+        self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
+        self.ui.progressBar.setValue(0)
+        self.ui.nextTaskLabel.setText("No development plan loaded yet.")
+        self.ui.logOutputTextEdit.clear()
+        self.setEnabled(True)
+
     def prepare_for_display(self):
         """
         This is the standard refresh method called by the main window before the

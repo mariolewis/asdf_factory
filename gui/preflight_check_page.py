@@ -30,6 +30,7 @@ class PreflightCheckPage(QWidget):
         self.ui.discardButton.clicked.connect(self.on_discard_clicked)
         self.ui.backButton.clicked.connect(self.project_load_failed.emit)
         self.ui.continueButton.clicked.connect(self.on_continue_clicked)
+        self.ui.ignoreButton.clicked.connect(self.on_ignore_clicked)
 
     def prepare_for_display(self):
         """Updates the page content based on the pre-flight check result."""
@@ -101,3 +102,8 @@ class PreflightCheckPage(QWidget):
             self.project_load_finalized.emit()
         else:
             QMessageBox.critical(self, "Error", "Could not identify the project to continue.")
+
+    def on_ignore_clicked(self):
+        """Proceeds with loading the project, leaving local changes as they are."""
+        # This action is functionally the same as a successful check for the UI flow
+        self.on_proceed_clicked()
