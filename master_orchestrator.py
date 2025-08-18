@@ -975,7 +975,8 @@ class MasterOrchestrator:
 
     def handle_proceed_action(self, progress_callback=None):
         """
-        Handles the logic for the Genesis Pipeline, now with a progress callback.
+        Handles the logic for the Genesis Pipeline, checking for task type
+        before execution.
         """
         if self.current_phase != FactoryPhase.GENESIS:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
@@ -984,8 +985,6 @@ class MasterOrchestrator:
         if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
             logging.info("Development plan is complete. Transitioning to integration phase.")
             if progress_callback: progress_callback("Development plan complete.")
-
-            # This is the fix: Simply set the phase and let the UI handle the next step.
             self.set_phase("INTEGRATION_AND_VERIFICATION")
             return "Development complete. Ready for Integration."
 
@@ -1003,11 +1002,13 @@ class MasterOrchestrator:
 
             if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
                 self._execute_declarative_modification_task(task, project_root_path, db, progress_callback)
+                # After pausing for the PM, immediately exit this function. The UI will update based on the new phase.
+                return "Paused for high-risk change approval."
             else:
+                # For standard source code, execute the full pipeline.
                 self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
-
-            self.active_plan_cursor += 1
-            return "Step complete."
+                self.active_plan_cursor += 1
+                return "Step complete."
 
         except Exception as e:
             logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}")

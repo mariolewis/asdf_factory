@@ -607,6 +607,27 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.option2_selected.connect(self.on_stale_analysis_proceed)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
+        elif current_phase_name == "AWAITING_PM_DECLARATIVE_CHECKPOINT":
+            task = self.orchestrator.task_awaiting_approval
+            details_text = (
+                f"The following high-risk declarative change is proposed for the component:\n"
+                f"<b>{task.get('component_name')}</b> in file <b>{task.get('component_file_path')}</b>\n\n"
+                f"--- PROPOSED CHANGE ---\n"
+                f"{task.get('task_description')}\n\n"
+                f"Please review this change. You can allow the factory to execute it automatically or choose to apply it manually yourself."
+            )
+            self.decision_page.configure(
+                header="High-Risk Change Approval",
+                instruction="A high-risk change requires your explicit approval before execution.",
+                details=details_text,
+                option1_text="Execute Change Automatically",
+                option2_text="I Will Apply Manually & Skip"
+            )
+            # Connect signals to the new handlers
+            self.decision_page.option1_selected.connect(self.on_declarative_execute_auto)
+            self.decision_page.option2_selected.connect(self.on_declarative_execute_manual)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
         elif current_phase_name == "PROJECT_COMPLETED":
             self.project_complete_page.set_project_name(self.orchestrator.project_name)
             self.ui.mainContentArea.setCurrentWidget(self.project_complete_page)
@@ -705,6 +726,16 @@ class ASDFMainWindow(QMainWindow):
             self.orchestrator.handle_stale_analysis_choice("PROCEED", cr_id)
             # The orchestrator will set the phase back to the CR manager, so we update the UI
             self.update_ui_after_state_change()
+
+    def on_declarative_execute_auto(self):
+        """Handles the user's choice to have the factory execute the declarative change."""
+        self.orchestrator.handle_declarative_checkpoint_decision("EXECUTE_AUTOMATICALLY")
+        self.update_ui_after_state_change()
+
+    def on_declarative_execute_manual(self):
+        """Handles the user's choice to apply the change manually and skip automated execution."""
+        self.orchestrator.handle_declarative_checkpoint_decision("WILL_EXECUTE_MANUALLY")
+        self.update_ui_after_state_change()
 
     def on_proceed(self):
         """Triggers the primary 'proceed' action for the active page, if applicable."""
