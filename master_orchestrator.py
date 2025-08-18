@@ -258,6 +258,31 @@ class MasterOrchestrator:
             return self.active_plan[self.active_plan_cursor]
         return None
 
+    def get_uncompleted_tasks_for_manual_fix(self) -> list | None:
+        """
+        Retrieves a list of all tasks from the current development plan that
+        do not yet have a corresponding completed artifact in the RoWD.
+
+        Returns:
+            A list of task dictionaries, or None if an error occurs.
+        """
+        if not self.project_id or not self.active_plan:
+            logging.error("Cannot get uncompleted tasks: No active project or plan.")
+            return None
+        try:
+            db = self.db_manager
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
+
+            uncompleted_tasks = [
+                task for task in self.active_plan
+                if task.get('micro_spec_id') not in completed_spec_ids
+            ]
+            return uncompleted_tasks
+        except Exception as e:
+            logging.error(f"Failed to retrieve uncompleted tasks: {e}", exc_info=True)
+            return None
+
     def start_new_project(self, project_name: str) -> str:
         """
         Prepares a new project in the database and calculates a suggested root path,
@@ -2407,71 +2432,61 @@ class MasterOrchestrator:
             logging.error(f"Failed to discard changes for project history ID {history_id}: {e}")
             self.preflight_check_result = {"status": "ERROR", "message": str(e)}
 
-    def handle_continue_with_uncommitted_changes(self, history_id: int):
+    def handle_continue_with_uncommitted_changes(self, completed_task_ids: list):
         """
-        Handles the 'Continue Project' action for a project with state drift.
-        Loads the plan, commits changes, creates the RoWD record, and resumes.
+        Handles the 'Continue Project' action by committing all changes, and then
+        creating RoWD records for each task the user selected as completed.
         """
-        logging.info(f"Committing manual changes for project history ID: {history_id}")
+        logging.info(f"Committing manual changes and creating RoWD records for {len(completed_task_ids)} tasks.")
         try:
             db = self.db_manager
-            history_record = db.get_project_history_by_id(history_id)
-            if not history_record:
-                raise Exception(f"Could not find history record for ID {history_id}.")
-
-            # --- CORRECTED BLOCK STARTS HERE ---
             project_details = db.get_project_by_id(self.project_id)
-            if project_details and 'development_plan_text' in project_details.keys() and project_details['development_plan_text']:
-                plan_json = self._get_json_from_document(project_details['development_plan_text'])
-                self.active_plan = plan_json.get("development_plan", [])
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found for committing manual changes.")
 
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
-                last_completed_index = -1
-                for i, task in enumerate(self.active_plan):
-                    if task.get('micro_spec_id') in completed_spec_ids:
-                        last_completed_index = i
-                self.active_plan_cursor = last_completed_index + 1
-            # --- CORRECTED BLOCK ENDS HERE ---
-
-            project_root = history_record['project_root_folder']
-            from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
+            project_root = project_details['project_root_folder']
             build_agent = BuildAndCommitAgentAppTarget(project_root)
 
-            commit_message = "feat: Apply and commit manual bug fix"
+            commit_message = "feat: Apply and commit manual fixes from PM"
             success, message = build_agent.commit_all_changes(commit_message)
 
             if not success:
                 raise Exception(f"Failed to commit changes: {message}")
 
-            if self.active_plan and self.active_plan_cursor < len(self.active_plan):
-                task_just_fixed = self.active_plan[self.active_plan_cursor]
-                commit_hash = message.split(":")[-1].strip() if "New commit hash:" in message else "N/A"
+            commit_hash = message.split(":")[-1].strip() if "New commit hash:" in message else "N/A"
 
-                logging.info(f"Creating RoWD success record for manually fixed component: {task_just_fixed.get('component_name')}")
-                doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
-                doc_agent.update_artifact_record({
-                    "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
-                    "project_id": self.project_id,
-                    "file_path": task_just_fixed.get("component_file_path"),
-                    "artifact_name": task_just_fixed.get("component_name"),
-                    "artifact_type": task_just_fixed.get("component_type"),
-                    "short_description": task_just_fixed.get("task_description"),
-                    "status": "UNIT_TESTS_PASSING",
-                    "unit_test_status": "TESTS_PASSING",
-                    "commit_hash": commit_hash,
-                    "version": 1,
-                    "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
-                    "micro_spec_id": task_just_fixed.get("micro_spec_id")
-                })
+            doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
 
-            logging.info("Manual changes committed successfully. Resuming project.")
+            for task_id in completed_task_ids:
+                # Find the full task details from the active plan
+                task_just_fixed = next((task for task in self.active_plan if task.get("micro_spec_id") == task_id), None)
+
+                if task_just_fixed:
+                    logging.info(f"Creating RoWD success record for manually fixed component: {task_just_fixed.get('component_name')}")
+                    doc_agent.update_artifact_record({
+                        "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                        "project_id": self.project_id,
+                        "file_path": task_just_fixed.get("component_file_path"),
+                        "artifact_name": task_just_fixed.get("component_name"),
+                        "artifact_type": task_just_fixed.get("component_type"),
+                        "short_description": task_just_fixed.get("task_description"),
+                        "status": "UNIT_TESTS_PASSING", # We assume the PM's manual fix is correct
+                        "unit_test_status": "TESTS_PASSING",
+                        "commit_hash": commit_hash,
+                        "version": 1,
+                        "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+                        "micro_spec_id": task_just_fixed.get("micro_spec_id")
+                    })
+                else:
+                    logging.warning(f"Could not find task details for micro_spec_id '{task_id}' in the active plan. Cannot create RoWD record.")
+
+            logging.info("Manual changes committed and RoWD updated successfully. Resuming project.")
             resume_phase = self._determine_resume_phase_from_rowd(db)
             self.set_phase(resume_phase.name)
 
         except Exception as e:
-            logging.error(f"Failed to continue project for history ID {history_id}: {e}")
-            self.preflight_check_result = {"status": "ERROR", "message": str(e)}
+            logging.error(f"Failed to continue project with uncommitted changes: {e}", exc_info=True)
+            # If this process fails, we put the user back on the pre-flight page to try again
             self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
     def delete_archived_project(self, history_id: int) -> tuple[bool, str]:
@@ -2564,7 +2579,20 @@ class MasterOrchestrator:
             self.project_root_path = history_record['project_root_folder']
 
             # --- THIS IS THE FIX ---
-            # Determine the resume phase right after loading data, before any checks.
+            # Eagerly load the development plan into memory as it's needed for the manual fix workflow.
+            project_details_for_plan = db.get_project_by_id(project_id_to_load)
+            if project_details_for_plan and project_details_for_plan['development_plan_text']:
+                try:
+                    plan_json = self._get_json_from_document(project_details_for_plan['development_plan_text'])
+                    self.active_plan = plan_json.get("development_plan", [])
+                    logging.info("Successfully pre-loaded development plan into orchestrator state.")
+                except (json.JSONDecodeError, KeyError) as e:
+                    logging.warning(f"Could not pre-load development plan during project load: {e}")
+                    self.active_plan = None
+            else:
+                self.active_plan = None
+            # --- END OF FIX ---
+
             self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
 
             check_result = self._perform_preflight_checks(history_record['project_root_folder'])

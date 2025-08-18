@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor
 
 from gui.ui_preflight_check_page import Ui_PreflightCheckPage
 from master_orchestrator import MasterOrchestrator
+from gui.manual_change_dialog import ManualChangeDialog
 
 class PreflightCheckPage(QWidget):
     """
@@ -94,14 +95,29 @@ class PreflightCheckPage(QWidget):
                 QMessageBox.critical(self, "Error", "Could not identify the project to discard changes for.")
 
     def on_continue_clicked(self):
-        """Handles the primary action for state drift: committing changes and resuming."""
-        history_id = self.orchestrator.preflight_check_result.get("history_id")
-        if history_id:
-            # We will create this orchestrator method in the next step
-            self.orchestrator.handle_continue_with_uncommitted_changes(history_id)
-            self.project_load_finalized.emit()
-        else:
-            QMessageBox.critical(self, "Error", "Could not identify the project to continue.")
+        """
+        Handles the primary action for state drift by showing the manual change
+        confirmation dialog to the user.
+        """
+        try:
+            # We will create this new orchestrator method in the next step
+            uncompleted_tasks = self.orchestrator.get_uncompleted_tasks_for_manual_fix()
+            if uncompleted_tasks is None:
+                QMessageBox.critical(self, "Error", "Could not retrieve the list of uncompleted tasks.")
+                return
+
+            dialog = ManualChangeDialog(uncompleted_tasks, self)
+            if dialog.exec():
+                selected_task_ids = dialog.get_selected_task_ids()
+
+                # We will modify this orchestrator method in a later step
+                self.orchestrator.handle_continue_with_uncommitted_changes(selected_task_ids)
+                self.project_load_finalized.emit()
+            # If the user cancels, we do nothing and they remain on the pre-flight page.
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An unexpected error occurred: {e}")
+            logging.error(f"Failed during on_continue_clicked: {e}", exc_info=True)
 
     def on_ignore_clicked(self):
         """Proceeds with loading the project, leaving local changes as they are."""
