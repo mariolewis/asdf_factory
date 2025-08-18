@@ -94,16 +94,50 @@
        <item>
         <widget class="QLabel" name="feedbackLabel">
          <property name="text">
-          <string>You can make edits in the document above before approving.</string>
+          <string>Provide feedback for refinement (optional):</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="approveButton">
-         <property name="text">
-          <string>Approve Coding Standard</string>
+        <widget class="QPlainTextEdit" name="feedbackTextEdit">
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>100</height>
+          </size>
          </property>
         </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout">
+         <item>
+          <spacer name="horizontalSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="refineButton">
+           <property name="text">
+            <string>Submit Feedback &amp; Refine</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="approveButton">
+           <property name="text">
+            <string>Approve Coding Standard</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
       </layout>
      </widget>

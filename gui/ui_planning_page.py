@@ -16,8 +16,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QSpacerItem, QStackedWidget,
-    QTextEdit, QVBoxLayout, QWidget)
+    QPlainTextEdit, QPushButton, QSizePolicy, QSpacerItem,
+    QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_PlanningPage(object):
     def setupUi(self, PlanningPage):
@@ -78,16 +78,27 @@ class Ui_PlanningPage(object):
 
         self.verticalLayout_3.addWidget(self.planTextEdit)
 
+        self.feedbackLabel = QLabel(self.reviewPage)
+        self.feedbackLabel.setObjectName(u"feedbackLabel")
+
+        self.verticalLayout_3.addWidget(self.feedbackLabel)
+
+        self.feedbackTextEdit = QPlainTextEdit(self.reviewPage)
+        self.feedbackTextEdit.setObjectName(u"feedbackTextEdit")
+        self.feedbackTextEdit.setMaximumSize(QSize(16777215, 100))
+
+        self.verticalLayout_3.addWidget(self.feedbackTextEdit)
+
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.regenerateButton = QPushButton(self.reviewPage)
-        self.regenerateButton.setObjectName(u"regenerateButton")
-
-        self.horizontalLayout.addWidget(self.regenerateButton)
-
         self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
+
+        self.refineButton = QPushButton(self.reviewPage)
+        self.refineButton.setObjectName(u"refineButton")
+
+        self.horizontalLayout.addWidget(self.refineButton)
 
         self.approveButton = QPushButton(self.reviewPage)
         self.approveButton.setObjectName(u"approveButton")
@@ -113,7 +124,8 @@ class Ui_PlanningPage(object):
         self.instructionLabel.setText(QCoreApplication.translate("PlanningPage", u"Click the button below to generate a detailed, sequential development plan based on the finalized specifications.", None))
         self.generateButton.setText(QCoreApplication.translate("PlanningPage", u"Generate Development Plan", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("PlanningPage", u"Review Development Plan", None))
-        self.regenerateButton.setText(QCoreApplication.translate("PlanningPage", u"Re-generate Plan", None))
+        self.feedbackLabel.setText(QCoreApplication.translate("PlanningPage", u"Provide feedback for refinement (optional):", None))
+        self.refineButton.setText(QCoreApplication.translate("PlanningPage", u"Submit Feedback & Refine", None))
         self.approveButton.setText(QCoreApplication.translate("PlanningPage", u"Approve Plan & Proceed to Development", None))
     # retranslateUi
 

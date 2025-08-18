@@ -191,3 +191,44 @@ class ReportGeneratorAgent:
         document.save(doc_buffer)
         doc_buffer.seek(0)
         return doc_buffer
+
+    def generate_dev_plan_docx(self, plan_data: dict, project_name: str) -> BytesIO:
+        """
+        Generates a formatted .docx file for the Development Plan.
+
+        Args:
+            plan_data (dict): The structured data for the development plan.
+            project_name (str): The name of the project for the report title.
+
+        Returns:
+            BytesIO: An in-memory byte stream of the generated .docx file.
+        """
+        document = Document()
+        document.add_heading(f"Development Plan: {project_name}", level=1)
+
+        main_exe = plan_data.get("main_executable_file", "Not specified")
+        document.add_paragraph(f"Main Executable File: {main_exe}")
+
+        document.add_heading('Development Steps', level=2)
+
+        plan_steps = plan_data.get("development_plan", [])
+        if not plan_steps:
+            document.add_paragraph("No development steps were generated.")
+        else:
+            for i, task in enumerate(plan_steps, 1):
+                p = document.add_paragraph(style='List Number')
+                run = p.add_run(f"Task {i}: {task.get('component_name', 'N/A')}")
+                run.bold = True
+
+                # Add details with indentation
+                p_desc = document.add_paragraph(f"Description: {task.get('task_description', 'No description.')}")
+                p_desc.paragraph_format.left_indent = Inches(0.25)
+
+                p_id = document.add_paragraph(f"ID: {task.get('micro_spec_id', 'N/A')}")
+                p_id.paragraph_format.left_indent = Inches(0.25)
+
+        # Save document to an in-memory buffer
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer

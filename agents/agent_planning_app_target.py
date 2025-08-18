@@ -86,3 +86,62 @@ class PlanningAgent_AppTarget:
             logging.error(f"Failed to generate development plan: {e}")
             error_response = {"error": "Failed to generate a valid development plan.", "details": str(e)}
             return json.dumps(error_response)
+
+    def refine_plan(self, current_plan_json: str, pm_feedback: str, final_spec_text: str, tech_spec_text: str) -> str:
+        """
+        Refines an existing development plan based on PM feedback.
+        """
+        import re
+
+        logging.info("PlanningAgent: Refining development plan based on PM feedback...")
+
+        prompt = textwrap.dedent(f"""
+            You are an expert Lead Solutions Architect revising a development plan. Your task is to refine an existing JSON development plan based on specific feedback from a Product Manager.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Modify, Don't Regenerate:** You MUST modify the "Current Plan Draft" to incorporate the "PM Feedback". Do not regenerate the entire plan from scratch. Preserve all tasks that are not affected by the feedback.
+            2.  **JSON Object Output:** Your entire response MUST be a single, valid JSON object, identical in schema to the original plan.
+            3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object.
+
+            **--- CONTEXT: Project Specifications ---**
+            Full Application Specification:
+            {final_spec_text}
+
+            Full Technical Specification:
+            {tech_spec_text}
+
+            **--- INPUT 1: Current Plan Draft (JSON) ---**
+            ```json
+            {current_plan_json}
+            ```
+
+            **--- INPUT 2: PM Feedback to Address ---**
+            ```
+            {pm_feedback}
+            ```
+
+            **--- Refined Development Plan (JSON Output) ---**
+        """)
+
+        try:
+            response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
+
+            # --- CORRECTED CLEANING AND VALIDATION LOGIC ---
+            # More robustly find and extract the JSON block using regex
+            json_match = re.search(r"\{.*\}", response_json_str, re.DOTALL)
+
+            if not json_match:
+                logging.error(f"PlanningAgent could not find a JSON object in the LLM response during refinement. Response: '{response_json_str}'")
+                raise ValueError("The AI model returned a response without a valid JSON object. Please try refining with different wording.")
+
+            cleaned_response = json_match.group(0)
+            # --- END OF CORRECTION ---
+
+            # Final validation check
+            json.loads(cleaned_response)
+            logging.info("Successfully refined development plan from API.")
+            return cleaned_response
+        except Exception as e:
+            logging.error(f"PlanningAgent_AppTarget refinement failed: {e}")
+            error_response = {"error": "Failed to refine the development plan.", "details": str(e)}
+            return json.dumps(error_response)

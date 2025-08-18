@@ -39,6 +39,7 @@ class CodingStandardPage(QWidget):
         """Connects UI element signals to Python methods."""
         self.ui.generateButton.clicked.connect(self.run_generation_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
+        self.ui.refineButton.clicked.connect(self.run_refinement_task)
 
     def _set_ui_busy(self, is_busy):
         """Disables or enables the page while a background task runs."""
@@ -71,6 +72,32 @@ class CodingStandardPage(QWidget):
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
+
+    def run_refinement_task(self):
+        """Initiates the background task to refine the coding standard."""
+        feedback = self.ui.feedbackTextEdit.toPlainText().strip()
+        if not feedback:
+            QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement.")
+            return
+
+        current_draft = self.ui.standardTextEdit.toPlainText()
+        self._execute_task(self._task_refine_standard, self._handle_refinement_result, current_draft, feedback)
+
+    def _handle_refinement_result(self, new_draft):
+        """Handles the result from the refinement worker thread."""
+        try:
+            self.coding_standard_draft = new_draft
+            self.ui.standardTextEdit.setText(self.coding_standard_draft)
+            self.ui.feedbackTextEdit.clear()
+            QMessageBox.information(self, "Success", "The coding standard has been refined based on your feedback.")
+            self.state_changed.emit()
+        finally:
+            self._set_ui_busy(False)
+
+    def _task_refine_standard(self, current_draft, feedback, **kwargs):
+        """The actual function that runs in the background to refine the standard."""
+        agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
+        return agent.refine_standard(current_draft, feedback)
 
     def on_approve_clicked(self):
         """Saves the final coding standard and proceeds to the next phase."""

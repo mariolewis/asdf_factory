@@ -838,7 +838,7 @@ class MasterOrchestrator:
 
     def finalize_and_save_coding_standard(self, standard_draft: str):
         """
-        Saves the final coding standard to the database and a file,
+        Saves the final coding standard to the database and a formatted .docx file,
         and transitions to the next phase.
         """
         if not self.project_id:
@@ -858,8 +858,17 @@ class MasterOrchestrator:
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                standard_file_path = docs_dir / "coding_standard.md"
-                standard_file_path.write_text(final_doc_with_header, encoding="utf-8")
+                # Change the output filename to .docx
+                standard_file_path = docs_dir / "coding_standard.docx"
+
+                # Use the ReportGeneratorAgent to create the docx file
+                report_generator = ReportGeneratorAgent()
+                docx_bytes = report_generator.generate_text_document_docx(
+                    title=f"Coding Standard - {self.project_name}",
+                    content=standard_draft
+                )
+                with open(standard_file_path, 'wb') as f:
+                    f.write(docx_bytes.getbuffer())
 
                 # Commit the new document
                 self._commit_document(standard_file_path, "docs: Finalize Coding Standard")
@@ -871,35 +880,45 @@ class MasterOrchestrator:
 
     def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
         """
-        Saves the final dev plan to the database and a file,
+        Saves the final dev plan to the database and a formatted .docx file,
         loads it into the active state, and transitions to Genesis.
         """
         if not self.project_id:
             return False, "No active project."
 
         try:
+            # Save the raw JSON plan (with header) to the database for runtime use
             final_doc_with_header = self._prepend_standard_header(
                 document_content=plan_json_string,
                 document_type="Sequential Development Plan"
             )
+            self.db_manager.update_project_field(self.project_id, "development_plan_text", final_doc_with_header)
 
-            db = self.db_manager
-            db.update_project_field(self.project_id, "development_plan_text", final_doc_with_header)
-
-            project_details = db.get_project_by_id(self.project_id)
+            # Generate and save the formatted .docx report to the filesystem
+            project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                plan_file_path = docs_dir / "development_plan.json"
-                plan_file_path.write_text(plan_json_string, encoding="utf-8")
+                plan_file_path = docs_dir / "development_plan.docx"
 
-                # Commit the new document
+                report_generator = ReportGeneratorAgent()
+                plan_data = json.loads(plan_json_string)
+                docx_bytes = report_generator.generate_dev_plan_docx(plan_data, self.project_name)
+
+                with open(plan_file_path, 'wb') as f:
+                    f.write(docx_bytes.getbuffer())
+
                 self._commit_document(plan_file_path, "docs: Finalize Development Plan")
 
+            # Load the plan into the active state for execution
             full_plan_data = json.loads(plan_json_string)
             dev_plan_list = full_plan_data.get("development_plan")
             if dev_plan_list is None:
                 raise ValueError("The plan JSON is missing the 'development_plan' key.")
+
+            self.active_plan = dev_plan_list
+            self.active_plan_cursor = 0
+            logging.info(f"Successfully loaded development plan with {len(dev_plan_list)} tasks.")
 
             self.set_phase("GENESIS")
             return True, "Plan approved! Starting development..."

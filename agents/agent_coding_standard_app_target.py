@@ -70,3 +70,44 @@ class CodingStandardAgent_AppTarget:
         except Exception as e:
             logging.error(f"CodingStandardAgent_AppTarget failed: {e}")
             return f"Error: An unexpected error occurred while generating the coding standard: {e}"
+
+    def refine_standard(self, current_draft: str, pm_feedback: str) -> str:
+        """
+        Refines an existing coding standard draft based on PM feedback.
+
+        Args:
+            current_draft (str): The current version of the coding standard.
+            pm_feedback (str): The feedback from the PM for refinement.
+
+        Returns:
+            A string containing the refined coding standard, formatted in Markdown.
+        """
+        logging.info("CodingStandardAgent: Refining coding standard based on PM feedback...")
+
+        prompt = textwrap.dedent(f"""
+            You are a lead software architect revising a document. Your task is to refine an existing draft of a Coding Standard based on specific feedback from a Product Manager.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Modify, Don't Regenerate:** You MUST modify the "Current Draft" to incorporate the "PM Feedback". Do not regenerate the entire document from scratch. Preserve all sections that are not affected by the feedback.
+            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined coding standard document. Do not include any preamble, introduction, or conversational text.
+
+            **--- INPUT 1: Current Draft ---**
+            ```markdown
+            {current_draft}
+            ```
+
+            **--- INPUT 2: PM Feedback to Address ---**
+            ```
+            {pm_feedback}
+            ```
+
+            **--- Refined Coding Standard Document ---**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            logging.info("Successfully refined coding standard from API.")
+            return response_text
+        except Exception as e:
+            logging.error(f"CodingStandardAgent_AppTarget refinement failed: {e}")
+            return f"Error: An unexpected error occurred while refining the coding standard: {e}"

@@ -96,20 +96,37 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="feedbackLabel">
+         <property name="text">
+          <string>Provide feedback for refinement (optional):</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QPlainTextEdit" name="feedbackTextEdit">
+         <property name="maximumSize">
+          <size>
+           <width>16777215</width>
+           <height>100</height>
+          </size>
+         </property>
+        </widget>
+       </item>
+       <item>
         <layout class="QHBoxLayout" name="horizontalLayout">
-         <item>
-          <widget class="QPushButton" name="regenerateButton">
-           <property name="text">
-            <string>Re-generate Plan</string>
-           </property>
-          </widget>
-         </item>
          <item>
           <spacer name="horizontalSpacer">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
            </property>
           </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="refineButton">
+           <property name="text">
+            <string>Submit Feedback &amp; Refine</string>
+           </property>
+          </widget>
          </item>
          <item>
           <widget class="QPushButton" name="approveButton">
