@@ -79,9 +79,16 @@
       </spacer>
      </item>
      <item>
+      <widget class="QPushButton" name="viewButton">
+       <property name="text">
+        <string>View Selected Document</string>
+       </property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="exportButton">
        <property name="text">
-        <string>Print Selected Document to .docx</string>
+        <string>Export</string>
        </property>
       </widget>
      </item>

@@ -10,7 +10,7 @@ import sys
 from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu, QVBoxLayout, QHeaderView, QAbstractItemView, QStyle, QToolButton, QButtonGroup)
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem, QIcon
-from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize
+from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize, QTimer
 from PySide6.QtCore import QThreadPool
 
 from gui.ui_main_window import Ui_MainWindow
@@ -445,30 +445,24 @@ class ASDFMainWindow(QMainWindow):
 
     def on_cr_analyze_action(self, cr_id: int):
         """Handles the signal to run impact analysis on a CR in a background thread."""
-        self.setEnabled(False) # Disable the main window to prevent user interaction
+        self.setEnabled(False)
         self.statusBar().showMessage(f"Running impact analysis for CR-{cr_id}...")
 
-        # Create and start the worker thread
         worker = Worker(self.orchestrator.handle_run_impact_analysis_action, cr_id)
+        # Connect the result/error signals to the data handler
         worker.signals.result.connect(lambda: self._handle_analysis_result(cr_id, True))
         worker.signals.error.connect(lambda err: self._handle_analysis_result(cr_id, False, err))
-        self.threadpool.start(worker) # Assuming self.threadpool exists from another page
+        # Connect the FINISHED signal to the UI re-enabling handler
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
 
     def _handle_analysis_result(self, cr_id: int, success: bool, error=None):
-        """Handles the result of the background analysis task."""
-        self.setEnabled(True) # Re-enable the main window
-        self.statusBar().clearMessage()
-
+        """Handles showing the result message of the background analysis task."""
         if success:
-            QMessageBox.information(self, "Success", f"Impact analysis for CR-{cr_id} completed successfully.")
+            QTimer.singleShot(100, lambda: QMessageBox.information(self, "Success", f"Impact analysis for CR-{cr_id} completed successfully."))
         else:
             error_msg = str(error[1]) if error else "An unknown error occurred."
-            QMessageBox.critical(self, "Analysis Failed", f"Failed to run impact analysis for CR-{cr_id}:\n{error_msg}")
-
-        # Refresh the CR table to show the updated status and summary
-        if self.ui.mainContentArea.currentWidget() == self.cr_management_page:
-            self.cr_management_page.update_cr_table()
-        self.update_cr_register_view() # Also update the side panel view
+            QTimer.singleShot(100, lambda: QMessageBox.critical(self, "Analysis Failed", f"Failed to run impact analysis for CR-{cr_id}:\n{error_msg}"))
 
     def _handle_integration_result(self):
         """Called when the integration worker is finished. Triggers a final UI update."""
@@ -482,26 +476,40 @@ class ASDFMainWindow(QMainWindow):
         self.statusBar().showMessage(f"Generating implementation plan for CR-{cr_id}...")
 
         worker = Worker(self.orchestrator.handle_implement_cr_action, cr_id)
+        # Connect the result/error signals to the data handler
         worker.signals.result.connect(lambda: self._handle_implementation_result(cr_id, True))
         worker.signals.error.connect(lambda err: self._handle_implementation_result(cr_id, False, err))
+        # This is the crucial change: connect the FINISHED signal
+        worker.signals.finished.connect(self._on_background_task_finished)
         self.threadpool.start(worker)
 
     def _handle_implementation_result(self, cr_id: int, success: bool, error=None):
-        """Handles the result of the background implementation planning task."""
+        """Handles showing the result message of the background implementation task."""
+        if success:
+            # The message is now queued. The UI transition is handled by _on_background_task_finished.
+            QTimer.singleShot(100, lambda: QMessageBox.information(self, "Success", f"Implementation plan for CR-{cr_id} created. Transitioning to development phase."))
+        else:
+            error_msg = str(error[1]) if error else "An unknown error occurred."
+            QTimer.singleShot(100, lambda: QMessageBox.critical(self, "Implementation Failed", f"Failed to create an implementation plan for CR-{cr_id}:\n{error_msg}"))
+
+    def _on_background_task_finished(self):
+        """
+        A dedicated slot that runs AFTER a background task is completely finished.
+        It re-enables the UI and then refreshes the data tables.
+        """
         self.setEnabled(True)
         self.statusBar().clearMessage()
 
-        if success:
-            QMessageBox.information(self, "Success", f"Implementation plan for CR-{cr_id} created. Transitioning to development phase.")
-            # The orchestrator has changed the phase to GENESIS, so a full UI update is needed
-            self.update_ui_after_state_change()
-        else:
-            error_msg = str(error[1]) if error else "An unknown error occurred."
-            QMessageBox.critical(self, "Implementation Failed", f"Failed to create an implementation plan for CR-{cr_id}:\n{error_msg}")
+        # --- THIS IS THE FIX ---
+        # The orchestrator's state is now final. A single call here will now
+        # correctly read the new phase (GENESIS) and transition the page.
+        self.update_ui_after_state_change()
+        # --- END OF FIX ---
 
     def update_ui_after_state_change(self):
         """
-        Performs a full UI refresh. This is called only after a phase transition.
+        Performs a full UI refresh. This is the single source of truth for mapping
+        the orchestrator's state to the correct UI view.
         """
         self.update_cr_register_view()
         self.update_static_ui_elements()
@@ -510,6 +518,7 @@ class ASDFMainWindow(QMainWindow):
         current_phase_name = current_phase.name
         is_project_active = self.orchestrator.project_id is not None
 
+        # This map now includes all standard pages
         page_display_map = {
             "ENV_SETUP_TARGET_APP": self.env_setup_page,
             "SPEC_ELABORATION": self.spec_elaboration_page,
@@ -525,19 +534,23 @@ class ASDFMainWindow(QMainWindow):
             "VIEWING_REPORTS": self.reports_page,
             "MANUAL_UI_TESTING": self.manual_ui_testing_page,
             "IMPLEMENTING_CHANGE_REQUEST": self.cr_management_page,
+            "PROJECT_COMPLETED": self.project_complete_page
         }
 
+        # Disconnect all signals from the generic decision page to prevent multiple triggers
         try:
             self.decision_page.option1_selected.disconnect()
             self.decision_page.option2_selected.disconnect()
             self.decision_page.option3_selected.disconnect()
         except (RuntimeError, TypeError):
-            pass
+            pass # Ignore errors if signals were not connected
 
         if current_phase_name in page_display_map:
             page_to_show = page_display_map[current_phase_name]
             if hasattr(page_to_show, 'prepare_for_display'):
                 page_to_show.prepare_for_display()
+            if current_phase_name == "PROJECT_COMPLETED":
+                 self.project_complete_page.set_project_name(self.orchestrator.project_name)
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
@@ -545,31 +558,39 @@ class ASDFMainWindow(QMainWindow):
             self.genesis_page.ui.processingLabel.setText("Running Integration & Verification...")
             self.genesis_page.ui.logOutputTextEdit.clear()
             self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
-            worker = Worker(self.orchestrator.run_integration_and_verification_phase)
+
+            # --- THIS IS THE FIX ---
+            # Check for the 'force' flag from the orchestrator's state
+            task_info = self.orchestrator.task_awaiting_approval or {}
+            force_flag = task_info.get("force_integration", False)
+
+            # Pass the flag to the worker
+            worker = Worker(self.orchestrator.run_integration_and_verification_phase, force_proceed=force_flag)
+            # --- END OF FIX ---
+
             worker.signals.progress.connect(self.genesis_page.on_progress_update)
             worker.signals.result.connect(self._handle_integration_result)
             worker.signals.error.connect(self._handle_integration_result)
             self.threadpool.start(worker)
 
-        elif current_phase_name == "AWAITING_PM_TRIAGE_INPUT":
-            failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No details provided.")
+        elif current_phase_name == "AWAITING_INTEGRATION_CONFIRMATION":
+            task = self.orchestrator.task_awaiting_approval or {}
+            known_issues = task.get("known_issues", [])
+            issue_list_str = "\n".join([f"- {issue['artifact_name']} (Status: {issue['status']})" for issue in known_issues])
             details_text = (
-                "The automated triage system could not gather enough context to identify the root cause of the following failure:\n\n"
-                f"{failure_log}\n\n"
-                "You can retry the automated analysis, or pause to investigate and fix the issue manually."
+                "The system has detected that one or more components have a non-passing status (e.g., 'KNOWN_ISSUE').\n\n"
+                f"--- Components with Issues ---\n{issue_list_str}\n\n"
+                "Proceeding with integration is not recommended. Do you wish to proceed anyway?"
             )
             self.decision_page.configure(
-                header="Triage Escalation",
-                instruction="Automated analysis failed. Please choose how to proceed.",
+                header="Pre-Integration Checkpoint",
+                instruction="Components with known issues were detected.",
                 details=details_text,
-                option1_text="Retry Automated Triage",
-                option2_text="Pause for Manual Fix",
-                option3_text="Ignore Failure & Proceed"
+                option1_text="Proceed Anyway",
+                option2_text="Stop & Export Project"
             )
-            # Re-use the same handlers as the other debug escalation
-            self.decision_page.option1_selected.connect(self.on_decision_option1)
-            self.decision_page.option2_selected.connect(self.on_decision_option2)
-            self.decision_page.option3_selected.connect(self.on_decision_option3)
+            self.decision_page.option1_selected.connect(self.on_integration_confirmed)
+            self.decision_page.option2_selected.connect(self.on_stop_export_project)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "DEBUG_PM_ESCALATION":
@@ -577,44 +598,21 @@ class ASDFMainWindow(QMainWindow):
             failure_log = task_details.get("failure_log", "No details provided.")
             is_env_failure = task_details.get("is_env_failure", False)
 
-            # Disconnect previous signals to avoid multiple connections
-            try:
-                self.decision_page.option1_selected.disconnect()
-                self.decision_page.option2_selected.disconnect()
-                self.decision_page.option3_selected.disconnect()
-            except (RuntimeError, TypeError):
-                pass # Ignore if not connected
-
             if is_env_failure:
-                # Configure the UI specifically for an Environment Failure
-                details_text = (
-                    "The factory has encountered an unrecoverable ENVIRONMENT error. This is typically caused by a missing tool or a misconfiguration in your system's PATH (e.g., 'pytest' is not installed or accessible).\n\n"
-                    f"--- ERROR LOG ---\n{failure_log}\n\n"
-                    "Please fix the environment issue externally. Once you believe it is resolved, you can retry the operation."
-                )
                 self.decision_page.configure(
                     header="Environment Failure",
                     instruction="The process is paused. Please resolve the environment issue.",
-                    details=details_text,
+                    details=f"The factory has encountered an unrecoverable ENVIRONMENT error:\n\n--- ERROR LOG ---\n{failure_log}",
                     option1_text="I have fixed the issue, Retry",
                     option2_text="Stop & Export Project"
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_stop_export_project)
             else:
-                # This is the original logic for a Code Failure
-                details_text = (
-                    "The automated debug procedure could not resolve the following issue after multiple attempts:\n\n"
-                    f"{failure_log}\n\n"
-                    "--- How to proceed ---\n"
-                    "• Retry Automated Fix: Runs the entire analysis and fix cycle again.\n"
-                    "• Pause for Manual Fix: Exports the project's current state and closes it, allowing you to fix the code in an external editor.\n"
-                    "• Ignore Bug & Proceed: Marks the failing component as a 'KNOWN_ISSUE' and continues with the next task."
-                )
                 self.decision_page.configure(
                     header="Debug Escalation",
                     instruction="The factory has been unable to fix a persistent bug. Please choose how to proceed.",
-                    details=details_text,
+                    details=f"The automated debug procedure could not resolve the following issue:\n\n{failure_log}",
                     option1_text="Retry Automated Fix",
                     option2_text="Pause for Manual Fix",
                     option3_text="Ignore Bug & Proceed"
@@ -622,16 +620,15 @@ class ASDFMainWindow(QMainWindow):
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_decision_option2)
                 self.decision_page.option3_selected.connect(self.on_decision_option3)
-
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
             self.decision_page.configure(
                 header="Stale Impact Analysis",
-                instruction="The project's code has changed since the impact analysis was last run for this item. Proceeding with an outdated analysis is not recommended.",
-                details="Do you want to re-run the analysis before creating an implementation plan, or proceed with the existing (stale) analysis?",
-                option1_text="Re-run Analysis and Review",
-                option2_text="Proceed Anyway (Not Recommended)"
+                instruction="The project's code has changed since the impact analysis was last run.",
+                details="Do you want to re-run the analysis, or proceed with the existing (stale) analysis?",
+                option1_text="Re-run Analysis",
+                option2_text="Proceed Anyway"
             )
             self.decision_page.option1_selected.connect(self.on_stale_analysis_rerun)
             self.decision_page.option2_selected.connect(self.on_stale_analysis_proceed)
@@ -640,11 +637,7 @@ class ASDFMainWindow(QMainWindow):
         elif current_phase_name == "AWAITING_PM_DECLARATIVE_CHECKPOINT":
             task = self.orchestrator.task_awaiting_approval
             details_text = (
-                f"The following high-risk declarative change is proposed for the component:\n"
-                f"<b>{task.get('component_name')}</b> in file <b>{task.get('component_file_path')}</b>\n\n"
-                f"--- PROPOSED CHANGE ---\n"
-                f"{task.get('task_description')}\n\n"
-                f"Please review this change. You can allow the factory to execute it automatically or choose to apply it manually yourself."
+                f"High-risk change for: <b>{task.get('component_name')}</b>\nFile: <b>{task.get('component_file_path')}</b>\n\n<pre>{task.get('task_description')}</pre>"
             )
             self.decision_page.configure(
                 header="High-Risk Change Approval",
@@ -653,14 +646,10 @@ class ASDFMainWindow(QMainWindow):
                 option1_text="Execute Change Automatically",
                 option2_text="I Will Apply Manually & Skip"
             )
-            # Connect signals to the new handlers
             self.decision_page.option1_selected.connect(self.on_declarative_execute_auto)
             self.decision_page.option2_selected.connect(self.on_declarative_execute_manual)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
-        elif current_phase_name == "PROJECT_COMPLETED":
-            self.project_complete_page.set_project_name(self.orchestrator.project_name)
-            self.ui.mainContentArea.setCurrentWidget(self.project_complete_page)
         elif current_phase_name == "IDLE" or not is_project_active:
             self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
         else:
@@ -820,7 +809,7 @@ class ASDFMainWindow(QMainWindow):
             return
 
         dialog = RaiseRequestDialog(self, initial_request_type="CHANGE_REQUEST")
-        if dialog.exec():  # This is true if the user clicks "Save" and validation passes
+        if dialog.exec():
             data = dialog.get_data()
             request_type = data["request_type"]
             description = data["description"]
@@ -829,20 +818,19 @@ class ASDFMainWindow(QMainWindow):
             success = False
             if request_type == "CHANGE_REQUEST":
                 self.orchestrator.save_new_change_request(description)
-                # For CR, set_phase is handled inside the orchestrator
                 success = True
             elif request_type == "BUG_REPORT":
                 success = self.orchestrator.save_bug_report(description, severity)
-                # For bugs, we stay in the current phase
-                self.orchestrator.set_phase(self.orchestrator.current_phase.name)
-
             elif request_type == "SPEC_CORRECTION":
-                QMessageBox.information(self, "Not Implemented", "The full workflow for 'Specification Correction' requires a dedicated editor and will be implemented separately.")
+                QMessageBox.information(self, "Not Implemented", "The full workflow for 'Specification Correction' will be implemented separately.")
                 return
 
             if success:
                 QMessageBox.information(self, "Success", f"{request_type.replace('_', ' ').title()} has been successfully logged.")
-                self.update_cr_register_view() # Refresh the Changes table
+                # --- THIS IS THE FIX ---
+                # Trigger a full UI update to refresh all tables and state.
+                self.update_ui_after_state_change()
+                # --- END OF FIX ---
             else:
                 QMessageBox.critical(self, "Error", f"Failed to save the {request_type.replace('_', ' ').title()}.")
 
@@ -875,7 +863,9 @@ class ASDFMainWindow(QMainWindow):
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to view its documents.")
             return
+        # --- THIS IS THE FIX ---
         self.previous_phase = self.orchestrator.current_phase
+        # --- END OF FIX ---
         self.orchestrator.set_phase("VIEWING_DOCUMENTS")
         self.update_ui_after_state_change()
 
@@ -883,7 +873,9 @@ class ASDFMainWindow(QMainWindow):
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to view its reports.")
             return
+        # --- THIS IS THE FIX ---
         self.previous_phase = self.orchestrator.current_phase
+        # --- END OF FIX ---
         self.orchestrator.set_phase("VIEWING_REPORTS")
         self.update_ui_after_state_change()
 
@@ -912,3 +904,10 @@ class ASDFMainWindow(QMainWindow):
             else: subprocess.run(["xdg-open", file_path], check=True)
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Could not open file or folder:\n{e}")
+
+    def on_integration_confirmed(self):
+        """Handles the user's choice to proceed with integration despite known issues."""
+        self.orchestrator.handle_integration_confirmation("PROCEED")
+        # The orchestrator will now re-trigger the integration task in the background,
+        # so we just need to update the UI to show its progress.
+        self.update_ui_after_state_change()

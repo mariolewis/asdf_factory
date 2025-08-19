@@ -1010,7 +1010,7 @@ class MasterOrchestrator:
     def handle_proceed_action(self, progress_callback=None):
         """
         Handles the logic for the Genesis Pipeline, now with a separate 'fix mode'
-        track and specific handling for environment vs. code failures.
+        track and correct debug counter reset logic.
         """
         # --- FIX MODE LOGIC ---
         if self.is_in_fix_mode:
@@ -1078,43 +1078,66 @@ class MasterOrchestrator:
 
             self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
             self.active_plan_cursor += 1
+
+            # --- THIS IS THE FIX ---
+            # If a main plan task succeeds, we reset the debug counter for the next task.
+            self.debug_attempt_counter = 0
+            # --- END OF FIX ---
+
             return "Step complete."
 
         except EnvironmentFailureException:
-            # This is a controlled stop. The phase was already set to DEBUG_PM_ESCALATION.
             logging.warning("Halting Genesis pipeline due to an unrecoverable environment failure.")
             return "Environment failure. Escalated to PM."
         except Exception as e:
-            # This is for recoverable code failures that should trigger the debug loop.
             logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}", exc_info=True)
             self.escalate_for_manual_debug(str(e))
             return f"Error during development: {e}"
 
-    def run_integration_and_verification_phase(self, progress_callback=None):
+    def run_integration_and_verification_phase(self, force_proceed=False, progress_callback=None):
         """
-        Runs the full integration and verification process. This is designed to be
-        called in a background thread by the UI.
+        Runs the full integration and verification process, now with a flag
+        to bypass the initial known-issues check after PM confirmation.
         """
         logging.info("Starting integration and verification phase...")
         try:
             db = self.db_manager
-            # Check for known issues before proceeding
-            non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
-            known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
 
-            if known_issues:
-                if progress_callback: progress_callback("Integration paused: Found components with known issues.")
-                self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
-                self.set_phase("AWAITING_INTEGRATION_CONFIRMATION")
-                return
+            # --- THIS IS THE FIX ---
+            # Only check for known issues if we are not forcing a proceed.
+            if not force_proceed:
+                non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
+                known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
 
-            # If no issues, proceed with the actual integration task
+                if known_issues:
+                    if progress_callback: progress_callback("Integration paused: Found components with known issues.")
+                    self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
+                    self.set_phase("AWAITING_INTEGRATION_CONFIRMATION")
+                    return
+            # --- END OF FIX ---
+
+            # If no issues, or if force_proceed is true, run the actual integration.
             if progress_callback: progress_callback("Running integration and UI testing phase logic...")
             self._run_integration_and_ui_testing_phase(progress_callback=progress_callback)
 
         except Exception as e:
             logging.error(f"Integration and verification phase failed: {e}", exc_info=True)
             self.escalate_for_manual_debug(str(e))
+
+    def handle_integration_confirmation(self, decision: str):
+        """
+        Handles the PM's decision on whether to proceed with integration.
+        """
+        if decision == "PROCEED":
+            logging.warning("PM chose to proceed with integration despite known issues.")
+            self.task_awaiting_approval = {"force_integration": True}
+            # --- THIS IS THE FIX ---
+            # Transition back to Genesis. The main window will see this and re-trigger
+            # the integration phase, but this time with the 'force' flag set.
+            self.set_phase("GENESIS")
+            # --- END OF FIX ---
+        else:
+            self.set_phase("GENESIS")
 
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
         """
@@ -1276,8 +1299,8 @@ class MasterOrchestrator:
 
     def _run_post_implementation_doc_update(self):
         """
-        After a CR/bug fix plan is fully implemented, this method updates all
-        relevant project documents using its own database connection.
+        After a CR/bug fix, this method updates all relevant project documents
+        in the database AND writes the changes back to the filesystem.
         """
         logging.info("Change implementation complete. Running post-implementation documentation update...")
         try:
@@ -1291,10 +1314,14 @@ class MasterOrchestrator:
                 logging.error("Could not run doc update; LLM Service is not configured.")
                 return
 
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "_docs"
+
             implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
             doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
 
-            def update_document(doc_key: str, doc_name: str, save_func):
+            # --- THIS IS THE NEW, REFACTORED LOGIC ---
+            def update_and_save_document(doc_key: str, doc_name: str, file_name: str):
                 original_doc = project_details[doc_key]
                 if original_doc:
                     logging.info(f"Checking for {doc_name} updates...")
@@ -1302,16 +1329,22 @@ class MasterOrchestrator:
                         original_spec=original_doc,
                         implementation_plan=implementation_plan_for_update
                     )
-                    if updated_content != original_doc:
-                        doc_with_header = self._prepend_standard_header(updated_content, doc_name)
-                        # This uses a generic field update now
-                        db.update_project_field(self.project_id, doc_key, doc_with_header)
-                        logging.info(f"Successfully updated and saved the {doc_name}.")
 
-            update_document('final_spec_text', 'Application Specification', lambda pid, val: db.update_project_field(pid, 'final_spec_text', val))
-            update_document('tech_spec_text', 'Technical Specification', lambda pid, val: db.update_project_field(pid, 'tech_spec_text', val))
-            update_document('ux_spec_text', 'UX/UI Specification', lambda pid, val: db.update_project_field(pid, 'ux_spec_text', val))
-            update_document('ui_test_plan_text', 'UI Test Plan', lambda pid, val: db.update_project_field(pid, 'ui_test_plan_text', val))
+                    # The content of the document itself contains the header with the version
+                    db.update_project_field(self.project_id, doc_key, updated_content)
+
+                    # Also write the updated content back to the file system
+                    doc_path = docs_dir / file_name
+                    doc_path.write_text(updated_content, encoding="utf-8")
+                    self._commit_document(doc_path, f"docs: Update {doc_name} after CR implementation")
+                    logging.info(f"Successfully updated, saved, and committed the {doc_name}.")
+
+            update_and_save_document('final_spec_text', 'Application Specification', 'application_spec.md')
+            update_and_save_document('tech_spec_text', 'Technical Specification', 'technical_spec.md')
+            update_and_save_document('ux_spec_text', 'UX/UI Specification', 'ux_ui_specification.md')
+            update_and_save_document('ui_test_plan_text', 'UI Test Plan', 'ui_test_plan.md')
+            # --- END OF NEW LOGIC ---
+
         except Exception as e:
             logging.error(f"Failed during post-implementation doc update: {e}")
 
@@ -1585,9 +1618,12 @@ class MasterOrchestrator:
             return
 
         try:
-            # Corrected: Direct call to the db_manager
             self.db_manager.add_change_request(self.project_id, description, request_type)
-            self.set_phase("AWAITING_INITIAL_IMPACT_ANALYSIS")
+            # --- THIS IS THE FIX ---
+            # Instead of transitioning to a non-existent UI, we now transition back
+            # to the CR management screen so the user can see the new entry.
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+            # --- END OF FIX ---
             logging.info("Successfully saved new Functional Enhancement CR.")
         except Exception as e:
             logging.error(f"Failed to save new change request: {e}")
@@ -1709,52 +1745,39 @@ class MasterOrchestrator:
             if not cr_details:
                 raise Exception(f"CR-{cr_id} not found in the database.")
 
+            db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
+
+            # (The logic for stale analysis and context building remains the same)
             analysis_timestamp_str = cr_details['last_modified_timestamp']
             last_commit_timestamp = self.get_latest_commit_timestamp()
-
             if analysis_timestamp_str and last_commit_timestamp:
                 analysis_time = datetime.fromisoformat(analysis_timestamp_str)
                 if last_commit_timestamp > analysis_time:
-                    logging.warning(f"Impact analysis for CR-{cr_id} is stale. Awaiting PM confirmation.")
                     self.task_awaiting_approval = {"cr_id_for_reanalysis": cr_id}
                     self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
                     return
 
             project_details = db.get_project_by_id(self.project_id)
-            if not project_details or not project_details['project_root_folder']:
-                raise FileNotFoundError("Project root folder not found for CR implementation.")
-
             project_root_path = Path(project_details['project_root_folder'])
             impacted_ids = json.loads(cr_details['impacted_artifact_ids'] or '[]')
             source_code_files = {}
             for artifact_id in impacted_ids:
                 artifact_record = db.get_artifact_by_id(artifact_id)
                 if artifact_record and artifact_record['file_path']:
-                    try:
-                        source_path = project_root_path / artifact_record['file_path']
-                        if source_path.exists():
-                            source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
-                    except Exception:
-                        pass
+                    source_path = project_root_path / artifact_record['file_path']
+                    if source_path.exists(): source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
 
             core_docs = {"final_spec_text": project_details['final_spec_text']}
             context_package = self._build_and_validate_context_package(core_docs, source_code_files)
-
-            if context_package.get("error"):
-                raise Exception(f"Context Builder Error: {context_package['error']}")
+            if context_package.get("error"): raise Exception(f"Context Builder Error: {context_package['error']}")
 
             all_artifacts = db.get_all_artifacts_for_project(self.project_id)
             rowd_json = json.dumps([dict(row) for row in all_artifacts])
-            db.update_cr_status(cr_id, "PLANNING_IN_PROGRESS")
 
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
-
             new_plan_str = planner_agent.create_refactoring_plan(
-                cr_details['description'],
-                project_details['final_spec_text'],
-                project_details['tech_spec_text'],
-                rowd_json,
-                context_package["source_code"]
+                cr_details['description'], project_details['final_spec_text'],
+                project_details['tech_spec_text'], rowd_json, context_package["source_code"]
             )
 
             response_data = json.loads(new_plan_str)
@@ -1763,12 +1786,20 @@ class MasterOrchestrator:
 
             self.active_plan = response_data
             self.active_plan_cursor = 0
-
-            # --- THIS IS THE NEW LINE ---
             self.is_executing_cr_plan = True
+
+            # --- THIS IS THE FIX ---
+            # After the plan is successfully generated, update the status to reflect this.
+            db.update_cr_status(cr_id, "IMPLEMENTATION_IN_PROGRESS")
+            # --- END OF FIX ---
 
             logging.info("Successfully generated new development plan from Change Request.")
             self.set_phase("GENESIS")
+
+        except Exception as e:
+            logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
+            db.update_cr_status(cr_id, "RAISED") # Revert status on failure
+            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
         except Exception as e:
             logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
@@ -2039,7 +2070,7 @@ class MasterOrchestrator:
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
         Initiates a multi-attempt, iterative triage and debug process that
-        consults the Knowledge Base.
+        correctly uses the instance's debug counter and stores failure context.
         """
         logging.info("A failure has triggered the iterative debugging pipeline.")
 
@@ -2050,64 +2081,65 @@ class MasterOrchestrator:
         db = self.db_manager
         max_attempts = int(db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2")
 
-        for attempt in range(max_attempts):
-            logging.info(f"--- Automated Debug Attempt {attempt + 1} of {max_attempts} ---")
+        self.debug_attempt_counter += 1
+        logging.info(f"--- Automated Debug Attempt {self.debug_attempt_counter} of {max_attempts} ---")
 
-            # Step 1: Analyze and consult Knowledge Base first
-            triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
-            # Pass empty code for initial analysis; the agent's KB query relies on the error log tags
-            hypothesis = triage_agent.analyze_and_hypothesize(failure_log, "")
+        if self.debug_attempt_counter > max_attempts:
+            logging.warning(f"All {max_attempts} automated debug attempts have failed. Escalating to PM.")
 
-            if hypothesis and not hypothesis.startswith("Error:"):
-                logging.info(f"TriageAgent formed an initial hypothesis: {hypothesis[:150]}...")
-                # Attempt to plan and execute a fix based on the hypothesis alone
-                if self._plan_and_execute_fix(hypothesis, {}):
-                    logging.info("Automated debug was successful based on initial hypothesis (or KB).")
-                    self.debug_attempt_counter = 0
-                    return
+            # --- THIS IS THE FIX ---
+            # When escalating, store the details of the ORIGINAL failing task.
+            original_failing_task = self.get_current_task_details()
+            self.task_awaiting_approval = {
+                "failure_log": failure_log,
+                "original_failing_task": original_failing_task
+            }
+            # --- END OF FIX ---
 
-            # Step 2: If KB/initial analysis fails, proceed with tiered context gathering
-            project_details = db.get_project_by_id(self.project_id)
-            project_root_path = Path(project_details['project_root_folder'])
-            context_package = {}
+            self.debug_attempt_counter = 0
+            self.set_phase("DEBUG_PM_ESCALATION")
+            return
 
-            # Tier 1: Stack Trace
-            file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
-            if file_paths_from_trace:
-                for file_path in file_paths_from_trace:
+        # (The rest of the triage and fix-planning logic remains the same)
+        triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
+        hypothesis = triage_agent.analyze_and_hypothesize(failure_log, "")
+
+        if hypothesis and not hypothesis.startswith("Error:"):
+            logging.info(f"TriageAgent formed an initial hypothesis: {hypothesis[:150]}...")
+            if self._plan_and_execute_fix(hypothesis, {}):
+                logging.info("Successfully generated a fix plan based on hypothesis. Returning to Genesis.")
+                return
+
+        project_details = db.get_project_by_id(self.project_id)
+        project_root_path = Path(project_details['project_root_folder'])
+        context_package = {}
+
+        file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
+        if file_paths_from_trace:
+            for file_path in file_paths_from_trace:
+                full_path = project_root_path / file_path
+                if full_path.exists():
+                    context_package[file_path] = full_path.read_text(encoding='utf-8')
+        if not context_package:
+            apex_file_name = project_details.get('apex_executable_name')
+            failing_task_details = self.get_current_task_details()
+            failing_component_name = failing_task_details['task'].get('component_name') if failing_task_details else None
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
+            if apex_file_name and failing_component_name:
+                file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
+                file_paths_from_apex = json.loads(file_paths_from_trace_json)
+                for file_path in file_paths_from_apex:
                     full_path = project_root_path / file_path
                     if full_path.exists():
                         context_package[file_path] = full_path.read_text(encoding='utf-8')
 
-            # Tier 2: Apex Trace (if stack trace yields no context)
-            if not context_package:
-                apex_file_name = project_details.get('apex_executable_name')
-                failing_task = self.get_current_task_details()
-                failing_component_name = failing_task.get('component_name') if failing_task else None
-                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
+        if context_package:
+            if self._plan_and_execute_fix(failure_log, context_package):
+                logging.info("Successfully generated a fix plan based on tiered triage context. Returning to Genesis.")
+                return
 
-                if apex_file_name and failing_component_name:
-                    file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
-                    file_paths_from_apex = json.loads(file_paths_from_trace_json)
-                    for file_path in file_paths_from_apex:
-                        full_path = project_root_path / file_path
-                        if full_path.exists():
-                            context_package[file_path] = full_path.read_text(encoding='utf-8')
-
-            # Step 3: Attempt to fix if any context was gathered
-            if context_package:
-                if self._plan_and_execute_fix(failure_log, context_package):
-                    logging.info("Automated debug was successful based on tiered triage context.")
-                    self.debug_attempt_counter = 0
-                    return
-
-            logging.warning(f"Debug attempt {attempt + 1} failed. Trying again if attempts remain...")
-
-        # If the loop completes without a successful fix, escalate to the PM
-        logging.warning(f"All {max_attempts} automated debug attempts have failed. Escalating to PM.")
-        self.task_awaiting_approval = {"failure_log": failure_log}
-        self.set_phase("DEBUG_PM_ESCALATION")
+        logging.warning(f"Debug attempt {self.debug_attempt_counter} failed to produce a fix plan.")
 
     def handle_pm_triage_input(self, pm_error_description: str):
         """
@@ -2178,6 +2210,10 @@ class MasterOrchestrator:
                 self.debug_attempt_counter = 0
                 failure_log_from_state = self.task_awaiting_approval.get('failure_log', "PM-initiated retry after escalation.")
                 self.task_awaiting_approval = None
+                # When retrying, we must exit fix mode
+                self.is_in_fix_mode = False
+                self.fix_plan = None
+                self.fix_plan_cursor = 0
                 self.escalate_for_manual_debug(failure_log_from_state)
             else:
                 logging.warning("Retry clicked, but no failure context found. Returning to GENESIS.")
@@ -2190,18 +2226,38 @@ class MasterOrchestrator:
         elif choice == "IGNORE":
             logging.warning("Acknowledging and ignoring bug. Updating artifact status to 'KNOWN_ISSUE'.")
             try:
-                if self.task_awaiting_approval:
-                    failing_artifact_id = self.task_awaiting_approval.get('failing_artifact_id')
-                    if failing_artifact_id:
-                        timestamp = datetime.now(timezone.utc).isoformat()
-                        self.db_manager.update_artifact_status(failing_artifact_id, "KNOWN_ISSUE", timestamp)
-                        logging.info(f"Status of artifact {failing_artifact_id} set to KNOWN_ISSUE.")
-                    else:
-                        logging.error("Could not identify the specific failing artifact to mark as 'KNOWN_ISSUE'.")
+                # --- THIS IS THE FIX ---
+                # Use the saved original task from the escalation context
+                original_failing_task_info = self.task_awaiting_approval.get('original_failing_task', {})
+                task_details = original_failing_task_info.get('task', {})
+                # --- END OF FIX ---
 
-                self.set_phase("GENESIS")
+                if task_details:
+                    doc_agent = DocUpdateAgentRoWD(self.db_manager, llm_service=self.llm_service)
+                    doc_agent.update_artifact_record({
+                        "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                        "project_id": self.project_id,
+                        "file_path": task_details.get("component_file_path"),
+                        "artifact_name": task_details.get("component_name"),
+                        "artifact_type": task_details.get("component_type"),
+                        "short_description": "PM chose to ignore a persistent failure during development.",
+                        "status": "KNOWN_ISSUE",
+                        "unit_test_status": "TESTS_FAILING",
+                        "version": 1,
+                        "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+                        "micro_spec_id": task_details.get("micro_spec_id")
+                    })
+                    logging.info(f"Status of component '{task_details.get('component_name')}' set to KNOWN_ISSUE.")
+                else:
+                    logging.error("Could not identify the specific failing artifact to mark as 'KNOWN_ISSUE'.")
+
+                # Cleanly exit fix mode and advance the main plan
+                self.is_in_fix_mode = False
+                self.fix_plan = None
+                self.fix_plan_cursor = 0
                 self.active_plan_cursor += 1
                 self.task_awaiting_approval = None
+                self.set_phase("GENESIS")
 
             except Exception as e:
                 logging.error(f"Failed to update artifact status to 'KNOWN_ISSUE': {e}")

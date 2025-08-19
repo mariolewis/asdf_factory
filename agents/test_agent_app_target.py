@@ -27,16 +27,8 @@ class TestAgent_AppTarget:
         """
         Generates unit test code for a given component, adhering to a standard
         and targeting a specific programming language.
-
-        Args:
-            source_code (str): The source code of the component to be tested.
-            component_spec (str): The micro-specification describing behavior.
-            coding_standard (str): The coding standard to enforce.
-            target_language (str): The programming language of the component.
-
-        Returns:
-            str: The generated source code for the unit tests.
         """
+        import re
         try:
             prompt = f"""
             You are an expert Software Quality Assurance (QA) Engineer specializing in automated testing.
@@ -46,8 +38,7 @@ class TestAgent_AppTarget:
             1.  **Target Language:** The component is written in **{target_language}**. Your unit tests MUST be written for this language and its standard testing frameworks (e.g., pytest for Python, JUnit/Mockito for Java/Kotlin).
             2.  **Comprehensive Coverage:** Your tests MUST cover the "happy path," edge cases (e.g., null inputs, empty lists, boundary values), and error handling.
             3.  **Adherence to Coding Standard:** The unit test code you generate MUST follow all rules in the provided coding standard.
-            4.  **No Citations:** Your output must NOT contain any citation markers (e.g., `[cite]`).
-            5.  **Raw Code Output:** Your entire response MUST BE ONLY the raw source code for the unit tests.
+            4.  **RAW CODE ONLY:** Your entire response MUST BE ONLY the raw source code for the unit tests. Do not include any conversational text or markdown fences like ```python.
 
             **--- INPUTS ---**
 
@@ -70,7 +61,14 @@ class TestAgent_AppTarget:
             """
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            return response_text
+
+            # --- THIS IS THE FIX ---
+            # Robustly clean markdown fences from the AI's response.
+            code_text = response_text.strip()
+            code_text = re.sub(r"^\s*`{3}.*?\n", "", code_text)
+            code_text = re.sub(r"\n\s*`{3}\s*$", "", code_text)
+            return code_text.strip()
+            # --- END OF FIX ---
 
         except Exception as e:
             error_message = f"An error occurred during unit test generation: {e}"

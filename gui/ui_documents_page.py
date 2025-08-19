@@ -66,6 +66,11 @@ class Ui_DocumentsPage(object):
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
 
+        self.viewButton = QPushButton(DocumentsPage)
+        self.viewButton.setObjectName(u"viewButton")
+
+        self.horizontalLayout.addWidget(self.viewButton)
+
         self.exportButton = QPushButton(DocumentsPage)
         self.exportButton.setObjectName(u"exportButton")
 
@@ -85,6 +90,7 @@ class Ui_DocumentsPage(object):
         self.headerLabel.setText(QCoreApplication.translate("DocumentsPage", u"Project Documents", None))
         self.instructionLabel.setText(QCoreApplication.translate("DocumentsPage", u"Select a project to view and download its core documents.", None))
         self.backButton.setText(QCoreApplication.translate("DocumentsPage", u"<-- Back to Main Workflow", None))
-        self.exportButton.setText(QCoreApplication.translate("DocumentsPage", u"Print Selected Document to .docx", None))
+        self.viewButton.setText(QCoreApplication.translate("DocumentsPage", u"View Selected Document", None))
+        self.exportButton.setText(QCoreApplication.translate("DocumentsPage", u"Export", None))
     # retranslateUi
 
