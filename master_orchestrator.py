@@ -37,6 +37,9 @@ from agents.agent_rollback_app_target import RollbackAgent
 from agents.agent_project_scoping import ProjectScopingAgent
 from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
 
+class EnvironmentFailureException(Exception):
+    """Custom exception for unrecoverable environment errors."""
+    pass
 
 class FactoryPhase(Enum):
     """Enumeration for the main factory F-Phases."""
@@ -114,6 +117,10 @@ class MasterOrchestrator:
         self.resume_phase_after_load = None
         self.active_ux_spec = {}
         self.is_project_dirty = False
+        self.is_executing_cr_plan = False
+        self.is_in_fix_mode = False
+        self.fix_plan = None
+        self.fix_plan_cursor = 0
         self._llm_service = None
         logging.info("MasterOrchestrator instance created.")
 
@@ -134,6 +141,10 @@ class MasterOrchestrator:
         self.resume_phase_after_load = None
         self.active_ux_spec = {}
         self.is_project_dirty = False
+        self.is_executing_cr_plan = False
+        self.is_in_fix_mode = False
+        self.fix_plan = None
+        self.fix_plan_cursor = 0
 
     def close_active_project(self):
         """
@@ -249,14 +260,38 @@ class MasterOrchestrator:
 
     def get_current_task_details(self) -> dict | None:
         """
-        Safely retrieves the current task from the active plan.
-
-        Returns:
-            A dictionary of the current task details, or None if no active plan
-            or the plan is complete.
+        Safely retrieves the current task, cursor, and total count, respecting
+        whether the system is in 'fix mode'.
         """
-        if self.active_plan and self.active_plan_cursor < len(self.active_plan):
-            return self.active_plan[self.active_plan_cursor]
+        plan = None
+        cursor = 0
+        is_fix = self.is_in_fix_mode
+
+        # Determine which plan to use based on the current mode
+        if is_fix and self.fix_plan:
+            plan = self.fix_plan
+            cursor = self.fix_plan_cursor
+        else:
+            plan = self.active_plan
+            cursor = self.active_plan_cursor
+
+        if plan and cursor < len(plan):
+            return {
+                "task": plan[cursor],
+                "cursor": cursor,
+                "total": len(plan),
+                "is_fix_mode": is_fix
+            }
+
+        # This handles the case where the main plan is complete
+        if not is_fix and self.active_plan and self.active_plan_cursor >= len(self.active_plan):
+             return {
+                "task": {"component_name": "All development tasks complete."},
+                "cursor": self.active_plan_cursor,
+                "total": len(self.active_plan),
+                "is_fix_mode": is_fix
+            }
+
         return None
 
     def get_uncompleted_tasks_for_manual_fix(self) -> list | None:
@@ -283,6 +318,26 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to retrieve uncompleted tasks: {e}", exc_info=True)
             return None
+
+    def _recalculate_plan_cursor_from_db(self):
+        """
+        Scans the database for completed artifacts and sets the active plan
+        cursor to the correct resume point.
+        """
+        if not self.project_id or not self.active_plan:
+            self.active_plan_cursor = 0
+            return
+
+        all_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+        completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
+
+        last_completed_index = -1
+        for i, task in enumerate(self.active_plan):
+            if task.get('micro_spec_id') in completed_spec_ids:
+                last_completed_index = i
+
+        self.active_plan_cursor = last_completed_index + 1
+        logging.info(f"Recalculated and set plan cursor to resume at step {self.active_plan_cursor + 1}.")
 
     def start_new_project(self, project_name: str) -> str:
         """
@@ -918,7 +973,7 @@ class MasterOrchestrator:
 
             self.active_plan = dev_plan_list
             self.active_plan_cursor = 0
-            logging.info(f"Successfully loaded development plan with {len(dev_plan_list)} tasks.")
+            logging.info(f"Successfully loaded development plan with {len(dev_plan_list)} tasks. Starting at task 1.")
 
             self.set_phase("GENESIS")
             return True, "Plan approved! Starting development..."
@@ -930,49 +985,9 @@ class MasterOrchestrator:
     def set_phase(self, phase_name: str):
         """
         Sets the current project phase and automatically saves the new state.
-        Also handles loading the active plan when entering the GENESIS phase.
         """
         try:
             new_phase = FactoryPhase[phase_name]
-
-            # This block is the corrected logic.
-            # It now runs EVERY time the phase is set to GENESIS to ensure the plan is loaded.
-            if new_phase == FactoryPhase.GENESIS and self.project_id:
-                logging.info("Entering GENESIS phase. Loading development plan from database.")
-                self.active_plan = None # Reset plan by default
-                self.active_plan_cursor = 0
-
-                project_details = self.db_manager.get_project_by_id(self.project_id)
-                plan_text_from_db = project_details['development_plan_text'] if project_details else None
-
-                if plan_text_from_db:
-                    json_content_str = plan_text_from_db
-                    header_delimiter = f"\n{'-' * 50}\n\n"
-
-                    if header_delimiter in json_content_str:
-                        parts = json_content_str.split(header_delimiter, 1)
-                        if len(parts) > 1:
-                            json_content_str = parts[1]
-
-                    try:
-                        full_plan_data = json.loads(json_content_str)
-                        dev_plan_list = full_plan_data.get("development_plan")
-                        if dev_plan_list:
-                            self.active_plan = dev_plan_list
-                            all_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
-                            completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
-
-                            last_completed_index = -1
-                            for i, task in enumerate(self.active_plan):
-                                if task.get('micro_spec_id') in completed_spec_ids:
-                                    last_completed_index = i
-
-                            self.active_plan_cursor = last_completed_index + 1
-                            logging.info(f"Successfully loaded development plan. Resuming at task {self.active_plan_cursor + 1}/{len(self.active_plan)}.")
-
-                    except json.JSONDecodeError:
-                        logging.error(f"Failed to decode development plan for project {self.project_id}. The stored plan is not valid JSON.")
-                        self.active_plan = None
 
             non_dirtying_phases = [
                 FactoryPhase.IDLE,
@@ -994,15 +1009,53 @@ class MasterOrchestrator:
 
     def handle_proceed_action(self, progress_callback=None):
         """
-        Handles the logic for the Genesis Pipeline, checking for task type
-        before execution.
+        Handles the logic for the Genesis Pipeline, now with a separate 'fix mode'
+        track and specific handling for environment vs. code failures.
         """
+        # --- FIX MODE LOGIC ---
+        if self.is_in_fix_mode:
+            logging.info("--- In Fix Mode: Executing from fix plan. ---")
+            if not self.fix_plan or self.fix_plan_cursor >= len(self.fix_plan):
+                logging.info("Fix plan is now complete. Exiting fix mode and re-attempting original task.")
+                self.is_in_fix_mode = False
+                self.fix_plan = None
+                self.fix_plan_cursor = 0
+            else:
+                task = self.fix_plan[self.fix_plan_cursor]
+                component_name = task.get('component_name', 'Unnamed Fix Task')
+                logging.info(f"Executing FIX task {self.fix_plan_cursor + 1}/{len(self.fix_plan)} for component: {component_name}")
+                if progress_callback:
+                    progress_callback(f"Executing FIX task {self.fix_plan_cursor + 1}/{len(self.fix_plan)} for: {component_name}")
+
+                try:
+                    db = self.db_manager
+                    project_details = db.get_project_by_id(self.project_id)
+                    project_root_path = Path(project_details['project_root_folder'])
+
+                    self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
+                    self.fix_plan_cursor += 1
+                    return "Fix step complete."
+                except EnvironmentFailureException:
+                    logging.warning("Halting fix plan due to an unrecoverable environment failure.")
+                    return "Environment failure during fix. Escalated to PM."
+                except Exception as e:
+                    logging.error(f"A task within the fix plan failed for {component_name}. Error: {e}")
+                    self.escalate_for_manual_debug(str(e))
+                    return f"Error during fix execution: {e}"
+        # --- END OF FIX MODE LOGIC ---
+
+        # --- REGULAR PLAN LOGIC ---
         if self.current_phase != FactoryPhase.GENESIS:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
             return "No action taken."
 
         if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
-            logging.info("Development plan is complete. Transitioning to integration phase.")
+            logging.info("Development plan is complete.")
+            if self.is_executing_cr_plan:
+                logging.info("Completed a Change Request plan. Running post-implementation documentation update.")
+                self._run_post_implementation_doc_update()
+                self.is_executing_cr_plan = False
+
             if progress_callback: progress_callback("Development plan complete.")
             self.set_phase("INTEGRATION_AND_VERIFICATION")
             return "Development complete. Ready for Integration."
@@ -1021,16 +1074,19 @@ class MasterOrchestrator:
 
             if component_type in ["DB_MIGRATION_SCRIPT", "BUILD_SCRIPT_MODIFICATION", "CONFIG_FILE_UPDATE"]:
                 self._execute_declarative_modification_task(task, project_root_path, db, progress_callback)
-                # After pausing for the PM, immediately exit this function. The UI will update based on the new phase.
                 return "Paused for high-risk change approval."
-            else:
-                # For standard source code, execute the full pipeline.
-                self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
-                self.active_plan_cursor += 1
-                return "Step complete."
 
+            self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
+            self.active_plan_cursor += 1
+            return "Step complete."
+
+        except EnvironmentFailureException:
+            # This is a controlled stop. The phase was already set to DEBUG_PM_ESCALATION.
+            logging.warning("Halting Genesis pipeline due to an unrecoverable environment failure.")
+            return "Environment failure. Escalated to PM."
         except Exception as e:
-            logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}")
+            # This is for recoverable code failures that should trigger the debug loop.
+            logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}", exc_info=True)
             self.escalate_for_manual_debug(str(e))
             return f"Error during development: {e}"
 
@@ -1064,16 +1120,6 @@ class MasterOrchestrator:
         """
         Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
         """
-        # --- DIAGNOSTIC STEP 1: Pre-Execution Check ---
-        component_name = task.get("component_name")
-        logging.info(f"--- GENESIS DIAGNOSTICS for component: {component_name} ---")
-        existing_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
-        for art in existing_artifacts:
-            if art['artifact_name'] == component_name:
-                logging.warning(f"[!! DUPLICATE WARNING !!] An artifact named '{component_name}' already exists in the database before execution begins. Artifact ID: {art['artifact_id']}")
-        logging.info("--- Pre-Execution Check Complete ---")
-        # --- END DIAGNOSTIC ---
-
         component_name = task.get("component_name")
         if progress_callback: progress_callback(f"Executing source code generation for: {component_name}")
 
@@ -1084,21 +1130,18 @@ class MasterOrchestrator:
         coding_standard = project_details['coding_standard_text']
         target_language = project_details['technology_stack']
         test_command = project_details['test_execution_command']
-
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
         micro_spec_content = task.get("task_description")
 
         if progress_callback: progress_callback(f"Generating logic plan for {component_name}...")
-        # CORRECTED: Typo in class name fixed
         logic_agent = LogicAgent_AppTarget(llm_service=self.llm_service)
         code_agent = CodeAgent_AppTarget(llm_service=self.llm_service)
         review_agent = CodeReviewAgent(llm_service=self.llm_service)
         test_agent = TestAgent_AppTarget(llm_service=self.llm_service)
-
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
-        if progress_callback: progress_callback(f"Generating source code for {component_name}...")
 
+        if progress_callback: progress_callback(f"Generating source code for {component_name}...")
         style_guide_to_use = project_details['ux_spec_text'] or project_details['final_spec_text']
         source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, style_guide=style_guide_to_use)
 
@@ -1123,13 +1166,21 @@ class MasterOrchestrator:
 
         if progress_callback: progress_callback(f"Writing files, testing, and committing {component_name}...")
         build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
-        success, result_message = build_agent.build_and_commit_component(
+        status, result_message = build_agent.build_and_commit_component(
             task.get("component_file_path"), source_code,
             task.get("test_file_path"), unit_tests, test_command, self.llm_service
         )
 
-        if not success:
+        # --- THIS IS THE NEW LOGIC ---
+        if status == 'ENVIRONMENT_FAILURE':
+            logging.error(f"Environment failure for {component_name}: {result_message}")
+            self.task_awaiting_approval = {"failure_log": result_message, "is_env_failure": True}
+            self.set_phase("DEBUG_PM_ESCALATION")
+            raise EnvironmentFailureException(result_message) # Stop execution
+        elif status != 'SUCCESS':
+            # This is a code failure, which IS recoverable by the debug loop.
             raise Exception(f"BuildAndCommitAgent failed for {component_name}: {result_message}")
+        # --- END OF NEW LOGIC ---
 
         commit_hash = result_message.split(":")[-1].strip() if "New commit hash:" in result_message else "N/A"
 
@@ -1144,16 +1195,6 @@ class MasterOrchestrator:
             "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
             "micro_spec_id": task.get("micro_spec_id")
         })
-        # --- DIAGNOSTIC STEP 2: Post-Execution Log ---
-        logging.info(f"--- GENESIS DIAGNOSTICS for component: {component_name} (Post-Save) ---")
-        final_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
-        count = 0
-        for art in final_artifacts:
-            if art['artifact_name'] == component_name:
-                count += 1
-        logging.info(f"Found {count} artifact(s) named '{component_name}' in the database after saving.")
-        logging.info("--------------------------------------------------")
-        # --- END DIAGNOSTIC ---
 
     def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
         """
@@ -1708,11 +1749,10 @@ class MasterOrchestrator:
 
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
 
-            # This is the corrected line that now passes the tech_spec_text
             new_plan_str = planner_agent.create_refactoring_plan(
                 cr_details['description'],
                 project_details['final_spec_text'],
-                project_details['tech_spec_text'], # Added this argument
+                project_details['tech_spec_text'],
                 rowd_json,
                 context_package["source_code"]
             )
@@ -1723,6 +1763,10 @@ class MasterOrchestrator:
 
             self.active_plan = response_data
             self.active_plan_cursor = 0
+
+            # --- THIS IS THE NEW LINE ---
+            self.is_executing_cr_plan = True
+
             logging.info("Successfully generated new development plan from Change Request.")
             self.set_phase("GENESIS")
 
@@ -2562,20 +2606,20 @@ class MasterOrchestrator:
             self.project_name = history_record['project_name']
             self.project_root_path = history_record['project_root_folder']
 
-            # --- THIS IS THE FIX ---
-            # Eagerly load the development plan into memory as it's needed for the manual fix workflow.
             project_details_for_plan = db.get_project_by_id(project_id_to_load)
             if project_details_for_plan and project_details_for_plan['development_plan_text']:
                 try:
                     plan_json = self._get_json_from_document(project_details_for_plan['development_plan_text'])
                     self.active_plan = plan_json.get("development_plan", [])
                     logging.info("Successfully pre-loaded development plan into orchestrator state.")
+                    # --- THIS IS THE FIX ---
+                    # After loading the plan, immediately calculate the correct resume point.
+                    self._recalculate_plan_cursor_from_db()
                 except (json.JSONDecodeError, KeyError) as e:
                     logging.warning(f"Could not pre-load development plan during project load: {e}")
                     self.active_plan = None
             else:
                 self.active_plan = None
-            # --- END OF FIX ---
 
             self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
 
@@ -2602,10 +2646,11 @@ class MasterOrchestrator:
 
     def _plan_and_execute_fix(self, failure_log: str, context_package: dict) -> bool:
         """
-        Invokes the FixPlannerAgent and prepares the resulting plan for execution.
+        Invokes the FixPlannerAgent and loads the resulting plan into a separate
+        'fix_plan' track for execution.
         Returns True on success, False on failure.
         """
-        logging.info("Invoking FixPlannerAgent with rich context to generate a fix plan...")
+        logging.info("Invoking FixPlannerAgent to generate a fix plan...")
 
         if not self.llm_service:
             raise Exception("Cannot plan fix: LLM Service is not configured.")
@@ -2626,11 +2671,15 @@ class MasterOrchestrator:
             if not parsed_plan:
                 raise Exception("FixPlannerAgent returned an empty plan.")
 
-            # Load the new fix plan and transition to Genesis to execute it.
-            self.active_plan = parsed_plan
-            self.active_plan_cursor = 0
+            # --- THIS IS THE FIX ---
+            # Load the new plan into the separate fix track and activate fix mode.
+            self.fix_plan = parsed_plan
+            self.fix_plan_cursor = 0
+            self.is_in_fix_mode = True
+            # --- END OF FIX ---
+
             self.set_phase("GENESIS")
-            logging.info("Successfully generated a fix plan. Transitioning to GENESIS phase to apply the fix.")
+            logging.info(f"Successfully generated a fix plan with {len(parsed_plan)} steps. Entering fix mode.")
             return True
 
         except (json.JSONDecodeError, TypeError, ValueError) as e:

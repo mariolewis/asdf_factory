@@ -83,15 +83,35 @@ class GenesisPage(QWidget):
             self.genesis_complete.emit()
 
     def update_checkpoint_display(self):
-        """Updates the PM Checkpoint screen with the current progress."""
-        task = self.orchestrator.get_current_task_details()
-        total_tasks = len(self.orchestrator.active_plan) if self.orchestrator.active_plan else 0
-        cursor = self.orchestrator.active_plan_cursor
+        """
+        Updates the PM Checkpoint screen with the current progress, now fully
+        aware of the orchestrator's normal vs. fix mode.
+        """
+        details = self.orchestrator.get_current_task_details()
 
-        if self.orchestrator.active_plan and cursor < total_tasks:
-            progress_percent = int((cursor / total_tasks) * 100)
+        if details:
+            task = details.get("task", {})
+            cursor = details.get("cursor", 0)
+            total = details.get("total", 0)
+            is_fix = details.get("is_fix_mode", False)
+
+            # Handle plan completion display
+            if cursor >= total and total > 0:
+                progress_percent = 100
+                self.ui.nextTaskLabel.setText("All development tasks are complete.")
+                self.ui.proceedButton.setText("▶️ Proceed to Integration")
+            else:
+                progress_percent = int((cursor / total) * 100) if total > 0 else 0
+
+                mode_prefix = "FIX: " if is_fix else ""
+                task_name = task.get('component_name', 'Unnamed Task')
+
+                self.ui.nextTaskLabel.setText(f"Next task ({cursor + 1}/{total}): {mode_prefix}{task_name}")
+                self.ui.proceedButton.setText(f"▶️ Proceed with: {mode_prefix}{task_name}")
+
             self.ui.progressBar.setValue(progress_percent)
-            self.ui.nextTaskLabel.setText(f"Next component to build ({cursor + 1}/{total_tasks}): {task.get('component_name')}")
         else:
-            self.ui.progressBar.setValue(100)
-            self.ui.nextTaskLabel.setText("All development tasks are complete. Click 'Proceed' to begin integration.")
+            # Fallback for when no plan is loaded
+            self.ui.progressBar.setValue(0)
+            self.ui.nextTaskLabel.setText("No development plan loaded yet.")
+            self.ui.proceedButton.setText("▶️ Proceed")

@@ -573,26 +573,56 @@ class ASDFMainWindow(QMainWindow):
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "DEBUG_PM_ESCALATION":
-            failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No details.")
-            details_text = (
-                "The automated debug procedure could not resolve the following issue:\n\n"
-                f"{failure_log}\n\n"
-                "--- How to proceed ---\n"
-                "• Retry Automated Fix: Runs the entire analysis and fix cycle again.\n"
-                "• Pause for Manual Fix: Exports the project's current state and closes it, allowing you to fix the code in an external editor. You can then reload the project to commit your fix.\n"
-                "• Ignore Bug & Proceed: Marks the failing component as a 'KNOWN_ISSUE' in the CR/Bug register and continues with the next task in the plan."
-            )
-            self.decision_page.configure(
-                header="Debug Escalation",
-                instruction="The factory has been unable to fix a persistent bug. Please choose how to proceed.",
-                details=details_text,
-                option1_text="Retry Automated Fix",
-                option2_text="Pause for Manual Fix",
-                option3_text="Ignore Bug & Proceed"
-            )
-            self.decision_page.option1_selected.connect(self.on_decision_option1)
-            self.decision_page.option2_selected.connect(self.on_decision_option2)
-            self.decision_page.option3_selected.connect(self.on_decision_option3)
+            task_details = self.orchestrator.task_awaiting_approval or {}
+            failure_log = task_details.get("failure_log", "No details provided.")
+            is_env_failure = task_details.get("is_env_failure", False)
+
+            # Disconnect previous signals to avoid multiple connections
+            try:
+                self.decision_page.option1_selected.disconnect()
+                self.decision_page.option2_selected.disconnect()
+                self.decision_page.option3_selected.disconnect()
+            except (RuntimeError, TypeError):
+                pass # Ignore if not connected
+
+            if is_env_failure:
+                # Configure the UI specifically for an Environment Failure
+                details_text = (
+                    "The factory has encountered an unrecoverable ENVIRONMENT error. This is typically caused by a missing tool or a misconfiguration in your system's PATH (e.g., 'pytest' is not installed or accessible).\n\n"
+                    f"--- ERROR LOG ---\n{failure_log}\n\n"
+                    "Please fix the environment issue externally. Once you believe it is resolved, you can retry the operation."
+                )
+                self.decision_page.configure(
+                    header="Environment Failure",
+                    instruction="The process is paused. Please resolve the environment issue.",
+                    details=details_text,
+                    option1_text="I have fixed the issue, Retry",
+                    option2_text="Stop & Export Project"
+                )
+                self.decision_page.option1_selected.connect(self.on_decision_option1)
+                self.decision_page.option2_selected.connect(self.on_stop_export_project)
+            else:
+                # This is the original logic for a Code Failure
+                details_text = (
+                    "The automated debug procedure could not resolve the following issue after multiple attempts:\n\n"
+                    f"{failure_log}\n\n"
+                    "--- How to proceed ---\n"
+                    "• Retry Automated Fix: Runs the entire analysis and fix cycle again.\n"
+                    "• Pause for Manual Fix: Exports the project's current state and closes it, allowing you to fix the code in an external editor.\n"
+                    "• Ignore Bug & Proceed: Marks the failing component as a 'KNOWN_ISSUE' and continues with the next task."
+                )
+                self.decision_page.configure(
+                    header="Debug Escalation",
+                    instruction="The factory has been unable to fix a persistent bug. Please choose how to proceed.",
+                    details=details_text,
+                    option1_text="Retry Automated Fix",
+                    option2_text="Pause for Manual Fix",
+                    option3_text="Ignore Bug & Proceed"
+                )
+                self.decision_page.option1_selected.connect(self.on_decision_option1)
+                self.decision_page.option2_selected.connect(self.on_decision_option2)
+                self.decision_page.option3_selected.connect(self.on_decision_option3)
+
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":

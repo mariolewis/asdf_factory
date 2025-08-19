@@ -65,10 +65,11 @@ class BuildAndCommitAgentAppTarget:
 
         return path
 
-    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[bool, str]:
+    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[str, str]:
         """
-        Writes the component and its tests, runs all tests using the
-        VerificationAgent, and commits on success.
+        Writes files, runs tests, and commits on success.
+        Returns a tuple of (status, message), where status is 'SUCCESS',
+        'CODE_FAILURE', 'ENVIRONMENT_FAILURE', or 'AGENT_ERROR'.
         """
         try:
             sanitized_component_path = self._sanitize_path(component_path_str)
@@ -80,7 +81,6 @@ class BuildAndCommitAgentAppTarget:
                 component_path = self.repo_path / sanitized_component_path
                 component_path.parent.mkdir(parents=True, exist_ok=True)
                 component_path.write_text(component_code, encoding='utf-8')
-                # Use the sanitized string path for Git, not the Path object
                 files_to_commit.append(str(sanitized_component_path))
                 logging.info(f"Wrote source code to {component_path}")
 
@@ -88,7 +88,6 @@ class BuildAndCommitAgentAppTarget:
                 test_path = self.repo_path / sanitized_test_path
                 test_path.parent.mkdir(parents=True, exist_ok=True)
                 test_path.write_text(test_code, encoding='utf-8')
-                # Use the sanitized string path for Git
                 files_to_commit.append(str(sanitized_test_path))
                 logging.info(f"Wrote unit tests to {test_path}")
 
@@ -97,12 +96,13 @@ class BuildAndCommitAgentAppTarget:
             status, test_output = verification_agent.run_all_tests(self.repo_path, test_command)
 
             if status != 'SUCCESS':
-                logging.error("Unit tests failed for new component. Aborting commit.")
-                return False, f"Unit tests failed:\n{test_output}"
+                logging.error(f"Test run failed with status {status}. Aborting commit.")
+                # Return the specific status received from the verification agent
+                return status, test_output
 
             if not files_to_commit:
                 logging.warning("No files were written to disk for this component, but tests passed. Skipping commit.")
-                return True, "Tests passed, but no files were generated to commit."
+                return "SUCCESS", "Tests passed, but no files were generated to commit."
 
             component_name = Path(files_to_commit[0]).name
             commit_message = f"feat: Add component {component_name} and unit tests"
@@ -112,12 +112,12 @@ class BuildAndCommitAgentAppTarget:
                 raise Exception(f"Git commit failed after tests passed: {commit_result}")
 
             logging.info(f"Successfully tested and committed component {component_name}.")
-            return True, commit_result
+            return "SUCCESS", commit_result
 
         except Exception as e:
             error_message = f"An unexpected error occurred in build_and_commit_component: {e}"
             logging.error(error_message, exc_info=True)
-            return False, error_message
+            return "AGENT_ERROR", error_message
 
     def run_command(self, command_to_run: str) -> tuple[bool, str]:
         """

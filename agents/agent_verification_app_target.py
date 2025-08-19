@@ -62,10 +62,6 @@ class VerificationAgent_AppTarget:
         """
         Executes the entire test suite for the project using a provided command.
 
-        Args:
-            project_root (str | Path): The root directory of the target project.
-            test_command_str (str): The specific command to execute to run all tests.
-
         Returns:
             A tuple containing a status string ('SUCCESS', 'CODE_FAILURE',
             'ENVIRONMENT_FAILURE') and the test runner output.
@@ -82,6 +78,8 @@ class VerificationAgent_AppTarget:
         logging.info(f"Executing verification command: '{test_command_str}'")
 
         try:
+            # Use shell=True for Windows compatibility with commands like 'pytest'
+            # that might be in the PATH but not direct executables.
             result = subprocess.run(
                 test_command_str,
                 shell=True,
@@ -91,6 +89,15 @@ class VerificationAgent_AppTarget:
                 check=False
             )
             output = result.stdout + "\n" + result.stderr
+
+            # --- THIS IS THE FIX ---
+            # Check for common "command not found" messages to identify an Environment Failure.
+            # 127 is a common exit code for "command not found" on Linux/macOS.
+            if result.returncode == 127 or "is not recognized" in output or "command not found" in output:
+                logging.error(f"Environment Failure: Test command '{test_command_str}' not found.")
+                return 'ENVIRONMENT_FAILURE', output
+            # --- END OF FIX ---
+
             logging.info(f"Verification execution finished with exit code: {result.returncode}")
 
             if result.returncode == 0:
