@@ -1994,114 +1994,76 @@ class MasterOrchestrator:
 
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
-        Initiates the multi-tiered triage and debug process.
+        Initiates a multi-attempt, iterative triage and debug process that
+        consults the Knowledge Base.
         """
-        logging.info("A failure has triggered the debugging pipeline.")
+        logging.info("A failure has triggered the iterative debugging pipeline.")
 
         if is_functional_bug:
             self._plan_fix_from_description(failure_log)
             return
 
-        self.debug_attempt_counter += 1
-        logging.info(f"Technical debug attempt counter is now: {self.debug_attempt_counter}")
+        db = self.db_manager
+        max_attempts = int(db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2")
 
-        try:
-            db = self.db_manager
-            max_attempts_str = db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2"
-            max_attempts = int(max_attempts_str)
+        for attempt in range(max_attempts):
+            logging.info(f"--- Automated Debug Attempt {attempt + 1} of {max_attempts} ---")
 
-            if self.debug_attempt_counter > max_attempts:
-                logging.warning(f"Automated debug attempts have exceeded the limit of {max_attempts}. Escalating to PM.")
-                self.task_awaiting_approval = {"failure_log": failure_log}
-                self.set_phase("DEBUG_PM_ESCALATION")
-                return
-
-            if not self.llm_service:
-                raise Exception("Cannot proceed with debugging: LLM Service is not configured.")
-
-            project_details = db.get_project_by_id(self.project_id)
-            if not project_details or not project_details['project_root_folder']:
-                raise FileNotFoundError("Project root folder not found for debugging.")
-
-            project_root_path = Path(project_details['project_root_folder'])
-
+            # Step 1: Analyze and consult Knowledge Base first
             triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
+            # Pass empty code for initial analysis; the agent's KB query relies on the error log tags
+            hypothesis = triage_agent.analyze_and_hypothesize(failure_log, "")
+
+            if hypothesis and not hypothesis.startswith("Error:"):
+                logging.info(f"TriageAgent formed an initial hypothesis: {hypothesis[:150]}...")
+                # Attempt to plan and execute a fix based on the hypothesis alone
+                if self._plan_and_execute_fix(hypothesis, {}):
+                    logging.info("Automated debug was successful based on initial hypothesis (or KB).")
+                    self.debug_attempt_counter = 0
+                    return
+
+            # Step 2: If KB/initial analysis fails, proceed with tiered context gathering
+            project_details = db.get_project_by_id(self.project_id)
+            project_root_path = Path(project_details['project_root_folder'])
             context_package = {}
 
-            logging.info("Applying Adaptive Context Strategy for debugging...")
-            limit_str = db.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2000000"
-            context_limit = int(limit_str)
+            # Tier 1: Stack Trace
+            file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
+            if file_paths_from_trace:
+                for file_path in file_paths_from_trace:
+                    full_path = project_root_path / file_path
+                    if full_path.exists():
+                        context_package[file_path] = full_path.read_text(encoding='utf-8')
 
-            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-            all_source_files = {}
-            total_chars = 0
+            # Tier 2: Apex Trace (if stack trace yields no context)
+            if not context_package:
+                apex_file_name = project_details.get('apex_executable_name')
+                failing_task = self.get_current_task_details()
+                failing_component_name = failing_task.get('component_name') if failing_task else None
+                all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+                all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
 
-            for artifact in all_artifacts:
-                file_path_str = artifact['file_path']
-                if file_path_str and file_path_str.lower() != 'n/a':
-                    full_path = project_root_path / file_path_str
-                    if full_path.exists() and full_path.is_file():
-                        try:
-                            content = full_path.read_text(encoding='utf-8')
-                            all_source_files[file_path_str] = content
-                            total_chars += len(content)
-                        except Exception as e:
-                            logging.warning(f"Could not read file for debug context: {full_path}. Error: {e}")
-
-            if total_chars > 0 and total_chars < context_limit:
-                logging.info(f"Full project source code ({total_chars:,} chars) fits within the context limit ({context_limit:,} chars). Using rich context for triage.")
-                context_package = all_source_files
-            else:
-                if total_chars > 0:
-                     logging.warning(f"Full project source ({total_chars:,} chars) exceeds limit ({context_limit:,} chars). Falling back to heuristic triage.")
-
-                logging.info("Attempting Tier 1 analysis: Parsing stack trace.")
-                file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
-
-                if file_paths_from_trace:
-                    logging.info(f"Tier 1 Success: Found {len(file_paths_from_trace)} files in stack trace.")
-                    for file_path in file_paths_from_trace:
+                if apex_file_name and failing_component_name:
+                    file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
+                    file_paths_from_apex = json.loads(file_paths_from_trace_json)
+                    for file_path in file_paths_from_apex:
                         full_path = project_root_path / file_path
                         if full_path.exists():
                             context_package[file_path] = full_path.read_text(encoding='utf-8')
-                        else:
-                            logging.warning(f"File '{file_path}' from stack trace not found at '{full_path}'.")
 
-                if not context_package:
-                    logging.warning("Tier 1 Failed. Proceeding to Tier 2 analysis: Apex Trace.")
-                    apex_file_name = project_details['apex_executable_name'] if 'apex_executable_name' in project_details.keys() and project_details['apex_executable_name'] else None
-                    failing_task = self.get_current_task_details()
-                    failing_component_name = failing_task.get('component_name') if failing_task else None
-
-                    if apex_file_name and failing_component_name:
-                        all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
-                        file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
-                        file_paths_from_trace = json.loads(file_paths_from_trace_json)
-
-                        if file_paths_from_trace:
-                            logging.info(f"Tier 2 Success: Found {len(file_paths_from_trace)} files in apex trace.")
-                            for file_path in file_paths_from_trace:
-                                full_path = project_root_path / file_path
-                                if full_path.exists():
-                                    context_package[file_path] = full_path.read_text(encoding='utf-8')
-                                else:
-                                    logging.warning(f"File '{file_path}' from apex trace not found at '{full_path}'.")
-                    else:
-                        logging.warning("Tier 2 skipped: Apex executable name or failing component name not available.")
-
+            # Step 3: Attempt to fix if any context was gathered
             if context_package:
-                logging.info("Automated Triage Success: Context gathered. Proceeding to plan a fix.")
-                self._plan_and_execute_fix(failure_log, context_package)
-                return
-            else:
-                logging.warning("Automated Triage (Tiers 1 & 2) failed to gather context. Escalating to PM for Tier 3.")
-                self.task_awaiting_approval = {"failure_log": failure_log}
-                self.set_phase("AWAITING_PM_TRIAGE_INPUT")
+                if self._plan_and_execute_fix(failure_log, context_package):
+                    logging.info("Automated debug was successful based on tiered triage context.")
+                    self.debug_attempt_counter = 0
+                    return
 
-        except Exception as e:
-            logging.error(f"A critical error occurred during the triage process: {e}")
-            self.task_awaiting_approval = {"failure_log": str(e)}
-            self.set_phase("DEBUG_PM_ESCALATION")
+            logging.warning(f"Debug attempt {attempt + 1} failed. Trying again if attempts remain...")
+
+        # If the loop completes without a successful fix, escalate to the PM
+        logging.warning(f"All {max_attempts} automated debug attempts have failed. Escalating to PM.")
+        self.task_awaiting_approval = {"failure_log": failure_log}
+        self.set_phase("DEBUG_PM_ESCALATION")
 
     def handle_pm_triage_input(self, pm_error_description: str):
         """
@@ -2638,10 +2600,10 @@ class MasterOrchestrator:
             logging.error(f"Failed to retrieve project history: {e}")
             return []
 
-    def _plan_and_execute_fix(self, failure_log: str, context_package: dict):
+    def _plan_and_execute_fix(self, failure_log: str, context_package: dict) -> bool:
         """
-        A helper method that invokes the FixPlannerAgent and prepares the
-        resulting plan for execution by the Genesis pipeline.
+        Invokes the FixPlannerAgent and prepares the resulting plan for execution.
+        Returns True on success, False on failure.
         """
         logging.info("Invoking FixPlannerAgent with rich context to generate a fix plan...")
 
@@ -2657,7 +2619,6 @@ class MasterOrchestrator:
         )
 
         try:
-            # FIX: More robust check for a specific error structure
             parsed_plan = json.loads(fix_plan_str)
             if isinstance(parsed_plan, list) and len(parsed_plan) > 0 and parsed_plan[0].get("error"):
                 raise Exception(f"FixPlannerAgent failed to generate a plan: {parsed_plan[0]['error']}")
@@ -2665,13 +2626,16 @@ class MasterOrchestrator:
             if not parsed_plan:
                 raise Exception("FixPlannerAgent returned an empty plan.")
 
+            # Load the new fix plan and transition to Genesis to execute it.
             self.active_plan = parsed_plan
             self.active_plan_cursor = 0
             self.set_phase("GENESIS")
             logging.info("Successfully generated a fix plan. Transitioning to GENESIS phase to apply the fix.")
+            return True
 
-        except (json.JSONDecodeError, TypeError) as e:
-            raise Exception(f"FixPlannerAgent returned invalid JSON. Error: {e}. Response was: {fix_plan_str}")
+        except (json.JSONDecodeError, TypeError, ValueError) as e:
+            logging.error(f"Failed to create or parse a valid fix plan. Error: {e}. Response was: {fix_plan_str}")
+            return False
 
     def _build_and_validate_context_package(self, core_documents: dict, source_code_files: dict) -> dict:
         """
