@@ -821,9 +821,6 @@ class ASDFMainWindow(QMainWindow):
                 success = True
             elif request_type == "BUG_REPORT":
                 success = self.orchestrator.save_bug_report(description, severity)
-            elif request_type == "SPEC_CORRECTION":
-                QMessageBox.information(self, "Not Implemented", "The full workflow for 'Specification Correction' will be implemented separately.")
-                return
 
             if success:
                 QMessageBox.information(self, "Success", f"{request_type.replace('_', ' ').title()} has been successfully logged.")

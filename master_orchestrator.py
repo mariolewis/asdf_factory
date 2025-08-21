@@ -1628,69 +1628,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to save new change request: {e}")
 
-    def save_spec_correction_cr(self, new_spec_text: str):
-        """
-        Saves a 'Specification Correction' CR, runs an immediate impact analysis
-        and auto-generates a linked CR for the required code changes.
-        """
-        if not self.project_id:
-            logging.error("Cannot save spec correction; no active project.")
-            return
-
-        try:
-            if not self.llm_service:
-                raise Exception("Cannot run impact analysis: LLM Service is not configured.")
-
-            db = self.db_manager
-            project_details = db.get_project_by_id(self.project_id)
-            original_spec_text = project_details['final_spec_text']
-
-            spec_cr_description = "Correction to Application Specification. See linked CR for code implementation."
-            spec_cr_id = db.add_change_request(
-                project_id=self.project_id,
-                description=spec_cr_description,
-                request_type='SPEC_CORRECTION'
-            )
-            db.update_cr_status(spec_cr_id, "COMPLETED")
-
-            db.update_project_field(self.project_id, "final_spec_text", new_spec_text)
-            logging.info(f"Saved new specification text for CR-{spec_cr_id}.")
-
-            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-            rowd_json = json.dumps([dict(row) for row in all_artifacts])
-
-            cr_desc_for_agent = (
-                "Analyze the difference between the 'Original Specification' and the 'New Specification' "
-                "to identify the necessary code changes. The 'New Specification' is the source of truth."
-                f"\n\n--- Original Specification ---\n{original_spec_text}"
-                f"\n\n--- New Specification ---\n{new_spec_text}"
-            )
-
-            impact_agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
-            _, summary, impacted_ids = impact_agent.analyze_impact(
-                change_request_desc=cr_desc_for_agent,
-                final_spec_text=new_spec_text,
-                rowd_json=rowd_json
-            )
-
-            if summary:
-                code_cr_description = (
-                    f"Auto-generated CR to implement changes for Specification Correction CR-{spec_cr_id}.\n\n"
-                    f"Analysis Summary: {summary}"
-                )
-                db.add_linked_change_request(
-                    project_id=self.project_id,
-                    description=code_cr_description,
-                    linked_cr_id=spec_cr_id
-                )
-                logging.info(f"Auto-generated linked code implementation CR for Spec CR-{spec_cr_id}.")
-
-            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
-
-        except Exception as e:
-            logging.error(f"Failed to process specification correction CR: {e}")
-            self.set_phase("RAISING_CHANGE_REQUEST")
-
     def handle_report_bug_action(self):
         """
         Transitions the factory into the state for reporting a new bug.

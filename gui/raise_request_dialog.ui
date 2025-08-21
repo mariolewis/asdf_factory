@@ -36,17 +36,10 @@
       <item>
        <widget class="QRadioButton" name="crRadioButton">
         <property name="text">
-         <string>Functional Enhancement</string>
+         <string>Change Request</string>
         </property>
         <property name="checked">
          <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QRadioButton" name="specRadioButton">
-        <property name="text">
-         <string>Specification Correction</string>
         </property>
        </widget>
       </item>

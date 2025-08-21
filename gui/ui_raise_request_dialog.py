@@ -44,11 +44,6 @@ class Ui_RaiseRequestDialog(object):
 
         self.horizontalLayout.addWidget(self.crRadioButton)
 
-        self.specRadioButton = QRadioButton(self.typeGroupBox)
-        self.specRadioButton.setObjectName(u"specRadioButton")
-
-        self.horizontalLayout.addWidget(self.specRadioButton)
-
         self.bugRadioButton = QRadioButton(self.typeGroupBox)
         self.bugRadioButton.setObjectName(u"bugRadioButton")
 
@@ -104,8 +99,7 @@ class Ui_RaiseRequestDialog(object):
         RaiseRequestDialog.setWindowTitle(QCoreApplication.translate("RaiseRequestDialog", u"Raise New Request", None))
         self.headerLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Create New Request", None))
         self.typeGroupBox.setTitle(QCoreApplication.translate("RaiseRequestDialog", u"Request Type", None))
-        self.crRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Functional Enhancement", None))
-        self.specRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Specification Correction", None))
+        self.crRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Change Request", None))
         self.bugRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Bug Report", None))
         self.descriptionLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Description:", None))
         self.severityLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Severity:", None))

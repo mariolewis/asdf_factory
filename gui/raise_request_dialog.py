@@ -14,8 +14,6 @@ class RaiseRequestDialog(QDialog):
 
         if initial_request_type == "BUG_REPORT":
             self.ui.bugRadioButton.setChecked(True)
-        elif initial_request_type == "SPEC_CORRECTION":
-            self.ui.specRadioButton.setChecked(True)
         else: # Default to Change Request
             self.ui.crRadioButton.setChecked(True)
 
@@ -29,7 +27,6 @@ class RaiseRequestDialog(QDialog):
         self.ui.buttonBox.rejected.connect(self.reject)
         self.ui.bugRadioButton.toggled.connect(self._update_ui_for_type)
         self.ui.crRadioButton.toggled.connect(self._update_ui_for_type)
-        self.ui.specRadioButton.toggled.connect(self._update_ui_for_type)
 
     def _update_ui_for_type(self):
         """Shows or hides the severity dropdown based on the selected request type."""
@@ -50,8 +47,6 @@ class RaiseRequestDialog(QDialog):
         request_type = "CHANGE_REQUEST"
         if self.ui.bugRadioButton.isChecked():
             request_type = "BUG_REPORT"
-        elif self.ui.specRadioButton.isChecked():
-            request_type = "SPEC_CORRECTION"
 
         return {
             "request_type": request_type,
