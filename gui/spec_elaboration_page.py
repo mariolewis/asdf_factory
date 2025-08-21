@@ -53,10 +53,11 @@ class SpecElaborationPage(QWidget):
         self.ui.processTextButton.clicked.connect(self.run_generation_task)
         self.ui.browseFilesButton.clicked.connect(self.on_browse_files_clicked)
         self.ui.processFilesButton.clicked.connect(self.run_generation_task)
-        self.ui.confirmAnalysisButton.clicked.connect(self.run_ai_analysis_task)
+        self.ui.confirmAnalysisButton.clicked.connect(self.on_confirm_analysis_clicked)
         self.ui.cancelProjectButton.clicked.connect(self.on_cancel_project_clicked)
         self.ui.submitFeedbackButton.clicked.connect(self.run_refinement_task)
         self.ui.approveSpecButton.clicked.connect(self.on_approve_spec_clicked)
+        self.ui.submitForAnalysisButton.clicked.connect(self.run_refinement_and_analysis_task)
 
     def _set_ui_busy(self, is_busy):
         self.setEnabled(not is_busy)
@@ -139,9 +140,6 @@ class SpecElaborationPage(QWidget):
                 return
         self._execute_task(self._task_generate_and_analyze, self._handle_analysis_result, input_data)
 
-    def run_ai_analysis_task(self):
-        self._execute_task(self._task_run_ai_analysis, self._handle_ai_analysis_result, self.refinement_iteration_count)
-
     def run_refinement_task(self):
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
         if not feedback:
@@ -167,12 +165,66 @@ class SpecElaborationPage(QWidget):
         finally:
             self._set_ui_busy(False)
 
-    def _handle_ai_analysis_result(self, ai_issues):
+    def on_confirm_analysis_clicked(self):
+        """
+        Handles the user confirming the complexity analysis. This transitions
+        to the new full-width PM review page.
+        """
+        # The spec_draft was stored when the initial analysis was run.
+        # Now, we display it in the new full-width editor.
+        self.ui.pmReviewTextEdit.setText(self.spec_draft)
+        self.ui.pmFeedbackTextEdit.clear()
+        self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
+        self.state_changed.emit()
+
+    def run_refinement_and_analysis_task(self):
+        """
+        Gathers PM input from the first review, then runs the combined
+        refinement and analysis task in the background.
+        """
+        current_draft = self.ui.pmReviewTextEdit.toPlainText()
+        feedback = self.ui.pmFeedbackTextEdit.toPlainText().strip()
+
+        # Feedback is optional, but the draft cannot be empty
+        if not current_draft.strip():
+            QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")
+            return
+
+        self._execute_task(self._task_refine_and_analyze, self._handle_refinement_and_analysis_result, current_draft, feedback)
+
+    def _task_refine_and_analyze(self, current_draft, feedback, **kwargs):
+        """
+        Background task to first refine the spec, then identify issues in the refined version.
+        """
+        spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
+
+        # Step 1: Refine the draft based on PM's edits and feedback.
+        # In this initial refinement, there are no prior "AI Issues", so we pass an empty string.
+        refined_draft = spec_agent.refine_specification(current_draft, "", feedback)
+
+        # Step 2: Analyze the newly refined draft for issues. This is the first analysis iteration.
+        ai_issues = spec_agent.identify_potential_issues(refined_draft, iteration_count=1)
+
+        return refined_draft, ai_issues
+
+    def _handle_refinement_and_analysis_result(self, result_tuple):
+        """
+        Handles the result of the combined task, populating the final split-screen review page.
+        """
         try:
+            refined_draft, ai_issues = result_tuple
+
+            # Store the results for the next refinement cycle
+            self.spec_draft = refined_draft
             self.ai_issues = ai_issues
+            self.refinement_iteration_count = 2 # Set counter to 2 for the *next* refinement
+
+            # Populate the final split-screen review page
             self.ui.specDraftTextEdit.setText(self.spec_draft)
             self.ui.aiIssuesTextEdit.setText(self.ai_issues)
             self.ui.feedbackTextEdit.clear()
+
+            # Switch to the final review page
             self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
             self.state_changed.emit()
         finally:
@@ -241,10 +293,6 @@ class SpecElaborationPage(QWidget):
         full_spec_draft = self.orchestrator.prepend_standard_header(spec_draft_content, "Application Specification")
 
         return analysis_result, full_spec_draft
-
-    def _task_run_ai_analysis(self, iteration_count, **kwargs):
-        spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        return spec_agent.identify_potential_issues(self.spec_draft, iteration_count)
 
     def _task_refine_spec(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)

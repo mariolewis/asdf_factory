@@ -1007,6 +1007,17 @@ class MasterOrchestrator:
         except KeyError:
             logging.error(f"Attempted to set an invalid phase: {phase_name}")
 
+    def update_current_step_and_save_state(self, current_step: str, state_details: dict):
+        """
+        Updates the granular step within a phase and immediately saves the full
+        application state to the database.
+        """
+        logging.info(f"Updating current step to: {current_step}")
+        self.current_step = current_step
+        self.task_awaiting_approval = state_details
+        self.is_project_dirty = True
+        self._save_current_state()
+
     def handle_proceed_action(self, progress_callback=None):
         """
         Handles the logic for the Genesis Pipeline, now with a separate 'fix mode'
