@@ -75,16 +75,17 @@ class SpecClarificationAgent:
             logging.error(f"LLM service call failed during spec expansion: {e}")
             raise
 
-    def identify_potential_issues(self, spec_text: str) -> str:
+    def identify_potential_issues(self, spec_text: str, iteration_count: int) -> str:
         """
-        Analyzes a specification draft to identify ambiguities.
+        Analyzes a specification draft to identify ambiguities, narrowing focus on later iterations.
         """
         kb_prefix = ""
-        logging.info("SpecClarificationAgent: Querying Knowledge Base for similar specs.")
+        logging.info(f"SpecClarificationAgent: Identifying issues for iteration {iteration_count}.")
+
+        # Knowledge base query remains the same
         tags = self._extract_tags_from_spec(spec_text)
         if tags:
             try:
-                # Corrected: Direct call to the db_manager
                 kb_results = self.db_manager.query_kb_by_tags(tags)
                 if kb_results:
                     solution = kb_results[0]['solution']
@@ -93,16 +94,24 @@ class SpecClarificationAgent:
             except Exception as e:
                 logging.warning(f"SpecClarificationAgent: Failed to query Knowledge Base. Error: {e}")
 
-        logging.info("SpecClarificationAgent: Calling LLM service to identify potential spec issues...")
+        convergence_directive = ""
+        if iteration_count > 1:
+            convergence_directive = textwrap.dedent("""
+            **IMPORTANT - CONVERGENCE DIRECTIVE:**
+            This is refinement iteration {iteration_count}. You MUST focus ONLY on high or medium-severity issues such as logical contradictions, missing critical functionality, or significant ambiguities. IGNORE low-severity stylistic points or trivial suggestions.
+            """)
+
         prompt = textwrap.dedent(f"""
             You are an expert requirements analyst. Your task is to review the following software specification draft.
             Your goal is to identify ambiguities and guide the Product Manager to a clear, actionable resolution.
+
+            {convergence_directive}
 
             **MANDATORY INSTRUCTIONS:**
             1.  Identify any ambiguities, contradictions, underspecified features, or missing information.
             2.  For each issue you identify, you MUST propose 1-2 concrete potential solutions or clarifying options for the Product Manager to consider.
             3.  Structure your response as a numbered list. For each item, clearly state the "Issue" and then provide the "Proposed Solutions".
-            4.  If you find no issues, please state that the specification appears to be clear and complete.
+            4.  If you find no issues, your entire response MUST be the single phrase: "No significant issues found."
 
             **The specification draft is:**
             ---
@@ -135,9 +144,14 @@ class SpecClarificationAgent:
 
         prompt = textwrap.dedent(f"""
             As an expert software architect, your task is to revise a software specification draft.
-            You have the original draft, a list of issues previously identified with it, and a set of clarifications from the Product Manager (PM).
+            You have the current draft, a list of issues previously identified with it, and a set of clarifications from the Product Manager (PM).
 
-            Your goal is to integrate the PM's clarifications to resolve the identified issues and produce a new, more complete, and unambiguous version of the specification. Do not omit any parts of the original specification that were not discussed; only modify the parts that are affected by the clarifications. Ensure the new version is a complete, standalone document.
+            Your goal is to integrate the PM's clarifications to resolve the identified issues and produce a new, more complete, and unambiguous version of the specification.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
+            2.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's clarifications.
+            3.  **Complete Document**: Ensure the new version is a complete, standalone document including the preserved header.
             {fallback_instruction}
             **Current Specification Draft:**
             ---

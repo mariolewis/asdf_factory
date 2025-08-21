@@ -2,6 +2,7 @@
 
 import logging
 import json
+import re
 from datetime import datetime
 import os
 from pathlib import Path
@@ -26,6 +27,7 @@ class SpecElaborationPage(QWidget):
         self.spec_draft = None
         self.selected_files = []
         self.ai_issues = ""
+        self.refinement_iteration_count = 1
 
         self.ui = Ui_SpecElaborationPage()
         self.ui.setupUi(self)
@@ -38,6 +40,7 @@ class SpecElaborationPage(QWidget):
         self.spec_draft = None
         self.selected_files = []
         self.ai_issues = ""
+        self.refinement_iteration_count = 1
         self.ui.briefDescriptionTextEdit.clear()
         self.ui.uploadPathLineEdit.clear()
         self.ui.analysisResultTextEdit.clear()
@@ -137,7 +140,7 @@ class SpecElaborationPage(QWidget):
         self._execute_task(self._task_generate_and_analyze, self._handle_analysis_result, input_data)
 
     def run_ai_analysis_task(self):
-        self._execute_task(self._task_run_ai_analysis, self._handle_ai_analysis_result)
+        self._execute_task(self._task_run_ai_analysis, self._handle_ai_analysis_result, self.refinement_iteration_count)
 
     def run_refinement_task(self):
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
@@ -183,6 +186,7 @@ class SpecElaborationPage(QWidget):
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Draft has been updated.")
             self.state_changed.emit()
+            self.refinement_iteration_count += 1
         finally:
             self._set_ui_busy(False)
 
@@ -208,7 +212,7 @@ class SpecElaborationPage(QWidget):
 
     def _task_generate_and_analyze(self, input_data, **kwargs):
         """
-        Saves the user's brief, generates the spec draft, and analyzes it.
+        Saves the user's brief, generates the spec draft, analyzes it, and adds the standard header.
         """
         if isinstance(input_data, list):
             self.orchestrator.save_uploaded_brief_files(input_data)
@@ -223,22 +227,38 @@ class SpecElaborationPage(QWidget):
             raise Exception("No text could be extracted from the provided input.")
 
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        spec_draft = spec_agent.expand_brief_description(initial_text)
+        spec_draft_content = spec_agent.expand_brief_description(initial_text)
 
         scoping_agent = ProjectScopingAgent(self.orchestrator.llm_service)
-        analysis_result = scoping_agent.analyze_complexity(spec_draft)
+        analysis_result = scoping_agent.analyze_complexity(spec_draft_content)
         if "error" in analysis_result:
             raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
 
         analysis_json_str = json.dumps(analysis_result)
         self.orchestrator.finalize_and_save_complexity_assessment(analysis_json_str)
 
-        return analysis_result, spec_draft
+        # Add the header to the raw draft before returning it to the UI
+        full_spec_draft = self.orchestrator.prepend_standard_header(spec_draft_content, "Application Specification")
 
-    def _task_run_ai_analysis(self, **kwargs):
+        return analysis_result, full_spec_draft
+
+    def _task_run_ai_analysis(self, iteration_count, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        return spec_agent.identify_potential_issues(self.spec_draft)
+        return spec_agent.identify_potential_issues(self.spec_draft, iteration_count)
 
     def _task_refine_spec(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        return spec_agent.refine_specification(current_draft, self.ai_issues, feedback)
+
+        # Get the refined content from the agent
+        refined_draft = spec_agent.refine_specification(current_draft, self.ai_issues, feedback)
+
+        # Reliably update the date in the header using Python
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        # This MORE ROBUST regex finds the "Date: " line and replaces the rest of the line
+        date_updated_draft = re.sub(
+            r"(Date: ).*",
+            rf"\g{current_date}",
+            refined_draft
+        )
+
+        return date_updated_draft

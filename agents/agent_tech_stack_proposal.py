@@ -88,8 +88,9 @@ class TechStackProposalAgent:
             You are a senior Solutions Architect revising a document. Your task is to refine an existing draft of a Technical Specification based on specific feedback from a Product Manager, ensuring it remains appropriate for the target "{target_os}" environment.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Modify, Don't Regenerate:** You MUST modify the "Current Draft" to incorporate the "PM Feedback". Do not regenerate the entire document from scratch. Preserve all sections that are not affected by the feedback.
-            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document. Do not include any preamble, introduction, or conversational text.
+            1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
+            2.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's feedback. Do not regenerate the entire document from scratch.
+            3.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document, including the preserved header.
 
             **--- INPUT 1: Current Draft ---**
             ```markdown

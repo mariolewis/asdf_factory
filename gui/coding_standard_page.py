@@ -1,5 +1,7 @@
 # gui/coding_standard_page.py
 
+import re
+from datetime import datetime
 import logging
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
@@ -97,7 +99,20 @@ class CodingStandardPage(QWidget):
     def _task_refine_standard(self, current_draft, feedback, **kwargs):
         """The actual function that runs in the background to refine the standard."""
         agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
-        return agent.refine_standard(current_draft, feedback)
+
+        # Get the refined content from the agent
+        refined_draft = agent.refine_standard(current_draft, feedback)
+
+        # Reliably update the date in the header using Python
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        # This robust regex finds the "Date: " line and replaces the rest of the line
+        date_updated_draft = re.sub(
+            r"(Date: ).*",
+            rf"\g{current_date}",
+            refined_draft
+        )
+
+        return date_updated_draft
 
     def on_approve_clicked(self):
         """Saves the final coding standard and proceeds to the next phase."""
@@ -119,6 +134,15 @@ class CodingStandardPage(QWidget):
 
         if not tech_spec_text:
             raise Exception("Could not retrieve the Technical Specification. Cannot generate a coding standard.")
+
+        agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
+
+        # Get raw content from the agent
+        draft_content = agent.generate_standard(tech_spec_text)
+
+        # Add the header before returning to the UI
+        full_draft = self.orchestrator.prepend_standard_header(draft_content, "Coding Standard")
+        return full_draft
 
         agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
         return agent.generate_standard(tech_spec_text)

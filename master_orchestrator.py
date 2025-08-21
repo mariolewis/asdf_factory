@@ -759,7 +759,7 @@ class MasterOrchestrator:
                 final_spec_parts.append("## 4. Theming & Style Guide\\n" + style_guide)
             final_spec_doc = "\\n\\n---\\n\\n".join(final_spec_parts)
 
-            final_doc_with_header = self._prepend_standard_header(
+            final_doc_with_header = self.prepend_standard_header(
                 document_content=final_spec_doc,
                 document_type="UX/UI Specification"
             )
@@ -798,7 +798,7 @@ class MasterOrchestrator:
             return
 
         try:
-            final_doc_with_header = self._prepend_standard_header(
+            final_doc_with_header = self.prepend_standard_header(
                 document_content=spec_draft,
                 document_type="Application Specification"
             )
@@ -866,7 +866,7 @@ class MasterOrchestrator:
             return
 
         try:
-            final_doc_with_header = self._prepend_standard_header(
+            final_doc_with_header = self.prepend_standard_header(
                 document_content=tech_spec_draft,
                 document_type="Technical Specification"
             )
@@ -901,7 +901,7 @@ class MasterOrchestrator:
             return
 
         try:
-            final_doc_with_header = self._prepend_standard_header(
+            final_doc_with_header = self.prepend_standard_header(
                 document_content=standard_draft,
                 document_type="Coding Standard"
             )
@@ -943,7 +943,7 @@ class MasterOrchestrator:
 
         try:
             # Save the raw JSON plan (with header) to the database for runtime use
-            final_doc_with_header = self._prepend_standard_header(
+            final_doc_with_header = self.prepend_standard_header(
                 document_content=plan_json_string,
                 document_type="Sequential Development Plan"
             )
@@ -1325,9 +1325,14 @@ class MasterOrchestrator:
                 original_doc = project_details[doc_key]
                 if original_doc:
                     logging.info(f"Checking for {doc_name} updates...")
+
+                    # Get the current date to pass to the agent
+                    current_date = datetime.now().strftime('%Y-%m-%d')
+
                     updated_content = doc_agent.update_specification_text(
                         original_spec=original_doc,
-                        implementation_plan=implementation_plan_for_update
+                        implementation_plan=implementation_plan_for_update,
+                        current_date=current_date  # Pass the date to the agent
                     )
 
                     # The content of the document itself contains the header with the version
@@ -1533,7 +1538,7 @@ class MasterOrchestrator:
                 logging.info(f"Applied integration modifications to {file_path_str}")
             # --- End of new logic ---
 
-            final_integration_plan = self._prepend_standard_header(
+            final_integration_plan = self.prepend_standard_header(
                 document_content=integration_plan_json,
                 document_type="Integration Plan"
             )
@@ -1549,7 +1554,7 @@ class MasterOrchestrator:
             ui_test_planner = UITestPlannerAgent_AppTarget(llm_service=self.llm_service)
             ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
 
-            final_ui_test_plan = self._prepend_standard_header(
+            final_ui_test_plan = self.prepend_standard_header(
                 document_content=ui_test_plan_content,
                 document_type="UI Test Plan"
             )
@@ -2234,23 +2239,26 @@ class MasterOrchestrator:
 
         return success, output
 
-    def _prepend_standard_header(self, document_content: str, document_type: str) -> str:
+    def prepend_standard_header(self, document_content: str, document_type: str) -> str:
         """
         Prepends a standard project header, including a version number
-        extracted from the content, to a given document.
+        and the current date, to a given document.
         """
         if not self.project_id:
             return document_content
 
         version_number = "1.0"
-        match = re.search(r'(?:v|Version\s)(\d+\.\d+)', document_content, re.IGNORECASE)
+        match = re.search(r'(?:v|Version\s|Version number:\s)(\d+\.\d+)', document_content, re.IGNORECASE)
         if match:
             version_number = match.group(1)
 
-        # This is the corrected block with proper \n newlines
+        # Get the current date in YYYY-MM-DD format
+        current_date = datetime.now().strftime('%Y-%m-%d')
+
         header = (
             f"PROJECT NUMBER: {self.project_id}\n"
             f"{document_type.upper()}\n"
+            f"Date: {current_date}\n"
             f"Version number: {version_number}\n"
             f"{'-' * 50}\n\n"
         )
@@ -2983,7 +2991,7 @@ class MasterOrchestrator:
             ui_test_planner = UITestPlannerAgent_AppTarget(llm_service=self.llm_service)
             ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
 
-            final_ui_test_plan = self._prepend_standard_header(
+            final_ui_test_plan = self.prepend_standard_header(
                 document_content=ui_test_plan_content,
                 document_type="UI Test Plan"
             )

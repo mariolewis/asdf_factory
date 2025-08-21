@@ -1,5 +1,7 @@
 # gui/tech_spec_page.py
 
+import re
+from datetime import datetime
 import logging
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
@@ -126,7 +128,13 @@ class TechSpecPage(QWidget):
         if not final_spec_text:
             raise Exception("Could not retrieve the application specification.")
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
-        return agent.propose_stack(final_spec_text, target_os)
+
+        # Get raw content from the agent
+        draft_content = agent.propose_stack(final_spec_text, target_os)
+
+        # Add the header before returning to the UI
+        full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
+        return full_draft
 
     def _task_generate_from_guidelines(self, guidelines, target_os, **kwargs):
         db = self.orchestrator.db_manager
@@ -134,9 +142,28 @@ class TechSpecPage(QWidget):
         final_spec_text = project_details['final_spec_text']
         context = f"{final_spec_text}\n\n--- PM Directive for Technology Stack ---\n{guidelines}"
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
-        return agent.propose_stack(context, target_os)
+
+        # Get raw content from the agent
+        draft_content = agent.propose_stack(context, target_os)
+
+        # Add the header before returning to the UI
+        full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
+        return full_draft
 
     def _task_refine_spec(self, current_draft, feedback, target_os, **kwargs):
         """The actual function that runs in the background to refine the tech spec."""
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
-        return agent.refine_stack(current_draft, feedback, target_os)
+
+        # Get the refined content from the agent
+        refined_draft = agent.refine_stack(current_draft, feedback, target_os)
+
+        # Reliably update the date in the header using Python
+        current_date = datetime.now().strftime('%Y-%m-%d')
+        # This robust regex finds the "Date: " line and replaces the rest of the line
+        date_updated_draft = re.sub(
+            r"(Date: ).*",
+            rf"\g{current_date}",
+            refined_draft
+        )
+
+        return date_updated_draft
