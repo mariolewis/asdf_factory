@@ -144,8 +144,8 @@ class SpecElaborationPage(QWidget):
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback or clarifications.")
             return
-        self.spec_draft = self.ui.specDraftTextEdit.toPlainText()
-        self._execute_task(self._task_refine_spec, self._handle_refinement_result, feedback)
+        current_draft = self.ui.specDraftTextEdit.toPlainText()
+        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback)
 
     def _handle_analysis_result(self, result_tuple):
         """Handles the result of the initial spec generation and complexity analysis."""
@@ -239,6 +239,6 @@ class SpecElaborationPage(QWidget):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
         return spec_agent.identify_potential_issues(self.spec_draft)
 
-    def _task_refine_spec(self, feedback, **kwargs):
+    def _task_refine_spec(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        return spec_agent.refine_specification(self.spec_draft, self.ai_issues, feedback)
+        return spec_agent.refine_specification(current_draft, self.ai_issues, feedback)

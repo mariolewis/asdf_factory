@@ -123,7 +123,7 @@ class SpecClarificationAgent:
             logging.error(f"LLM service call failed during issue identification: {e}")
             raise
 
-    def refine_specification(self, original_spec_text: str, issues_found: str, pm_clarification: str, is_gui_project: bool = False) -> str:
+    def refine_specification(self, current_draft_text: str, issues_found: str, pm_clarification: str, is_gui_project: bool = False) -> str:
         """
         Refines the specification draft based on PM feedback.
         """
@@ -139,9 +139,9 @@ class SpecClarificationAgent:
 
             Your goal is to integrate the PM's clarifications to resolve the identified issues and produce a new, more complete, and unambiguous version of the specification. Do not omit any parts of the original specification that were not discussed; only modify the parts that are affected by the clarifications. Ensure the new version is a complete, standalone document.
             {fallback_instruction}
-            **Original Specification Draft:**
+            **Current Specification Draft:**
             ---
-            {original_spec_text}
+            {current_draft_text}
             ---
 
             **Issues You Identified:**

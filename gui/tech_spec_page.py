@@ -84,9 +84,9 @@ class TechSpecPage(QWidget):
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback to refine the draft.")
             return
-        self.tech_spec_draft = self.ui.techSpecTextEdit.toPlainText()
+        current_draft = self.ui.techSpecTextEdit.toPlainText()
         target_os = self.ui.osComboBox.currentText()
-        self._execute_task(self._task_refine_spec, self._handle_refinement_result, feedback, target_os)
+        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback, target_os)
 
     def _handle_generation_result(self, tech_spec_draft):
         try:
@@ -136,14 +136,7 @@ class TechSpecPage(QWidget):
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
         return agent.propose_stack(context, target_os)
 
-    def _task_refine_spec(self, feedback, target_os, **kwargs):
-        db = self.orchestrator.db_manager
-        project_details = db.get_project_by_id(self.orchestrator.project_id)
-        final_spec_text = project_details['final_spec_text']
-        context = (
-            f"{final_spec_text}\n\n"
-            f"--- Current Draft to Refine ---\n{self.tech_spec_draft}\n\n"
-            f"--- PM Feedback for Refinement ---\n{feedback}"
-        )
+    def _task_refine_spec(self, current_draft, feedback, target_os, **kwargs):
+        """The actual function that runs in the background to refine the tech spec."""
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
-        return agent.propose_stack(context, target_os)
+        return agent.refine_stack(current_draft, feedback, target_os)

@@ -69,3 +69,45 @@ class TechStackProposalAgent:
         except Exception as e:
             logging.error(f"TechStackProposalAgent API call failed: {e}")
             return f"Error: An unexpected error occurred while generating the tech stack proposal: {e}"
+
+    def refine_stack(self, current_draft: str, pm_feedback: str, target_os: str) -> str:
+        """
+        Refines an existing technical specification draft based on PM feedback.
+
+        Args:
+            current_draft (str): The current version of the technical spec.
+            pm_feedback (str): The feedback from the PM for refinement.
+            target_os (str): The target operating system.
+
+        Returns:
+            A string containing the refined technical specification.
+        """
+        logging.info(f"TechStackProposalAgent: Refining tech spec for OS: {target_os}...")
+
+        prompt = textwrap.dedent(f"""
+            You are a senior Solutions Architect revising a document. Your task is to refine an existing draft of a Technical Specification based on specific feedback from a Product Manager, ensuring it remains appropriate for the target "{target_os}" environment.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Modify, Don't Regenerate:** You MUST modify the "Current Draft" to incorporate the "PM Feedback". Do not regenerate the entire document from scratch. Preserve all sections that are not affected by the feedback.
+            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document. Do not include any preamble, introduction, or conversational text.
+
+            **--- INPUT 1: Current Draft ---**
+            ```markdown
+            {current_draft}
+            ```
+
+            **--- INPUT 2: PM Feedback to Address ---**
+            ```
+            {pm_feedback}
+            ```
+
+            **--- Refined Technical Specification for {target_os} (Markdown) ---**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            logging.info("Successfully refined technical specification from API.")
+            return response_text
+        except Exception as e:
+            logging.error(f"TechStackProposalAgent refinement failed: {e}")
+            return f"Error: An unexpected error occurred while refining the tech spec: {e}"
