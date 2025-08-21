@@ -280,20 +280,24 @@ class SpecElaborationPage(QWidget):
         # --- End Template Loading ---
 
         if isinstance(input_data, list):
+            # This part handles file uploads
             self.orchestrator.save_uploaded_brief_files(input_data)
             bootstrap_agent = ProjectBootstrapAgent(self.orchestrator.db_manager)
             initial_text, _, error = bootstrap_agent.extract_text_from_file_paths(input_data)
             if error: raise Exception(error)
         else:
+            # This part handles text input
             initial_text = input_data
             self.orchestrator.save_text_brief_as_file(initial_text)
 
         if not initial_text or not initial_text.strip():
             raise Exception("No text could be extracted from the provided input.")
 
+        # The agent generates the raw content of the specification
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
         spec_draft_content = spec_agent.expand_brief_description(initial_text, template_content=template_content)
 
+        # The scoping agent analyzes the raw content
         scoping_agent = ProjectScopingAgent(self.orchestrator.llm_service)
         analysis_result = scoping_agent.analyze_complexity(spec_draft_content)
         if "error" in analysis_result:
@@ -302,6 +306,7 @@ class SpecElaborationPage(QWidget):
         analysis_json_str = json.dumps(analysis_result)
         self.orchestrator.finalize_and_save_complexity_assessment(analysis_json_str)
 
+        # CRUCIAL STEP: Add the header to the raw draft before returning it to the UI
         full_spec_draft = self.orchestrator.prepend_standard_header(spec_draft_content, "Application Specification")
 
         return analysis_result, full_spec_draft
@@ -313,11 +318,11 @@ class SpecElaborationPage(QWidget):
         refined_draft = spec_agent.refine_specification(current_draft, self.ai_issues, feedback)
 
         # Reliably update the date in the header using Python
-        current_date = datetime.now().strftime('%Y-%m-%d')
+        current_date = datetime.now().strftime('%x')
         # This MORE ROBUST regex finds the "Date: " line and replaces the rest of the line
         date_updated_draft = re.sub(
             r"(Date: ).*",
-            rf"\g{current_date}",
+            r"\g<1>" + current_date,
             refined_draft
         )
 

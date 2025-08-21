@@ -231,7 +231,7 @@
        <item>
         <widget class="QLabel" name="finalReviewHeaderLabel">
          <property name="text">
-          <string>Final Specification Review</string>
+          <string>Step 2: Final Specification Review</string>
          </property>
          <property name="styleSheet">
           <string notr="true">font-size: 14pt;</string>
@@ -241,9 +241,9 @@
        <item>
         <widget class="QSplitter" name="splitter">
          <property name="orientation">
-          <enum>Qt::Horizontal</enum>
+          <enum>Qt::Vertical</enum>
          </property>
-         <widget class="QWidget" name="">
+         <widget class="QWidget" name="specDraftPane">
           <layout class="QVBoxLayout" name="verticalLayout_7">
            <item>
             <widget class="QLabel" name="specDraftLabel">
@@ -257,7 +257,7 @@
            </item>
           </layout>
          </widget>
-         <widget class="QWidget" name="">
+         <widget class="QWidget" name="aiIssuesPane">
           <layout class="QVBoxLayout" name="verticalLayout_8">
            <item>
             <widget class="QLabel" name="aiIssuesLabel">
@@ -275,20 +275,37 @@
            </item>
           </layout>
          </widget>
+         <widget class="QWidget" name="feedbackPane">
+          <layout class="QVBoxLayout" name="verticalLayout_10">
+           <item>
+            <widget class="QLabel" name="feedbackLabel">
+             <property name="text">
+              <string>Your Feedback &amp; Clarifications (Optional):</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPlainTextEdit" name="feedbackTextEdit"/>
+           </item>
+          </layout>
+         </widget>
         </widget>
-       </item>
-       <item>
-        <widget class="QLabel" name="feedbackLabel">
-         <property name="text">
-          <string>Your Feedback &amp; Clarifications (Optional):</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPlainTextEdit" name="feedbackTextEdit"/>
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <item>
+          <spacer name="horizontalSpacer_3">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
          <item>
           <widget class="QPushButton" name="submitFeedbackButton">
            <property name="text">

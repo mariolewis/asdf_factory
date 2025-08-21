@@ -44,7 +44,10 @@ class CodingStandardAgent_AppTarget:
         template_instruction = ""
         if template_content:
             template_instruction = textwrap.dedent(f"""
-            **CRITICAL TEMPLATE INSTRUCTION:** You MUST use the following template to structure your entire response. Adhere to its headings, formatting, and style. Populate the template with content derived from the technical specification.
+            **CRITICAL TEMPLATE INSTRUCTION:**
+            Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template.
+            Populate the sections of the template with content derived from the technical specification.
+            DO NOT invent new sections. DO NOT change the names of the headings from the template.
             --- TEMPLATE START ---
             {template_content}
             --- TEMPLATE END ---

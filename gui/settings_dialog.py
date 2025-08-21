@@ -7,11 +7,11 @@ from pathlib import Path
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
-                               QPushButton, QStandardItemEditorFactory)
+                               QPushButton)
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTabWidget, QWidget,
                                QFormLayout, QLabel, QComboBox, QStackedWidget,
                                QLineEdit, QSpinBox, QDialogButtonBox, QSpacerItem,
-                               QSizePolicy, QMessageBox)
+                               QSizePolicy, QMessageBox, QHBoxLayout)
 
 from master_orchestrator import MasterOrchestrator
 

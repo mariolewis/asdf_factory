@@ -2,6 +2,7 @@
 
 import re
 from datetime import datetime
+from pathlib import Path
 import logging
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
@@ -104,11 +105,11 @@ class CodingStandardPage(QWidget):
         refined_draft = agent.refine_standard(current_draft, feedback)
 
         # Reliably update the date in the header using Python
-        current_date = datetime.now().strftime('%Y-%m-%d')
-        # This robust regex finds the "Date: " line and replaces the rest of the line
+        current_date = datetime.now().strftime('%x')
+        # This corrected regex finds the "Date: " line and replaces the rest of the line
         date_updated_draft = re.sub(
             r"(Date: ).*",
-            rf"\g{current_date}",
+            r"\g<1>" + current_date,
             refined_draft
         )
 
@@ -131,8 +132,6 @@ class CodingStandardPage(QWidget):
         # --- Template Loading Logic ---
         template_content = None
         try:
-            # Note: The user can create specific templates like "Python Coding Standard".
-            # For now, we look for a generic default. This can be enhanced later.
             template_record = self.orchestrator.db_manager.get_template_by_name("Default Coding Standard")
             if template_record:
                 template_path = Path(template_record['file_path'])
@@ -145,6 +144,12 @@ class CodingStandardPage(QWidget):
 
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
+
+        # --- ADDED SAFETY CHECK ---
+        if not project_details:
+            raise Exception("Could not retrieve project details. A project must be active to generate a standard.")
+        # --- END OF CHECK ---
+
         tech_spec_text = project_details['tech_spec_text']
 
         if not tech_spec_text:

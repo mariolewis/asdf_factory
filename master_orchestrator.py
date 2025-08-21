@@ -1338,7 +1338,7 @@ class MasterOrchestrator:
                     logging.info(f"Checking for {doc_name} updates...")
 
                     # Get the current date to pass to the agent
-                    current_date = datetime.now().strftime('%Y-%m-%d')
+                    current_date = datetime.now().strftime('%x')
 
                     updated_content = doc_agent.update_specification_text(
                         original_spec=original_doc,
@@ -2264,7 +2264,7 @@ class MasterOrchestrator:
             version_number = match.group(1)
 
         # Get the current date in YYYY-MM-DD format
-        current_date = datetime.now().strftime('%Y-%m-%d')
+        current_date = datetime.now().strftime('%x')
 
         header = (
             f"PROJECT NUMBER: {self.project_id}\n"
