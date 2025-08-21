@@ -128,6 +128,21 @@ class CodingStandardPage(QWidget):
 
     def _task_generate_standard(self, **kwargs):
         """The actual function that runs in the background."""
+        # --- Template Loading Logic ---
+        template_content = None
+        try:
+            # Note: The user can create specific templates like "Python Coding Standard".
+            # For now, we look for a generic default. This can be enhanced later.
+            template_record = self.orchestrator.db_manager.get_template_by_name("Default Coding Standard")
+            if template_record:
+                template_path = Path(template_record['file_path'])
+                if template_path.exists():
+                    template_content = template_path.read_text(encoding='utf-8')
+                    logging.info("Found and loaded 'Default Coding Standard' template.")
+        except Exception as e:
+            logging.warning(f"Could not load default coding standard template: {e}")
+        # --- End Template Loading ---
+
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         tech_spec_text = project_details['tech_spec_text']
@@ -137,12 +152,7 @@ class CodingStandardPage(QWidget):
 
         agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
 
-        # Get raw content from the agent
-        draft_content = agent.generate_standard(tech_spec_text)
+        draft_content = agent.generate_standard(tech_spec_text, template_content=template_content)
 
-        # Add the header before returning to the UI
         full_draft = self.orchestrator.prepend_standard_header(draft_content, "Coding Standard")
         return full_draft
-
-        agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
-        return agent.generate_standard(tech_spec_text)

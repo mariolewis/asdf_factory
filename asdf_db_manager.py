@@ -122,6 +122,14 @@ class ASDFDBManager:
             archive_file_path TEXT NOT NULL, last_stop_timestamp TEXT NOT NULL
         );"""
         self._execute_query(create_project_history_table)
+        create_factory_templates_table = """
+        CREATE TABLE IF NOT EXISTS FactoryTemplates (
+            template_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_name TEXT NOT NULL UNIQUE,
+            file_path TEXT NOT NULL,
+            creation_timestamp TEXT NOT NULL
+        );"""
+        self._execute_query(create_factory_templates_table)
         logging.info("Finished creating/verifying database tables.")
 
     def create_project(self, project_id: str, project_name: str, creation_timestamp: str) -> str:
@@ -204,6 +212,28 @@ class ASDFDBManager:
 
     def delete_project_from_history(self, history_id: int):
         self._execute_query("DELETE FROM ProjectHistory WHERE history_id = ?", (history_id,))
+
+    def add_template(self, template_name: str, file_path: str) -> int:
+        """Adds a new template record to the database."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        query = "INSERT INTO FactoryTemplates (template_name, file_path, creation_timestamp) VALUES (?, ?, ?)"
+        cursor = self._execute_query(query, (template_name, file_path, timestamp))
+        return cursor.lastrowid
+
+    def get_template_by_name(self, template_name: str) -> Optional[sqlite3.Row]:
+        """Retrieves a specific template record by its unique name."""
+        query = "SELECT * FROM FactoryTemplates WHERE template_name = ?"
+        return self._execute_query(query, (template_name,), fetch="one")
+
+    def get_all_templates(self) -> list:
+        """Retrieves all saved template records from the database."""
+        query = "SELECT * FROM FactoryTemplates ORDER BY template_name"
+        return self._execute_query(query, fetch="all")
+
+    def delete_template(self, template_id: int):
+        """Deletes a template record from the database by its ID."""
+        query = "DELETE FROM FactoryTemplates WHERE template_id = ?"
+        self._execute_query(query, (template_id,))
 
     def get_all_change_requests_for_project(self, project_id: str) -> list:
         return self._execute_query("SELECT * FROM ChangeRequestRegister WHERE project_id = ? ORDER BY creation_timestamp DESC", (project_id,), fetch="all")

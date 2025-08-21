@@ -122,6 +122,19 @@ class TechSpecPage(QWidget):
         self.tech_spec_complete.emit()
 
     def _task_propose_stack(self, target_os, **kwargs):
+        # --- Template Loading Logic ---
+        template_content = None
+        try:
+            template_record = self.orchestrator.db_manager.get_template_by_name("Default Technical Specification")
+            if template_record:
+                template_path = Path(template_record['file_path'])
+                if template_path.exists():
+                    template_content = template_path.read_text(encoding='utf-8')
+                    logging.info("Found and loaded 'Default Technical Specification' template.")
+        except Exception as e:
+            logging.warning(f"Could not load default technical spec template: {e}")
+        # --- End Template Loading ---
+
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         final_spec_text = project_details['final_spec_text']
@@ -129,24 +142,33 @@ class TechSpecPage(QWidget):
             raise Exception("Could not retrieve the application specification.")
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
 
-        # Get raw content from the agent
-        draft_content = agent.propose_stack(final_spec_text, target_os)
+        draft_content = agent.propose_stack(final_spec_text, target_os, template_content=template_content)
 
-        # Add the header before returning to the UI
         full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
         return full_draft
 
     def _task_generate_from_guidelines(self, guidelines, target_os, **kwargs):
+        # --- Template Loading Logic ---
+        template_content = None
+        try:
+            template_record = self.orchestrator.db_manager.get_template_by_name("Default Technical Specification")
+            if template_record:
+                template_path = Path(template_record['file_path'])
+                if template_path.exists():
+                    template_content = template_path.read_text(encoding='utf-8')
+                    logging.info("Found and loaded 'Default Technical Specification' template.")
+        except Exception as e:
+            logging.warning(f"Could not load default technical spec template: {e}")
+        # --- End Template Loading ---
+
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         final_spec_text = project_details['final_spec_text']
         context = f"{final_spec_text}\n\n--- PM Directive for Technology Stack ---\n{guidelines}"
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
 
-        # Get raw content from the agent
-        draft_content = agent.propose_stack(context, target_os)
+        draft_content = agent.propose_stack(context, target_os, template_content=template_content)
 
-        # Add the header before returning to the UI
         full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
         return full_draft
 

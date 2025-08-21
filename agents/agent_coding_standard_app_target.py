@@ -27,12 +27,13 @@ class CodingStandardAgent_AppTarget:
         self.llm_service = llm_service
         logging.info("CodingStandardAgent_AppTarget initialized.")
 
-    def generate_standard(self, tech_spec_text: str) -> str:
+    def generate_standard(self, tech_spec_text: str, template_content: str | None = None) -> str:
         """
         Analyzes a technical specification and generates a coding standard document.
 
         Args:
             tech_spec_text: The full text of the finalized technical specification.
+            template_content (str, optional): The content of a template to follow.
 
         Returns:
             A string containing the generated coding standard, formatted in Markdown.
@@ -40,11 +41,22 @@ class CodingStandardAgent_AppTarget:
         """
         logging.info("CodingStandardAgent: Generating coding standard...")
 
+        template_instruction = ""
+        if template_content:
+            template_instruction = textwrap.dedent(f"""
+            **CRITICAL TEMPLATE INSTRUCTION:** You MUST use the following template to structure your entire response. Adhere to its headings, formatting, and style. Populate the template with content derived from the technical specification.
+            --- TEMPLATE START ---
+            {template_content}
+            --- TEMPLATE END ---
+            """)
+
         prompt = textwrap.dedent(f"""
             You are a lead software architect with extensive experience in establishing best practices.
             Your task is to generate a detailed, professional coding standard document based on the provided Technical Specification. The goal is to produce code that is highly readable, modular, and easily maintainable.
 
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the coding standard document. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the document's content.
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the coding standard document. Do not include any preamble, introduction, or conversational text.
+
+            {template_instruction}
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze Tech Stack:** Analyze the Technical Specification to identify the primary programming language, frameworks, and key libraries.

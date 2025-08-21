@@ -1,6 +1,13 @@
 # gui/settings_dialog.py
 
 import logging
+import shutil
+import os
+from pathlib import Path
+from PySide6.QtWidgets import QFileDialog
+from PySide6.QtGui import QStandardItemModel, QStandardItem
+from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
+                               QPushButton, QStandardItemEditorFactory)
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTabWidget, QWidget,
                                QFormLayout, QLabel, QComboBox, QStackedWidget,
                                QLineEdit, QSpinBox, QDialogButtonBox, QSpacerItem,
@@ -8,6 +15,48 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTabWidget, QWidget,
 
 from master_orchestrator import MasterOrchestrator
 
+class AddTemplateDialog(QDialog):
+    """A simple dialog to get the name and path for a new template."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Add New Template")
+        self.setMinimumWidth(400)
+        self.file_path = ""
+
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
+
+        self.name_input = QLineEdit()
+        self.path_input = QLineEdit()
+        self.path_input.setReadOnly(True)
+        browse_button = QPushButton("Browse...")
+
+        form_layout.addRow("Template Name:", self.name_input)
+        path_layout = QHBoxLayout()
+        path_layout.addWidget(self.path_input)
+        path_layout.addWidget(browse_button)
+        form_layout.addRow("Template File:", path_layout)
+
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+
+        layout.addLayout(form_layout)
+        layout.addWidget(self.button_box)
+
+        browse_button.clicked.connect(self._browse_for_file)
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+
+    def _browse_for_file(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Select Template File", "", "Documents (*.md *.txt *.docx)")
+        if path:
+            self.file_path = path
+            self.path_input.setText(path)
+
+    def get_data(self):
+        return {
+            "name": self.name_input.text().strip(),
+            "path": self.file_path
+        }
 class SettingsDialog(QDialog):
     """
     The dialog window for managing ASDF settings.
@@ -75,6 +124,12 @@ class SettingsDialog(QDialog):
         self.project_path_input = QLineEdit()
         self.archive_path_input = QLineEdit()
 
+        # --- Templates Tab Widgets ---
+        self.templates_tab = QWidget()
+        self.templates_table_view = QTableView()
+        self.templates_model = QStandardItemModel(self)
+        self.add_template_button = QPushButton("Add New Template...")
+        self.remove_template_button = QPushButton("Remove Selected")
         self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
 
     def _create_layouts(self):
@@ -123,11 +178,116 @@ class SettingsDialog(QDialog):
         factory_tab_layout.addRow("Default Project Path:", self.project_path_input)
         factory_tab_layout.addRow("Default Export Path:", self.archive_path_input)
 
+        templates_tab_layout = QVBoxLayout(self.templates_tab)
+        templates_tab_layout.addWidget(QLabel("Manage default templates for document generation."))
+
+        self.templates_table_view.setModel(self.templates_model)
+        self.templates_table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.templates_table_view.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.templates_table_view.setAlternatingRowColors(True)
+        templates_tab_layout.addWidget(self.templates_table_view)
+
+        template_button_layout = QHBoxLayout()
+        template_button_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        template_button_layout.addWidget(self.add_template_button)
+        template_button_layout.addWidget(self.remove_template_button)
+        templates_tab_layout.addLayout(template_button_layout)
+
+        self.tab_widget.addTab(self.templates_tab, "Templates")
         self.tab_widget.addTab(self.llm_providers_tab, "LLM Providers")
         self.tab_widget.addTab(self.factory_behavior_tab, "Factory Behavior")
 
         self.main_layout.addWidget(self.tab_widget)
         self.main_layout.addWidget(self.button_box)
+
+    def _populate_templates_tab(self):
+        """Fetches all templates from the DB and populates the templates table."""
+        self.templates_model.clear()
+        self.templates_model.setHorizontalHeaderLabels(['ID', 'Template Name', 'File Path'])
+
+        try:
+            templates = self.orchestrator.db_manager.get_all_templates()
+            for template in templates:
+                id_item = QStandardItem(str(template['template_id']))
+                name_item = QStandardItem(template['template_name'])
+                path_item = QStandardItem(template['file_path'])
+                self.templates_model.appendRow([id_item, name_item, path_item])
+
+            self.templates_table_view.setModel(self.templates_model)
+            self.templates_table_view.setColumnHidden(0, True) # Hide the ID
+            self.templates_table_view.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+            self.templates_table_view.resizeColumnToContents(2)
+        except Exception as e:
+            logging.error(f"Failed to populate templates tab: {e}")
+            QMessageBox.critical(self, "Error", f"Could not load templates from database: {e}")
+
+    def _on_add_template_clicked(self):
+        """Handles the logic for adding a new template."""
+        dialog = AddTemplateDialog(self)
+        if dialog.exec():
+            data = dialog.get_data()
+            name = data.get("name")
+            source_path_str = data.get("path")
+
+            if not name or not source_path_str:
+                QMessageBox.warning(self, "Input Missing", "Both a template name and a file path are required.")
+                return
+
+            try:
+                source_path = Path(source_path_str)
+                templates_dir = Path("data") / "templates"
+                destination_path = templates_dir / source_path.name
+
+                # Copy the file to the local templates directory
+                shutil.copy(source_path, destination_path)
+
+                # Save the record to the database
+                self.orchestrator.db_manager.add_template(name, str(destination_path))
+
+                # Refresh the table view
+                self._populate_templates_tab()
+                QMessageBox.information(self, "Success", f"Template '{name}' was added successfully.")
+
+            except Exception as e:
+                logging.error(f"Failed to add new template: {e}")
+                QMessageBox.critical(self, "Error", f"Could not add template: {e}")
+
+    def _on_remove_template_clicked(self):
+        """Handles the logic for removing a selected template."""
+        selection_model = self.templates_table_view.selectionModel()
+        if not selection_model.hasSelection():
+            QMessageBox.warning(self, "No Selection", "Please select a template from the list to remove.")
+            return
+
+        selected_row = selection_model.selectedRows()[0].row()
+        template_id_item = self.templates_model.item(selected_row, 0)
+        template_name_item = self.templates_model.item(selected_row, 1)
+        file_path_item = self.templates_model.item(selected_row, 2)
+
+        template_id = int(template_id_item.text())
+        template_name = template_name_item.text()
+        file_path = file_path_item.text()
+
+        reply = QMessageBox.question(self, "Confirm Deletion",
+                                    f"Are you sure you want to permanently delete the template '{template_name}'?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            try:
+                # Delete the record from the database
+                self.orchestrator.db_manager.delete_template(template_id)
+
+                # Delete the physical file
+                if Path(file_path).exists():
+                    os.remove(file_path)
+
+                # Refresh the table view
+                self._populate_templates_tab()
+                QMessageBox.information(self, "Success", f"Template '{template_name}' was removed.")
+
+            except Exception as e:
+                logging.error(f"Failed to remove template: {e}")
+                QMessageBox.critical(self, "Error", f"Could not remove template: {e}")
 
     def populate_fields(self):
         """Loads all current settings from the database and populates the UI fields."""
@@ -159,11 +319,14 @@ class SettingsDialog(QDialog):
         self.archive_path_input.setText(get_val("DEFAULT_ARCHIVE_PATH"))
 
         self.on_provider_changed()
+        self._populate_templates_tab()
 
     def connect_signals(self):
         self.provider_combo_box.currentTextChanged.connect(self.on_provider_changed)
         self.button_box.accepted.connect(self.save_settings_and_accept)
         self.button_box.rejected.connect(self.reject)
+        self.add_template_button.clicked.connect(self._on_add_template_clicked)
+        self.remove_template_button.clicked.connect(self._on_remove_template_clicked)
 
     def on_provider_changed(self):
         provider_name = self.provider_combo_box.currentText()

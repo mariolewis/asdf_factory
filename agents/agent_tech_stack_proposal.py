@@ -26,24 +26,28 @@ class TechStackProposalAgent:
         self.llm_service = llm_service
         logging.info("TechStackProposalAgent initialized.")
 
-    def propose_stack(self, functional_spec_text: str, target_os: str) -> str:
+    def propose_stack(self, functional_spec_text: str, target_os: str, template_content: str | None = None) -> str:
         """
         Analyzes a functional specification and proposes a tech stack tailored
         for a specific operating system, including a development setup guide.
-
-        Args:
-            functional_spec_text: The full text of the finalized application spec.
-            target_os (str): The target OS (e.g., "Windows", "Linux", "macOS").
-
-        Returns:
-            A string containing the proposed tech stack with justifications.
         """
         logging.info(f"TechStackProposalAgent: Proposing technology stack for OS: {target_os}...")
+
+        template_instruction = ""
+        if template_content:
+            template_instruction = textwrap.dedent(f"""
+            **CRITICAL TEMPLATE INSTRUCTION:** You MUST use the following template to structure your entire response. Adhere to its headings, formatting, and style. Populate the template with content derived from the functional specification.
+            --- TEMPLATE START ---
+            {template_content}
+            --- TEMPLATE END ---
+            """)
 
         prompt = textwrap.dedent(f"""
             You are an expert Solutions Architect. Your task is to create a formal Technical Specification, including a high-level architecture and a complete technology stack, based on the provided functional specification for a **{target_os}** environment.
 
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Technical Specification document. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the document's content.
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Technical Specification document. Do not include any preamble, introduction, or conversational text.
+
+            {template_instruction}
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze for Existing Tech:** First, review the specification to see if a technology stack is already mentioned.

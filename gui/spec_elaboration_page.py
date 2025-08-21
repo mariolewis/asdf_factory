@@ -266,6 +266,19 @@ class SpecElaborationPage(QWidget):
         """
         Saves the user's brief, generates the spec draft, analyzes it, and adds the standard header.
         """
+        # --- Template Loading Logic ---
+        template_content = None
+        try:
+            template_record = self.orchestrator.db_manager.get_template_by_name("Default Application Specification")
+            if template_record:
+                template_path = Path(template_record['file_path'])
+                if template_path.exists():
+                    template_content = template_path.read_text(encoding='utf-8')
+                    logging.info("Found and loaded 'Default Application Specification' template.")
+        except Exception as e:
+            logging.warning(f"Could not load default application spec template: {e}")
+        # --- End Template Loading ---
+
         if isinstance(input_data, list):
             self.orchestrator.save_uploaded_brief_files(input_data)
             bootstrap_agent = ProjectBootstrapAgent(self.orchestrator.db_manager)
@@ -279,7 +292,7 @@ class SpecElaborationPage(QWidget):
             raise Exception("No text could be extracted from the provided input.")
 
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        spec_draft_content = spec_agent.expand_brief_description(initial_text)
+        spec_draft_content = spec_agent.expand_brief_description(initial_text, template_content=template_content)
 
         scoping_agent = ProjectScopingAgent(self.orchestrator.llm_service)
         analysis_result = scoping_agent.analyze_complexity(spec_draft_content)
@@ -289,7 +302,6 @@ class SpecElaborationPage(QWidget):
         analysis_json_str = json.dumps(analysis_result)
         self.orchestrator.finalize_and_save_complexity_assessment(analysis_json_str)
 
-        # Add the header to the raw draft before returning it to the UI
         full_spec_draft = self.orchestrator.prepend_standard_header(spec_draft_content, "Application Specification")
 
         return analysis_result, full_spec_draft
