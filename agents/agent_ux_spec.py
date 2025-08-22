@@ -25,6 +25,158 @@ class UX_Spec_Agent:
         self.llm_service = llm_service
         logging.info("UX_Spec_Agent initialized.")
 
+    def generate_enriched_ux_draft(self, project_brief: str, personas: list[str], template_content: str | None = None) -> str:
+        """
+        Generates a single, consolidated UX/UI Specification draft in Markdown.
+        """
+        logging.info("UX_Spec_Agent: Generating consolidated UX/UI specification draft...")
+
+        personas_str = "- " + "\n- ".join(personas) if personas else "No specific personas were confirmed."
+
+        template_instruction = ""
+        if template_content:
+            template_instruction = textwrap.dedent(f"""
+            **CRITICAL TEMPLATE INSTRUCTION:**
+            Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template.
+            Populate the sections of the template with content derived from the inputs.
+            DO NOT invent new sections. DO NOT change the names of the headings from the template.
+            --- TEMPLATE START ---
+            {template_content}
+            --- TEMPLATE END ---
+            """)
+
+        prompt = textwrap.dedent(f"""
+            You are a senior UX Designer and Business Analyst. Your task is to create a single, comprehensive, and consolidated UX/UI Specification document in Markdown format.
+
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown document. Do not include any preamble, introduction, or conversational text.
+
+            {template_instruction}
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Analyze Holistically:** Analyze the provided Project Brief and User Personas to understand the application's goals and target audience.
+            2.  **Markdown Format:** The entire output must be a well-structured Markdown document.
+            3.  **Required Sections (if no template is provided):** If no template is given, you MUST generate a document containing the following sections, using the exact heading names provided:
+                - `## 1. User Personas`
+                - `## 2. Core User Journeys`
+                - `## 3. Features & User Stories`
+                - `## 4. Inferred Screens & Components`
+                - `## 5. Draft Theming & Style Guide`
+            4.  **Content Generation:** For each section, generate detailed and logical content based on the inputs. For the Style Guide, propose a clean, modern, and professional theme suitable for the application type.
+
+            ---
+            **INPUT 1: Project Brief**
+            {project_brief}
+
+            **INPUT 2: Confirmed User Personas**
+            {personas_str}
+            ---
+
+            **Consolidated UX/UI Specification (Markdown):**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text.strip()
+        except Exception as e:
+            logging.error(f"UX_Spec_Agent failed to generate enriched UX draft: {e}")
+            return f"### Error\nCould not generate the UX/UI Specification Draft. Details: {e}"
+
+    def refine_ux_spec(self, current_draft: str, pm_feedback: str, template_content: str | None = None) -> str:
+        """
+        Refines an existing UX/UI specification draft based on PM feedback.
+        """
+        logging.info("UX_Spec_Agent: Refining UX/UI specification draft...")
+
+        template_instruction = ""
+        if template_content:
+            template_instruction = textwrap.dedent(f"""
+            **CRITICAL TEMPLATE INSTRUCTION:**
+            The original draft was based on a template. Your refined output MUST also strictly and exactly follow the structure, headings, and formatting of that same template.
+            --- TEMPLATE START ---
+            {template_content}
+            --- TEMPLATE END ---
+            """)
+
+        prompt = textwrap.dedent(f"""
+            You are a senior UX Designer revising a document. Your task is to refine an existing draft of a UX/UI Specification based on specific feedback from a Product Manager.
+
+            {template_instruction}
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
+            2.  **Modify Body Only**: Your changes should only be in the body of the document to incorporate the PM's feedback. Do not regenerate the entire document from scratch.
+            3.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document, including the preserved header.
+
+            **--- INPUT 1: Current Draft ---**
+            ```markdown
+            {current_draft}
+            ```
+
+            **--- INPUT 2: PM Feedback to Address ---**
+            ```
+            {pm_feedback}
+            ```
+
+            **--- Refined UX/UI Specification Document (Markdown) ---**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text.strip()
+        except Exception as e:
+            logging.error(f"UX_Spec_Agent failed to refine UX draft: {e}")
+            return f"### Error\nCould not refine the UX/UI Specification Draft. Details: {e}"
+
+    def parse_final_spec_and_generate_blueprint(self, final_spec_markdown: str) -> str:
+        """
+        Parses the final, human-readable UX/UI spec in Markdown and generates
+        a structured, machine-readable JSON blueprint of the screens and components.
+        """
+        logging.info("UX_Spec_Agent: Parsing final spec to generate JSON blueprint...")
+
+        prompt = textwrap.dedent(f"""
+            You are a meticulous data extraction system. Your task is to analyze a final UX/UI Specification written in Markdown and convert all screen and component descriptions into a single, structured JSON object.
+
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the JSON object. Do not include any preamble, introduction, comments, or markdown formatting like ```json. The first character of your response must be the opening brace `{{`.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **JSON Output:** Your response MUST be a single, valid JSON object.
+            2.  **Top-Level Key:** The top-level key of the JSON object MUST be "screens". Its value should be an array of screen objects.
+            3.  **Screen Object Schema:** Each object in the "screens" array MUST adhere to the following schema:
+                {{
+                  "screen_name": "...",
+                  "layout_description": "...",
+                  "components": [
+                    {{
+                      "component_type": "...",
+                      "label": "...",
+                      "details": "...",
+                      "action": "..."
+                    }}
+                  ]
+                }}
+            4.  **Extraction:** Carefully read the 'Inferred Screens & Components' section of the Markdown input and populate the JSON structure accordingly. Infer the layout, component types, labels, details, and actions from the text.
+
+            ---
+            **INPUT: Final UX/UI Specification (Markdown)**
+            {final_spec_markdown}
+            ---
+
+            **OUTPUT: Structural UI Blueprint (JSON Object):**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            # Clean the response to remove potential markdown fences
+            cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
+            # Final validation check
+            json.loads(cleaned_response)
+            return cleaned_response
+        except Exception as e:
+            logging.error(f"UX_Spec_Agent failed to parse spec and generate blueprint: {e}")
+            error_json = {{"error": f"Could not generate blueprint from spec. Details: {e}"}}
+            return json.dumps(error_json, indent=2)
+
     def generate_user_journeys(self, project_brief: str, personas: list[str]) -> str:
         """
         Generates a list of core user journeys based on the project brief and personas.

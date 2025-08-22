@@ -13,6 +13,7 @@ import git
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_ux_triage import UX_Triage_Agent
+from agents.agent_ux_spec import UX_Spec_Agent
 from agents.agent_report_generator import ReportGeneratorAgent
 from agents.agent_ux_spec import UX_Spec_Agent
 from asdf_db_manager import ASDFDBManager
@@ -437,6 +438,69 @@ class MasterOrchestrator:
             logging.error(f"Failed to save text brief as file: {e}")
             return None
 
+    def handle_ux_ui_brief_submission(self, brief_input):
+        """
+        Handles the initial project brief submission, saves the brief as a physical
+        file, stores its path, calls the triage agent, and prepares for the PM's decision.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle brief submission; no active project.")
+            return
+
+        try:
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found in database.")
+            project_root = Path(project_details['project_root_folder'])
+
+            # Create a dedicated directory for project documents
+            docs_dir = project_root / "_docs"
+            docs_dir.mkdir(exist_ok=True)
+
+            brief_content = ""
+            original_filename = "project_brief.md" # Default for text input
+
+            # --- Process and Save the Brief ---
+            if isinstance(brief_input, str):
+                brief_content = brief_input
+            else: # Assumes it's a Streamlit UploadedFile-like object
+                original_filename = getattr(brief_input, 'name', 'project_brief_uploaded.txt')
+                if original_filename.endswith('.docx'):
+                    import docx
+                    doc = docx.Document(brief_input)
+                    brief_content = "\n".join([p.text for p in doc.paragraphs])
+                else: # For .txt and .md
+                    brief_content = brief_input.getvalue().decode("utf-8")
+
+            # Save the processed content as a markdown file
+            brief_file_path = docs_dir / original_filename.replace('.txt', '.md').replace('.docx', '.md')
+            brief_file_path.write_text(brief_content, encoding="utf-8")
+            logging.info(f"Saved project brief to physical file: {brief_file_path}")
+
+            # --- Save the path to the database ---
+            self.db_manager.update_project_field(self.project_id, "project_brief_path", str(brief_file_path.relative_to(project_root)))
+
+            # --- Proceed with AI Analysis ---
+            if not self.llm_service:
+                raise Exception("Cannot analyze brief: LLM Service is not configured.")
+
+            self.active_ux_spec = {'project_brief': brief_content}
+            triage_agent = UX_Triage_Agent(llm_service=self.llm_service)
+            analysis_result = triage_agent.analyze_brief(brief_content)
+
+            if "error" in analysis_result:
+                self.task_awaiting_approval = {"analysis_error": analysis_result.get('details')}
+            else:
+                self.active_ux_spec['inferred_personas'] = analysis_result.get("inferred_personas", [])
+                self.task_awaiting_approval = {"analysis": analysis_result}
+
+            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
+
+        except Exception as e:
+            logging.error(f"Failed to handle UX/UI brief submission: {e}", exc_info=True)
+            self.task_awaiting_approval = {"analysis_error": str(e)}
+            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
+
     def save_uploaded_brief_files(self, uploaded_files: list) -> list[str]:
         """Copies uploaded brief files to the project's _docs/_uploads directory."""
         if not self.project_id:
@@ -554,7 +618,8 @@ class MasterOrchestrator:
 
     def handle_ux_ui_phase_decision(self, decision: str):
         """
-        Handles the PM's decision to either start the UX/UI phase or skip it.
+        Handles the PM's decision to either start the UX/UI phase or skip it,
+        ensuring the project brief is correctly handed off.
         """
         # Persist the is_gui flag regardless of the decision, as it's now known.
         analysis_result = self.task_awaiting_approval.get("analysis", {})
@@ -566,9 +631,168 @@ class MasterOrchestrator:
             self.task_awaiting_approval = None # Clear the approval task
             self.set_phase("UX_UI_DESIGN")
         elif decision == "SKIP_TO_SPEC":
-            logging.info("PM chose to skip the UX/UI Design phase. Proceeding to Environment Setup.")
+            logging.info("PM chose to skip the UX/UI Design phase. Proceeding to Application Specification.")
+            # Retrieve the brief we stored earlier and hand it off to the next phase.
+            brief_content = self.active_ux_spec.get('project_brief', '')
+            self.task_awaiting_approval = {"pending_brief": brief_content}
+            self.set_phase("SPEC_ELABORATION")
+        else:
+            logging.warning(f"Received an unknown decision for UX/UI phase: {decision}")
+
+    def generate_initial_ux_spec_draft(self):
+        """
+        Calls the UX_Spec_Agent to generate the first consolidated draft of the
+        UX/UI Specification, using a template if available.
+
+        Returns:
+            A string containing the generated Markdown draft, or an error message.
+        """
+        if not self.project_id:
+            return "Error: No active project."
+
+        try:
+            # --- Template Loading Logic ---
+            template_content = None
+            try:
+                template_record = self.db_manager.get_template_by_name("Default UX/UI Specification")
+                if template_record:
+                    template_path = Path(template_record['file_path'])
+                    if template_path.exists():
+                        template_content = template_path.read_text(encoding='utf-8')
+                        logging.info("Found and loaded 'Default UX/UI Specification' template.")
+            except Exception as e:
+                logging.warning(f"Could not load default UX/UI spec template: {e}")
+            # --- End Template Loading ---
+
+            # Retrieve the brief and personas stored during the triage phase
+            project_brief = self.active_ux_spec.get('project_brief', '')
+            personas = self.active_ux_spec.get('inferred_personas', [])
+
+            if not project_brief:
+                raise ValueError("Project brief not found in the active UX spec context.")
+
+            agent = UX_Spec_Agent(llm_service=self.llm_service)
+            draft = agent.generate_enriched_ux_draft(project_brief, personas, template_content=template_content)
+
+            # Add the standard document header to the draft
+            full_draft_with_header = self.prepend_standard_header(
+                document_content=draft,
+                document_type="UX/UI Specification"
+            )
+            return full_draft_with_header
+
+        except Exception as e:
+            logging.error(f"Failed to generate initial UX spec draft: {e}", exc_info=True)
+            return f"### Error\nAn unexpected error occurred while generating the draft: {e}"
+
+    def refine_ux_spec_draft(self, current_draft: str, pm_feedback: str) -> str:
+        """
+        Calls the UX_Spec_Agent to refine the UX/UI spec draft based on PM feedback
+        and updates the document's date, using a template if available.
+        """
+        if not self.project_id:
+            return "Error: No active project."
+
+        try:
+            # --- Template Loading Logic ---
+            template_content = None
+            try:
+                template_record = self.db_manager.get_template_by_name("Default UX/UI Specification")
+                if template_record:
+                    template_path = Path(template_record['file_path'])
+                    if template_path.exists():
+                        template_content = template_path.read_text(encoding='utf-8')
+                        logging.info("Found and loaded 'Default UX/UI Specification' template for refinement.")
+            except Exception as e:
+                logging.warning(f"Could not load default UX/UI spec template for refinement: {e}")
+            # --- End Template Loading ---
+
+            agent = UX_Spec_Agent(llm_service=self.llm_service)
+            refined_content = agent.refine_ux_spec(current_draft, pm_feedback, template_content=template_content)
+
+            # Reliably update the date in the header
+            current_date = datetime.now().strftime('%x')
+            date_updated_draft = re.sub(
+                r"(Date: ).*",
+                r"\g<1>" + current_date,
+                refined_content
+            )
+            return date_updated_draft
+
+        except Exception as e:
+            logging.error(f"Failed to refine UX spec draft: {e}", exc_info=True)
+            return f"### Error\nAn unexpected error occurred while refining the draft: {e}"
+
+    def handle_ux_spec_completion(self, final_spec_markdown: str) -> bool:
+        """
+        Finalizes the UX/UI Specification, saves it, generates the JSON blueprint,
+        stores the final spec for the next phase, and transitions to SPEC_ELABORATION.
+        """
+        if not self.project_id:
+            logging.error("Cannot complete UX Spec: No active project.")
+            return False
+
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not (project_details and project_details['project_root_folder']):
+                 raise FileNotFoundError("Project root folder not found for saving UX spec.")
+
+            # --- Finalize and Save the UX Spec Artifact ---
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "_docs"
+            ux_spec_file_path = docs_dir / "ux_ui_specification.md"
+            ux_spec_file_path.write_text(final_spec_markdown, encoding="utf-8")
+            self._commit_document(ux_spec_file_path, "docs: Finalize UX/UI Specification")
+
+            agent = UX_Spec_Agent(llm_service=self.llm_service)
+            json_blueprint = agent.parse_final_spec_and_generate_blueprint(final_spec_markdown)
+            if '"error":' in json_blueprint:
+                raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
+
+            composite_spec_for_db = (
+                f"{final_spec_markdown}\n\n"
+                f"{'='*80}\n"
+                f"MACHINE-READABLE JSON BLUEPRINT\n"
+                f"{'='*80}\n\n"
+                f"```json\n{json_blueprint}\n```"
+            )
+            db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
+
+            # --- Prepare for the next phase ---
+            # Store the final spec in the approval task variable to pass it to the SpecElaborationPage
+            self.task_awaiting_approval = {"completed_ux_spec": final_spec_markdown}
+            self.active_ux_spec = {} # Clear the temporary UX spec data
+
+            # Transition to the next phase
+            self.set_phase("SPEC_ELABORATION")
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to complete UX/UI Specification: {e}", exc_info=True)
+            self.task_awaiting_approval = {"error": str(e)}
+            return False
+
+    def handle_ux_ui_phase_decision(self, decision: str):
+        """
+        Handles the PM's decision to either start the UX/UI phase or skip it,
+        ensuring the project brief is correctly handed off.
+        """
+        # Persist the is_gui flag regardless of the decision, as it's now known.
+        analysis_result = self.task_awaiting_approval.get("analysis", {})
+        is_gui = analysis_result.get("requires_gui", False)
+        self.db_manager.update_project_field(self.project_id, "is_gui_project", 1 if is_gui else 0)
+
+        if decision == "START_UX_UI_PHASE":
+            logging.info("PM chose to start the dedicated UX/UI Design phase.")
             self.task_awaiting_approval = None # Clear the approval task
-            self.set_phase("ENV_SETUP_TARGET_APP")
+            self.set_phase("UX_UI_DESIGN")
+        elif decision == "SKIP_TO_SPEC":
+            logging.info("PM chose to skip the UX/UI Design phase. Proceeding to Application Specification.")
+            # Retrieve the brief we stored earlier and hand it off to the next phase.
+            brief_content = self.active_ux_spec.get('project_brief', '')
+            self.task_awaiting_approval = {"pending_brief": brief_content}
+            self.set_phase("SPEC_ELABORATION")
         else:
             logging.warning(f"Received an unknown decision for UX/UI phase: {decision}")
 
@@ -730,7 +954,7 @@ class MasterOrchestrator:
             logging.error(f"Failed to handle style guide submission: {e}")
             self.active_ux_spec['error'] = str(e)
 
-    def handle_ux_spec_completion(self) -> bool:
+    def handle_ux_spec_completion(self, final_spec_markdown: str) -> bool:
         """
         Compiles the final UX/UI Specification, saves it to the database and a file,
         and transitions to the next main phase.
@@ -778,8 +1002,8 @@ class MasterOrchestrator:
                 self._commit_document(ux_spec_file_path, "docs: Finalize UX/UI Specification")
 
             self.active_ux_spec = {}
-            self.task_awaiting_approval = None
-            self.set_phase("ENV_SETUP_TARGET_APP")
+            self.task_awaiting_approval = {"completed_ux_spec": final_spec_markdown}
+            self.set_phase("SPEC_ELABORATION")
             return True
 
         except Exception as e:
@@ -787,6 +1011,36 @@ class MasterOrchestrator:
             if 'error' not in self.active_ux_spec:
                  self.active_ux_spec['error'] = str(e)
             return False
+
+    def generate_application_spec_draft(self, initial_spec_text: str) -> tuple[dict, str]:
+        """
+        Takes an initial specification (like a completed UX spec), generates the
+        full Application Spec draft, and performs a complexity analysis on it.
+        """
+        if not self.project_id:
+            raise Exception("Cannot generate application spec; no active project.")
+
+        # The agent generates the raw content of the specification
+        spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
+        app_spec_draft_content = spec_agent.expand_brief_description(initial_spec_text)
+
+        # The scoping agent analyzes the raw content
+        scoping_agent = ProjectScopingAgent(self.llm_service)
+        analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content)
+        if "error" in analysis_result:
+            raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
+
+        # Save the assessment to the database
+        analysis_json_str = json.dumps(analysis_result)
+        self.finalize_and_save_complexity_assessment(analysis_json_str)
+
+        # Add the standard header to the raw draft before returning it to the UI
+        full_app_spec_draft = self.prepend_standard_header(
+            document_content=app_spec_draft_content,
+            document_type="Application Specification"
+        )
+
+        return analysis_result, full_app_spec_draft
 
     def finalize_and_save_app_spec(self, spec_draft: str):
         """
@@ -1001,7 +1255,7 @@ class MasterOrchestrator:
             self.current_phase = new_phase
             logging.info(f"Transitioning to phase: {self.current_phase.name}")
 
-            if self.project_id:
+            if self.project_id and new_phase != FactoryPhase.VIEWING_PROJECT_HISTORY:
                 self._save_current_state()
 
         except KeyError:

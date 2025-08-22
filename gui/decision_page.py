@@ -38,9 +38,9 @@ class DecisionPage(QWidget):
         self.ui.option3Button.clicked.connect(self.option3_selected.emit)
 
     def configure(self, header: str, instruction: str, details: str,
-                option1_text: str = None,
-                option2_text: str = None,
-                option3_text: str = None):
+                option1_text: str = None, option1_enabled: bool = True,
+                option2_text: str = None, option2_enabled: bool = True,
+                option3_text: str = None, option3_enabled: bool = True):
         """
         Configures the page content and buttons for a specific decision.
         """
@@ -51,17 +51,20 @@ class DecisionPage(QWidget):
         if option1_text:
             self.ui.option1Button.setText(option1_text)
             self.ui.option1Button.setVisible(True)
+            self.ui.option1Button.setEnabled(option1_enabled)
         else:
             self.ui.option1Button.setVisible(False)
 
         if option2_text:
             self.ui.option2Button.setText(option2_text)
             self.ui.option2Button.setVisible(True)
+            self.ui.option2Button.setEnabled(option2_enabled)
         else:
             self.ui.option2Button.setVisible(False)
 
         if option3_text:
             self.ui.option3Button.setText(option3_text)
             self.ui.option3Button.setVisible(True)
+            self.ui.option3Button.setEnabled(option3_enabled)
         else:
             self.ui.option3Button.setVisible(False)

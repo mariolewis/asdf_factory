@@ -102,6 +102,26 @@ class Ui_SpecElaborationPage(object):
         self.verticalLayout_2.addWidget(self.inputTabWidget)
 
         self.stackedWidget.addWidget(self.initialInputPage)
+        self.processingPage = QWidget()
+        self.processingPage.setObjectName(u"processingPage")
+        self.verticalLayout_11 = QVBoxLayout(self.processingPage)
+        self.verticalLayout_11.setObjectName(u"verticalLayout_11")
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_11.addItem(self.verticalSpacer_2)
+
+        self.processingLabel = QLabel(self.processingPage)
+        self.processingLabel.setObjectName(u"processingLabel")
+        self.processingLabel.setStyleSheet(u"font-size: 14pt;")
+        self.processingLabel.setAlignment(Qt.AlignCenter)
+
+        self.verticalLayout_11.addWidget(self.processingLabel)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_11.addItem(self.verticalSpacer_3)
+
+        self.stackedWidget.addWidget(self.processingPage)
         self.complexityReviewPage = QWidget()
         self.complexityReviewPage.setObjectName(u"complexityReviewPage")
         self.verticalLayout_5 = QVBoxLayout(self.complexityReviewPage)
@@ -288,6 +308,7 @@ class Ui_SpecElaborationPage(object):
         self.inputTabWidget.setTabText(self.inputTabWidget.indexOf(self.uploadTab), QCoreApplication.translate("SpecElaborationPage", u"Upload Specification Document(s)", None))
         self.processTextButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Process Brief Description", None))
         self.inputTabWidget.setTabText(self.inputTabWidget.indexOf(self.textInputTab), QCoreApplication.translate("SpecElaborationPage", u"Enter Brief Description", None))
+        self.processingLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Processing... Please wait.", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Project Complexity & Risk Assessment", None))
         self.cancelProjectButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Cancel Project", None))
         self.confirmAnalysisButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Confirm Assessment & Proceed to Final Review", None))

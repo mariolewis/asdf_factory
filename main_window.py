@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import subprocess
 import sys
+import warnings
 
 from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu, QVBoxLayout, QHeaderView, QAbstractItemView, QStyle, QToolButton, QButtonGroup)
@@ -34,6 +35,7 @@ from gui.reports_page import ReportsPage
 from gui.manual_ui_testing_page import ManualUITestingPage
 from gui.project_complete_page import ProjectCompletePage
 from gui.cr_management_page import CRManagementPage
+from gui.ux_spec_page import UXSpecPage
 from gui.worker import Worker
 
 class ASDFMainWindow(QMainWindow):
@@ -98,6 +100,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.project_complete_page)
         self.cr_management_page = CRManagementPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.cr_management_page)
+        self.ux_spec_page = UXSpecPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.ux_spec_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -236,7 +240,7 @@ class ASDFMainWindow(QMainWindow):
         # --- End of Corrected Section ---
 
         # Connect signals that trigger a FULL UI refresh and page transition
-        for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page]:
+        for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page, self.ux_spec_page]:
             if hasattr(page, 'setup_complete'): page.setup_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'spec_elaboration_complete'): page.spec_elaboration_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'project_cancelled'): page.project_cancelled.connect(self.update_ui_after_state_change)
@@ -248,6 +252,7 @@ class ASDFMainWindow(QMainWindow):
             if hasattr(page, 'genesis_complete'): page.genesis_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'project_loaded'): page.project_loaded.connect(self.update_ui_after_state_change)
             if hasattr(page, 'project_load_finalized'): page.project_load_finalized.connect(self.update_ui_after_state_change)
+            if hasattr(page, 'ux_spec_complete'): page.ux_spec_complete.connect(self.update_ui_after_state_change)
 
         # Connect signals that trigger a PARTIAL UI refresh (no page transition)
         for page in [self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page]:
@@ -341,6 +346,7 @@ class ASDFMainWindow(QMainWindow):
         """
         is_project_active = self.orchestrator.project_id is not None
         is_project_dirty = self.orchestrator.is_project_dirty
+        self.ui.actionLoad_Exported_Project.setEnabled(not is_project_active)
         project_name = self.orchestrator.project_name or "N/A"
         current_phase_enum = self.orchestrator.current_phase
         display_phase_name = self.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
@@ -507,6 +513,7 @@ class ASDFMainWindow(QMainWindow):
         # --- END OF FIX ---
 
     def update_ui_after_state_change(self):
+        logging.debug("update_ui_after_state_change: Method entered.")
         """
         Performs a full UI refresh. This is the single source of truth for mapping
         the orchestrator's state to the correct UI view.
@@ -516,6 +523,7 @@ class ASDFMainWindow(QMainWindow):
 
         current_phase = self.orchestrator.current_phase
         current_phase_name = current_phase.name
+        logging.debug(f"update_ui_after_state_change: Detected phase: {current_phase_name}")
         is_project_active = self.orchestrator.project_id is not None
 
         # This map now includes all standard pages
@@ -534,19 +542,61 @@ class ASDFMainWindow(QMainWindow):
             "VIEWING_REPORTS": self.reports_page,
             "MANUAL_UI_TESTING": self.manual_ui_testing_page,
             "IMPLEMENTING_CHANGE_REQUEST": self.cr_management_page,
-            "PROJECT_COMPLETED": self.project_complete_page
+            "PROJECT_COMPLETED": self.project_complete_page,
+            "UX_UI_DESIGN": self.ux_spec_page,
         }
 
         # Disconnect all signals from the generic decision page to prevent multiple triggers
-        try:
-            self.decision_page.option1_selected.disconnect()
-            self.decision_page.option2_selected.disconnect()
-            self.decision_page.option3_selected.disconnect()
-        except (RuntimeError, TypeError):
-            pass # Ignore errors if signals were not connected
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            try:
+                self.decision_page.option1_selected.disconnect()
+                self.decision_page.option2_selected.disconnect()
+                self.decision_page.option3_selected.disconnect()
+            except TypeError:
+                pass # Still catch TypeError for other potential issues
 
-        if current_phase_name in page_display_map:
+        if current_phase_name == "AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION":
+            task = self.orchestrator.task_awaiting_approval or {}
+            analysis = task.get("analysis", {})
+            error = task.get("analysis_error")
+
+            if error:
+                details_text = f"The UX Triage Agent failed to process the brief.\n\n--- ERROR ---\n{error}"
+                self.decision_page.configure(
+                    header="Triage Analysis Failed",
+                    instruction="An error occurred during the initial analysis.",
+                    details=details_text,
+                    option1_text="Proceed to Specification Anyway",
+                    option2_text="Cancel Project"
+                )
+                self.decision_page.option1_selected.connect(self.on_ux_phase_decision_skip)
+                self.decision_page.option2_selected.connect(self.on_cancel_project)
+            else:
+                necessity = analysis.get('ux_phase_necessity', 'N/A')
+                justification = analysis.get('justification', 'No details provided.')
+                details_text = f"AI Recommendation: {necessity}\n\n--- Justification ---\n{justification}"
+
+                # This is the new logic to disable the button
+                is_start_button_enabled = (necessity != "Not Recommended")
+
+                self.decision_page.configure(
+                    header="UX/UI Phase Recommendation",
+                    instruction="The AI has analyzed the project brief and recommends the following course of action.",
+                    details=details_text,
+                    option1_text="Start Dedicated UX/UI Phase",
+                    option1_enabled=is_start_button_enabled,
+                    option2_text="Skip and Proceed to Application Specification"
+                )
+                self.decision_page.option1_selected.connect(self.on_ux_phase_decision_start)
+                self.decision_page.option2_selected.connect(self.on_ux_phase_decision_skip)
+
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name in page_display_map:
             page_to_show = page_display_map[current_phase_name]
+            logging.debug(f"update_ui_after_state_change: Found page in map. About to switch to: {page_to_show.__class__.__name__}")
+
             if hasattr(page_to_show, 'prepare_for_display'):
                 page_to_show.prepare_for_display()
             if current_phase_name == "PROJECT_COMPLETED":
@@ -655,6 +705,7 @@ class ASDFMainWindow(QMainWindow):
         else:
             self.ui.mainContentArea.setCurrentWidget(self.ui.phasePage)
             self.ui.phaseLabel.setText(f"UI for phase '{current_phase_name}' is not yet implemented.")
+        logging.debug("update_ui_after_state_change: Method finished.")
 
     def on_new_project(self):
         project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
@@ -754,6 +805,16 @@ class ASDFMainWindow(QMainWindow):
     def on_declarative_execute_manual(self):
         """Handles the user's choice to apply the change manually and skip automated execution."""
         self.orchestrator.handle_declarative_checkpoint_decision("WILL_EXECUTE_MANUALLY")
+        self.update_ui_after_state_change()
+
+    def on_ux_phase_decision_start(self):
+        """Handles the PM's choice to start the UX/UI phase."""
+        self.orchestrator.handle_ux_ui_phase_decision("START_UX_UI_PHASE")
+        self.update_ui_after_state_change()
+
+    def on_ux_phase_decision_skip(self):
+        """Handles the PM's choice to skip the UX/UI phase."""
+        self.orchestrator.handle_ux_ui_phase_decision("SKIP_TO_SPEC")
         self.update_ui_after_state_change()
 
     def on_proceed(self):
