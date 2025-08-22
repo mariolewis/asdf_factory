@@ -92,11 +92,19 @@ class ASDFDBManager:
         self._execute_query(create_cr_register_table)
         create_artifacts_table = """
         CREATE TABLE IF NOT EXISTS Artifacts (
-            artifact_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, file_path TEXT,
-            artifact_name TEXT NOT NULL, artifact_type TEXT NOT NULL, signature TEXT,
-            short_description TEXT, version INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL,
-            last_modified_timestamp TEXT NOT NULL, commit_hash TEXT, micro_spec_id TEXT,
-            dependencies TEXT, unit_test_status TEXT,
+            artifact_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            file_path TEXT,
+            artifact_name TEXT NOT NULL,
+            artifact_type TEXT NOT NULL,
+            signature TEXT,
+            short_description TEXT,
+            version INTEGER NOT NULL DEFAULT 1,
+            last_modified_timestamp TEXT NOT NULL,
+            commit_hash TEXT,
+            micro_spec_id TEXT,
+            dependencies TEXT,
+            unit_test_status TEXT,
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );"""
         self._execute_query(create_artifacts_table)

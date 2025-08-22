@@ -29,22 +29,26 @@ class DocUpdateAgentRoWD:
     def update_artifact_record(self, artifact_data: dict) -> bool:
         """
         Creates or updates a record for a single software artifact in the RoWD.
-
-        This method bundles the responsibility of communicating with the database
-        to record the state of a developed component. It calls the appropriate
-        method on the database manager to perform the write operation.
+        This version cleans the data to match the new schema before saving.
 
         Args:
             artifact_data (dict): A dictionary containing all the details
-                                  of the artifact, corresponding to the
-                                  columns in the 'Artifacts' table.
+                                  of the artifact.
 
         Returns:
             bool: True if the record was saved successfully, False otherwise.
         """
         try:
+            # Remove the obsolete 'status' field if it exists from older calls
+            artifact_data.pop('status', None)
+
+            # Ensure all required fields by the new schema exist, providing defaults
+            artifact_data.setdefault('version', 1)
+            artifact_data.setdefault('commit_hash', None)
+            artifact_data.setdefault('dependencies', None)
+            artifact_data.setdefault('unit_test_status', 'PENDING_GENERATION')
+
             # The agent's role is to call the DAO layer.
-            # This follows the separation of concerns principle.
             self.db_manager.add_or_update_artifact(artifact_data)
             return True
 
