@@ -44,13 +44,23 @@ class CodingStandardPage(QWidget):
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
 
-    def _set_ui_busy(self, is_busy):
-        """Disables or enables the page while a background task runs."""
-        self.setEnabled(not is_busy)
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the main window and updates the status bar."""
+        main_window = self.window() # Get the top-level window
+        if not main_window:
+            self.setEnabled(not is_busy) # Fallback if parent isn't found
+            return
 
-    def _execute_task(self, task_function, on_result, *args):
+        main_window.setEnabled(not is_busy)
+        if hasattr(main_window, 'statusBar'):
+            if is_busy:
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
+
+    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
         """Generic method to run a task in the background."""
-        self._set_ui_busy(True)
+        self._set_ui_busy(True, status_message)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
@@ -58,13 +68,16 @@ class CodingStandardPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
-        QMessageBox.critical(self, "Error", error_msg)
-        self._set_ui_busy(False)
+        try:
+            error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
+            QMessageBox.critical(self, "Error", error_msg)
+        finally:
+            self._set_ui_busy(False)
 
     def run_generation_task(self):
         """Initiates the background task to generate the coding standard."""
-        self._execute_task(self._task_generate_standard, self._handle_generation_result)
+        self._execute_task(self._task_generate_standard, self._handle_generation_result,
+                           status_message="Generating coding standard draft...")
 
     def _handle_generation_result(self, standard_draft):
         """Handles the result from the worker thread."""
@@ -84,7 +97,8 @@ class CodingStandardPage(QWidget):
             return
 
         current_draft = self.ui.standardTextEdit.toPlainText()
-        self._execute_task(self._task_refine_standard, self._handle_refinement_result, current_draft, feedback)
+        self._execute_task(self._task_refine_standard, self._handle_refinement_result, current_draft, feedback,
+                           status_message="Refining coding standard...")
 
     def _handle_refinement_result(self, new_draft):
         """Handles the result from the refinement worker thread."""
@@ -92,7 +106,7 @@ class CodingStandardPage(QWidget):
             self.coding_standard_draft = new_draft
             self.ui.standardTextEdit.setText(self.coding_standard_draft)
             self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "The coding standard has been refined based on your feedback.")
+            QMessageBox.information(self, "Success", "Success: The coding standard has been refined based on your feedback.")
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -109,7 +123,7 @@ class CodingStandardPage(QWidget):
         # This corrected regex finds the "Date: " line and replaces the rest of the line
         date_updated_draft = re.sub(
             r"(Date: ).*",
-            r"\g<1>" + current_date,
+            r"\g" + current_date,
             refined_draft
         )
 
@@ -123,7 +137,7 @@ class CodingStandardPage(QWidget):
             return
 
         self.orchestrator.finalize_and_save_coding_standard(final_standard)
-        QMessageBox.information(self, "Success", "Coding Standard approved and saved.")
+        QMessageBox.information(self, "Success", "Success: Coding Standard approved and saved.")
         self.orchestrator.is_project_dirty = True
         self.coding_standard_complete.emit()
 

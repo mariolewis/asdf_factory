@@ -29,7 +29,6 @@ class Ui_UXSpecPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(UXSpecPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -102,7 +101,7 @@ class Ui_UXSpecPage(object):
         self.headerLabel.setText(QCoreApplication.translate("UXSpecPage", u"User Experience & Interface Design", None))
         self.reviewInstructionLabel.setText(QCoreApplication.translate("UXSpecPage", u"Below is the consolidated UX/UI Specification draft, including personas, user journeys, and a style guide. Please review it, make any direct edits, and provide general feedback for refinement below.", None))
         self.feedbackLabel.setText(QCoreApplication.translate("UXSpecPage", u"Feedback for Refinement (Optional):", None))
-        self.refineButton.setText(QCoreApplication.translate("UXSpecPage", u"Submit Feedback & Refine", None))
+        self.refineButton.setText(QCoreApplication.translate("UXSpecPage", u"Submit Feedback && Refine", None))
         self.approveButton.setText(QCoreApplication.translate("UXSpecPage", u"Approve Specification", None))
     # retranslateUi
 

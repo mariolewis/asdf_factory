@@ -5,7 +5,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog
+from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QApplication
 from PySide6.QtCore import Signal, QThreadPool
 
 from gui.ui_spec_elaboration_page import Ui_SpecElaborationPage
@@ -71,32 +71,54 @@ class SpecElaborationPage(QWidget):
         if completed_ux_spec:
             logging.info("Detected completed UX Spec. Auto-generating Application Spec draft.")
             self.orchestrator.task_awaiting_approval = None
+            self.ui.headerLabel.setText("Assessing Project Complexity...")
             self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
-            self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, completed_ux_spec)
+            self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, completed_ux_spec,
+                               status_message="Generating application spec from UX design...")
         elif pending_brief:
             logging.info("Detected pending brief from UX skip. Auto-generating Application Spec draft.")
             self.orchestrator.task_awaiting_approval = None
+            self.ui.headerLabel.setText("Assessing Project Complexity...")
             self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
-            self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, pending_brief)
+            self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, pending_brief,
+                               status_message="Generating application spec from brief...")
         else:
             logging.info("No pending brief found. Displaying initial brief input page.")
+            self.ui.headerLabel.setText("Your Requirements")
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
 
-    def _set_ui_busy(self, is_busy):
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the page and updates the main status bar."""
         self.setEnabled(not is_busy)
 
-    def _execute_task(self, task_function, on_result, *args):
-        self._set_ui_busy(True)
+        # Also switch to the processing page view for clear, unmissable feedback
+        if is_busy:
+            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+
+        main_window = self.parent()
+        if main_window and hasattr(main_window, 'statusBar'):
+            if is_busy:
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
+
+    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
+        """Generic method to run a task in the background."""
+        self._set_ui_busy(True, status_message)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
         self.threadpool.start(worker)
 
     def _on_task_error(self, error_tuple):
-        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
-        QMessageBox.critical(self, "Error", error_msg)
-        self._set_ui_busy(False)
-        self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
+        """Handles errors from the worker thread."""
+        try:
+            error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
+            QMessageBox.critical(self, "Error", error_msg)
+            self.ui.headerLabel.setText("Your Requirements") # Reset header on error
+            self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
+        finally:
+            self._set_ui_busy(False)
 
     def _format_assessment_for_display(self, analysis_data: dict) -> str:
         if not analysis_data or "complexity_analysis" not in analysis_data:
@@ -127,6 +149,9 @@ class SpecElaborationPage(QWidget):
     def run_generation_task(self):
         """Processes a new brief submitted by the user and sends it to the UX Triage workflow."""
         sender = self.sender()
+        input_data = None
+        status_message = "Processing brief..."
+
         if sender == self.ui.processTextButton:
             input_data = self.ui.briefDescriptionTextEdit.toPlainText().strip()
             if not input_data:
@@ -134,10 +159,14 @@ class SpecElaborationPage(QWidget):
                 return
         elif sender == self.ui.processFilesButton:
             input_data = self.selected_files
+            status_message = "Processing uploaded documents..."
             if not input_data:
                 QMessageBox.warning(self, "Input Required", "Please browse for at least one specification document.")
                 return
-        self._execute_task(self._task_submit_brief_for_triage, self._handle_triage_submission_result, input_data)
+
+        if input_data:
+            self._execute_task(self._task_submit_brief_for_triage, self._handle_triage_submission_result, input_data,
+                               status_message=status_message)
 
     def _task_submit_brief_for_triage(self, input_data, **kwargs):
         if isinstance(input_data, list):
@@ -152,11 +181,8 @@ class SpecElaborationPage(QWidget):
         return "Triage initiated."
 
     def _handle_triage_submission_result(self, result):
-        try:
-            logging.info(f"Triage submission background task completed with result: {result}")
-            self.spec_elaboration_complete.emit()
-        finally:
-            self._set_ui_busy(False)
+        logging.info(f"Triage submission background task completed with result: {result}")
+        self.spec_elaboration_complete.emit()
 
     def _task_generate_from_existing_spec(self, spec_text, **kwargs):
         """Background task for processing text from a prior phase."""
@@ -164,15 +190,47 @@ class SpecElaborationPage(QWidget):
 
     def _handle_analysis_result(self, result_tuple):
         try:
+            self.ui.headerLabel.setText("Project Complexity & Risk Assessment") # Set correct header
             analysis_result, self.spec_draft = result_tuple
             analysis_for_display = self._format_assessment_for_display(analysis_result)
             self.ui.analysisResultTextEdit.setHtml(analysis_for_display)
             self.ui.stackedWidget.setCurrentWidget(self.ui.complexityReviewPage)
+
+            # Explicitly enable buttons to ensure workflow is not blocked
+            self.ui.cancelProjectButton.setEnabled(True)
+            self.ui.confirmAnalysisButton.setEnabled(True)
+
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 
+    def _handle_refinement_and_analysis_result(self, result_tuple):
+        try:
+            self.ui.headerLabel.setText("Application Specification Review")
+            self.spec_draft, self.ai_issues = result_tuple
+            self.refinement_iteration_count = 2
+
+            # 1. Make the page visible first
+            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+            # 2. Force Qt to process pending events and draw the widget
+            QApplication.processEvents()
+
+            # 3. Now, populate the content
+            self.ui.specDraftTextEdit.setText(self.spec_draft)
+            self.ui.aiIssuesTextEdit.setText(self.ai_issues)
+            self.ui.feedbackTextEdit.clear()
+
+            # 4. Explicitly enable buttons
+            self.ui.submitFeedbackButton.setEnabled(True)
+            self.ui.approveSpecButton.setEnabled(True)
+
+            self.state_changed.emit()
+        finally:
+            # 5. Re-enable the entire page widget
+            self._set_ui_busy(False)
+
     def on_confirm_analysis_clicked(self):
+        self.ui.headerLabel.setText("Draft Application Specification") # Set correct header
         self.ui.pmReviewTextEdit.setText(self.spec_draft)
         self.ui.pmFeedbackTextEdit.clear()
         self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
@@ -184,7 +242,8 @@ class SpecElaborationPage(QWidget):
         if not current_draft.strip():
             QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")
             return
-        self._execute_task(self._task_refine_and_analyze, self._handle_refinement_and_analysis_result, current_draft, feedback)
+        self._execute_task(self._task_refine_and_analyze, self._handle_refinement_and_analysis_result, current_draft, feedback,
+                           status_message="Refining draft and running AI analysis...")
 
     def _task_refine_and_analyze(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
@@ -192,25 +251,14 @@ class SpecElaborationPage(QWidget):
         ai_issues = spec_agent.identify_potential_issues(refined_draft, iteration_count=1)
         return refined_draft, ai_issues
 
-    def _handle_refinement_and_analysis_result(self, result_tuple):
-        try:
-            self.spec_draft, self.ai_issues = result_tuple
-            self.refinement_iteration_count = 2
-            self.ui.specDraftTextEdit.setText(self.spec_draft)
-            self.ui.aiIssuesTextEdit.setText(self.ai_issues)
-            self.ui.feedbackTextEdit.clear()
-            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
-            self.state_changed.emit()
-        finally:
-            self._set_ui_busy(False)
-
     def run_refinement_task(self):
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback or clarifications.")
             return
         current_draft = self.ui.specDraftTextEdit.toPlainText()
-        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback)
+        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback,
+                           status_message="Refining specification based on feedback...")
 
     def _task_refine_spec(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
@@ -220,16 +268,13 @@ class SpecElaborationPage(QWidget):
         return date_updated_draft
 
     def _handle_refinement_result(self, new_draft):
-        try:
-            self.spec_draft = new_draft
-            self.ui.specDraftTextEdit.setText(self.spec_draft)
-            self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version on the left.")
-            self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "Draft has been updated.")
-            self.state_changed.emit()
-            self.refinement_iteration_count += 1
-        finally:
-            self._set_ui_busy(False)
+        self.spec_draft = new_draft
+        self.ui.specDraftTextEdit.setText(self.spec_draft)
+        self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version on the left.")
+        self.ui.feedbackTextEdit.clear()
+        QMessageBox.information(self, "Success", "Success: Draft has been updated.")
+        self.state_changed.emit()
+        self.refinement_iteration_count += 1
 
     def on_cancel_project_clicked(self):
         reply = QMessageBox.question(self, "Cancel Project", "Are you sure you want to cancel and archive this project?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
@@ -242,5 +287,5 @@ class SpecElaborationPage(QWidget):
             QMessageBox.warning(self, "Approval Failed", "The specification cannot be empty.")
             return
         self.orchestrator.finalize_and_save_app_spec(final_spec)
-        QMessageBox.information(self, "Success", "Specification approved and saved.")
+        QMessageBox.information(self, "Success", "Success: Specification approved and saved.")
         self.spec_elaboration_complete.emit()

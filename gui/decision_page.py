@@ -46,7 +46,7 @@ class DecisionPage(QWidget):
         """
         self.ui.headerLabel.setText(header)
         self.ui.instructionLabel.setText(instruction)
-        self.ui.detailsTextEdit.setText(details)
+        self.ui.detailsTextEdit.setHtml(details)
 
         if option1_text:
             self.ui.option1Button.setText(option1_text)

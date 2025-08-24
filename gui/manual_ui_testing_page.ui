@@ -29,10 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>Testing &amp; Validation</string>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
+      <string>Testing &amp;&amp; Validation</string>
      </property>
     </widget>
    </item>

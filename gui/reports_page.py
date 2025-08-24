@@ -74,7 +74,9 @@ class ReportsPage(QWidget):
         self.ui.progressFormLayout.addRow("Total Components Defined:", QLabel(str(total_components)))
 
         for status, count in status_counts.items():
-            self.ui.progressFormLayout.addRow(f"{status.replace('_', ' ').title()}:", QLabel(str(count)))
+            # THIS IS THE FIX: Handle cases where status might be None in the database
+            display_status = status.replace('_', ' ').title() if status else "Status Not Set"
+            self.ui.progressFormLayout.addRow(f"{display_status}:", QLabel(str(count)))
 
     def update_cr_report(self):
         """Populates the Change Requests & Bug Fixes table."""

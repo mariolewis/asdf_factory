@@ -30,7 +30,6 @@ class Ui_TechSpecPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(TechSpecPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -74,6 +73,10 @@ class Ui_TechSpecPage(object):
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout.addItem(self.horizontalSpacer_2)
+
         self.proposeStackButton = QPushButton(self.initialChoicePage)
         self.proposeStackButton.setObjectName(u"proposeStackButton")
 
@@ -98,7 +101,6 @@ class Ui_TechSpecPage(object):
         self.verticalLayout_4.setObjectName(u"verticalLayout_4")
         self.pmDefineHeaderLabel = QLabel(self.pmDefinePage)
         self.pmDefineHeaderLabel.setObjectName(u"pmDefineHeaderLabel")
-        self.pmDefineHeaderLabel.setStyleSheet(u"font-size: 14pt;")
 
         self.verticalLayout_4.addWidget(self.pmDefineHeaderLabel)
 
@@ -113,10 +115,19 @@ class Ui_TechSpecPage(object):
 
         self.verticalLayout_4.addWidget(self.pmGuidelinesTextEdit)
 
+        self.horizontalLayout_3 = QHBoxLayout()
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_3.addItem(self.horizontalSpacer_3)
+
         self.generateFromGuidelinesButton = QPushButton(self.pmDefinePage)
         self.generateFromGuidelinesButton.setObjectName(u"generateFromGuidelinesButton")
 
-        self.verticalLayout_4.addWidget(self.generateFromGuidelinesButton)
+        self.horizontalLayout_3.addWidget(self.generateFromGuidelinesButton)
+
+
+        self.verticalLayout_4.addLayout(self.horizontalLayout_3)
 
         self.stackedWidget.addWidget(self.pmDefinePage)
         self.reviewPage = QWidget()
@@ -125,7 +136,6 @@ class Ui_TechSpecPage(object):
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.reviewHeaderLabel = QLabel(self.reviewPage)
         self.reviewHeaderLabel.setObjectName(u"reviewHeaderLabel")
-        self.reviewHeaderLabel.setStyleSheet(u"font-size: 14pt;")
 
         self.verticalLayout_3.addWidget(self.reviewHeaderLabel)
 

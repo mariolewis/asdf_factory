@@ -31,9 +31,6 @@
      <property name="text">
       <string>Build Script Generation</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>
@@ -55,6 +52,19 @@
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
      <item>
       <widget class="QPushButton" name="autoGenerateButton">
        <property name="text">

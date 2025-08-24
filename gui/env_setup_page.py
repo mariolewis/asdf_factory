@@ -21,6 +21,11 @@ class EnvSetupPage(QWidget):
         self.orchestrator = orchestrator
         self.ui = Ui_EnvSetupPage()
         self.ui.setupUi(self)
+
+        # Initially hide the version control choice
+        self.ui.vcsChoiceWidget.setVisible(False)
+        self.ui.vcsLine.setVisible(False)
+
         self.connect_signals()
 
     def set_initial_path(self, path: str):
@@ -32,16 +37,14 @@ class EnvSetupPage(QWidget):
         logging.info("Resetting EnvSetupPage for a new project.")
         self.ui.projectPathLineEdit.setEnabled(True)
         self.ui.confirmPathButton.setEnabled(True)
-        self.ui.initGitButton.setEnabled(False)
-        self.ui.proceedButton.setEnabled(False)
-        self.ui.gitLabel.setText("Git repository not initialized.")
-        self.ui.gitLabel.setStyleSheet("color: orange;")
+        self.ui.vcsChoiceWidget.setVisible(False)
+        self.ui.vcsLine.setVisible(False)
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
         self.ui.confirmPathButton.clicked.connect(self.on_confirm_path_clicked)
-        self.ui.initGitButton.clicked.connect(self.on_init_git_clicked)
-        self.ui.proceedButton.clicked.connect(self.on_proceed_clicked)
+        self.ui.initGitButton.clicked.connect(self.on_init_git_and_proceed_clicked)
+        self.ui.localWorkspaceButton.clicked.connect(self.on_local_workspace_and_proceed_clicked)
 
     def _check_for_brownfield_project(self, directory_path: str) -> bool:
         """Scans a directory for signs of an existing project."""
@@ -84,13 +87,14 @@ class EnvSetupPage(QWidget):
 
             self.ui.projectPathLineEdit.setEnabled(False)
             self.ui.confirmPathButton.setEnabled(False)
-            self.ui.initGitButton.setEnabled(True)
+            self.ui.vcsChoiceWidget.setVisible(True)
+            self.ui.vcsLine.setVisible(True)
 
         except Exception as e:
             logging.error(f"Error confirming project path: {e}")
             QMessageBox.critical(self, "Error", f"An error occurred while confirming the path:\n{e}")
 
-    def on_init_git_clicked(self):
+    def on_init_git_and_proceed_clicked(self):
         """Handles the logic for the 'Initialize Git Repository' button."""
         project_path = self.orchestrator.project_root_path
         if not project_path:
@@ -108,17 +112,24 @@ class EnvSetupPage(QWidget):
             subprocess.run(['git', 'add', '.gitignore'], cwd=project_path, check=True)
             subprocess.run(['git', 'commit', '-m', 'Initial commit: Add .gitignore'], cwd=project_path, check=True)
 
-            self.ui.gitLabel.setText("Git repository initialized successfully.")
-            self.ui.gitLabel.setStyleSheet("color: green;")
-            self.ui.initGitButton.setEnabled(False)
-            self.ui.proceedButton.setEnabled(True)
-            QMessageBox.information(self, "Success", "Successfully initialized Git repository.")
+            QMessageBox.information(self, "Success", "Success: Successfully initialized Git repository.")
+
+            # This is a version-controlled project
+            self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "version_control_enabled", 1)
+
+            self.orchestrator.set_phase("SPEC_ELABORATION")
+            self.setup_complete.emit()
 
         except Exception as e:
             logging.error(f"Failed to initialize Git repository: {e}")
             QMessageBox.critical(self, "Error", f"An unexpected error occurred:\n{e}")
 
-    def on_proceed_clicked(self):
-        """Finalizes the setup and signals completion."""
+    def on_local_workspace_and_proceed_clicked(self):
+        """Handles the logic for the 'Local Workspace' button."""
+        QMessageBox.information(self, "Local Workspace", "Proceeding without Git. You can initialize a repository manually later if needed.")
+
+        # This is NOT a version-controlled project
+        self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "version_control_enabled", 0)
+
         self.orchestrator.set_phase("SPEC_ELABORATION")
         self.setup_complete.emit()

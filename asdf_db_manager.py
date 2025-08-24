@@ -76,7 +76,8 @@ class ASDFDBManager:
             is_gui_project BOOLEAN NOT NULL DEFAULT 0, final_spec_text TEXT, tech_spec_text TEXT,
             is_build_automated BOOLEAN NOT NULL DEFAULT 1, build_script_file_name TEXT,
             coding_standard_text TEXT, development_plan_text TEXT, integration_plan_text TEXT,
-            ui_test_plan_text TEXT, test_execution_command TEXT
+            ui_test_plan_text TEXT, test_execution_command TEXT,
+            version_control_enabled BOOLEAN NOT NULL DEFAULT 1
         );"""
         self._execute_query(create_projects_table)
         create_cr_register_table = """
@@ -94,6 +95,7 @@ class ASDFDBManager:
         CREATE TABLE IF NOT EXISTS Artifacts (
             artifact_id TEXT PRIMARY KEY,
             project_id TEXT NOT NULL,
+            status TEXT,
             file_path TEXT,
             artifact_name TEXT NOT NULL,
             artifact_type TEXT NOT NULL,

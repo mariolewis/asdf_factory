@@ -2,6 +2,7 @@
 
 import logging
 import re
+import markdown
 from PySide6.QtWidgets import (QWidget, QMessageBox, QFileDialog, QHeaderView,
                                QAbstractItemView, QDialog, QVBoxLayout, QTextEdit,
                                QDialogButtonBox)
@@ -77,13 +78,22 @@ class DocumentsPage(QWidget):
         # Simple check for JSON content
         if doc_key in ["development_plan_text", "complexity_assessment_text", "integration_plan_text"]:
             try:
-                parsed_json = json.loads(content)
-                pretty_json = json.dumps(parsed_json, indent=4)
-                return f"<pre>{pretty_json}</pre>"
+                import json
+                # The document content might have a text header before the JSON
+                json_match = re.search(r"\{.*\}", content, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    parsed_json = json.loads(json_str)
+                    pretty_json = json.dumps(parsed_json, indent=4)
+                    return f"<pre>{pretty_json}</pre>"
+                else:
+                    return f"<pre>{content}</pre>" # Fallback for non-JSON or malformed
             except json.JSONDecodeError:
-                pass # Fallback to plain text
-        # For Markdown or plain text, convert newlines to <br> for HTML
-        return content.replace('\n', '<br>')
+                return f"<pre>{content}</pre>" # Fallback
+
+        # For all other documents, convert Markdown to HTML
+        # Add the 'fenced_code' extension to support code blocks properly
+        return markdown.markdown(content, extensions=['fenced_code', 'codehilite'])
 
     def _get_selected_doc_info(self) -> dict | None:
         """Helper to get all info for the selected document."""

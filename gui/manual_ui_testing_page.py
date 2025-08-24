@@ -32,6 +32,7 @@ class ManualUITestingPage(QWidget):
         self.selected_file_path = ""
         self.ui.filePathLineEdit.clear()
         self.ui.processResultsButton.setEnabled(False)
+        self.setEnabled(True)
 
     def connect_signals(self):
         """Connects widget signals to the appropriate slots."""
@@ -47,16 +48,21 @@ class ManualUITestingPage(QWidget):
             self.ui.filePathLineEdit.setText(file_path)
             self.ui.processResultsButton.setEnabled(True)
 
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the page and updates the main status bar."""
+        self.setEnabled(not is_busy)
+        main_window = self.parent()
+        if main_window and hasattr(main_window, 'statusBar'):
+            if is_busy:
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
+
     def run_process_results_task(self):
         """Initiates the background task to process the test results."""
-        # Mark the project as dirty immediately, before starting the task
         self.orchestrator.is_project_dirty = True
 
-        # Show confirmation message IMMEDIATELY
-        QMessageBox.information(self, "Processing Started", "Your test results have been submitted and are being processed in the background. The application will advance to the next step when complete.")
-
-        self.ui.processResultsButton.setEnabled(False)
-        self.ui.processResultsButton.setText("Processing...")
+        self._set_ui_busy(True, "Processing test results file...")
 
         worker = Worker(self._task_process_results, self.selected_file_path)
         worker.signals.result.connect(self._handle_processing_result)
@@ -65,20 +71,20 @@ class ManualUITestingPage(QWidget):
 
     def _handle_processing_result(self, success):
         """Handles the result from the worker thread."""
-        self.ui.processResultsButton.setText("Process Test Results")
-        # The success message is no longer needed here.
-        # We just emit the signal to trigger the UI refresh to the next phase.
-        if success:
-            self.testing_complete.emit()
-        else:
-            QMessageBox.critical(self, "Error", "Failed to submit test results. Please check the logs.")
-            self.ui.processResultsButton.setEnabled(True)
+        try:
+            if success:
+                self.testing_complete.emit()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to submit test results. Please check the logs.")
+        finally:
+            self._set_ui_busy(False)
 
     def _handle_processing_error(self, error_tuple):
         """Handles an error from the worker thread."""
-        self.ui.processResultsButton.setText("Process Test Results")
-        self.ui.processResultsButton.setEnabled(True)
-        QMessageBox.critical(self, "Processing Error", f"An error occurred while processing the file:\n{error_tuple[1]}")
+        try:
+            QMessageBox.critical(self, "Processing Error", f"An error occurred while processing the file:\n{error_tuple[1]}")
+        finally:
+            self._set_ui_busy(False)
 
     def _task_process_results(self, file_path, **kwargs):
         """The actual function that runs in the background to read the file and pass it to the orchestrator."""

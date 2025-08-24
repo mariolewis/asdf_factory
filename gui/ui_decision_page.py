@@ -29,7 +29,6 @@ class Ui_DecisionPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(DecisionPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 

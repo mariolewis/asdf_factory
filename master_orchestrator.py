@@ -416,7 +416,7 @@ class MasterOrchestrator:
         return saved_paths
 
     def save_text_brief_as_file(self, brief_content: str) -> str | None:
-        """Saves a text-based project brief to a markdown file and commits it."""
+        """Saves a text-based project brief to a markdown file in the _uploads directory and commits it."""
         if not self.project_id: return None
 
         try:
@@ -424,9 +424,11 @@ class MasterOrchestrator:
             if not project_details: return None
 
             project_root = Path(project_details['project_root_folder'])
-            docs_dir = project_root / "_docs"
-            docs_dir.mkdir(exist_ok=True)
-            brief_file_path = docs_dir / "user_project_brief.md"
+            # Corrected Path: Point to the _uploads sub-directory
+            uploads_dir = project_root / "_docs" / "_uploads"
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+
+            brief_file_path = uploads_dir / "project_brief.md"
             brief_file_path.write_text(brief_content, encoding="utf-8")
 
             # Commit the new brief document
@@ -448,152 +450,22 @@ class MasterOrchestrator:
             return
 
         try:
-            project_details = self.db_manager.get_project_by_id(self.project_id)
-            if not project_details or not project_details['project_root_folder']:
-                raise FileNotFoundError("Project root folder not found in database.")
-            project_root = Path(project_details['project_root_folder'])
-
-            # Create a dedicated directory for project documents
-            docs_dir = project_root / "_docs"
-            docs_dir.mkdir(exist_ok=True)
-
             brief_content = ""
-            original_filename = "project_brief.md" # Default for text input
-
-            # --- Process and Save the Brief ---
             if isinstance(brief_input, str):
                 brief_content = brief_input
-            else: # Assumes it's a Streamlit UploadedFile-like object
-                original_filename = getattr(brief_input, 'name', 'project_brief_uploaded.txt')
-                if original_filename.endswith('.docx'):
-                    import docx
-                    doc = docx.Document(brief_input)
-                    brief_content = "\n".join([p.text for p in doc.paragraphs])
-                else: # For .txt and .md
-                    brief_content = brief_input.getvalue().decode("utf-8")
+            else: # Fallback for other potential input types
+                brief_content = str(brief_input)
 
-            # Save the processed content as a markdown file
-            brief_file_path = docs_dir / original_filename.replace('.txt', '.md').replace('.docx', '.md')
-            brief_file_path.write_text(brief_content, encoding="utf-8")
-            logging.info(f"Saved project brief to physical file: {brief_file_path}")
+            # --- Use the corrected helper to save the file ---
+            brief_file_path_str = self.save_text_brief_as_file(brief_content)
+            if not brief_file_path_str:
+                raise IOError("Failed to save the project brief to a file.")
 
-            # --- Save the path to the database ---
-            self.db_manager.update_project_field(self.project_id, "project_brief_path", str(brief_file_path.relative_to(project_root)))
+            project_root = Path(self.db_manager.get_project_by_id(self.project_id)['project_root_folder'])
+            relative_path = Path(brief_file_path_str).relative_to(project_root)
 
-            # --- Proceed with AI Analysis ---
-            if not self.llm_service:
-                raise Exception("Cannot analyze brief: LLM Service is not configured.")
-
-            self.active_ux_spec = {'project_brief': brief_content}
-            triage_agent = UX_Triage_Agent(llm_service=self.llm_service)
-            analysis_result = triage_agent.analyze_brief(brief_content)
-
-            if "error" in analysis_result:
-                self.task_awaiting_approval = {"analysis_error": analysis_result.get('details')}
-            else:
-                self.active_ux_spec['inferred_personas'] = analysis_result.get("inferred_personas", [])
-                self.task_awaiting_approval = {"analysis": analysis_result}
-
-            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
-
-        except Exception as e:
-            logging.error(f"Failed to handle UX/UI brief submission: {e}", exc_info=True)
-            self.task_awaiting_approval = {"analysis_error": str(e)}
-            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
-
-    def save_uploaded_brief_files(self, uploaded_files: list) -> list[str]:
-        """Copies uploaded brief files to the project's _docs/_uploads directory."""
-        if not self.project_id:
-            logging.error("Cannot save uploaded files; no active project.")
-            return []
-
-        saved_paths = []
-        project_details = self.db_manager.get_project_by_id(self.project_id)
-        if not project_details or not project_details['project_root_folder']:
-            logging.error(f"Could not find project root folder for project {self.project_id}.")
-            return []
-
-        project_root = Path(project_details['project_root_folder'])
-        uploads_dir = project_root / "_docs" / "_uploads"
-        uploads_dir.mkdir(parents=True, exist_ok=True)
-
-        for uploaded_file_path in uploaded_files:
-            try:
-                source_path = Path(uploaded_file_path)
-                destination_path = uploads_dir / source_path.name
-                import shutil
-                shutil.copy(source_path, destination_path)
-                saved_paths.append(str(destination_path))
-                logging.info(f"Copied uploaded brief file to: {destination_path}")
-            except Exception as e:
-                logging.error(f"Failed to copy uploaded file {uploaded_file_path}: {e}")
-
-        return saved_paths
-
-    def save_text_brief_as_file(self, brief_content: str) -> str | None:
-        """Saves a text-based project brief to a markdown file."""
-        if not self.project_id:
-            logging.error("Cannot save text brief; no active project.")
-            return None
-
-        try:
-            project_details = self.db_manager.get_project_by_id(self.project_id)
-            if not project_details or not project_details['project_root_folder']:
-                logging.error(f"Could not find project root folder for project {self.project_id}.")
-                return None
-
-            project_root = Path(project_details['project_root_folder'])
-            docs_dir = project_root / "_docs"
-            docs_dir.mkdir(exist_ok=True)
-            brief_file_path = docs_dir / "user_project_brief.md"
-            brief_file_path.write_text(brief_content, encoding="utf-8")
-            logging.info(f"Saved text project brief to: {brief_file_path}")
-            return str(brief_file_path)
-        except Exception as e:
-            logging.error(f"Failed to save text brief as file: {e}")
-            return None
-
-    def handle_ux_ui_brief_submission(self, brief_input):
-        """
-        Handles the initial project brief submission, saves the brief as a physical
-        file, stores its path, calls the triage agent, and prepares for the PM's decision.
-        """
-        if not self.project_id:
-            logging.error("Cannot handle brief submission; no active project.")
-            return
-
-        try:
-            project_details = self.db_manager.get_project_by_id(self.project_id)
-            if not project_details or not project_details['project_root_folder']:
-                raise FileNotFoundError("Project root folder not found in database.")
-            project_root = Path(project_details['project_root_folder'])
-
-            # Create a dedicated directory for project documents
-            docs_dir = project_root / "_docs"
-            docs_dir.mkdir(exist_ok=True)
-
-            brief_content = ""
-            original_filename = "project_brief.md" # Default for text input
-
-            # --- Process and Save the Brief ---
-            if isinstance(brief_input, str):
-                brief_content = brief_input
-            else: # Assumes it's a Streamlit UploadedFile-like object
-                original_filename = getattr(brief_input, 'name', 'project_brief_uploaded.txt')
-                if original_filename.endswith('.docx'):
-                    import docx
-                    doc = docx.Document(brief_input)
-                    brief_content = "\n".join([p.text for p in doc.paragraphs])
-                else: # For .txt and .md
-                    brief_content = brief_input.getvalue().decode("utf-8")
-
-            # Save the processed content as a markdown file
-            brief_file_path = docs_dir / original_filename.replace('.txt', '.md').replace('.docx', '.md')
-            brief_file_path.write_text(brief_content, encoding="utf-8")
-            logging.info(f"Saved project brief to physical file: {brief_file_path}")
-
-            # --- Save the path to the database ---
-            self.db_manager.update_project_field(self.project_id, "project_brief_path", str(brief_file_path.relative_to(project_root)))
+            # --- Save the relative path to the database ---
+            self.db_manager.update_project_field(self.project_id, "project_brief_path", str(relative_path))
 
             # --- Proceed with AI Analysis ---
             if not self.llm_service:
@@ -722,56 +594,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to refine UX spec draft: {e}", exc_info=True)
             return f"### Error\nAn unexpected error occurred while refining the draft: {e}"
-
-    def handle_ux_spec_completion(self, final_spec_markdown: str) -> bool:
-        """
-        Finalizes the UX/UI Specification, saves it, generates the JSON blueprint,
-        stores the final spec for the next phase, and transitions to SPEC_ELABORATION.
-        """
-        if not self.project_id:
-            logging.error("Cannot complete UX Spec: No active project.")
-            return False
-
-        try:
-            db = self.db_manager
-            project_details = db.get_project_by_id(self.project_id)
-            if not (project_details and project_details['project_root_folder']):
-                 raise FileNotFoundError("Project root folder not found for saving UX spec.")
-
-            # --- Finalize and Save the UX Spec Artifact ---
-            project_root = Path(project_details['project_root_folder'])
-            docs_dir = project_root / "_docs"
-            ux_spec_file_path = docs_dir / "ux_ui_specification.md"
-            ux_spec_file_path.write_text(final_spec_markdown, encoding="utf-8")
-            self._commit_document(ux_spec_file_path, "docs: Finalize UX/UI Specification")
-
-            agent = UX_Spec_Agent(llm_service=self.llm_service)
-            json_blueprint = agent.parse_final_spec_and_generate_blueprint(final_spec_markdown)
-            if '"error":' in json_blueprint:
-                raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
-
-            composite_spec_for_db = (
-                f"{final_spec_markdown}\n\n"
-                f"{'='*80}\n"
-                f"MACHINE-READABLE JSON BLUEPRINT\n"
-                f"{'='*80}\n\n"
-                f"```json\n{json_blueprint}\n```"
-            )
-            db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
-
-            # --- Prepare for the next phase ---
-            # Store the final spec in the approval task variable to pass it to the SpecElaborationPage
-            self.task_awaiting_approval = {"completed_ux_spec": final_spec_markdown}
-            self.active_ux_spec = {} # Clear the temporary UX spec data
-
-            # Transition to the next phase
-            self.set_phase("SPEC_ELABORATION")
-            return True
-
-        except Exception as e:
-            logging.error(f"Failed to complete UX/UI Specification: {e}", exc_info=True)
-            self.task_awaiting_approval = {"error": str(e)}
-            return False
 
     def handle_ux_ui_phase_decision(self, decision: str):
         """
@@ -944,7 +766,7 @@ class MasterOrchestrator:
             # Store the generated markdown
             self.active_ux_spec['style_guide'] = style_guide_md
 
-            logging.info("Successfully generated and stored the Theming & Style Guide.")
+            logging.info("Successfully generated and stored the Theming && Style Guide.")
 
             # Clear any previous error messages
             if 'error' in self.active_ux_spec:
@@ -956,60 +778,68 @@ class MasterOrchestrator:
 
     def handle_ux_spec_completion(self, final_spec_markdown: str) -> bool:
         """
-        Compiles the final UX/UI Specification, saves it to the database and a file,
-        and transitions to the next main phase.
+        Finalizes the UX/UI Specification, saves it, generates the JSON blueprint,
+        stores the final spec for the next phase, and transitions to SPEC_ELABORATION.
         """
         if not self.project_id:
+            logging.error("Cannot complete UX Spec: No active project.")
             return False
 
         try:
-            final_spec_parts = []
-            personas = self.active_ux_spec.get('confirmed_personas', [])
-            if personas:
-                final_spec_parts.append("## 1. User Personas\\n- " + "\\n- ".join(personas))
-            journeys = self.active_ux_spec.get('confirmed_user_journeys', '')
-            if journeys:
-                final_spec_parts.append("## 2. Core User Journeys\\n" + journeys)
-            blueprints = self.active_ux_spec.get('screen_blueprints', {})
-            if blueprints:
-                blueprint_section = ["## 3. Structural Blueprint (JSON)"]
-                blueprint_section.append("```json")
-                parsed_blueprints = {k: json.loads(v) for k, v in blueprints.items()}
-                blueprint_section.append(json.dumps(parsed_blueprints, indent=2))
-                blueprint_section.append("```")
-                final_spec_parts.append("\\n".join(blueprint_section))
-            style_guide = self.active_ux_spec.get('style_guide', '')
-            if style_guide:
-                final_spec_parts.append("## 4. Theming & Style Guide\\n" + style_guide)
-            final_spec_doc = "\\n\\n---\\n\\n".join(final_spec_parts)
-
-            final_doc_with_header = self.prepend_standard_header(
-                document_content=final_spec_doc,
-                document_type="UX/UI Specification"
-            )
-
             db = self.db_manager
-            db.update_project_field(self.project_id, "ux_spec_text", final_doc_with_header)
-
             project_details = db.get_project_by_id(self.project_id)
-            if project_details and project_details['project_root_folder']:
-                project_root = Path(project_details['project_root_folder'])
-                docs_dir = project_root / "_docs"
-                ux_spec_file_path = docs_dir / "ux_ui_specification.md"
-                ux_spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
+            if not (project_details and project_details['project_root_folder']):
+                 raise FileNotFoundError("Project root folder not found for saving UX spec.")
 
-                # Commit the new document
-                self._commit_document(ux_spec_file_path, "docs: Finalize UX/UI Specification")
+            # --- Finalize and Save the UX Spec Artifact ---
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "_docs"
 
-            self.active_ux_spec = {}
+            # Save the Markdown file for system use
+            ux_spec_file_path_md = docs_dir / "ux_ui_specification.md"
+            ux_spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
+            self._commit_document(ux_spec_file_path_md, "docs: Finalize UX/UI Specification (Markdown)")
+
+            # Generate and save the formatted .docx file for human use
+            ux_spec_file_path_docx = docs_dir / "ux_ui_specification.docx"
+            report_generator = ReportGeneratorAgent()
+            # We pass the raw markdown to the generator, without the header
+            ux_spec_content = self._get_content_from_document(final_spec_markdown)
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"UX/UI Specification - {self.project_name}",
+                content=ux_spec_content
+            )
+            with open(ux_spec_file_path_docx, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+            self._commit_document(ux_spec_file_path_docx, "docs: Add formatted UX/UI Specification (docx)")
+
+
+            agent = UX_Spec_Agent(llm_service=self.llm_service)
+            json_blueprint = agent.parse_final_spec_and_generate_blueprint(final_spec_markdown)
+            if '"error":' in json_blueprint:
+                raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
+
+            composite_spec_for_db = (
+                f"{final_spec_markdown}\n\n"
+                f"{'='*80}\n"
+                f"MACHINE-READABLE JSON BLUEPRINT\n"
+                f"{'='*80}\n\n"
+                f"```json\n{json_blueprint}\n```"
+            )
+            db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
+
+            # --- Prepare for the next phase ---
+            # Store the final spec in the approval task variable to pass it to the SpecElaborationPage
             self.task_awaiting_approval = {"completed_ux_spec": final_spec_markdown}
+            self.active_ux_spec = {} # Clear the temporary UX spec data
+
+            # Transition to the next phase
             self.set_phase("SPEC_ELABORATION")
             return True
 
         except Exception as e:
-            logging.error(f"Failed to complete UX/UI Specification: {e}")
-            if 'error' not in self.active_ux_spec:
-                 self.active_ux_spec['error'] = str(e)
+            logging.error(f"Failed to complete UX/UI Specification: {e}", exc_info=True)
+            self.task_awaiting_approval = {"error": str(e)}
             return False
 
     def generate_application_spec_draft(self, initial_spec_text: str) -> tuple[dict, str]:
@@ -1045,7 +875,7 @@ class MasterOrchestrator:
     def finalize_and_save_app_spec(self, spec_draft: str):
         """
         Applies the standard header, saves the final application spec to the
-        database and a file, and transitions to the next phase.
+        database, a .md file, and a formatted .docx file, and transitions to the next phase.
         """
         if not self.project_id:
             logging.error("Cannot save application spec; no active project.")
@@ -1063,11 +893,22 @@ class MasterOrchestrator:
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                spec_file_path = docs_dir / "application_spec.md"
-                spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
 
-                # Commit the new document
-                self._commit_document(spec_file_path, "docs: Finalize Application Specification")
+                # Save the Markdown file for system use
+                spec_file_path_md = docs_dir / "application_spec.md"
+                spec_file_path_md.write_text(final_doc_with_header, encoding="utf-8")
+                self._commit_document(spec_file_path_md, "docs: Finalize Application Specification (Markdown)")
+
+                # Generate and save the formatted .docx file for human use
+                spec_file_path_docx = docs_dir / "application_spec.docx"
+                report_generator = ReportGeneratorAgent()
+                docx_bytes = report_generator.generate_text_document_docx(
+                    title=f"Application Specification - {self.project_name}",
+                    content=spec_draft
+                )
+                with open(spec_file_path_docx, 'wb') as f:
+                    f.write(docx_bytes.getbuffer())
+                self._commit_document(spec_file_path_docx, "docs: Add formatted Application Specification (docx)")
 
             self.set_phase("TECHNICAL_SPECIFICATION")
 
@@ -1076,8 +917,8 @@ class MasterOrchestrator:
 
     def finalize_and_save_complexity_assessment(self, assessment_json_str: str):
         """
-        Saves the complexity assessment to the DB, and now generates and saves
-        a formatted .docx report to the filesystem.
+        Saves the complexity assessment to the DB and generates and saves both a raw
+        .json file and a formatted .docx report to the filesystem.
         """
         if not self.project_id:
             logging.error("Cannot save complexity assessment; no active project.")
@@ -1086,34 +927,37 @@ class MasterOrchestrator:
         try:
             # Save the raw data to the database as before
             self.db_manager.update_project_field(self.project_id, "complexity_assessment_text", assessment_json_str)
-            logging.info(f"Successfully saved Complexity & Risk Assessment to database for project {self.project_id}")
+            logging.info(f"Successfully saved Complexity && Risk Assessment to database for project {self.project_id}")
 
-            # Now, generate and save the formatted .docx report
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                # Change the output filename to .docx
-                assessment_file_path = docs_dir / "complexity_and_risk_assessment.docx"
+                docs_dir.mkdir(exist_ok=True)
 
-                # Use the new agent method
+                # Save the raw JSON file for system use
+                assessment_file_path_json = docs_dir / "complexity_and_risk_assessment.json"
+                assessment_file_path_json.write_text(assessment_json_str, encoding="utf-8")
+                self._commit_document(assessment_file_path_json, "docs: Add Complexity and Risk Assessment (JSON)")
+
+                # Generate and save the formatted .docx report
+                assessment_file_path_docx = docs_dir / "complexity_and_risk_assessment.docx"
                 report_generator = ReportGeneratorAgent()
                 assessment_data = json.loads(assessment_json_str)
                 docx_bytes = report_generator.generate_assessment_docx(assessment_data, self.project_name)
 
-                with open(assessment_file_path, 'wb') as f:
+                with open(assessment_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
 
-                # Commit the new .docx document
-                self._commit_document(assessment_file_path, "docs: Add Complexity and Risk Assessment")
+                self._commit_document(assessment_file_path_docx, "docs: Add formatted Complexity and Risk Assessment (docx)")
 
         except Exception as e:
             logging.error(f"Failed to finalize and save complexity assessment: {e}")
 
     def finalize_and_save_tech_spec(self, tech_spec_draft: str, target_os: str):
         """
-        Saves the final technical spec to the database and a file,
-        extracts key info, and transitions to the next phase.
+        Saves the final technical spec to the database, a .md file, and a formatted
+        .docx file, extracts key info, and transitions to the next phase.
         """
         if not self.project_id:
             logging.error("Cannot save technical spec; no active project.")
@@ -1133,11 +977,23 @@ class MasterOrchestrator:
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                spec_file_path = docs_dir / "technical_spec.md"
-                spec_file_path.write_text(final_doc_with_header, encoding="utf-8")
 
-                # Commit the new document
-                self._commit_document(spec_file_path, "docs: Finalize Technical Specification")
+                # Save the Markdown file for system use
+                spec_file_path_md = docs_dir / "technical_spec.md"
+                spec_file_path_md.write_text(final_doc_with_header, encoding="utf-8")
+                self._commit_document(spec_file_path_md, "docs: Finalize Technical Specification (Markdown)")
+
+                # Generate and save the formatted .docx file for human use
+                spec_file_path_docx = docs_dir / "technical_spec.docx"
+                report_generator = ReportGeneratorAgent()
+                docx_bytes = report_generator.generate_text_document_docx(
+                    title=f"Technical Specification - {self.project_name}",
+                    content=tech_spec_draft
+                )
+                with open(spec_file_path_docx, 'wb') as f:
+                    f.write(docx_bytes.getbuffer())
+                self._commit_document(spec_file_path_docx, "docs: Add formatted Technical Specification (docx)")
+
 
             self._extract_and_save_primary_technology(final_doc_with_header)
             self.set_phase("BUILD_SCRIPT_SETUP")
@@ -1147,8 +1003,8 @@ class MasterOrchestrator:
 
     def finalize_and_save_coding_standard(self, standard_draft: str):
         """
-        Saves the final coding standard to the database and a formatted .docx file,
-        and transitions to the next phase.
+        Saves the final coding standard to the database, a .md file, and a
+        formatted .docx file, and transitions to the next phase.
         """
         if not self.project_id:
             logging.error("Cannot save coding standard; no active project.")
@@ -1167,20 +1023,22 @@ class MasterOrchestrator:
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                # Change the output filename to .docx
-                standard_file_path = docs_dir / "coding_standard.docx"
 
-                # Use the ReportGeneratorAgent to create the docx file
+                # Save the Markdown file for system use
+                standard_file_path_md = docs_dir / "coding_standard.md"
+                standard_file_path_md.write_text(final_doc_with_header, encoding="utf-8")
+                self._commit_document(standard_file_path_md, "docs: Finalize Coding Standard (Markdown)")
+
+                # Generate and save the formatted .docx file for human use
+                standard_file_path_docx = docs_dir / "coding_standard.docx"
                 report_generator = ReportGeneratorAgent()
                 docx_bytes = report_generator.generate_text_document_docx(
                     title=f"Coding Standard - {self.project_name}",
                     content=standard_draft
                 )
-                with open(standard_file_path, 'wb') as f:
+                with open(standard_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
-
-                # Commit the new document
-                self._commit_document(standard_file_path, "docs: Finalize Coding Standard")
+                self._commit_document(standard_file_path_docx, "docs: Add formatted Coding Standard (docx)")
 
             self.set_phase("PLANNING")
 
@@ -1189,8 +1047,8 @@ class MasterOrchestrator:
 
     def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
         """
-        Saves the final dev plan to the database and a formatted .docx file,
-        loads it into the active state, and transitions to Genesis.
+        Saves the final dev plan to the database, a .json file, and a formatted
+        .docx file, loads it into the active state, and transitions to Genesis.
         """
         if not self.project_id:
             return False, "No active project."
@@ -1203,21 +1061,28 @@ class MasterOrchestrator:
             )
             self.db_manager.update_project_field(self.project_id, "development_plan_text", final_doc_with_header)
 
-            # Generate and save the formatted .docx report to the filesystem
+            # Generate and save both raw and formatted files to the filesystem
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "_docs"
-                plan_file_path = docs_dir / "development_plan.docx"
+                docs_dir.mkdir(exist_ok=True)
 
+                # Save the raw JSON file for system use
+                plan_file_path_json = docs_dir / "development_plan.json"
+                plan_file_path_json.write_text(plan_json_string, encoding="utf-8")
+                self._commit_document(plan_file_path_json, "docs: Finalize Development Plan (JSON)")
+
+                # Generate and save the formatted .docx report
+                plan_file_path_docx = docs_dir / "development_plan.docx"
                 report_generator = ReportGeneratorAgent()
                 plan_data = json.loads(plan_json_string)
                 docx_bytes = report_generator.generate_dev_plan_docx(plan_data, self.project_name)
 
-                with open(plan_file_path, 'wb') as f:
+                with open(plan_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
 
-                self._commit_document(plan_file_path, "docs: Finalize Development Plan")
+                self._commit_document(plan_file_path_docx, "docs: Add formatted Development Plan (docx)")
 
             # Load the plan into the active state for execution
             full_plan_data = json.loads(plan_json_string)
@@ -1418,6 +1283,9 @@ class MasterOrchestrator:
         coding_standard = project_details['coding_standard_text']
         target_language = project_details['technology_stack']
         test_command = project_details['test_execution_command']
+        # Check if version control is enabled for this project, defaulting to True if not set
+        version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
+
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
         micro_spec_content = task.get("task_description")
@@ -1453,13 +1321,13 @@ class MasterOrchestrator:
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
 
         if progress_callback: progress_callback(f"Writing files, testing, and committing {component_name}...")
-        build_agent = BuildAndCommitAgentAppTarget(str(project_root_path))
+        build_agent = BuildAndCommitAgentAppTarget(str(project_root_path), version_control_enabled=version_control_enabled)
         status, result_message = build_agent.build_and_commit_component(
             task.get("component_file_path"), source_code,
-            task.get("test_file_path"), unit_tests, test_command, self.llm_service
+            task.get("test_file_path"), unit_tests, test_command, self.llm_service,
+            version_control_enabled # Pass the flag to the agent
         )
 
-        # --- THIS IS THE NEW LOGIC ---
         if status == 'ENVIRONMENT_FAILURE':
             logging.error(f"Environment failure for {component_name}: {result_message}")
             self.task_awaiting_approval = {"failure_log": result_message, "is_env_failure": True}
@@ -1468,7 +1336,6 @@ class MasterOrchestrator:
         elif status != 'SUCCESS':
             # This is a code failure, which IS recoverable by the debug loop.
             raise Exception(f"BuildAndCommitAgent failed for {component_name}: {result_message}")
-        # --- END OF NEW LOGIC ---
 
         commit_hash = result_message.split(":")[-1].strip() if "New commit hash:" in result_message else "N/A"
 
@@ -1681,6 +1548,17 @@ class MasterOrchestrator:
         # If no header, assume the whole content is JSON
         return json.loads(doc_text)
 
+    def _get_content_from_document(self, doc_text: str) -> str:
+        """Strips the standard text header from a document to get the raw content."""
+        if not doc_text:
+            return ""
+        header_delimiter = f"\n{'-' * 50}\n\n"
+        if header_delimiter in doc_text:
+            parts = doc_text.split(header_delimiter, 1)
+            if len(parts) > 1:
+                return parts[1]
+        return doc_text # Return original text if delimiter not found
+
     def _determine_resume_phase_from_rowd(self, db: ASDFDBManager) -> FactoryPhase:
         """
         Analyzes the loaded project documents and artifact statuses to determine
@@ -1753,11 +1631,11 @@ class MasterOrchestrator:
     def _run_integration_and_ui_testing_phase(self, progress_callback=None):
         """
         Executes the full Integration and UI Testing workflow, including planning,
-        execution, and final test plan generation.
+        execution, and final test plan generation in both .md and .docx formats.
         """
-        logging.info("Starting Phase: Automated Integration & Verification.")
+        logging.info("Starting Phase: Automated Integration && Verification.")
         if progress_callback:
-            progress_callback("Starting Phase: Automated Integration & Verification.")
+            progress_callback("Starting Phase: Automated Integration && Verification.")
 
         try:
             db = self.db_manager
@@ -1770,12 +1648,9 @@ class MasterOrchestrator:
 
             if progress_callback: progress_callback("Analyzing project for integration points...")
 
-            # For this version, we assume all new artifacts are potential integration points
-            # A more advanced version could be more selective.
             all_artifacts = db.get_all_artifacts_for_project(self.project_id)
             new_artifacts_for_integration = [dict(row) for row in all_artifacts]
 
-            # Determine which existing files are the most likely integration points
             integration_files_to_load = self._get_integration_context_files(new_artifacts_for_integration)
             existing_code_context = {}
             for file_path in integration_files_to_load:
@@ -1789,19 +1664,18 @@ class MasterOrchestrator:
                 json.dumps(new_artifacts_for_integration), existing_code_context
             )
 
-            # --- This is the new, crucial execution logic ---
             if progress_callback: progress_callback("Executing Integration Plan...")
             orchestration_agent = OrchestrationCodeAgent(llm_service=self.llm_service)
             integration_plan = json.loads(integration_plan_json)
 
             for file_path_str, modifications in integration_plan.items():
+                if progress_callback: progress_callback(f"  - Applying changes to {file_path_str}...")
                 target_file_path = project_root_path / file_path_str
                 original_code = target_file_path.read_text(encoding='utf-8') if target_file_path.exists() else ""
 
                 modified_code = orchestration_agent.apply_modifications(original_code, json.dumps(modifications))
                 target_file_path.write_text(modified_code, encoding='utf-8')
                 logging.info(f"Applied integration modifications to {file_path_str}")
-            # --- End of new logic ---
 
             final_integration_plan = self.prepend_standard_header(
                 document_content=integration_plan_json,
@@ -1825,9 +1699,23 @@ class MasterOrchestrator:
             )
             db.update_project_field(self.project_id, "ui_test_plan_text", final_ui_test_plan)
 
-            test_plan_file_path = docs_dir / "ui_test_plan.md"
-            test_plan_file_path.write_text(final_ui_test_plan, encoding="utf-8")
-            self._commit_document(test_plan_file_path, "docs: Add UI Test Plan")
+            # Save the Markdown file for system use
+            test_plan_file_path_md = docs_dir / "ui_test_plan.md"
+            test_plan_file_path_md.write_text(final_ui_test_plan, encoding="utf-8")
+            self._commit_document(test_plan_file_path_md, "docs: Add UI Test Plan (Markdown)")
+
+            # Generate and save the formatted .docx file for human use
+            test_plan_file_path_docx = docs_dir / "ui_test_plan.docx"
+            report_generator = ReportGeneratorAgent()
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"Manual UI Test Plan - {self.project_name}",
+                content=ui_test_plan_content
+            )
+            with open(test_plan_file_path_docx, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+            self._commit_document(test_plan_file_path_docx, "docs: Add formatted UI Test Plan (docx)")
+
+            if progress_callback: progress_callback("Integration phase complete. Proceeding to manual testing.")
 
             self.set_phase("MANUAL_UI_TESTING")
 
@@ -2530,7 +2418,7 @@ class MasterOrchestrator:
         return header + document_content
 
     def _commit_document(self, file_path: Path, commit_message: str):
-        """A helper method to stage and commit a single document."""
+        """A helper method to stage and commit a single document, but only if version control is enabled."""
         if not self.project_id:
             return
         try:
@@ -2538,6 +2426,14 @@ class MasterOrchestrator:
             if not project_details or not project_details['project_root_folder']:
                 logging.error(f"Cannot commit {file_path.name}: project root folder not found.")
                 return
+
+            # --- THIS IS THE FIX ---
+            # Check if version control is enabled before attempting any git operations.
+            version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
+            if not version_control_enabled:
+                logging.info(f"Skipping commit for {file_path.name}; version control is disabled for this project.")
+                return
+            # --- END OF FIX ---
 
             project_root = Path(project_details['project_root_folder'])
             repo = git.Repo(project_root)
@@ -2650,10 +2546,10 @@ class MasterOrchestrator:
             logging.error(f"Failed to stop and export project: {e}", exc_info=True)
             return None
 
-    def _perform_preflight_checks(self, project_root_str: str) -> dict:
+    def _perform_preflight_checks(self, project_root_str: str, project_id: str) -> dict:
         """
         Performs a sequence of pre-flight checks on an existing project environment.
-        This version includes a more robust Git repository check.
+        This version is now aware of the version control setting.
         """
         import os
         import subprocess
@@ -2664,35 +2560,46 @@ class MasterOrchestrator:
         if not project_root.exists() or not project_root.is_dir():
             return {"status": "PATH_NOT_FOUND", "message": f"The project folder could not be found or is not a directory. Please confirm the new location: {project_root_str}"}
 
-        # 2. VCS Validation (Multi-tiered check for robustness)
-        # Check 2a: Directory existence
-        if not (project_root / '.git').is_dir():
-            return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing. Please re-initialize the repository."}
+        # Check the project's setting for version control
+        project_details = self.db_manager.get_project_by_id(project_id)
+        version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
 
-        # Check 2b: GitPython validation
-        try:
-            repo = git.Repo(project_root)
-        except git.InvalidGitRepositoryError:
-            return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (GitPython check failed)."}
+        # 2. VCS Validation (Only if enabled for this project)
+        if version_control_enabled:
+            # Check 2a: Directory existence
+            if not (project_root / '.git').is_dir():
+                return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing. Version control is enabled for this project."}
 
-        # Check 2c: Subprocess command validation (most robust)
-        try:
-            result = subprocess.run(
-                ['git', 'status'],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-                check=False,
-                startupinfo=subprocess.STARTUPINFO(dwFlags=subprocess.STARTF_USESHOWWINDOW) if os.name == 'nt' else None
-            )
-            if result.returncode != 0:
-                return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (command-line check failed)."}
-        except FileNotFoundError:
-            return {"status": "GIT_MISSING", "message": "Git command not found. Please ensure Git is installed and in your system's PATH."}
+            # Check 2b: GitPython validation
+            try:
+                repo = git.Repo(project_root)
+            except git.InvalidGitRepositoryError:
+                return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (GitPython check failed)."}
 
-        # 3. State Drift Validation
-        if repo.is_dirty(untracked_files=True):
-            return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository."}
+            # Check 2c: Subprocess command validation
+            try:
+                # This part for Windows startupinfo is platform-specific and can cause issues if not handled carefully
+                startupinfo = None
+                if os.name == 'nt':
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+
+                result = subprocess.run(
+                    ['git', 'status'],
+                    cwd=project_root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    startupinfo=startupinfo
+                )
+                if result.returncode != 0:
+                    return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (command-line check failed)."}
+            except FileNotFoundError:
+                return {"status": "GIT_MISSING", "message": "Git command not found. Please ensure Git is installed and in your system's PATH."}
+
+            # 3. State Drift Validation
+            if repo.is_dirty(untracked_files=True):
+                return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository."}
 
         # All checks passed
         return {"status": "ALL_PASS", "message": "Project environment successfully verified."}
@@ -2878,8 +2785,6 @@ class MasterOrchestrator:
                     plan_json = self._get_json_from_document(project_details_for_plan['development_plan_text'])
                     self.active_plan = plan_json.get("development_plan", [])
                     logging.info("Successfully pre-loaded development plan into orchestrator state.")
-                    # --- THIS IS THE FIX ---
-                    # After loading the plan, immediately calculate the correct resume point.
                     self._recalculate_plan_cursor_from_db()
                 except (json.JSONDecodeError, KeyError) as e:
                     logging.warning(f"Could not pre-load development plan during project load: {e}")
@@ -2889,7 +2794,7 @@ class MasterOrchestrator:
 
             self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
 
-            check_result = self._perform_preflight_checks(history_record['project_root_folder'])
+            check_result = self._perform_preflight_checks(history_record['project_root_folder'], project_id_to_load)
             self.preflight_check_result = {**check_result, "history_id": history_id}
 
             self.is_project_dirty = False

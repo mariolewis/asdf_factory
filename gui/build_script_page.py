@@ -37,13 +37,19 @@ class BuildScriptPage(QWidget):
         self.ui.autoGenerateButton.clicked.connect(self.run_auto_generate_task)
         self.ui.manualCreateButton.clicked.connect(self.on_manual_create_clicked)
 
-    def _set_ui_busy(self, is_busy):
-        """Disables or enables the page while a background task runs."""
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the page and updates the main status bar."""
         self.setEnabled(not is_busy)
+        main_window = self.parent()
+        if main_window and hasattr(main_window, 'statusBar'):
+            if is_busy:
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
 
-    def _execute_task(self, task_function, on_result, *args):
+    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
         """Generic method to run a task in the background."""
-        self._set_ui_busy(True)
+        self._set_ui_busy(True, status_message)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
@@ -51,13 +57,16 @@ class BuildScriptPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
-        QMessageBox.critical(self, "Error", error_msg)
-        self._set_ui_busy(False)
+        try:
+            error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
+            QMessageBox.critical(self, "Error", error_msg)
+        finally:
+            self._set_ui_busy(False)
 
     def run_auto_generate_task(self):
         """Initiates the background task to generate the build script."""
-        self._execute_task(self._task_auto_generate, self._handle_auto_generate_result)
+        self._execute_task(self._task_auto_generate, self._handle_auto_generate_result,
+                           status_message="Generating build script...")
 
     def _handle_auto_generate_result(self, script_info):
         """Handles the result from the worker thread."""
@@ -70,11 +79,10 @@ class BuildScriptPage(QWidget):
 
                 (project_root / filename).write_text(content, encoding='utf-8')
 
-                # Save the choice and the generated filename to the database
                 db.update_project_field(self.orchestrator.project_id, "is_build_automated", 1)
                 db.update_project_field(self.orchestrator.project_id, "build_script_file_name", filename)
 
-                QMessageBox.information(self, "Success", f"Generated and saved '{filename}' to the project root.")
+                QMessageBox.information(self, "Success", f"Success: Generated and saved '{filename}' to the project root.")
                 self.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
                 self.orchestrator.is_project_dirty = True
                 self.build_script_setup_complete.emit()

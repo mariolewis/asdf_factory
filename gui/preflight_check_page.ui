@@ -31,9 +31,6 @@
      <property name="text">
       <string>Continue Project</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>
@@ -98,7 +95,7 @@
          <item row="0" column="0">
           <widget class="QPushButton" name="continueButton">
            <property name="text">
-            <string>Continue Project &amp; Re-sync State</string>
+            <string>Continue Project &amp;&amp; Re-sync State</string>
            </property>
           </widget>
          </item>
@@ -149,7 +146,7 @@
          <item row="3" column="0">
           <widget class="QPushButton" name="ignoreButton">
            <property name="text">
-            <string>Ignore Uncommitted Changes &amp; Continue</string>
+            <string>Ignore Uncommitted Changes &amp;&amp; Continue</string>
            </property>
           </widget>
          </item>

@@ -73,10 +73,21 @@ if __name__ == "__main__":
     orchestrator = MasterOrchestrator(db_manager=db_manager)
     window = ASDFMainWindow(orchestrator=orchestrator)
 
-    style_file = Path(__file__).parent / "gui" / "style.qss"
-    if style_file.exists():
+    # --- Robust Stylesheet Loading ---
+    try:
+        style_file = Path(__file__).parent / "gui" / "style.qss"
+        if not style_file.exists():
+            raise FileNotFoundError(f"Stylesheet not found at: {style_file}")
+
         with open(style_file, "r") as f:
-            app.setStyleSheet(f.read())
+            window.setStyleSheet(f.read())
+            logging.info("Successfully loaded global stylesheet.")
+
+    except Exception as e:
+        error_msg = f"Fatal Error: Could not load the stylesheet 'gui/style.qss'.\nThe application cannot continue.\n\nDetails: {e}"
+        logging.critical(error_msg)
+        QMessageBox.critical(None, "Stylesheet Load Error", error_msg)
+        sys.exit(1) # Exit if the stylesheet fails to load
 
     window.showMaximized()
     sys.exit(app.exec())

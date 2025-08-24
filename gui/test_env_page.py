@@ -62,34 +62,50 @@ class TestEnvPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Failed to save build script filename:\n{e}")
 
-    def run_analysis_task(self):
-        self.ui.startButton.setText("Analyzing Specifications...")
-        self.setEnabled(False)
-        worker = Worker(self.orchestrator.start_test_environment_setup)
-        worker.signals.result.connect(self._handle_analysis_result)
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the page and updates the main status bar."""
+        self.setEnabled(not is_busy)
+        main_window = self.parent()
+        if main_window and hasattr(main_window, 'statusBar'):
+            if is_busy:
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
+
+    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
+        """Generic method to run a task in the background."""
+        self._set_ui_busy(True, status_message)
+        worker = Worker(task_function, *args)
+        worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
         self.threadpool.start(worker)
 
     def _on_task_error(self, error_tuple):
-        QMessageBox.critical(self, "Error", f"An error occurred: {error_tuple[1]}")
-        self.setEnabled(True)
-        self.ui.startButton.setText("Start Analysis")
+        try:
+            QMessageBox.critical(self, "Error", f"An error occurred: {error_tuple[1]}")
+        finally:
+            self._set_ui_busy(False)
+
+    def run_analysis_task(self):
+        self._execute_task(self.orchestrator.start_test_environment_setup, self._handle_analysis_result,
+                           status_message="Analyzing specifications for test environment...")
 
     def _handle_analysis_result(self, tasks):
-        self.setEnabled(True)
-        self.ui.startButton.setText("Start Analysis")
-        if tasks is None:
-            QMessageBox.critical(self, "Error", "Could not generate setup tasks.")
-            return
+        try:
+            if tasks is None:
+                QMessageBox.critical(self, "Error", "Could not generate setup tasks.")
+                return
 
-        self.setup_tasks = tasks
-        if not self.setup_tasks:
-            self.ui.stackedWidget.setCurrentWidget(self.ui.finalizePage)
-            self._populate_test_command()
-        else:
-            self._populate_steps_widget()
-            self._update_step_view()
-            self.ui.stackedWidget.setCurrentWidget(self.ui.checklistPage)
+            self.setup_tasks = tasks
+            if not self.setup_tasks:
+                self.ui.stackedWidget.setCurrentWidget(self.ui.finalizePage)
+                self._populate_test_command()
+            else:
+                self._populate_steps_widget()
+                self._update_step_view()
+                self.ui.stackedWidget.setCurrentWidget(self.ui.checklistPage)
+        finally:
+            self._set_ui_busy(False)
 
     def _populate_steps_widget(self):
         while self.ui.stepsStackedWidget.count() > 0:
@@ -101,11 +117,7 @@ class TestEnvPage(QWidget):
             scroll_area = QScrollArea()
             scroll_area.setWidgetResizable(True)
             page = QWidget()
-            # This ensures the panel respects the dark theme
-            page.setAutoFillBackground(True)
-            pal = page.palette()
-            pal.setColor(QPalette.Window, QColor("transparent"))
-            page.setPalette(pal)
+            page.setProperty("class", "contentPanel")
 
             layout = QVBoxLayout(page)
             header = QLabel(f"<b>Step {i+1} of {len(self.setup_tasks)}: {task.get('tool_name')}</b>")
@@ -119,7 +131,7 @@ class TestEnvPage(QWidget):
 
     def _update_step_view(self):
         self.ui.stepsStackedWidget.setCurrentIndex(self.current_step_index)
-        self.ui.doneButton.setText("Finish & Proceed" if self.current_step_index == len(self.setup_tasks) - 1 else "Done, Next Step")
+        self.ui.doneButton.setText("Finish && Proceed" if self.current_step_index == len(self.setup_tasks) - 1 else "Done, Next Step")
 
     def on_done_clicked(self):
         if self.current_step_index < len(self.setup_tasks) - 1:
@@ -147,22 +159,19 @@ class TestEnvPage(QWidget):
 
     def _populate_test_command(self):
         """Gets a suggested test command from the backend."""
-        self.ui.testCommandLineEdit.setText("Please wait a few seconds...")
-        QTimer.singleShot(100, self._start_get_test_command_task)
+        self._execute_task(self._task_get_test_command, self._handle_command_result,
+                           status_message="Generating test command...")
 
     def _handle_command_result(self, command_text):
         """Safely sets the text of the command line edit."""
-        if command_text and command_text.strip():
-            self.ui.testCommandLineEdit.setText(command_text)
-        else:
-            # If the result is empty or None for any reason, use a safe default.
-            self.ui.testCommandLineEdit.setText("pytest")
-
-    def _start_get_test_command_task(self):
-        worker = Worker(self._task_get_test_command)
-        worker.signals.result.connect(self.ui.testCommandLineEdit.setText)
-        worker.signals.error.connect(self._on_task_error)
-        self.threadpool.start(worker)
+        try:
+            if command_text and command_text.strip():
+                self.ui.testCommandLineEdit.setText(command_text)
+            else:
+                # If the result is empty or None for any reason, use a safe default.
+                self.ui.testCommandLineEdit.setText("pytest")
+        finally:
+            self._set_ui_busy(False)
 
     def _task_get_test_command(self, **kwargs):
         """Background task to get the suggested test command."""

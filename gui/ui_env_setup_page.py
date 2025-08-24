@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QLabel,
-    QLineEdit, QPushButton, QSizePolicy, QSpacerItem,
-    QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QSizePolicy,
+    QSpacerItem, QVBoxLayout, QWidget)
 
 class Ui_EnvSetupPage(object):
     def setupUi(self, EnvSetupPage):
@@ -29,7 +29,6 @@ class Ui_EnvSetupPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(EnvSetupPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -61,26 +60,58 @@ class Ui_EnvSetupPage(object):
 
         self.verticalLayout.addLayout(self.formLayout)
 
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
+
         self.confirmPathButton = QPushButton(EnvSetupPage)
         self.confirmPathButton.setObjectName(u"confirmPathButton")
 
-        self.verticalLayout.addWidget(self.confirmPathButton)
+        self.horizontalLayout_2.addWidget(self.confirmPathButton)
 
-        self.gitLabel = QLabel(EnvSetupPage)
-        self.gitLabel.setObjectName(u"gitLabel")
-        self.gitLabel.setStyleSheet(u"color: orange;")
 
-        self.verticalLayout.addWidget(self.gitLabel)
+        self.verticalLayout.addLayout(self.horizontalLayout_2)
 
-        self.initGitButton = QPushButton(EnvSetupPage)
+        self.vcsLine = QFrame(EnvSetupPage)
+        self.vcsLine.setObjectName(u"vcsLine")
+        self.vcsLine.setFrameShape(QFrame.Shape.HLine)
+        self.vcsLine.setFrameShadow(QFrame.Shadow.Sunken)
+
+        self.verticalLayout.addWidget(self.vcsLine)
+
+        self.vcsChoiceWidget = QWidget(EnvSetupPage)
+        self.vcsChoiceWidget.setObjectName(u"vcsChoiceWidget")
+        self.verticalLayout_2 = QVBoxLayout(self.vcsChoiceWidget)
+        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
+        self.verticalLayout_2.setContentsMargins(0, 0, 0, 0)
+        self.vcsInstructionLabel = QLabel(self.vcsChoiceWidget)
+        self.vcsInstructionLabel.setObjectName(u"vcsInstructionLabel")
+
+        self.verticalLayout_2.addWidget(self.vcsInstructionLabel)
+
+        self.horizontalLayout = QHBoxLayout()
+        self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout.addItem(self.horizontalSpacer)
+
+        self.localWorkspaceButton = QPushButton(self.vcsChoiceWidget)
+        self.localWorkspaceButton.setObjectName(u"localWorkspaceButton")
+
+        self.horizontalLayout.addWidget(self.localWorkspaceButton)
+
+        self.initGitButton = QPushButton(self.vcsChoiceWidget)
         self.initGitButton.setObjectName(u"initGitButton")
 
-        self.verticalLayout.addWidget(self.initGitButton)
+        self.horizontalLayout.addWidget(self.initGitButton)
 
-        self.proceedButton = QPushButton(EnvSetupPage)
-        self.proceedButton.setObjectName(u"proceedButton")
 
-        self.verticalLayout.addWidget(self.proceedButton)
+        self.verticalLayout_2.addLayout(self.horizontalLayout)
+
+
+        self.verticalLayout.addWidget(self.vcsChoiceWidget)
 
         self.bottomVerticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -95,11 +126,11 @@ class Ui_EnvSetupPage(object):
     def retranslateUi(self, EnvSetupPage):
         EnvSetupPage.setWindowTitle(QCoreApplication.translate("EnvSetupPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("EnvSetupPage", u"New Application Setup", None))
-        self.instructionLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Define the root folder and initialize a Git repository for the new target application.", None))
+        self.instructionLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Define the root folder for the new target application.", None))
         self.pathLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Target Project Root Folder:", None))
         self.confirmPathButton.setText(QCoreApplication.translate("EnvSetupPage", u"Confirm Project Folder", None))
-        self.gitLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Git repository not initialized.", None))
-        self.initGitButton.setText(QCoreApplication.translate("EnvSetupPage", u"Initialize Git Repository", None))
-        self.proceedButton.setText(QCoreApplication.translate("EnvSetupPage", u"Confirm Setup & Proceed to Specification", None))
+        self.vcsInstructionLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Next, choose how to manage your project's source code.", None))
+        self.localWorkspaceButton.setText(QCoreApplication.translate("EnvSetupPage", u"Use Local Workspace && Proceed", None))
+        self.initGitButton.setText(QCoreApplication.translate("EnvSetupPage", u"Initialize Git Repository && Proceed", None))
     # retranslateUi
 

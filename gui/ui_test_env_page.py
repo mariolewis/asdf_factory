@@ -29,7 +29,6 @@ class Ui_TestEnvPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(TestEnvPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -52,10 +51,19 @@ class Ui_TestEnvPage(object):
 
         self.verticalLayout_2.addWidget(self.standbyLabel)
 
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
+
         self.startButton = QPushButton(self.standbyPage)
         self.startButton.setObjectName(u"startButton")
 
-        self.verticalLayout_2.addWidget(self.startButton)
+        self.horizontalLayout_2.addWidget(self.startButton)
+
+
+        self.verticalLayout_2.addLayout(self.horizontalLayout_2)
 
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -85,6 +93,10 @@ class Ui_TestEnvPage(object):
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout.addItem(self.horizontalSpacer)
+
         self.doneButton = QPushButton(self.checklistPage)
         self.doneButton.setObjectName(u"doneButton")
 
@@ -119,10 +131,19 @@ class Ui_TestEnvPage(object):
 
         self.verticalLayout_4.addWidget(self.testCommandLineEdit)
 
+        self.horizontalLayout_3 = QHBoxLayout()
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_3.addItem(self.horizontalSpacer_3)
+
         self.finalizeButton = QPushButton(self.finalizePage)
         self.finalizeButton.setObjectName(u"finalizeButton")
 
-        self.verticalLayout_4.addWidget(self.finalizeButton)
+        self.horizontalLayout_3.addWidget(self.finalizeButton)
+
+
+        self.verticalLayout_4.addLayout(self.horizontalLayout_3)
 
         self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -144,10 +165,19 @@ class Ui_TestEnvPage(object):
 
         self.verticalLayout_5.addWidget(self.manualBuildScriptLineEdit)
 
+        self.horizontalLayout_5 = QHBoxLayout()
+        self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
+        self.horizontalSpacer_4 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_5.addItem(self.horizontalSpacer_4)
+
         self.confirmBuildScriptButton = QPushButton(self.manualBuildScriptPage)
         self.confirmBuildScriptButton.setObjectName(u"confirmBuildScriptButton")
 
-        self.verticalLayout_5.addWidget(self.confirmBuildScriptButton)
+        self.horizontalLayout_5.addWidget(self.confirmBuildScriptButton)
+
+
+        self.verticalLayout_5.addLayout(self.horizontalLayout_5)
 
         self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -169,9 +199,7 @@ class Ui_TestEnvPage(object):
     def retranslateUi(self, TestEnvPage):
         TestEnvPage.setWindowTitle(QCoreApplication.translate("TestEnvPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("TestEnvPage", u"Test Environment Setup", None))
-        self.standbyLabel.setText(QCoreApplication.translate("TestEnvPage", u"The system will now analyze the project's Technical Specification to generate a step-by-step guide for setting up the required testing environment.\n"
-"\n"
-"Click 'Start Analysis' to proceed.", None))
+        self.standbyLabel.setText(QCoreApplication.translate("TestEnvPage", u"This step generates a setup guide for the project's testing environment based on the technical specification. Click 'Start Analysis' to begin.", None))
         self.startButton.setText(QCoreApplication.translate("TestEnvPage", u"Start Analysis", None))
         self.checklistHeaderLabel.setText(QCoreApplication.translate("TestEnvPage", u"Please follow the steps below to set up the testing environment:", None))
         self.doneButton.setText(QCoreApplication.translate("TestEnvPage", u"Done, Next Step", None))

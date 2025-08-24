@@ -30,7 +30,6 @@ class Ui_ReportsPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(ReportsPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -55,10 +54,19 @@ class Ui_ReportsPage(object):
 
         self.verticalLayout_2.addLayout(self.progressFormLayout)
 
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
+
         self.exportProgressButton = QPushButton(self.progressSummaryGroupBox)
         self.exportProgressButton.setObjectName(u"exportProgressButton")
 
-        self.verticalLayout_2.addWidget(self.exportProgressButton)
+        self.horizontalLayout_2.addWidget(self.exportProgressButton)
+
+
+        self.verticalLayout_2.addLayout(self.horizontalLayout_2)
 
 
         self.verticalLayout.addWidget(self.progressSummaryGroupBox)
@@ -94,10 +102,19 @@ class Ui_ReportsPage(object):
 
         self.verticalLayout_3.addWidget(self.crTableView)
 
+        self.horizontalLayout_4 = QHBoxLayout()
+        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_4.addItem(self.horizontalSpacer_3)
+
         self.exportCrButton = QPushButton(self.crBugGroupBox)
         self.exportCrButton.setObjectName(u"exportCrButton")
 
-        self.verticalLayout_3.addWidget(self.exportCrButton)
+        self.horizontalLayout_4.addWidget(self.exportCrButton)
+
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_4)
 
 
         self.verticalLayout.addWidget(self.crBugGroupBox)
@@ -116,10 +133,10 @@ class Ui_ReportsPage(object):
     def retranslateUi(self, ReportsPage):
         ReportsPage.setWindowTitle(QCoreApplication.translate("ReportsPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("ReportsPage", u"Project Status Reports", None))
-        self.instructionLabel.setText(QCoreApplication.translate("ReportsPage", u"Showing all available reports for the currently active project.", None))
+        self.instructionLabel.setText(QCoreApplication.translate("ReportsPage", u"Review and export high-level reports for the active project.", None))
         self.progressSummaryGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Development Progress Summary", None))
         self.exportProgressButton.setText(QCoreApplication.translate("ReportsPage", u"Export Summary to .docx", None))
-        self.crBugGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Change Requests & Bug Fixes", None))
+        self.crBugGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Change & Bug Register", None))
         self.filterLabel.setText(QCoreApplication.translate("ReportsPage", u"Filter by Status:", None))
         self.crFilterComboBox.setItemText(0, QCoreApplication.translate("ReportsPage", u"Pending", None))
         self.crFilterComboBox.setItemText(1, QCoreApplication.translate("ReportsPage", u"Closed", None))

@@ -15,30 +15,30 @@ class BuildAndCommitAgentAppTarget:
     for a target application's components.
     """
 
-    def __init__(self, project_repo_path: str):
+    def __init__(self, project_repo_path: str, version_control_enabled: bool):
         """
         Initializes the BuildAndCommitAgentAppTarget.
 
         Args:
             project_repo_path (str): The absolute local path to the target
-                                     application's Git repository.
-
-        Raises:
-            FileNotFoundError: If the provided repository path does not exist.
-            git.InvalidGitRepositoryError: If the path is not a valid Git repository.
+                                     application's project folder.
+            version_control_enabled (bool): Flag indicating if Git is used.
         """
         import git
 
         self.repo_path = Path(project_repo_path)
+        self.repo = None
 
         if not self.repo_path.is_dir():
             raise FileNotFoundError(f"Project repository path does not exist or is not a directory: {self.repo_path}")
 
-        try:
-            # Initialize a Repo object from the GitPython library
-            self.repo = git.Repo(self.repo_path)
-        except git.InvalidGitRepositoryError:
-            raise git.InvalidGitRepositoryError(f"The path provided is not a valid Git repository: {self.repo_path}")
+        if version_control_enabled:
+            try:
+                # Initialize a Repo object from the GitPython library
+                self.repo = git.Repo(self.repo_path)
+            except git.InvalidGitRepositoryError:
+                # This error is now handled by the pre-flight check, but this is a safeguard.
+                raise git.InvalidGitRepositoryError(f"The path provided is not a valid Git repository: {self.repo_path}")
 
     def _sanitize_path(self, raw_path: str | None) -> str | None:
         """
@@ -65,9 +65,9 @@ class BuildAndCommitAgentAppTarget:
 
         return path
 
-    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService) -> tuple[str, str]:
+    def build_and_commit_component(self, component_path_str: str, component_code: str, test_path_str: str, test_code: str, test_command: str, llm_service: LLMService, version_control_enabled: bool) -> tuple[str, str]:
         """
-        Writes files, runs tests, and commits on success.
+        Writes files, runs tests, and conditionally commits on success.
         Returns a tuple of (status, message), where status is 'SUCCESS',
         'CODE_FAILURE', 'ENVIRONMENT_FAILURE', or 'AGENT_ERROR'.
         """
@@ -99,6 +99,10 @@ class BuildAndCommitAgentAppTarget:
                 logging.error(f"Test run failed with status {status}. Aborting commit.")
                 # Return the specific status received from the verification agent
                 return status, test_output
+
+            if not version_control_enabled:
+                logging.info("Version control is disabled. Skipping commit.")
+                return "SUCCESS", "Component saved and tests passed (local workspace)."
 
             if not files_to_commit:
                 logging.warning("No files were written to disk for this component, but tests passed. Skipping commit.")

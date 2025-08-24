@@ -31,9 +31,6 @@
      <property name="text">
       <string>User Experience &amp; Interface Design</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>
@@ -89,7 +86,7 @@
          <item>
           <widget class="QPushButton" name="refineButton">
            <property name="text">
-            <string>Submit Feedback &amp; Refine</string>
+            <string>Submit Feedback &amp;&amp; Refine</string>
            </property>
           </widget>
          </item>

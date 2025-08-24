@@ -29,10 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>Strategic Development Planning</string>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
+      <string>Development Planning</string>
      </property>
     </widget>
    </item>
@@ -58,11 +55,28 @@
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="generateButton">
-         <property name="text">
-          <string>Generate Development Plan</string>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <item>
+          <spacer name="horizontalSpacer_2">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="generateButton">
+           <property name="text">
+            <string>Generate Development Plan</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <spacer name="verticalSpacer">
@@ -82,9 +96,6 @@
         <widget class="QLabel" name="reviewHeaderLabel">
          <property name="text">
           <string>Review Development Plan</string>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">font-size: 14pt;</string>
          </property>
         </widget>
        </item>

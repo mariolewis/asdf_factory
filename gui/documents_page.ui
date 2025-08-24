@@ -31,9 +31,6 @@
      <property name="text">
       <string>Project Documents</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>
@@ -46,12 +43,12 @@
    <item>
     <widget class="QLabel" name="instructionLabel">
      <property name="text">
-      <string>Select a project to view and download its core documents.</string>
+      <string>View and export version-controlled documents for the active project.</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
      </property>
     </widget>
-   </item>
-   <item>
-    <widget class="QComboBox" name="projectSelectorComboBox"/>
    </item>
    <item>
     <widget class="QTableView" name="documentsTableView"/>
@@ -88,7 +85,7 @@
      <item>
       <widget class="QPushButton" name="exportButton">
        <property name="text">
-        <string>Export</string>
+        <string>Export Document</string>
        </property>
       </widget>
      </item>

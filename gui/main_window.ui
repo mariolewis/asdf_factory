@@ -125,7 +125,7 @@
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title">
-     <string>File</string>
+     <string>&amp;File</string>
     </property>
     <addaction name="actionNew_Project"/>
     <addaction name="actionLoad_Exported_Project"/>
@@ -138,7 +138,7 @@
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
-     <string>Edit</string>
+     <string>&amp;Edit</string>
     </property>
     <addaction name="actionUndo"/>
     <addaction name="actionRedo"/>
@@ -150,14 +150,14 @@
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
-     <string>View</string>
+     <string>&amp;View</string>
     </property>
     <addaction name="actionToggleProjectPanel"/>
     <addaction name="actionToggleNotificationPanel"/>
    </widget>
    <widget class="QMenu" name="menuProject">
     <property name="title">
-     <string>Project</string>
+     <string>&amp;Project</string>
     </property>
     <addaction name="actionManage_CRs_Bugs"/>
     <addaction name="actionView_Documents"/>
@@ -165,20 +165,20 @@
    </widget>
    <widget class="QMenu" name="menuRun">
     <property name="title">
-     <string>Run</string>
+     <string>&amp;Run</string>
     </property>
     <addaction name="actionProceed"/>
     <addaction name="actionRun_Tests"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
-     <string>Help</string>
+     <string>&amp;Help</string>
     </property>
     <addaction name="actionAbout_ASDF"/>
    </widget>
    <widget class="QMenu" name="menuDebug">
     <property name="title">
-     <string>Debug</string>
+     <string>&amp;Debug</string>
     </property>
    </widget>
    <addaction name="menuFile"/>
@@ -226,7 +226,7 @@
   </action>
   <action name="actionStop_Export_Project">
    <property name="text">
-    <string>Stop &amp; Export Project...</string>
+    <string>Stop &amp;&amp; Export Project...</string>
    </property>
   </action>
   <action name="actionSettings">
@@ -294,7 +294,7 @@
   </action>
   <action name="actionManage_CRs_Bugs">
    <property name="text">
-    <string>Manage CRs / Bugs</string>
+    <string>Change &amp;&amp; Bug Management</string>
    </property>
    <property name="toolTip">
     <string>View and manage the CR/Bug register</string>

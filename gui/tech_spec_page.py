@@ -49,13 +49,19 @@ class TechSpecPage(QWidget):
         self.ui.refineButton.clicked.connect(self.run_refine_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
 
-    def _set_ui_busy(self, is_busy):
-        """Disables or enables the page while a background task runs."""
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the page and updates the main status bar."""
         self.setEnabled(not is_busy)
+        main_window = self.parent()
+        if main_window and hasattr(main_window, 'statusBar'):
+            if is_busy:
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
 
-    def _execute_task(self, task_function, on_result, *args):
+    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
         """Generic method to run a task in the background."""
-        self._set_ui_busy(True)
+        self._set_ui_busy(True, status_message)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
@@ -63,13 +69,16 @@ class TechSpecPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
-        QMessageBox.critical(self, "Error", error_msg)
-        self._set_ui_busy(False)
+        try:
+            error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
+            QMessageBox.critical(self, "Error", error_msg)
+        finally:
+            self._set_ui_busy(False)
 
     def run_propose_stack_task(self):
         target_os = self.ui.osComboBox.currentText()
-        self._execute_task(self._task_propose_stack, self._handle_generation_result, target_os)
+        self._execute_task(self._task_propose_stack, self._handle_generation_result, target_os,
+                           status_message="Generating tech stack proposal...")
 
     def on_pm_define_clicked(self):
         self.ui.stackedWidget.setCurrentWidget(self.ui.pmDefinePage)
@@ -80,7 +89,8 @@ class TechSpecPage(QWidget):
             QMessageBox.warning(self, "Input Required", "Please provide your technology guidelines.")
             return
         target_os = self.ui.osComboBox.currentText()
-        self._execute_task(self._task_generate_from_guidelines, self._handle_generation_result, guidelines, target_os)
+        self._execute_task(self._task_generate_from_guidelines, self._handle_generation_result, guidelines, target_os,
+                           status_message="Generating specification from guidelines...")
 
     def run_refine_task(self):
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
@@ -89,7 +99,8 @@ class TechSpecPage(QWidget):
             return
         current_draft = self.ui.techSpecTextEdit.toPlainText()
         target_os = self.ui.osComboBox.currentText()
-        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback, target_os)
+        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback, target_os,
+                           status_message="Refining technical specification...")
 
     def _handle_generation_result(self, tech_spec_draft):
         try:
@@ -106,7 +117,7 @@ class TechSpecPage(QWidget):
             self.tech_spec_draft = new_draft
             self.ui.techSpecTextEdit.setText(self.tech_spec_draft)
             self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "The technical specification has been refined.")
+            QMessageBox.information(self, "Success", "Success: The technical specification has been refined.")
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -118,7 +129,7 @@ class TechSpecPage(QWidget):
             return
         target_os = self.ui.osComboBox.currentText()
         self.orchestrator.finalize_and_save_tech_spec(final_tech_spec, target_os)
-        QMessageBox.information(self, "Success", "Technical Specification approved and saved.")
+        QMessageBox.information(self, "Success", "Success: Technical Specification approved and saved.")
         self.orchestrator.is_project_dirty = True
         self.tech_spec_complete.emit()
 
@@ -185,7 +196,7 @@ class TechSpecPage(QWidget):
         # This corrected regex finds the "Date: " line and replaces the rest of the line
         date_updated_draft = re.sub(
             r"(Date: ).*",
-            r"\g<1>" + current_date,
+            r"\g" + current_date,
             refined_draft
         )
 

@@ -29,10 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>Application Specification</string>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
+      <string>Your Requirements</string>
      </property>
     </widget>
    </item>
@@ -50,7 +47,10 @@
        <item>
         <widget class="QLabel" name="instructionLabel">
          <property name="text">
-          <string>Please provide the initial specification for your target application.</string>
+          <string>Please enter a brief description of the application you want, or upload a requirement document and any additional technical specifications and/or standards that it must comply with.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
          </property>
         </widget>
        </item>
@@ -76,11 +76,28 @@
             </layout>
            </item>
            <item>
-            <widget class="QPushButton" name="processFilesButton">
-             <property name="text">
-              <string>Process Uploaded Document(s)</string>
-             </property>
-            </widget>
+            <layout class="QHBoxLayout" name="horizontalLayout_6">
+             <item>
+              <spacer name="horizontalSpacer_4">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QPushButton" name="processFilesButton">
+               <property name="text">
+                <string>Process Uploaded Document(s)</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
            </item>
            <item>
             <spacer name="verticalSpacer">
@@ -100,11 +117,28 @@
             <widget class="QPlainTextEdit" name="briefDescriptionTextEdit"/>
            </item>
            <item>
-            <widget class="QPushButton" name="processTextButton">
-             <property name="text">
-              <string>Process Brief Description</string>
-             </property>
-            </widget>
+            <layout class="QHBoxLayout" name="horizontalLayout_7">
+             <item>
+              <spacer name="horizontalSpacer_5">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item>
+              <widget class="QPushButton" name="processTextButton">
+               <property name="text">
+                <string>Process Brief Description</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
            </item>
           </layout>
          </widget>
@@ -129,9 +163,6 @@
        </item>
        <item>
         <widget class="QLabel" name="processingLabel">
-         <property name="styleSheet">
-          <string notr="true">font-size: 14pt;</string>
-         </property>
          <property name="text">
           <string>Processing... Please wait.</string>
          </property>
@@ -156,73 +187,60 @@
       </layout>
      </widget>
      <widget class="QWidget" name="complexityReviewPage">
-      <layout class="QVBoxLayout" name="verticalLayout_5">
-       <item>
-        <widget class="QLabel" name="reviewHeaderLabel">
-         <property name="text">
-          <string>Project Complexity &amp; Risk Assessment</string>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">font-size: 14pt;</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QTextEdit" name="analysisResultTextEdit">
-         <property name="readOnly">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_3">
-         <item>
-          <widget class="QPushButton" name="cancelProjectButton">
-           <property name="text">
-            <string>Cancel Project</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <spacer name="horizontalSpacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QPushButton" name="confirmAnalysisButton">
-           <property name="text">
-            <string>Confirm Assessment &amp; Proceed to Final Review</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-      </layout>
+  <layout class="QGridLayout" name="gridLayout" rowstretch="1,0" columnstretch="0">
+   <item row="1" column="0">
+    <layout class="QHBoxLayout" name="horizontalLayout_3">
+     <item>
+      <widget class="QPushButton" name="cancelProjectButton">
+       <property name="text">
+        <string>Cancel Project</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="horizontalSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QPushButton" name="confirmAnalysisButton">
+       <property name="text">
+        <string>Confirm Assessment &amp;&amp; Proceed</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item row="0" column="0">
+    <widget class="QTextEdit" name="analysisResultTextEdit">
+     <property name="readOnly">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+  </layout>
      </widget>
      <widget class="QWidget" name="pmFirstReviewPage">
       <layout class="QVBoxLayout" name="verticalLayout_9">
        <item>
         <widget class="QLabel" name="pmReviewHeaderLabel">
          <property name="text">
-          <string>Step 1: PM First Review</string>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">font-size: 14pt;</string>
+          <string>Initial Draft Review</string>
          </property>
         </widget>
        </item>
        <item>
         <widget class="QLabel" name="pmReviewInstructionLabel">
          <property name="text">
-          <string>Below is the initial specification draft generated by the AI. Please review it, make any direct edits you see fit, and/or provide general feedback for refinement in the text box at the bottom.</string>
+          <string>This is the first specification draft generated by the AI. Review it and make any direct edits. You can also provide general feedback for refinement in the box at the bottom before submitting for a final AI analysis.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
@@ -270,102 +288,86 @@
       </layout>
      </widget>
      <widget class="QWidget" name="finalReviewPage">
-      <layout class="QVBoxLayout" name="verticalLayout_6">
-       <item>
-        <widget class="QLabel" name="finalReviewHeaderLabel">
-         <property name="text">
-          <string>Step 2: Final Specification Review</string>
-         </property>
-         <property name="styleSheet">
-          <string notr="true">font-size: 14pt;</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QSplitter" name="splitter">
+      <layout class="QGridLayout" name="gridLayout_2" rowstretch="1,0" columnstretch="0">
+      <item row="0" column="0">
+      <widget class="QSplitter" name="splitter">
+      <property name="orientation">
+         <enum>Qt::Vertical</enum>
+      </property>
+      <widget class="QWidget" name="specDraftPane">
+         <layout class="QVBoxLayout" name="verticalLayout_7">
+         <item>
+         <widget class="QLabel" name="specDraftLabel">
+            <property name="text">
+            <string>Specification Draft (Editable)</string>
+            </property>
+         </widget>
+         </item>
+         <item>
+         <widget class="QTextEdit" name="specDraftTextEdit"/>
+         </item>
+         </layout>
+      </widget>
+      <widget class="QWidget" name="aiIssuesPane">
+         <layout class="QVBoxLayout" name="verticalLayout_8">
+         <item>
+         <widget class="QLabel" name="aiIssuesLabel">
+            <property name="text">
+            <string>AI Analysis &amp; Potential Issues</string>
+            </property>
+         </widget>
+         </item>
+         <item>
+         <widget class="QTextEdit" name="aiIssuesTextEdit">
+            <property name="readOnly">
+            <bool>true</bool>
+            </property>
+         </widget>
+         </item>
+         </layout>
+      </widget>
+      <widget class="QWidget" name="feedbackPane">
+         <layout class="QVBoxLayout" name="verticalLayout_10">
+         <item>
+         <widget class="QLabel" name="feedbackLabel">
+            <property name="text">
+            <string>Your Feedback &amp; Clarifications (Optional):</string>
+            </property>
+         </widget>
+         </item>
+         <item>
+         <widget class="QPlainTextEdit" name="feedbackTextEdit"/>
+         </item>
+         </layout>
+      </widget>
+      </widget>
+      </item>
+      <item row="1" column="0">
+      <layout class="QHBoxLayout" name="horizontalLayout_2">
+      <item>
+         <spacer name="horizontalSpacer_3">
          <property name="orientation">
-          <enum>Qt::Vertical</enum>
+         <enum>Qt::Horizontal</enum>
          </property>
-         <widget class="QWidget" name="specDraftPane">
-          <layout class="QVBoxLayout" name="verticalLayout_7">
-           <item>
-            <widget class="QLabel" name="specDraftLabel">
-             <property name="text">
-              <string>Specification Draft (Editable)</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QTextEdit" name="specDraftTextEdit"/>
-           </item>
-          </layout>
+         </spacer>
+      </item>
+      <item>
+         <widget class="QPushButton" name="submitFeedbackButton">
+         <property name="text">
+         <string>Submit Feedback &amp; Refine Draft</string>
+         </property>
          </widget>
-         <widget class="QWidget" name="aiIssuesPane">
-          <layout class="QVBoxLayout" name="verticalLayout_8">
-           <item>
-            <widget class="QLabel" name="aiIssuesLabel">
-             <property name="text">
-              <string>AI Analysis &amp; Potential Issues</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QTextEdit" name="aiIssuesTextEdit">
-             <property name="readOnly">
-              <bool>true</bool>
-             </property>
-            </widget>
-           </item>
-          </layout>
+      </item>
+      <item>
+         <widget class="QPushButton" name="approveSpecButton">
+         <property name="text">
+         <string>Approve Specification &amp; Proceed</string>
+         </property>
          </widget>
-         <widget class="QWidget" name="feedbackPane">
-          <layout class="QVBoxLayout" name="verticalLayout_10">
-           <item>
-            <widget class="QLabel" name="feedbackLabel">
-             <property name="text">
-              <string>Your Feedback &amp; Clarifications (Optional):</string>
-             </property>
-            </widget>
-           </item>
-           <item>
-            <widget class="QPlainTextEdit" name="feedbackTextEdit"/>
-           </item>
-          </layout>
-         </widget>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_2">
-         <item>
-          <spacer name="horizontalSpacer_3">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QPushButton" name="submitFeedbackButton">
-           <property name="text">
-            <string>Submit Feedback &amp; Refine Draft</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="approveSpecButton">
-           <property name="text">
-            <string>Approve Specification &amp; Proceed</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
+      </item>
       </layout>
+      </item>
+   </layout>
      </widget>
     </widget>
    </item>

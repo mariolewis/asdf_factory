@@ -6,3 +6,5 @@ openai
 anthropic
 pypdf
 PySide6
+markdown
+Pygments

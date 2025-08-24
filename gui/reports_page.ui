@@ -31,9 +31,6 @@
      <property name="text">
       <string>Project Status Reports</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>
@@ -46,7 +43,7 @@
    <item>
     <widget class="QLabel" name="instructionLabel">
      <property name="text">
-      <string>Showing all available reports for the currently active project.</string>
+      <string>Review and export high-level reports for the active project.</string>
      </property>
     </widget>
    </item>
@@ -60,11 +57,28 @@
        <layout class="QFormLayout" name="progressFormLayout"/>
       </item>
       <item>
-       <widget class="QPushButton" name="exportProgressButton">
-        <property name="text">
-         <string>Export Summary to .docx</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <item>
+         <spacer name="horizontalSpacer_2">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="exportProgressButton">
+          <property name="text">
+           <string>Export Summary to .docx</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>
@@ -72,7 +86,7 @@
    <item>
     <widget class="QGroupBox" name="crBugGroupBox">
      <property name="title">
-      <string>Change Requests &amp; Bug Fixes</string>
+      <string>Change &amp; Bug Register</string>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout_3">
       <item>
@@ -122,11 +136,28 @@
        <widget class="QTableView" name="crTableView"/>
       </item>
       <item>
-       <widget class="QPushButton" name="exportCrButton">
-        <property name="text">
-         <string>Export This View to .docx</string>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="horizontalLayout_4">
+        <item>
+         <spacer name="horizontalSpacer_3">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>40</width>
+            <height>20</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <widget class="QPushButton" name="exportCrButton">
+          <property name="text">
+           <string>Export This View to .docx</string>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </item>
      </layout>
     </widget>

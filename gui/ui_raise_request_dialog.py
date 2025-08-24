@@ -30,7 +30,6 @@ class Ui_RaiseRequestDialog(object):
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.headerLabel = QLabel(RaiseRequestDialog)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 16pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -96,7 +95,7 @@ class Ui_RaiseRequestDialog(object):
     # setupUi
 
     def retranslateUi(self, RaiseRequestDialog):
-        RaiseRequestDialog.setWindowTitle(QCoreApplication.translate("RaiseRequestDialog", u"Raise New Request", None))
+        RaiseRequestDialog.setWindowTitle(QCoreApplication.translate("RaiseRequestDialog", u"Create New Request", None))
         self.headerLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Create New Request", None))
         self.typeGroupBox.setTitle(QCoreApplication.translate("RaiseRequestDialog", u"Request Type", None))
         self.crRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Change Request", None))

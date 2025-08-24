@@ -52,6 +52,8 @@ class ASDFMainWindow(QMainWindow):
 
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.ui.horizontalLayout.setContentsMargins(0, 0, 0, 0)
+        self.ui.horizontalLayout.setSpacing(0)
 
         # Force the layout stretch factors programmatically
         self.ui.centralwidget.layout().setStretch(0, 0) # Index 0 is verticalActionBar (no stretch)
@@ -65,6 +67,7 @@ class ASDFMainWindow(QMainWindow):
         self._connect_signals()
 
         self.update_ui_after_state_change()
+        self._check_mandatory_settings()
 
     def _create_pages(self):
         """Creates and adds all page widgets to the stacked widget."""
@@ -298,6 +301,59 @@ class ASDFMainWindow(QMainWindow):
             if hasattr(page, 'prepare_for_new_project'):
                 page.prepare_for_new_project()
 
+    def _check_mandatory_settings(self):
+        """
+        Checks for mandatory global settings and enables/disables project actions.
+        Returns True if settings are valid, False otherwise.
+        """
+        try:
+            db = self.orchestrator.db_manager
+            config = db.get_all_config_values()
+
+            provider = config.get("SELECTED_LLM_PROVIDER")
+            api_key_valid = False
+            if provider == "Gemini" and config.get("GEMINI_API_KEY"):
+                api_key_valid = True
+            elif provider == "ChatGPT" and config.get("OPENAI_API_KEY"):
+                api_key_valid = True
+            elif provider == "Claude" and config.get("ANTHROPIC_API_KEY"):
+                api_key_valid = True
+            elif provider == "Phi-3 (Local)":
+                api_key_valid = True # No key needed
+            elif provider == "Any Other" and config.get("CUSTOM_ENDPOINT_API_KEY") and config.get("CUSTOM_ENDPOINT_URL"):
+                api_key_valid = True
+
+            paths_valid = bool(config.get("DEFAULT_PROJECT_PATH") and config.get("DEFAULT_ARCHIVE_PATH"))
+
+            settings_are_valid = api_key_valid and paths_valid
+
+            # Enable/disable actions
+            self.ui.actionNew_Project.setEnabled(settings_are_valid)
+            # The Load_Exported_Project action is only available when no project is active anyway
+            # but we can disable it here for consistency.
+            self.ui.actionLoad_Exported_Project.setEnabled(settings_are_valid)
+
+            # Update status bar AND the main info label
+            if not settings_are_valid:
+                message = "Configuration incomplete. \n\nPlease go to File > Settings to set the LLM API key and default paths."
+                self.statusBar().showMessage(message, 0)
+                if self.treeViewInfoLabel:
+                    self.treeViewInfoLabel.setText(message)
+            else:
+                # Clear any persistent message if settings are now valid
+                if "Configuration incomplete" in self.statusBar().currentMessage():
+                    self.statusBar().clearMessage()
+                if self.treeViewInfoLabel and "Configuration incomplete" in self.treeViewInfoLabel.text():
+                    self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or load an archive.")
+
+            return settings_are_valid
+        except Exception as e:
+            logging.error(f"Failed to check mandatory settings: {e}")
+            self.ui.actionNew_Project.setEnabled(False)
+            self.ui.actionLoad_Exported_Project.setEnabled(False)
+            self.statusBar().showMessage("Error checking settings. Please see logs.", 5000)
+            return False
+
     def on_view_explorer(self):
         """Toggles the visibility of the left project/navigation panel."""
         self.ui.leftPanelWidget.setVisible(not self.ui.leftPanelWidget.isVisible())
@@ -472,8 +528,9 @@ class ASDFMainWindow(QMainWindow):
 
     def _handle_integration_result(self):
         """Called when the integration worker is finished. Triggers a final UI update."""
-        self.statusBar().showMessage("Integration phase complete.", 5000)
-        # The orchestrator's phase will have been updated, so a full UI refresh will show the correct next page.
+        # The orchestrator's phase will have been updated, so a full UI refresh
+        # will show the correct next page (e.g., MANUAL_UI_TESTING or an error).
+        # The re-enabling of the UI is now handled by the _on_background_task_finished slot.
         self.update_ui_after_state_change()
 
     def on_cr_implement_action(self, cr_id: int):
@@ -518,6 +575,10 @@ class ASDFMainWindow(QMainWindow):
         Performs a full UI refresh. This is the single source of truth for mapping
         the orchestrator's state to the correct UI view.
         """
+        #is_project_active = self.orchestrator.project_id is not None
+        #if not is_project_active:
+        #    self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
+        #    return
         self.update_cr_register_view()
         self.update_static_ui_elements()
 
@@ -562,7 +623,7 @@ class ASDFMainWindow(QMainWindow):
             error = task.get("analysis_error")
 
             if error:
-                details_text = f"The UX Triage Agent failed to process the brief.\n\n--- ERROR ---\n{error}"
+                details_text = f"The UX Triage Agent failed to process the brief.<br><br>--- ERROR ---<br><pre>{error}</pre>"
                 self.decision_page.configure(
                     header="Triage Analysis Failed",
                     instruction="An error occurred during the initial analysis.",
@@ -575,9 +636,8 @@ class ASDFMainWindow(QMainWindow):
             else:
                 necessity = analysis.get('ux_phase_necessity', 'N/A')
                 justification = analysis.get('justification', 'No details provided.')
-                details_text = f"AI Recommendation: {necessity}\n\n--- Justification ---\n{justification}"
+                details_text = f"<b>AI Recommendation:</b> {necessity}<br><br><b>Justification:</b><br>{justification}"
 
-                # This is the new logic to disable the button
                 is_start_button_enabled = (necessity != "Not Recommended")
 
                 self.decision_page.configure(
@@ -604,23 +664,21 @@ class ASDFMainWindow(QMainWindow):
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
+            self.setEnabled(False)
+            self.statusBar().showMessage("Running integration and verification phase...")
             self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
             self.genesis_page.ui.processingLabel.setText("Running Integration & Verification...")
             self.genesis_page.ui.logOutputTextEdit.clear()
             self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
 
-            # --- THIS IS THE FIX ---
-            # Check for the 'force' flag from the orchestrator's state
             task_info = self.orchestrator.task_awaiting_approval or {}
             force_flag = task_info.get("force_integration", False)
 
-            # Pass the flag to the worker
             worker = Worker(self.orchestrator.run_integration_and_verification_phase, force_proceed=force_flag)
-            # --- END OF FIX ---
-
             worker.signals.progress.connect(self.genesis_page.on_progress_update)
             worker.signals.result.connect(self._handle_integration_result)
-            worker.signals.error.connect(self._handle_integration_result)
+            worker.signals.error.connect(self._handle_integration_result) # Can be handled by the same logic
+            worker.signals.finished.connect(self._on_background_task_finished) # Re-enables the UI
             self.threadpool.start(worker)
 
         elif current_phase_name == "AWAITING_INTEGRATION_CONFIRMATION":
@@ -637,7 +695,7 @@ class ASDFMainWindow(QMainWindow):
                 instruction="Components with known issues were detected.",
                 details=details_text,
                 option1_text="Proceed Anyway",
-                option2_text="Stop & Export Project"
+                option2_text="Stop && Export Project"
             )
             self.decision_page.option1_selected.connect(self.on_integration_confirmed)
             self.decision_page.option2_selected.connect(self.on_stop_export_project)
@@ -648,13 +706,16 @@ class ASDFMainWindow(QMainWindow):
             failure_log = task_details.get("failure_log", "No details provided.")
             is_env_failure = task_details.get("is_env_failure", False)
 
+            # Format the log as pre-formatted HTML text for monospaced display
+            formatted_log = f"<pre style='color: #CC7832;'>{failure_log}</pre>"
+
             if is_env_failure:
                 self.decision_page.configure(
                     header="Environment Failure",
                     instruction="The process is paused. Please resolve the environment issue.",
-                    details=f"The factory has encountered an unrecoverable ENVIRONMENT error:\n\n--- ERROR LOG ---\n{failure_log}",
+                    details=f"The factory has encountered an unrecoverable ENVIRONMENT error:<br><br>--- ERROR LOG ---{formatted_log}",
                     option1_text="I have fixed the issue, Retry",
-                    option2_text="Stop & Export Project"
+                    option2_text="Stop && Export Project"
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_stop_export_project)
@@ -662,10 +723,10 @@ class ASDFMainWindow(QMainWindow):
                 self.decision_page.configure(
                     header="Debug Escalation",
                     instruction="The factory has been unable to fix a persistent bug. Please choose how to proceed.",
-                    details=f"The automated debug procedure could not resolve the following issue:\n\n{failure_log}",
+                    details=f"The automated debug procedure could not resolve the following issue:<br><br>{formatted_log}",
                     option1_text="Retry Automated Fix",
                     option2_text="Pause for Manual Fix",
-                    option3_text="Ignore Bug & Proceed"
+                    option3_text="Ignore Bug && Proceed"
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_decision_option2)
@@ -694,7 +755,7 @@ class ASDFMainWindow(QMainWindow):
                 instruction="A high-risk change requires your explicit approval before execution.",
                 details=details_text,
                 option1_text="Execute Change Automatically",
-                option2_text="I Will Apply Manually & Skip"
+                option2_text="I Will Apply Manually && Skip"
             )
             self.decision_page.option1_selected.connect(self.on_declarative_execute_auto)
             self.decision_page.option2_selected.connect(self.on_declarative_execute_manual)
@@ -733,7 +794,7 @@ class ASDFMainWindow(QMainWindow):
     def on_stop_export_project(self):
         if not self.orchestrator.project_id: return
         default_name = f"{self.orchestrator.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}"
-        archive_name, ok = QInputDialog.getText(self, "Stop & Export Project", "Enter a name for the archive file:", text=default_name)
+        archive_name, ok = QInputDialog.getText(self, "Stop && Export Project", "Enter a name for the archive file:", text=default_name)
         if ok and archive_name:
             archive_path_from_db = self.orchestrator.db_manager.get_config_value("DEFAULT_ARCHIVE_PATH")
             if not archive_path_from_db or not archive_path_from_db.strip():
@@ -751,6 +812,8 @@ class ASDFMainWindow(QMainWindow):
         dialog = SettingsDialog(self.orchestrator, self)
         dialog.populate_fields()
         dialog.exec()
+        # Re-run the check and update the UI after the dialog is closed
+        self._check_mandatory_settings()
         self.update_ui_after_state_change()
 
     def on_about(self):

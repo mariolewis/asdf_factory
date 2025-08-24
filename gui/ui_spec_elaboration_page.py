@@ -15,10 +15,10 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QPlainTextEdit, QPushButton, QSizePolicy,
-    QSpacerItem, QSplitter, QStackedWidget, QTabWidget,
-    QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout,
+    QLabel, QLineEdit, QPlainTextEdit, QPushButton,
+    QSizePolicy, QSpacerItem, QSplitter, QStackedWidget,
+    QTabWidget, QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_SpecElaborationPage(object):
     def setupUi(self, SpecElaborationPage):
@@ -30,7 +30,6 @@ class Ui_SpecElaborationPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(SpecElaborationPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -49,6 +48,7 @@ class Ui_SpecElaborationPage(object):
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.instructionLabel = QLabel(self.initialInputPage)
         self.instructionLabel.setObjectName(u"instructionLabel")
+        self.instructionLabel.setWordWrap(True)
 
         self.verticalLayout_2.addWidget(self.instructionLabel)
 
@@ -73,10 +73,19 @@ class Ui_SpecElaborationPage(object):
 
         self.verticalLayout_3.addLayout(self.horizontalLayout)
 
+        self.horizontalLayout_6 = QHBoxLayout()
+        self.horizontalLayout_6.setObjectName(u"horizontalLayout_6")
+        self.horizontalSpacer_4 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_6.addItem(self.horizontalSpacer_4)
+
         self.processFilesButton = QPushButton(self.uploadTab)
         self.processFilesButton.setObjectName(u"processFilesButton")
 
-        self.verticalLayout_3.addWidget(self.processFilesButton)
+        self.horizontalLayout_6.addWidget(self.processFilesButton)
+
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_6)
 
         self.verticalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -92,10 +101,19 @@ class Ui_SpecElaborationPage(object):
 
         self.verticalLayout_4.addWidget(self.briefDescriptionTextEdit)
 
+        self.horizontalLayout_7 = QHBoxLayout()
+        self.horizontalLayout_7.setObjectName(u"horizontalLayout_7")
+        self.horizontalSpacer_5 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_7.addItem(self.horizontalSpacer_5)
+
         self.processTextButton = QPushButton(self.textInputTab)
         self.processTextButton.setObjectName(u"processTextButton")
 
-        self.verticalLayout_4.addWidget(self.processTextButton)
+        self.horizontalLayout_7.addWidget(self.processTextButton)
+
+
+        self.verticalLayout_4.addLayout(self.horizontalLayout_7)
 
         self.inputTabWidget.addTab(self.textInputTab, "")
 
@@ -112,7 +130,6 @@ class Ui_SpecElaborationPage(object):
 
         self.processingLabel = QLabel(self.processingPage)
         self.processingLabel.setObjectName(u"processingLabel")
-        self.processingLabel.setStyleSheet(u"font-size: 14pt;")
         self.processingLabel.setAlignment(Qt.AlignCenter)
 
         self.verticalLayout_11.addWidget(self.processingLabel)
@@ -124,20 +141,8 @@ class Ui_SpecElaborationPage(object):
         self.stackedWidget.addWidget(self.processingPage)
         self.complexityReviewPage = QWidget()
         self.complexityReviewPage.setObjectName(u"complexityReviewPage")
-        self.verticalLayout_5 = QVBoxLayout(self.complexityReviewPage)
-        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
-        self.reviewHeaderLabel = QLabel(self.complexityReviewPage)
-        self.reviewHeaderLabel.setObjectName(u"reviewHeaderLabel")
-        self.reviewHeaderLabel.setStyleSheet(u"font-size: 14pt;")
-
-        self.verticalLayout_5.addWidget(self.reviewHeaderLabel)
-
-        self.analysisResultTextEdit = QTextEdit(self.complexityReviewPage)
-        self.analysisResultTextEdit.setObjectName(u"analysisResultTextEdit")
-        self.analysisResultTextEdit.setReadOnly(True)
-
-        self.verticalLayout_5.addWidget(self.analysisResultTextEdit)
-
+        self.gridLayout = QGridLayout(self.complexityReviewPage)
+        self.gridLayout.setObjectName(u"gridLayout")
         self.horizontalLayout_3 = QHBoxLayout()
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
         self.cancelProjectButton = QPushButton(self.complexityReviewPage)
@@ -155,8 +160,15 @@ class Ui_SpecElaborationPage(object):
         self.horizontalLayout_3.addWidget(self.confirmAnalysisButton)
 
 
-        self.verticalLayout_5.addLayout(self.horizontalLayout_3)
+        self.gridLayout.addLayout(self.horizontalLayout_3, 1, 0, 1, 1)
 
+        self.analysisResultTextEdit = QTextEdit(self.complexityReviewPage)
+        self.analysisResultTextEdit.setObjectName(u"analysisResultTextEdit")
+        self.analysisResultTextEdit.setReadOnly(True)
+
+        self.gridLayout.addWidget(self.analysisResultTextEdit, 0, 0, 1, 1)
+
+        self.gridLayout.setRowStretch(0, 1)
         self.stackedWidget.addWidget(self.complexityReviewPage)
         self.pmFirstReviewPage = QWidget()
         self.pmFirstReviewPage.setObjectName(u"pmFirstReviewPage")
@@ -164,7 +176,6 @@ class Ui_SpecElaborationPage(object):
         self.verticalLayout_9.setObjectName(u"verticalLayout_9")
         self.pmReviewHeaderLabel = QLabel(self.pmFirstReviewPage)
         self.pmReviewHeaderLabel.setObjectName(u"pmReviewHeaderLabel")
-        self.pmReviewHeaderLabel.setStyleSheet(u"font-size: 14pt;")
 
         self.verticalLayout_9.addWidget(self.pmReviewHeaderLabel)
 
@@ -207,14 +218,8 @@ class Ui_SpecElaborationPage(object):
         self.stackedWidget.addWidget(self.pmFirstReviewPage)
         self.finalReviewPage = QWidget()
         self.finalReviewPage.setObjectName(u"finalReviewPage")
-        self.verticalLayout_6 = QVBoxLayout(self.finalReviewPage)
-        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
-        self.finalReviewHeaderLabel = QLabel(self.finalReviewPage)
-        self.finalReviewHeaderLabel.setObjectName(u"finalReviewHeaderLabel")
-        self.finalReviewHeaderLabel.setStyleSheet(u"font-size: 14pt;")
-
-        self.verticalLayout_6.addWidget(self.finalReviewHeaderLabel)
-
+        self.gridLayout_2 = QGridLayout(self.finalReviewPage)
+        self.gridLayout_2.setObjectName(u"gridLayout_2")
         self.splitter = QSplitter(self.finalReviewPage)
         self.splitter.setObjectName(u"splitter")
         self.splitter.setOrientation(Qt.Vertical)
@@ -268,11 +273,11 @@ class Ui_SpecElaborationPage(object):
 
         self.splitter.addWidget(self.feedbackPane)
 
-        self.verticalLayout_6.addWidget(self.splitter)
+        self.gridLayout_2.addWidget(self.splitter, 0, 0, 1, 1)
 
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer_3)
 
@@ -287,8 +292,9 @@ class Ui_SpecElaborationPage(object):
         self.horizontalLayout_2.addWidget(self.approveSpecButton)
 
 
-        self.verticalLayout_6.addLayout(self.horizontalLayout_2)
+        self.gridLayout_2.addLayout(self.horizontalLayout_2, 1, 0, 1, 1)
 
+        self.gridLayout_2.setRowStretch(0, 1)
         self.stackedWidget.addWidget(self.finalReviewPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
@@ -301,22 +307,20 @@ class Ui_SpecElaborationPage(object):
 
     def retranslateUi(self, SpecElaborationPage):
         SpecElaborationPage.setWindowTitle(QCoreApplication.translate("SpecElaborationPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Application Specification", None))
-        self.instructionLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Please provide the initial specification for your target application.", None))
+        self.headerLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Your Requirements", None))
+        self.instructionLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Please enter a brief description of the application you want, or upload a requirement document and any additional technical specifications and/or standards that it must comply with.", None))
         self.browseFilesButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Browse...", None))
         self.processFilesButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Process Uploaded Document(s)", None))
         self.inputTabWidget.setTabText(self.inputTabWidget.indexOf(self.uploadTab), QCoreApplication.translate("SpecElaborationPage", u"Upload Specification Document(s)", None))
         self.processTextButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Process Brief Description", None))
         self.inputTabWidget.setTabText(self.inputTabWidget.indexOf(self.textInputTab), QCoreApplication.translate("SpecElaborationPage", u"Enter Brief Description", None))
         self.processingLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Processing... Please wait.", None))
-        self.reviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Project Complexity & Risk Assessment", None))
         self.cancelProjectButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Cancel Project", None))
-        self.confirmAnalysisButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Confirm Assessment & Proceed to Final Review", None))
-        self.pmReviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Step 1: PM First Review", None))
-        self.pmReviewInstructionLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Below is the initial specification draft generated by the AI. Please review it, make any direct edits you see fit, and/or provide general feedback for refinement in the text box at the bottom.", None))
+        self.confirmAnalysisButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Confirm Assessment && Proceed", None))
+        self.pmReviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Initial Draft Review", None))
+        self.pmReviewInstructionLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"This is the first specification draft generated by the AI. Review it and make any direct edits. You can also provide general feedback for refinement in the box at the bottom before submitting for a final AI analysis.", None))
         self.pmFeedbackLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Feedback for Refinement (Optional):", None))
         self.submitForAnalysisButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Submit for AI Analysis", None))
-        self.finalReviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Step 2: Final Specification Review", None))
         self.specDraftLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Specification Draft (Editable)", None))
         self.aiIssuesLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"AI Analysis & Potential Issues", None))
         self.feedbackLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Your Feedback & Clarifications (Optional):", None))

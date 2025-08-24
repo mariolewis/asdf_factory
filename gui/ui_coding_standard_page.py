@@ -29,7 +29,6 @@ class Ui_CodingStandardPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(CodingStandardPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -52,10 +51,19 @@ class Ui_CodingStandardPage(object):
 
         self.verticalLayout_2.addWidget(self.instructionLabel)
 
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
+
         self.generateButton = QPushButton(self.generatePage)
         self.generateButton.setObjectName(u"generateButton")
 
-        self.verticalLayout_2.addWidget(self.generateButton)
+        self.horizontalLayout_2.addWidget(self.generateButton)
+
+
+        self.verticalLayout_2.addLayout(self.horizontalLayout_2)
 
         self.verticalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -68,7 +76,6 @@ class Ui_CodingStandardPage(object):
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.reviewHeaderLabel = QLabel(self.reviewPage)
         self.reviewHeaderLabel.setObjectName(u"reviewHeaderLabel")
-        self.reviewHeaderLabel.setStyleSheet(u"font-size: 14pt;")
 
         self.verticalLayout_3.addWidget(self.reviewHeaderLabel)
 
@@ -90,7 +97,7 @@ class Ui_CodingStandardPage(object):
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
 

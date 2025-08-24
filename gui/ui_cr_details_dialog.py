@@ -29,7 +29,6 @@ class Ui_CRDetailsDialog(object):
         self.verticalLayout.setObjectName(u"verticalLayout")
         self.headerLabel = QLabel(CRDetailsDialog)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 16pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -52,7 +51,7 @@ class Ui_CRDetailsDialog(object):
     # setupUi
 
     def retranslateUi(self, CRDetailsDialog):
-        CRDetailsDialog.setWindowTitle(QCoreApplication.translate("CRDetailsDialog", u"Change Request Details", None))
+        CRDetailsDialog.setWindowTitle(QCoreApplication.translate("CRDetailsDialog", u"Request Details", None))
         self.headerLabel.setText(QCoreApplication.translate("CRDetailsDialog", u"CR-ID: Type", None))
     # retranslateUi
 

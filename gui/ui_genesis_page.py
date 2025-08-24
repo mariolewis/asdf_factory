@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QLabel, QProgressBar,
-    QPushButton, QSizePolicy, QSpacerItem, QStackedWidget,
-    QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
+    QProgressBar, QPushButton, QSizePolicy, QSpacerItem,
+    QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_GenesisPage(object):
     def setupUi(self, GenesisPage):
@@ -29,7 +29,6 @@ class Ui_GenesisPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(GenesisPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -48,7 +47,6 @@ class Ui_GenesisPage(object):
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.checkpointHeaderLabel = QLabel(self.checkpointPage)
         self.checkpointHeaderLabel.setObjectName(u"checkpointHeaderLabel")
-        self.checkpointHeaderLabel.setStyleSheet(u"font-size: 14pt;")
 
         self.verticalLayout_2.addWidget(self.checkpointHeaderLabel)
 
@@ -65,10 +63,19 @@ class Ui_GenesisPage(object):
 
         self.verticalLayout_2.addWidget(self.nextTaskLabel)
 
+        self.horizontalLayout = QHBoxLayout()
+        self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout.addItem(self.horizontalSpacer)
+
         self.proceedButton = QPushButton(self.checkpointPage)
         self.proceedButton.setObjectName(u"proceedButton")
 
-        self.verticalLayout_2.addWidget(self.proceedButton)
+        self.horizontalLayout.addWidget(self.proceedButton)
+
+
+        self.verticalLayout_2.addLayout(self.horizontalLayout)
 
         self.verticalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -81,7 +88,6 @@ class Ui_GenesisPage(object):
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.processingLabel = QLabel(self.processingPage)
         self.processingLabel.setObjectName(u"processingLabel")
-        self.processingLabel.setStyleSheet(u"font-size: 14pt;")
         self.processingLabel.setAlignment(Qt.AlignCenter)
 
         self.verticalLayout_3.addWidget(self.processingLabel)
@@ -104,10 +110,10 @@ class Ui_GenesisPage(object):
 
     def retranslateUi(self, GenesisPage):
         GenesisPage.setWindowTitle(QCoreApplication.translate("GenesisPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("GenesisPage", u"Iterative Component Development", None))
-        self.checkpointHeaderLabel.setText(QCoreApplication.translate("GenesisPage", u"PM Checkpoint", None))
+        self.headerLabel.setText(QCoreApplication.translate("GenesisPage", u"Component Development", None))
+        self.checkpointHeaderLabel.setText(QCoreApplication.translate("GenesisPage", u"Development Checkpoint", None))
         self.nextTaskLabel.setText(QCoreApplication.translate("GenesisPage", u"Next component in the plan is: '...'", None))
-        self.proceedButton.setText(QCoreApplication.translate("GenesisPage", u"\u25b6\ufe0f Proceed with Next Component", None))
+        self.proceedButton.setText(QCoreApplication.translate("GenesisPage", u"\u25b6\ufe0f Proceed with Next Step", None))
         self.processingLabel.setText(QCoreApplication.translate("GenesisPage", u"Executing Development Step...", None))
     # retranslateUi
 

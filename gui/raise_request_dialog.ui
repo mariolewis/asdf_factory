@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Raise New Request</string>
+   <string>Create New Request</string>
   </property>
   <property name="modal">
    <bool>true</bool>
@@ -21,9 +21,6 @@
     <widget class="QLabel" name="headerLabel">
      <property name="text">
       <string>Create New Request</string>
-     </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 16pt; font-weight: bold;</string>
      </property>
     </widget>
    </item>

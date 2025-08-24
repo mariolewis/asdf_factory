@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
-    QHeaderView, QLabel, QPushButton, QSizePolicy,
-    QSpacerItem, QTableView, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QHeaderView,
+    QLabel, QPushButton, QSizePolicy, QSpacerItem,
+    QTableView, QVBoxLayout, QWidget)
 
 class Ui_DocumentsPage(object):
     def setupUi(self, DocumentsPage):
@@ -29,7 +29,6 @@ class Ui_DocumentsPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(DocumentsPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -42,13 +41,9 @@ class Ui_DocumentsPage(object):
 
         self.instructionLabel = QLabel(DocumentsPage)
         self.instructionLabel.setObjectName(u"instructionLabel")
+        self.instructionLabel.setWordWrap(True)
 
         self.verticalLayout.addWidget(self.instructionLabel)
-
-        self.projectSelectorComboBox = QComboBox(DocumentsPage)
-        self.projectSelectorComboBox.setObjectName(u"projectSelectorComboBox")
-
-        self.verticalLayout.addWidget(self.projectSelectorComboBox)
 
         self.documentsTableView = QTableView(DocumentsPage)
         self.documentsTableView.setObjectName(u"documentsTableView")
@@ -88,9 +83,9 @@ class Ui_DocumentsPage(object):
     def retranslateUi(self, DocumentsPage):
         DocumentsPage.setWindowTitle(QCoreApplication.translate("DocumentsPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("DocumentsPage", u"Project Documents", None))
-        self.instructionLabel.setText(QCoreApplication.translate("DocumentsPage", u"Select a project to view and download its core documents.", None))
+        self.instructionLabel.setText(QCoreApplication.translate("DocumentsPage", u"View and export version-controlled documents for the active project.", None))
         self.backButton.setText(QCoreApplication.translate("DocumentsPage", u"<-- Back to Main Workflow", None))
         self.viewButton.setText(QCoreApplication.translate("DocumentsPage", u"View Selected Document", None))
-        self.exportButton.setText(QCoreApplication.translate("DocumentsPage", u"Export", None))
+        self.exportButton.setText(QCoreApplication.translate("DocumentsPage", u"Export Document", None))
     # retranslateUi
 

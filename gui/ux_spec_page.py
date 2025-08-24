@@ -40,15 +40,20 @@ class UXSpecPage(QWidget):
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
 
-    def _set_ui_busy(self, is_busy):
-        """Disables or enables the page while a background task runs."""
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the page and updates the main status bar."""
         self.setEnabled(not is_busy)
-        if is_busy:
-            self.ui.specTextEdit.setText("Generating UX/UI Specification Draft...")
+        main_window = self.parent()
+        if main_window and hasattr(main_window, 'statusBar'):
+            if is_busy:
+                self.ui.specTextEdit.setText(message)
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
 
-    def _execute_task(self, task_function, on_result, *args):
+    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
         """Generic method to run a task in the background."""
-        self._set_ui_busy(True)
+        self._set_ui_busy(True, status_message)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
@@ -56,17 +61,20 @@ class UXSpecPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
-        QMessageBox.critical(self, "Error", error_msg)
-        self.ui.specTextEdit.setText(f"Failed to generate draft. Error:\n{error_tuple[1]}")
-        self._set_ui_busy(False)
+        try:
+            error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
+            QMessageBox.critical(self, "Error", error_msg)
+            self.ui.specTextEdit.setText(f"Failed to generate draft. Error:\n{error_tuple[1]}")
+        finally:
+            self._set_ui_busy(False)
 
     def prepare_for_display(self):
         """
         Triggers the UX_Spec_Agent to generate the initial draft when the page is shown.
         """
         logging.info("UXSpecPage: Preparing for display, starting draft generation.")
-        self._execute_task(self._task_generate_draft, self._handle_generation_result)
+        self._execute_task(self._task_generate_draft, self._handle_generation_result,
+                           status_message="Generating UX/UI specification draft...")
 
     def _task_generate_draft(self, **kwargs):
         """The actual function that runs in the background."""
@@ -89,7 +97,8 @@ class UXSpecPage(QWidget):
             return
 
         current_draft = self.ui.specTextEdit.toPlainText()
-        self._execute_task(self._task_refine_draft, self._handle_refinement_result, current_draft, feedback)
+        self._execute_task(self._task_refine_draft, self._handle_refinement_result, current_draft, feedback,
+                           status_message="Refining UX/UI specification...")
 
     def _task_refine_draft(self, current_draft, feedback, **kwargs):
         """Background task to call the orchestrator for refinement."""
@@ -101,7 +110,7 @@ class UXSpecPage(QWidget):
             self.ux_spec_draft = new_draft
             self.ui.specTextEdit.setText(self.ux_spec_draft)
             self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "The UX/UI Specification has been refined based on your feedback.")
+            QMessageBox.information(self, "Success", "Success: The UX/UI Specification has been refined based on your feedback.")
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -118,13 +127,14 @@ class UXSpecPage(QWidget):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            self._set_ui_busy(True)
-            # The orchestrator method will run in the main thread for this final step
+            self._set_ui_busy(True, "Finalizing UX/UI Specification...")
+            # This final orchestrator step is quick, so we run it in the main thread
+            # but keep the busy indicator for good UX.
             success = self.orchestrator.handle_ux_spec_completion(final_spec)
             self._set_ui_busy(False)
 
             if success:
-                QMessageBox.information(self, "Success", "UX/UI Specification approved and saved. Proceeding to Application Specification.")
+                QMessageBox.information(self, "Success", "Success: UX/UI Specification approved and saved. Proceeding to Application Specification.")
                 logging.debug("on_approve_clicked: Emitting ux_spec_complete signal.")
                 self.ux_spec_complete.emit()
             else:

@@ -42,40 +42,55 @@ class PlanningPage(QWidget):
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
 
-    def _format_plan_for_display(self, plan_data: dict) -> str:
+    def _format_plan_for_display(self, plan_json_str: str) -> str:
         """Converts the JSON development plan data into a formatted HTML string."""
-        if not plan_data or "development_plan" not in plan_data:
-            return "<p>Could not parse the development plan.</p>"
+        try:
+            plan_data = json.loads(plan_json_str)
+            if not plan_data or "development_plan" not in plan_data:
+                return "<p>Could not parse the development plan.</p>"
 
-        html = []
-        main_exe = plan_data.get("main_executable_file", "Not specified")
-        html.append(f"<h3>Main Executable File: {main_exe}</h3>")
-        html.append("<hr>")
-        html.append("<h3>Development Plan Steps:</h3>")
+            html = []
+            main_exe = plan_data.get("main_executable_file", "Not specified")
+            html.append(f"<h3>Main Executable File: {main_exe}</h3>")
+            html.append("<hr>")
+            html.append("<h3>Development Plan Steps:</h3>")
 
-        plan_steps = plan_data.get("development_plan", [])
-        if not plan_steps:
-            html.append("<p>No development steps were generated.</p>")
-        else:
-            html.append("<ol>")
-            for task in plan_steps:
-                html.append("<li>")
-                html.append(f"<b>ID:</b> {task.get('micro_spec_id', 'N/A')}<br/>")
-                html.append(f"<b>Component:</b> {task.get('component_name', 'N/A')}<br/>")
-                html.append(f"<b>Type:</b> {task.get('component_type', 'N/A')}<br/>")
-                html.append(f"<b>Description:</b> <i>{task.get('task_description', 'No description.')}</i>")
-                html.append("</li><br/>")
-            html.append("</ol>")
+            plan_steps = plan_data.get("development_plan", [])
+            if not plan_steps:
+                html.append("<p>No development steps were generated.</p>")
+            else:
+                html.append("<ol>")
+                for task in plan_steps:
+                    html.append("<li>")
+                    html.append(f"<b>ID:</b> {task.get('micro_spec_id', 'N/A')}<br/>")
+                    html.append(f"<b>Component:</b> {task.get('component_name', 'N/A')}<br/>")
+                    html.append(f"<b>Type:</b> {task.get('component_type', 'N/A')}<br/>")
+                    html.append(f"<b>Description:</b> <i>{task.get('task_description', 'No description.')}</i>")
+                    html.append("</li><br/>")
+                html.append("</ol>")
 
-        return "".join(html)
+            return "".join(html)
+        except json.JSONDecodeError:
+            return f"<p>Error: Could not parse the development plan JSON.</p><pre>{plan_json_str}</pre>"
 
-    def _set_ui_busy(self, is_busy):
-        """Disables or enables the page while a background task runs."""
-        self.setEnabled(not is_busy)
 
-    def _execute_task(self, task_function, on_result, *args):
+    def _set_ui_busy(self, is_busy, message="Processing..."):
+        """Disables or enables the main window and updates the status bar."""
+        main_window = self.window() # Get the top-level window
+        if not main_window:
+            self.setEnabled(not is_busy) # Fallback if parent isn't found
+            return
+
+        main_window.setEnabled(not is_busy)
+        if hasattr(main_window, 'statusBar'):
+            if is_busy:
+                main_window.statusBar().showMessage(message)
+            else:
+                main_window.statusBar().clearMessage()
+
+    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
         """Generic method to run a task in the background."""
-        self._set_ui_busy(True)
+        self._set_ui_busy(True, status_message)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
         worker.signals.error.connect(self._on_task_error)
@@ -83,29 +98,25 @@ class PlanningPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
-        error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
-        QMessageBox.critical(self, "Error", error_msg)
-        self._set_ui_busy(False)
+        try:
+            error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
+            QMessageBox.critical(self, "Error", error_msg)
+        finally:
+            self._set_ui_busy(False)
 
     def run_generation_task(self):
         """Initiates the background task to generate the development plan."""
-        self._execute_task(self._task_generate_plan, self._handle_generation_result)
+        self._execute_task(self._task_generate_plan, self._handle_generation_result,
+                           status_message="Generating development plan...")
 
     def _handle_generation_result(self, plan_json_str):
         """Handles the result from the worker thread."""
         try:
             self.development_plan_json = plan_json_str
-            parsed_json = json.loads(plan_json_str)
-
-            if "error" in parsed_json:
-                QMessageBox.warning(self, "Plan Generation Failed",
-                                    f"There was a temporary issue generating the development plan:\n{parsed_json.get('details')}\n\nPlease try again.")
-            else:
-                # This is the changed part: Call the new formatting method
-                plan_for_display = self._format_plan_for_display(parsed_json)
-                self.ui.planTextEdit.setHtml(plan_for_display)
-                self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
-                self.state_changed.emit()
+            plan_for_display = self._format_plan_for_display(plan_json_str)
+            self.ui.planTextEdit.setHtml(plan_for_display)
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 
@@ -117,7 +128,7 @@ class PlanningPage(QWidget):
 
         success, message = self.orchestrator.finalize_and_save_dev_plan(self.development_plan_json)
         if success:
-            QMessageBox.information(self, "Success", "Development Plan approved and saved.")
+            QMessageBox.information(self, "Success", "Success: Development Plan approved and saved.")
             self.orchestrator.is_project_dirty = True
             self.planning_complete.emit()
         else:
@@ -139,10 +150,15 @@ class PlanningPage(QWidget):
         )
         response_json_str = agent.generate_development_plan(final_spec, tech_spec)
 
-        response_data = json.loads(response_json_str)
-        main_executable = response_data.get("main_executable_file")
-        if main_executable:
-            db.update_project_field(self.orchestrator.project_id, "apex_executable_name", main_executable)
+        # Check for error before trying to parse, to avoid crashing on agent error
+        try:
+            response_data = json.loads(response_json_str)
+            main_executable = response_data.get("main_executable_file")
+            if main_executable:
+                db.update_project_field(self.orchestrator.project_id, "apex_executable_name", main_executable)
+        except json.JSONDecodeError:
+            logging.error(f"Could not parse development plan JSON from agent: {response_json_str}")
+            # The error will be displayed in the text box for the user to see.
 
         return response_json_str
 
@@ -154,23 +170,18 @@ class PlanningPage(QWidget):
             return
 
         current_plan_json = self.development_plan_json
-        self._execute_task(self._task_refine_plan, self._handle_refinement_result, current_plan_json, feedback)
+        self._execute_task(self._task_refine_plan, self._handle_refinement_result, current_plan_json, feedback,
+                           status_message="Refining development plan...")
 
     def _handle_refinement_result(self, new_plan_json_str):
         """Handles the result from the refinement worker thread."""
         try:
             self.development_plan_json = new_plan_json_str
-            parsed_json = json.loads(new_plan_json_str)
-
-            if "error" in parsed_json:
-                QMessageBox.warning(self, "Refinement Failed",
-                                    f"There was an issue refining the plan:\n{parsed_json.get('details')}")
-            else:
-                plan_for_display = self._format_plan_for_display(parsed_json)
-                self.ui.planTextEdit.setHtml(plan_for_display)
-                self.ui.feedbackTextEdit.clear()
-                QMessageBox.information(self, "Success", "The development plan has been refined based on your feedback.")
-                self.state_changed.emit()
+            plan_for_display = self._format_plan_for_display(new_plan_json_str)
+            self.ui.planTextEdit.setHtml(plan_for_display)
+            self.ui.feedbackTextEdit.clear()
+            QMessageBox.information(self, "Success", "Success: The development plan has been refined based on your feedback.")
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 

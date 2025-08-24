@@ -31,9 +31,6 @@
      <property name="text">
       <string>Action Required</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>

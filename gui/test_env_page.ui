@@ -31,9 +31,6 @@
      <property name="text">
       <string>Test Environment Setup</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>
@@ -53,9 +50,7 @@
        <item>
         <widget class="QLabel" name="standbyLabel">
          <property name="text">
-          <string>The system will now analyze the project's Technical Specification to generate a step-by-step guide for setting up the required testing environment.
-
-Click 'Start Analysis' to proceed.</string>
+          <string>This step generates a setup guide for the project's testing environment based on the technical specification. Click 'Start Analysis' to begin.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
@@ -63,11 +58,28 @@ Click 'Start Analysis' to proceed.</string>
         </widget>
        </item>
        <item>
-        <widget class="QPushButton" name="startButton">
-         <property name="text">
-          <string>Start Analysis</string>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="horizontalLayout_2">
+         <item>
+          <spacer name="horizontalSpacer_2">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="startButton">
+           <property name="text">
+            <string>Start Analysis</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <spacer name="verticalSpacer">
@@ -105,6 +117,19 @@ Click 'Start Analysis' to proceed.</string>
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout">
+         <item>
+          <spacer name="horizontalSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
          <item>
           <widget class="QPushButton" name="doneButton">
            <property name="text">
@@ -148,11 +173,28 @@ Please confirm the final command that should be used to run all automated tests 
         <widget class="QLineEdit" name="testCommandLineEdit"/>
        </item>
        <item>
-        <widget class="QPushButton" name="finalizeButton">
-         <property name="text">
-          <string>Finalize Test Environment Setup</string>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="horizontalLayout_3">
+         <item>
+          <spacer name="horizontalSpacer_3">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="finalizeButton">
+           <property name="text">
+            <string>Finalize Test Environment Setup</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <spacer name="verticalSpacer_2">
@@ -185,11 +227,28 @@ Please confirm the final command that should be used to run all automated tests 
         <widget class="QLineEdit" name="manualBuildScriptLineEdit"/>
        </item>
        <item>
-        <widget class="QPushButton" name="confirmBuildScriptButton">
-         <property name="text">
-          <string>Confirm Filename and Continue</string>
-         </property>
-        </widget>
+        <layout class="QHBoxLayout" name="horizontalLayout_5">
+         <item>
+          <spacer name="horizontalSpacer_4">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="confirmBuildScriptButton">
+           <property name="text">
+            <string>Confirm Filename and Continue</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <spacer name="verticalSpacer_3">

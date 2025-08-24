@@ -29,7 +29,6 @@ class Ui_CRManagementPage(object):
         self.verticalLayout.setContentsMargins(20, 20, 20, 20)
         self.headerLabel = QLabel(CRManagementPage)
         self.headerLabel.setObjectName(u"headerLabel")
-        self.headerLabel.setStyleSheet(u"font-size: 18pt; font-weight: bold;")
 
         self.verticalLayout.addWidget(self.headerLabel)
 
@@ -96,8 +95,8 @@ class Ui_CRManagementPage(object):
 
     def retranslateUi(self, CRManagementPage):
         CRManagementPage.setWindowTitle(QCoreApplication.translate("CRManagementPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("CRManagementPage", u"Change & Bug Management", None))
-        self.instructionLabel.setText(QCoreApplication.translate("CRManagementPage", u"Select an item from the register below to view available actions. Implementation of any item is only enabled after the main development plan is fully complete.", None))
+        self.headerLabel.setText(QCoreApplication.translate("CRManagementPage", u"Change && Bug Management", None))
+        self.instructionLabel.setText(QCoreApplication.translate("CRManagementPage", u"Select an item from the register to view available actions. Implementation is enabled for items with an 'IMPACT_ANALYZED' status after the main development plan is complete.", None))
         self.backButton.setText(QCoreApplication.translate("CRManagementPage", u"<-- Back to Main Workflow", None))
         self.editButton.setText(QCoreApplication.translate("CRManagementPage", u"Edit Item", None))
         self.deleteButton.setText(QCoreApplication.translate("CRManagementPage", u"Delete Item", None))

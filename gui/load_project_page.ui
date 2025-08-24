@@ -31,9 +31,6 @@
      <property name="text">
       <string>Load an Exported Project</string>
      </property>
-     <property name="styleSheet">
-      <string notr="true">font-size: 18pt; font-weight: bold;</string>
-     </property>
     </widget>
    </item>
    <item>
