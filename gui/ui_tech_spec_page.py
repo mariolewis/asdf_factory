@@ -139,6 +139,12 @@ class Ui_TechSpecPage(object):
 
         self.verticalLayout_3.addWidget(self.reviewHeaderLabel)
 
+        self.infoLabel = QLabel(self.reviewPage)
+        self.infoLabel.setObjectName(u"infoLabel")
+        self.infoLabel.setWordWrap(True)
+
+        self.verticalLayout_3.addWidget(self.infoLabel)
+
         self.techSpecTextEdit = QTextEdit(self.reviewPage)
         self.techSpecTextEdit.setObjectName(u"techSpecTextEdit")
 
@@ -195,6 +201,7 @@ class Ui_TechSpecPage(object):
         self.pmDefineInstructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). The AI will use your input to generate the full technical specification document.", None))
         self.generateFromGuidelinesButton.setText(QCoreApplication.translate("TechSpecPage", u"Generate Full Specification from My Input", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("TechSpecPage", u"Review Technical Specification", None))
+        self.infoLabel.setText(QCoreApplication.translate("TechSpecPage", u"Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please enter your input in the box below the draft.", None))
         self.feedbackLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide feedback for refinement (optional):", None))
         self.refineButton.setText(QCoreApplication.translate("TechSpecPage", u"Submit Feedback & Refine", None))
         self.approveButton.setText(QCoreApplication.translate("TechSpecPage", u"Approve Technical Specification", None))

@@ -191,6 +191,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="infoLabel">
+         <property name="text">
+          <string>Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please enter your input in the box below the draft.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QTextEdit" name="techSpecTextEdit"/>
        </item>
        <item>

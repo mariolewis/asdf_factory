@@ -1,15 +1,36 @@
 # gui/test_env_page.py
 
 import logging
-from PySide6.QtWidgets import QWidget, QMessageBox, QLabel, QVBoxLayout, QScrollArea
+import markdown
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox
+from PySide6.QtWidgets import QWidget, QMessageBox, QLabel, QVBoxLayout, QScrollArea, QFileDialog
 from PySide6.QtCore import Signal, QThreadPool, QTimer
 from PySide6.QtGui import QPalette, QColor
+from pathlib import Path
 
+from agents.agent_report_generator import ReportGeneratorAgent
 from gui.ui_test_env_page import Ui_TestEnvPage
 from gui.worker import Worker
 from master_orchestrator import MasterOrchestrator
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
 
+class HelpDialog(QDialog):
+    """A custom dialog to display scrollable help content."""
+    def __init__(self, title, content, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.setMinimumSize(700, 500)
+
+        layout = QVBoxLayout(self)
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        # Render the Markdown content as formatted HTML
+        text_edit.setHtml(markdown.markdown(content, extensions=['fenced_code']))
+        layout.addWidget(text_edit)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
 class TestEnvPage(QWidget):
     state_changed = Signal()
     test_env_setup_complete = Signal()
@@ -41,6 +62,8 @@ class TestEnvPage(QWidget):
     def connect_signals(self):
         self.ui.startButton.clicked.connect(self.run_analysis_task)
         self.ui.doneButton.clicked.connect(self.on_done_clicked)
+        self.ui.previousButton.clicked.connect(self.on_previous_clicked)
+        self.ui.exportButton.clicked.connect(self.on_export_clicked)
         self.ui.helpButton.clicked.connect(self.on_help_clicked)
         self.ui.ignoreButton.clicked.connect(self.on_ignore_clicked)
         self.ui.finalizeButton.clicked.connect(self.on_finalize_clicked)
@@ -63,10 +86,14 @@ class TestEnvPage(QWidget):
             QMessageBox.critical(self, "Database Error", f"Failed to save build script filename:\n{e}")
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
-        """Disables or enables the page and updates the main status bar."""
-        self.setEnabled(not is_busy)
-        main_window = self.parent()
-        if main_window and hasattr(main_window, 'statusBar'):
+        """Disables or enables the main window and updates the status bar."""
+        main_window = self.window()
+        if not main_window:
+            self.setEnabled(not is_busy)
+            return
+
+        main_window.setEnabled(not is_busy)
+        if hasattr(main_window, 'statusBar'):
             if is_busy:
                 main_window.statusBar().showMessage(message)
             else:
@@ -132,6 +159,13 @@ class TestEnvPage(QWidget):
     def _update_step_view(self):
         self.ui.stepsStackedWidget.setCurrentIndex(self.current_step_index)
         self.ui.doneButton.setText("Finish && Proceed" if self.current_step_index == len(self.setup_tasks) - 1 else "Done, Next Step")
+        self.ui.previousButton.setEnabled(self.current_step_index > 0)
+
+    def on_previous_clicked(self):
+        """Navigates to the previous setup step."""
+        if self.current_step_index > 0:
+            self.current_step_index -= 1
+            self._update_step_view()
 
     def on_done_clicked(self):
         if self.current_step_index < len(self.setup_tasks) - 1:
@@ -141,11 +175,81 @@ class TestEnvPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.finalizePage)
             self._populate_test_command()
 
+    def on_export_clicked(self):
+        """Exports all setup steps to a single .docx file in the project's _docs folder."""
+        if not self.setup_tasks:
+            QMessageBox.warning(self, "No Content", "There are no setup steps to export.")
+            return
+
+        try:
+            project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise IOError("Project root folder not found.")
+
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "_docs"
+            docs_dir.mkdir(exist_ok=True) # Ensure the directory exists
+
+            project_name = self.orchestrator.project_name or "project"
+            file_path = docs_dir / f"{project_name}_Test_Environment_Setup.docx"
+
+            full_content = []
+            for i, task in enumerate(self.setup_tasks):
+                full_content.append(f"Step {i+1}: {task.get('tool_name')}\n")
+                full_content.append(f"{task.get('instructions')}\n\n")
+
+            report_generator = ReportGeneratorAgent()
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"Test Environment Setup - {self.orchestrator.project_name}",
+                content="\n".join(full_content)
+            )
+            with open(file_path, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+
+            QMessageBox.information(self, "Success", f"Successfully exported setup instructions to:\n{file_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export document: {e}")
+
     def on_help_clicked(self):
-        pass # Placeholder for now
+        """Gets detailed help for the current setup task."""
+        if not self.setup_tasks or self.current_step_index >= len(self.setup_tasks):
+            return
+
+        current_task = self.setup_tasks[self.current_step_index]
+        instructions = current_task.get('instructions', 'No instructions available.')
+
+        # We can run this in a background thread to avoid blocking if the help generation is slow
+        self._execute_task(self.orchestrator.get_help_for_setup_task, self._handle_help_result, instructions,
+                           status_message="Getting help...")
+
+    def _handle_help_result(self, help_text):
+        """Displays the help text in a custom, scrollable dialog."""
+        try:
+            dialog = HelpDialog("Help", help_text, self)
+            dialog.exec()
+        finally:
+            self._set_ui_busy(False)
 
     def on_ignore_clicked(self):
-        pass # Placeholder for now
+        """Acknowledges the user wants to skip the current step, logs it,
+        and proceeds to the final step of this phase."""
+        if not self.setup_tasks or self.current_step_index >= len(self.setup_tasks):
+            return
+
+        current_task = self.setup_tasks[self.current_step_index]
+        task_name = current_task.get('tool_name', 'Unnamed Task')
+
+        reply = QMessageBox.question(self, "Confirm Ignore",
+                                     f"Are you sure you want to ignore the setup for '{task_name}'?\nThis may cause issues later. A 'KNOWN_ISSUE' will be logged.",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.orchestrator.handle_ignore_setup_task(current_task)
+            # --- THIS IS THE FIX ---
+            # Transition to the final page of THIS phase, not the next one.
+            self.ui.stackedWidget.setCurrentWidget(self.ui.finalizePage)
+            self._populate_test_command()
+            # --- END OF FIX ---
 
     def on_finalize_clicked(self):
         command = self.ui.testCommandLineEdit.text().strip()
@@ -168,7 +272,6 @@ class TestEnvPage(QWidget):
             if command_text and command_text.strip():
                 self.ui.testCommandLineEdit.setText(command_text)
             else:
-                # If the result is empty or None for any reason, use a safe default.
                 self.ui.testCommandLineEdit.setText("pytest")
         finally:
             self._set_ui_busy(False)
@@ -181,10 +284,9 @@ class TestEnvPage(QWidget):
             if self.orchestrator.llm_service and tech_spec_text:
                 agent = VerificationAgent_AppTarget(llm_service=self.orchestrator.llm_service)
                 details = agent._get_test_execution_details(tech_spec_text)
-                # Ensure we return a non-empty string from the details if possible
                 command = details.get("command") if details else ""
                 return command if command and command.strip() else "pytest"
             return "pytest"
         except Exception as e:
             logging.error(f"Failed to get suggested test command: {e}")
-            return "pytest" # Always return a safe default on any error
+            return "pytest"

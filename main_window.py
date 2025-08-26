@@ -788,6 +788,7 @@ class ASDFMainWindow(QMainWindow):
         self.update_ui_after_state_change()
 
     def on_close_project(self):
+        logging.debug("!!! on_close_project in main_window was triggered !!!")
         self.orchestrator.close_active_project()
         self.update_ui_after_state_change()
 

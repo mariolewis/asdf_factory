@@ -29,7 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>New Application Setup</string>
+      <string>New Project Setup</string>
      </property>
     </widget>
    </item>

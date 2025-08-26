@@ -66,9 +66,10 @@ class SpecClarificationAgent:
             {template_instruction}
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Technology Agnostic:** Your response MUST be purely functional and non-functional. You MUST NOT include any recommendations for specific programming languages, frameworks, databases, or technology stacks.
-            2.  **User-Specified Tech:** The only exception is if the user's brief explicitly commands the use of a specific technology. In that case, you must include it.
-            3.  **Logical Data Schema:** If the description implies data storage, include a 'Data Schema' section. Describe the tables and columns using logical data types (e.g., Text, Number, Date), not physical SQL types (e.g., VARCHAR, INT).
+            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+            2.  **Technology Agnostic:** Your response MUST be purely functional and non-functional. You MUST NOT include any recommendations for specific programming languages, frameworks, databases, or technology stacks.
+            3.  **User-Specified Tech:** The only exception is if the user's brief explicitly commands the use of a specific technology. In that case, you must include it.
+            4.  **Logical Data Schema:** If the description implies data storage, include a 'Data Schema' section. Describe the tables and columns using logical data types (e.g., Text, Number, Date), not physical SQL types (e.g., VARCHAR, INT).
             {fallback_instruction}
             The user's brief description is:
             ---
@@ -122,10 +123,11 @@ class SpecClarificationAgent:
             {convergence_directive}
 
             **MANDATORY INSTRUCTIONS:**
-            1.  Identify any ambiguities, contradictions, underspecified features, or missing information.
-            2.  For each issue you identify, you MUST propose 1-2 concrete potential solutions or clarifying options for the Product Manager to consider.
-            3.  Structure your response as a numbered list. For each item, clearly state the "Issue" and then provide the "Proposed Solutions".
-            4.  If you find no issues, your entire response MUST be the single phrase: "No significant issues found."
+            1.  **STRICT MARKDOWN FORMATTING:** Your entire response must be in raw Markdown. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with a '*' character. Paragraphs MUST be separated by a full blank line. This is mandatory.
+            2.  Identify any ambiguities, contradictions, underspecified features, or missing information.
+            3.  For each issue you identify, you MUST propose 1-2 concrete potential solutions or clarifying options for the Product Manager to consider.
+            4.  Structure your response as a numbered list. For each item, clearly state the "Issue" and then provide the "Proposed Solutions".
+            5.  If you find no issues, your entire response MUST be the single phrase: "No significant issues found."
 
             **The specification draft is:**
             ---
@@ -166,6 +168,8 @@ class SpecClarificationAgent:
             1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
             2.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's clarifications.
             3.  **Complete Document**: Ensure the new version is a complete, standalone document including the preserved header.
+            4.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document.
+            5.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
             {fallback_instruction}
             **Current Specification Draft:**
             ---

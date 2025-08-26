@@ -53,12 +53,12 @@ class TechStackProposalAgent:
             {template_instruction}
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze for Existing Tech:** First, review the specification to see if a technology stack is already mentioned.
-            2.  **If Tech IS Specified:** Your primary task is to accept and expand upon the user's choice. Validate that it fits the requirements and then detail the architecture and any missing libraries or components needed to complete the stack.
-            3.  **If Tech IS NOT Specified:** Your task is to propose the most appropriate technology stack from scratch, providing a brief justification for each choice.
-            4.  **Include Setup Guide:** You MUST include a dedicated section in your response titled **"Development Environment Setup Guide"**. This section must contain a clear, human-readable list of all necessary languages, frameworks, libraries, and tools that need to be installed to build and run the application.
-            5.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
-            6.  **Format:** Structure your response clearly using Markdown.
+            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+            2.  **Analyze for Existing Tech:** First, review the specification to see if a technology stack is already mentioned.
+            3.  **If Tech IS Specified:** Your primary task is to accept and expand upon the user's choice. Validate that it fits the requirements and then detail the architecture and any missing libraries or components needed to complete the stack.
+            4.  **If Tech IS NOT Specified:** Your task is to propose the most appropriate technology stack from scratch, providing a brief justification for each choice.
+            5.  **Include Setup Guide:** You MUST include a dedicated section in your response titled **"Development Environment Setup Guide"**. This section must contain a clear, human-readable list of all necessary languages, frameworks, libraries, and tools that need to be installed to build and run the application.
+            6.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
 
             ---
             **Functional Specification:**
@@ -98,6 +98,7 @@ class TechStackProposalAgent:
             1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
             2.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's feedback. Do not regenerate the entire document from scratch.
             3.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document, including the preserved header.
+            4.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
 
             **--- INPUT 1: Current Draft ---**
             ```markdown

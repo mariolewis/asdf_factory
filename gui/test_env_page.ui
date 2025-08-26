@@ -118,6 +118,13 @@
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout">
          <item>
+          <widget class="QPushButton" name="exportButton">
+           <property name="text">
+            <string>Save to .docx</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <spacer name="horizontalSpacer">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
@@ -129,6 +136,13 @@
             </size>
            </property>
           </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="previousButton">
+           <property name="text">
+            <string>&lt; Previous Step</string>
+           </property>
+          </widget>
          </item>
          <item>
           <widget class="QPushButton" name="doneButton">
@@ -147,7 +161,7 @@
          <item>
           <widget class="QPushButton" name="ignoreButton">
            <property name="text">
-            <string>Ignore &amp; Continue</string>
+            <string>Ignore &amp;&amp; Continue</string>
            </property>
           </widget>
          </item>
@@ -190,7 +204,7 @@ Please confirm the final command that should be used to run all automated tests 
          <item>
           <widget class="QPushButton" name="finalizeButton">
            <property name="text">
-            <string>Finalize Test Environment Setup</string>
+            <string>Finalize Setup &amp;&amp; Proceed</string>
            </property>
           </widget>
          </item>

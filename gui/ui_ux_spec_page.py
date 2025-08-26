@@ -51,6 +51,12 @@ class Ui_UXSpecPage(object):
 
         self.verticalLayout_2.addWidget(self.reviewInstructionLabel)
 
+        self.infoLabel = QLabel(self.reviewPage)
+        self.infoLabel.setObjectName(u"infoLabel")
+        self.infoLabel.setWordWrap(True)
+
+        self.verticalLayout_2.addWidget(self.infoLabel)
+
         self.specTextEdit = QTextEdit(self.reviewPage)
         self.specTextEdit.setObjectName(u"specTextEdit")
 
@@ -100,6 +106,7 @@ class Ui_UXSpecPage(object):
         UXSpecPage.setWindowTitle(QCoreApplication.translate("UXSpecPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("UXSpecPage", u"User Experience & Interface Design", None))
         self.reviewInstructionLabel.setText(QCoreApplication.translate("UXSpecPage", u"Below is the consolidated UX/UI Specification draft, including personas, user journeys, and a style guide. Please review it, make any direct edits, and provide general feedback for refinement below.", None))
+        self.infoLabel.setText(QCoreApplication.translate("UXSpecPage", u"Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please use the text box below.", None))
         self.feedbackLabel.setText(QCoreApplication.translate("UXSpecPage", u"Feedback for Refinement (Optional):", None))
         self.refineButton.setText(QCoreApplication.translate("UXSpecPage", u"Submit Feedback && Refine", None))
         self.approveButton.setText(QCoreApplication.translate("UXSpecPage", u"Approve Specification", None))

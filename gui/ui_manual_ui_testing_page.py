@@ -96,7 +96,7 @@ class Ui_ManualUITestingPage(object):
 
     def retranslateUi(self, ManualUITestingPage):
         ManualUITestingPage.setWindowTitle(QCoreApplication.translate("ManualUITestingPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"Testing & Validation", None))
+        self.headerLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"Testing && Validation", None))
         self.instructionLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Your action is required to complete the UI testing:</b>\n"
 "<ol>\n"
 "<li>Go to the <b>Documents</b> page to download the <i>UI Test Plan</i>.</li>\n"

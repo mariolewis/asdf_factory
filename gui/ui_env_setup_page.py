@@ -125,7 +125,7 @@ class Ui_EnvSetupPage(object):
 
     def retranslateUi(self, EnvSetupPage):
         EnvSetupPage.setWindowTitle(QCoreApplication.translate("EnvSetupPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("EnvSetupPage", u"New Application Setup", None))
+        self.headerLabel.setText(QCoreApplication.translate("EnvSetupPage", u"New Project Setup", None))
         self.instructionLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Define the root folder for the new target application.", None))
         self.pathLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Target Project Root Folder:", None))
         self.confirmPathButton.setText(QCoreApplication.translate("EnvSetupPage", u"Confirm Project Folder", None))

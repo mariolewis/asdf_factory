@@ -55,6 +55,16 @@
         </widget>
        </item>
        <item>
+        <widget class="QLabel" name="infoLabel">
+         <property name="text">
+          <string>Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please use the text box below.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QTextEdit" name="specTextEdit"/>
        </item>
        <item>

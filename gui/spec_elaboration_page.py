@@ -4,15 +4,15 @@ import logging
 import json
 import re
 from datetime import datetime
-from pathlib import Path
+import markdown
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QApplication
 from PySide6.QtCore import Signal, QThreadPool
 
 from gui.ui_spec_elaboration_page import Ui_SpecElaborationPage
 from gui.worker import Worker
 from master_orchestrator import MasterOrchestrator
-from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
+from agents.agent_project_bootstrap import ProjectBootstrapAgent
 
 class SpecElaborationPage(QWidget):
     state_changed = Signal()
@@ -71,15 +71,13 @@ class SpecElaborationPage(QWidget):
         if completed_ux_spec:
             logging.info("Detected completed UX Spec. Auto-generating Application Spec draft.")
             self.orchestrator.task_awaiting_approval = None
-            self.ui.headerLabel.setText("Assessing Project Complexity...")
-            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+            self.ui.headerLabel.setText("Elaborating & Assessing Application Specifications")
             self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, completed_ux_spec,
                                status_message="Generating application spec from UX design...")
         elif pending_brief:
             logging.info("Detected pending brief from UX skip. Auto-generating Application Spec draft.")
             self.orchestrator.task_awaiting_approval = None
-            self.ui.headerLabel.setText("Assessing Project Complexity...")
-            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+            self.ui.headerLabel.setText("Elaborating & Assessing Application Specifications")
             self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, pending_brief,
                                status_message="Generating application spec from brief...")
         else:
@@ -88,17 +86,17 @@ class SpecElaborationPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
-        """Disables or enables the page and updates the main status bar."""
-        self.setEnabled(not is_busy)
+        """Disables or enables the main window and updates the status bar."""
+        main_window = self.window()
+        if not main_window:
+            self.setEnabled(not is_busy) # Fallback
+            return
 
-        # Also switch to the processing page view for clear, unmissable feedback
-        if is_busy:
-            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
-
-        main_window = self.parent()
-        if main_window and hasattr(main_window, 'statusBar'):
+        main_window.setEnabled(not is_busy)
+        if hasattr(main_window, 'statusBar'):
             if is_busy:
                 main_window.statusBar().showMessage(message)
+                self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
             else:
                 main_window.statusBar().clearMessage()
 
@@ -115,7 +113,7 @@ class SpecElaborationPage(QWidget):
         try:
             error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
             QMessageBox.critical(self, "Error", error_msg)
-            self.ui.headerLabel.setText("Your Requirements") # Reset header on error
+            self.ui.headerLabel.setText("Elaborating & Assessing Application Specifications") # Reset header on error
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
         finally:
             self._set_ui_busy(False)
@@ -169,20 +167,31 @@ class SpecElaborationPage(QWidget):
                                status_message=status_message)
 
     def _task_submit_brief_for_triage(self, input_data, **kwargs):
+        """Background task to process the initial brief from either text or files."""
+        initial_text = ""
         if isinstance(input_data, list):
+            # This is the corrected logic for file processing
             bootstrap_agent = ProjectBootstrapAgent(self.orchestrator.db_manager)
-            initial_text, _, error = bootstrap_agent.extract_text_from_file_paths(input_data)
-            if error: raise Exception(error)
+            text_from_files, messages, error = bootstrap_agent.extract_text_from_file_paths(input_data)
+            if error:
+                raise Exception(f"Failed to process uploaded files: {error}")
+            initial_text = text_from_files
         else:
+            # This is the existing logic for text input, which is correct
             initial_text = input_data
+
         if not initial_text or not initial_text.strip():
             raise Exception("No text could be extracted from the provided input.")
+
         self.orchestrator.handle_ux_ui_brief_submission(initial_text)
         return "Triage initiated."
 
     def _handle_triage_submission_result(self, result):
-        logging.info(f"Triage submission background task completed with result: {result}")
-        self.spec_elaboration_complete.emit()
+        try:
+            logging.info(f"Triage submission background task completed with result: {result}")
+            self.spec_elaboration_complete.emit()
+        finally:
+            self._set_ui_busy(False)
 
     def _task_generate_from_existing_spec(self, spec_text, **kwargs):
         """Background task for processing text from a prior phase."""
@@ -190,48 +199,18 @@ class SpecElaborationPage(QWidget):
 
     def _handle_analysis_result(self, result_tuple):
         try:
-            self.ui.headerLabel.setText("Project Complexity & Risk Assessment") # Set correct header
+            self.ui.headerLabel.setText("Project Complexity & Risk Assessment")
             analysis_result, self.spec_draft = result_tuple
             analysis_for_display = self._format_assessment_for_display(analysis_result)
             self.ui.analysisResultTextEdit.setHtml(analysis_for_display)
             self.ui.stackedWidget.setCurrentWidget(self.ui.complexityReviewPage)
-
-            # Explicitly enable buttons to ensure workflow is not blocked
-            self.ui.cancelProjectButton.setEnabled(True)
-            self.ui.confirmAnalysisButton.setEnabled(True)
-
             self.state_changed.emit()
         finally:
-            self._set_ui_busy(False)
-
-    def _handle_refinement_and_analysis_result(self, result_tuple):
-        try:
-            self.ui.headerLabel.setText("Application Specification Review")
-            self.spec_draft, self.ai_issues = result_tuple
-            self.refinement_iteration_count = 2
-
-            # 1. Make the page visible first
-            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
-            # 2. Force Qt to process pending events and draw the widget
-            QApplication.processEvents()
-
-            # 3. Now, populate the content
-            self.ui.specDraftTextEdit.setText(self.spec_draft)
-            self.ui.aiIssuesTextEdit.setText(self.ai_issues)
-            self.ui.feedbackTextEdit.clear()
-
-            # 4. Explicitly enable buttons
-            self.ui.submitFeedbackButton.setEnabled(True)
-            self.ui.approveSpecButton.setEnabled(True)
-
-            self.state_changed.emit()
-        finally:
-            # 5. Re-enable the entire page widget
             self._set_ui_busy(False)
 
     def on_confirm_analysis_clicked(self):
-        self.ui.headerLabel.setText("Draft Application Specification") # Set correct header
-        self.ui.pmReviewTextEdit.setText(self.spec_draft)
+        self.ui.headerLabel.setText("Draft Application Specification")
+        self.ui.pmReviewTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
         self.ui.pmFeedbackTextEdit.clear()
         self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
         self.state_changed.emit()
@@ -248,8 +227,28 @@ class SpecElaborationPage(QWidget):
     def _task_refine_and_analyze(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
         refined_draft = spec_agent.refine_specification(current_draft, "", feedback)
-        ai_issues = spec_agent.identify_potential_issues(refined_draft, iteration_count=1)
+        ai_issues = spec_agent.identify_potential_issues(refined_draft, iteration_count=self.refinement_iteration_count)
         return refined_draft, ai_issues
+
+    def _handle_refinement_and_analysis_result(self, result_tuple):
+        try:
+            self.ui.headerLabel.setText("Application Specification Review")
+            self.spec_draft, self.ai_issues = result_tuple
+            self.refinement_iteration_count = 2
+
+            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+            QApplication.processEvents()
+
+            self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
+            self.ui.aiIssuesTextEdit.setHtml(markdown.markdown(self.ai_issues))
+            self.ui.feedbackTextEdit.clear()
+
+            self.ui.submitFeedbackButton.setEnabled(True)
+            self.ui.approveSpecButton.setEnabled(True)
+
+            self.state_changed.emit()
+        finally:
+            self._set_ui_busy(False)
 
     def run_refinement_task(self):
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
@@ -264,22 +263,41 @@ class SpecElaborationPage(QWidget):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
         refined_draft = spec_agent.refine_specification(current_draft, self.ai_issues, feedback)
         current_date = datetime.now().strftime('%x')
-        date_updated_draft = re.sub(r"(Date: ).*", r"\g" + current_date, refined_draft)
+        # This is the corrected regex to prevent the crash
+        date_updated_draft = re.sub(r"(Date: ).*", r"\g<1>" + current_date, refined_draft)
         return date_updated_draft
 
     def _handle_refinement_result(self, new_draft):
-        self.spec_draft = new_draft
-        self.ui.specDraftTextEdit.setText(self.spec_draft)
-        self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version on the left.")
-        self.ui.feedbackTextEdit.clear()
-        QMessageBox.information(self, "Success", "Success: Draft has been updated.")
-        self.state_changed.emit()
-        self.refinement_iteration_count += 1
+        try:
+            self.spec_draft = new_draft
+            self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
+            self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version.")
+            self.ui.feedbackTextEdit.clear()
+
+            # This is the new line that fixes the bug by switching back to the correct page
+            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+
+            QMessageBox.information(self, "Success", "Success: Draft has been updated.")
+            self.state_changed.emit()
+            self.refinement_iteration_count += 1
+        finally:
+            self._set_ui_busy(False)
 
     def on_cancel_project_clicked(self):
-        reply = QMessageBox.question(self, "Cancel Project", "Are you sure you want to cancel and archive this project?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        # Corrected to use QMessageBox.warning for a more appropriate dialog
+        reply = QMessageBox.warning(self, "Cancel Project",
+                                    "Are you sure you want to cancel and archive this project? This action cannot be undone.",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
         if reply == QMessageBox.Yes:
+            # Corrected to pass the required arguments to the export function
+            archive_path_from_db = self.orchestrator.db_manager.get_config_value("DEFAULT_ARCHIVE_PATH")
+            if not archive_path_from_db or not archive_path_from_db.strip():
+                QMessageBox.critical(self, "Configuration Error", "The Default Project Archive Path is not set. Please set it in the Settings dialog.")
+                return
+            archive_name = f"{self.orchestrator.project_name.replace(' ', '_')}_cancelled_{datetime.now().strftime('%Y%m%d')}"
+            self.orchestrator.stop_and_export_project(archive_path_from_db, archive_name)
             self.project_cancelled.emit()
+
 
     def on_approve_spec_clicked(self):
         final_spec = self.ui.specDraftTextEdit.toPlainText()

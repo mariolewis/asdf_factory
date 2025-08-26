@@ -79,6 +79,12 @@ class Ui_CodingStandardPage(object):
 
         self.verticalLayout_3.addWidget(self.reviewHeaderLabel)
 
+        self.infoLabel = QLabel(self.reviewPage)
+        self.infoLabel.setObjectName(u"infoLabel")
+        self.infoLabel.setWordWrap(True)
+
+        self.verticalLayout_3.addWidget(self.infoLabel)
+
         self.standardTextEdit = QTextEdit(self.reviewPage)
         self.standardTextEdit.setObjectName(u"standardTextEdit")
 
@@ -127,9 +133,10 @@ class Ui_CodingStandardPage(object):
     def retranslateUi(self, CodingStandardPage):
         CodingStandardPage.setWindowTitle(QCoreApplication.translate("CodingStandardPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Coding Standard Generation", None))
-        self.instructionLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Generate a project-specific coding standard based on the technical specification. This standard will be enforced by all code-generating agents.", None))
+        self.instructionLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Generate a project-specific coding standard based on the technical specification. This standard will be enforced during coding.", None))
         self.generateButton.setText(QCoreApplication.translate("CodingStandardPage", u"Generate Coding Standard Draft", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Review Coding Standard", None))
+        self.infoLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please enter your input in the box below the draft.", None))
         self.feedbackLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Provide feedback for refinement (optional):", None))
         self.refineButton.setText(QCoreApplication.translate("CodingStandardPage", u"Submit Feedback & Refine", None))
         self.approveButton.setText(QCoreApplication.translate("CodingStandardPage", u"Approve Coding Standard", None))

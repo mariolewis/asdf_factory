@@ -62,14 +62,15 @@ class CodingStandardAgent_AppTarget:
             {template_instruction}
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze Tech Stack:** Analyze the Technical Specification to identify the primary programming language, frameworks, and key libraries.
-            2.  **Generate Comprehensive Standard:** Your response MUST be a complete coding standard document formatted in Markdown. It must include, at a minimum, the following sections as specified in the PRD:
+            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+            2.  **Analyze Tech Stack:** Analyze the Technical Specification to identify the primary programming language, frameworks, and key libraries.
+            3.  **Generate Comprehensive Standard:** Your response MUST be a complete coding standard document formatted in Markdown. It must include, at a minimum, the following sections as specified in the PRD:
                 -   **Formatting and Naming Conventions:** Rules for code layout, indentation, line length, and clear naming conventions for variables, functions, and classes.
                 -   **Structural Principles:** A rule mandating the Single Responsibility Principle and guidelines on modular code organization.
                 -   **Documentation Standards:** Requirements for documenting 'what' a component does (e.g., docstrings with parameters) and 'why' an implementation choice was made (inline comments for complex logic).
                 -   **Data and Interface Contracts:** A rule requiring the use of explicit data structures (like classes or structs) for data exchange between components.
                 -   **Security and Error Handling:** A mandatory requirement for using parameterized queries to prevent SQL injection and best practices for graceful error handling.
-            3.  **Clarity and Detail:** Be specific and provide examples where appropriate.
+            4.  **Clarity and Detail:** Be specific and provide examples where appropriate.
 
             **--- INPUT: Technical Specification ---**
             {tech_spec_text}
@@ -106,6 +107,7 @@ class CodingStandardAgent_AppTarget:
             1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
             2.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's feedback. Do not regenerate the entire document from scratch.
             3.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined coding standard document, including the preserved header.
+            4.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
 
             **--- INPUT 1: Current Draft ---**
             ```markdown

@@ -17,8 +17,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QHBoxLayout,
     QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-    QSizePolicy, QSpacerItem, QSplitter, QStackedWidget,
-    QTabWidget, QTextEdit, QVBoxLayout, QWidget)
+    QSizePolicy, QSpacerItem, QStackedWidget, QTabWidget,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_SpecElaborationPage(object):
     def setupUi(self, SpecElaborationPage):
@@ -218,62 +218,49 @@ class Ui_SpecElaborationPage(object):
         self.stackedWidget.addWidget(self.pmFirstReviewPage)
         self.finalReviewPage = QWidget()
         self.finalReviewPage.setObjectName(u"finalReviewPage")
-        self.gridLayout_2 = QGridLayout(self.finalReviewPage)
-        self.gridLayout_2.setObjectName(u"gridLayout_2")
-        self.splitter = QSplitter(self.finalReviewPage)
-        self.splitter.setObjectName(u"splitter")
-        self.splitter.setOrientation(Qt.Vertical)
-        self.specDraftPane = QWidget(self.splitter)
-        self.specDraftPane.setObjectName(u"specDraftPane")
-        self.verticalLayout_7 = QVBoxLayout(self.specDraftPane)
+        self.verticalLayout_6 = QVBoxLayout(self.finalReviewPage)
+        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
+        self.reviewTabWidget = QTabWidget(self.finalReviewPage)
+        self.reviewTabWidget.setObjectName(u"reviewTabWidget")
+        self.specDraftTab = QWidget()
+        self.specDraftTab.setObjectName(u"specDraftTab")
+        self.verticalLayout_7 = QVBoxLayout(self.specDraftTab)
         self.verticalLayout_7.setObjectName(u"verticalLayout_7")
-        self.verticalLayout_7.setContentsMargins(0, 0, 0, 0)
-        self.specDraftLabel = QLabel(self.specDraftPane)
-        self.specDraftLabel.setObjectName(u"specDraftLabel")
-
-        self.verticalLayout_7.addWidget(self.specDraftLabel)
-
-        self.specDraftTextEdit = QTextEdit(self.specDraftPane)
+        self.specDraftTextEdit = QTextEdit(self.specDraftTab)
         self.specDraftTextEdit.setObjectName(u"specDraftTextEdit")
 
         self.verticalLayout_7.addWidget(self.specDraftTextEdit)
 
-        self.splitter.addWidget(self.specDraftPane)
-        self.aiIssuesPane = QWidget(self.splitter)
-        self.aiIssuesPane.setObjectName(u"aiIssuesPane")
-        self.verticalLayout_8 = QVBoxLayout(self.aiIssuesPane)
+        self.reviewTabWidget.addTab(self.specDraftTab, "")
+        self.aiIssuesTab = QWidget()
+        self.aiIssuesTab.setObjectName(u"aiIssuesTab")
+        self.verticalLayout_8 = QVBoxLayout(self.aiIssuesTab)
         self.verticalLayout_8.setObjectName(u"verticalLayout_8")
-        self.verticalLayout_8.setContentsMargins(0, 0, 0, 0)
-        self.aiIssuesLabel = QLabel(self.aiIssuesPane)
-        self.aiIssuesLabel.setObjectName(u"aiIssuesLabel")
-
-        self.verticalLayout_8.addWidget(self.aiIssuesLabel)
-
-        self.aiIssuesTextEdit = QTextEdit(self.aiIssuesPane)
+        self.aiIssuesTextEdit = QTextEdit(self.aiIssuesTab)
         self.aiIssuesTextEdit.setObjectName(u"aiIssuesTextEdit")
         self.aiIssuesTextEdit.setReadOnly(True)
 
         self.verticalLayout_8.addWidget(self.aiIssuesTextEdit)
 
-        self.splitter.addWidget(self.aiIssuesPane)
-        self.feedbackPane = QWidget(self.splitter)
-        self.feedbackPane.setObjectName(u"feedbackPane")
-        self.verticalLayout_10 = QVBoxLayout(self.feedbackPane)
+        self.reviewTabWidget.addTab(self.aiIssuesTab, "")
+        self.feedbackTab = QWidget()
+        self.feedbackTab.setObjectName(u"feedbackTab")
+        self.verticalLayout_10 = QVBoxLayout(self.feedbackTab)
         self.verticalLayout_10.setObjectName(u"verticalLayout_10")
-        self.verticalLayout_10.setContentsMargins(0, 0, 0, 0)
-        self.feedbackLabel = QLabel(self.feedbackPane)
+        self.feedbackLabel = QLabel(self.feedbackTab)
         self.feedbackLabel.setObjectName(u"feedbackLabel")
+        self.feedbackLabel.setWordWrap(True)
 
         self.verticalLayout_10.addWidget(self.feedbackLabel)
 
-        self.feedbackTextEdit = QPlainTextEdit(self.feedbackPane)
+        self.feedbackTextEdit = QPlainTextEdit(self.feedbackTab)
         self.feedbackTextEdit.setObjectName(u"feedbackTextEdit")
 
         self.verticalLayout_10.addWidget(self.feedbackTextEdit)
 
-        self.splitter.addWidget(self.feedbackPane)
+        self.reviewTabWidget.addTab(self.feedbackTab, "")
 
-        self.gridLayout_2.addWidget(self.splitter, 0, 0, 1, 1)
+        self.verticalLayout_6.addWidget(self.reviewTabWidget)
 
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
@@ -292,9 +279,8 @@ class Ui_SpecElaborationPage(object):
         self.horizontalLayout_2.addWidget(self.approveSpecButton)
 
 
-        self.gridLayout_2.addLayout(self.horizontalLayout_2, 1, 0, 1, 1)
+        self.verticalLayout_6.addLayout(self.horizontalLayout_2)
 
-        self.gridLayout_2.setRowStretch(0, 1)
         self.stackedWidget.addWidget(self.finalReviewPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
@@ -317,14 +303,15 @@ class Ui_SpecElaborationPage(object):
         self.processingLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Processing... Please wait.", None))
         self.cancelProjectButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Cancel Project", None))
         self.confirmAnalysisButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Confirm Assessment && Proceed", None))
-        self.pmReviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Initial Draft Review", None))
+        self.pmReviewHeaderLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Draft Application Specification", None))
         self.pmReviewInstructionLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"This is the first specification draft generated by the AI. Review it and make any direct edits. You can also provide general feedback for refinement in the box at the bottom before submitting for a final AI analysis.", None))
         self.pmFeedbackLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Feedback for Refinement (Optional):", None))
         self.submitForAnalysisButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Submit for AI Analysis", None))
-        self.specDraftLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Specification Draft (Editable)", None))
-        self.aiIssuesLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"AI Analysis & Potential Issues", None))
-        self.feedbackLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Your Feedback & Clarifications (Optional):", None))
-        self.submitFeedbackButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Submit Feedback & Refine Draft", None))
-        self.approveSpecButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Approve Specification & Proceed", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.specDraftTab), QCoreApplication.translate("SpecElaborationPage", u"Specification Draft", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.aiIssuesTab), QCoreApplication.translate("SpecElaborationPage", u"AI Analysis & Issues", None))
+        self.feedbackLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Provide feedback and clarifications below to have the AI generate a new version of the draft.", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.feedbackTab), QCoreApplication.translate("SpecElaborationPage", u"Your Feedback & Refinements", None))
+        self.submitFeedbackButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Submit Feedback && Refine Draft", None))
+        self.approveSpecButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Approve Specification && Proceed", None))
     # retranslateUi
 

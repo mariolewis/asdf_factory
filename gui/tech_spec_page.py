@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 import logging
+import markdown
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
 
@@ -99,13 +100,14 @@ class TechSpecPage(QWidget):
             return
         current_draft = self.ui.techSpecTextEdit.toPlainText()
         target_os = self.ui.osComboBox.currentText()
+        # This is the corrected line that now includes the status_message
         self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback, target_os,
-                           status_message="Refining technical specification...")
+                        status_message="Refining technical specification...")
 
     def _handle_generation_result(self, tech_spec_draft):
         try:
             self.tech_spec_draft = tech_spec_draft
-            self.ui.techSpecTextEdit.setText(self.tech_spec_draft)
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft)) # Corrected line
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
@@ -115,7 +117,7 @@ class TechSpecPage(QWidget):
     def _handle_refinement_result(self, new_draft):
         try:
             self.tech_spec_draft = new_draft
-            self.ui.techSpecTextEdit.setText(self.tech_spec_draft)
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code']))
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The technical specification has been refined.")
             self.state_changed.emit()
@@ -196,7 +198,7 @@ class TechSpecPage(QWidget):
         # This corrected regex finds the "Date: " line and replaces the rest of the line
         date_updated_draft = re.sub(
             r"(Date: ).*",
-            r"\g" + current_date,
+            r"\g<1>" + current_date,
             refined_draft
         )
 

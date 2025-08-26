@@ -38,10 +38,14 @@ class BuildScriptPage(QWidget):
         self.ui.manualCreateButton.clicked.connect(self.on_manual_create_clicked)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
-        """Disables or enables the page and updates the main status bar."""
-        self.setEnabled(not is_busy)
-        main_window = self.parent()
-        if main_window and hasattr(main_window, 'statusBar'):
+        """Disables or enables the main window and updates the status bar."""
+        main_window = self.window()
+        if not main_window:
+            self.setEnabled(not is_busy) # Fallback
+            return
+
+        main_window.setEnabled(not is_busy)
+        if hasattr(main_window, 'statusBar'):
             if is_busy:
                 main_window.statusBar().showMessage(message)
             else:

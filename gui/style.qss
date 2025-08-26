@@ -269,3 +269,12 @@ QTableCornerButton::section {
     background-color: #2A2A2B; /* Match header background */
     border: 1px solid #4A4A4A; /* Match header border */
 }
+
+/* ---- Info/Tip Labels ---- */
+QLabel[objectName="infoLabel"] {
+    background-color: #3C3F41;
+    border: 1px solid #555555;
+    border-radius: 4px;
+    padding: 8px;
+    font-style: italic;
+}

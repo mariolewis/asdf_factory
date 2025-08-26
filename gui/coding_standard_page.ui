@@ -47,7 +47,7 @@
        <item>
         <widget class="QLabel" name="instructionLabel">
          <property name="text">
-          <string>Generate a project-specific coding standard based on the technical specification. This standard will be enforced by all code-generating agents.</string>
+          <string>Generate a project-specific coding standard based on the technical specification. This standard will be enforced during coding.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
@@ -96,6 +96,16 @@
         <widget class="QLabel" name="reviewHeaderLabel">
          <property name="text">
           <string>Review Coding Standard</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="infoLabel">
+         <property name="text">
+          <string>Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please enter your input in the box below the draft.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
          </property>
         </widget>
        </item>

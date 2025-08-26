@@ -819,6 +819,12 @@ class MasterOrchestrator:
             if '"error":' in json_blueprint:
                 raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
 
+            # --- NEW: Save the JSON Blueprint to a file ---
+            blueprint_file_path_json = docs_dir / "ux_ui_blueprint.json"
+            blueprint_file_path_json.write_text(json_blueprint, encoding="utf-8")
+            self._commit_document(blueprint_file_path_json, "docs: Add UX/UI JSON Blueprint")
+            # --- END NEW ---
+
             composite_spec_for_db = (
                 f"{final_spec_markdown}\n\n"
                 f"{'='*80}\n"
@@ -936,9 +942,9 @@ class MasterOrchestrator:
                 docs_dir.mkdir(exist_ok=True)
 
                 # Save the raw JSON file for system use
-                assessment_file_path_json = docs_dir / "complexity_and_risk_assessment.json"
-                assessment_file_path_json.write_text(assessment_json_str, encoding="utf-8")
-                self._commit_document(assessment_file_path_json, "docs: Add Complexity and Risk Assessment (JSON)")
+                # assessment_file_path_json = docs_dir / "complexity_and_risk_assessment.json"
+                # assessment_file_path_json.write_text(assessment_json_str, encoding="utf-8")
+                # self._commit_document(assessment_file_path_json, "docs: Add Complexity and Risk Assessment (JSON)")
 
                 # Generate and save the formatted .docx report
                 assessment_file_path_docx = docs_dir / "complexity_and_risk_assessment.docx"
@@ -3063,7 +3069,7 @@ class MasterOrchestrator:
             logging.error(f"Failed to start test environment setup: {e}")
             return None
 
-    def get_help_for_setup_task(self, task_instructions: str):
+    def get_help_for_setup_task(self, task_instructions: str, **kwargs):
         """
         Calls the advisor agent to get detailed help for a specific setup task.
         """
@@ -3077,7 +3083,7 @@ class MasterOrchestrator:
             if not project_details:
                 raise Exception("Cannot get help: Project details not found.")
 
-            target_os = project_details.get('target_os', 'Linux')
+            target_os = project_details['target_os'] if project_details and 'target_os' in project_details.keys() else 'Linux'
 
             agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
             help_text = agent.get_help_for_task(task_instructions, target_os)
@@ -3120,21 +3126,18 @@ class MasterOrchestrator:
             artifact_name = f"Skipped Setup Task: {task.get('tool_name', 'Unnamed Step')}"
             description = f"The PM chose to ignore the setup/installation for the following tool or step: {task.get('instructions', 'No instructions provided.')}"
 
-            doc_agent.add_or_update_artifact({
+            doc_agent.update_artifact_record({
                 "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
                 "project_id": self.project_id,
                 "file_path": "N/A",
                 "artifact_name": artifact_name,
                 "artifact_type": "ENVIRONMENT_SETUP",
-                "signature": "N/A",
                 "short_description": description,
-                "version": 1,
                 "status": "KNOWN_ISSUE",
+                "unit_test_status": "NOT_APPLICABLE",
+                "version": 1,
                 "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
-                "commit_hash": None,
-                "micro_spec_id": None,
-                "dependencies": None,
-                "unit_test_status": "NOT_APPLICABLE"
+                "commit_hash": "N/A"
             })
             logging.info(f"Successfully created KNOWN_ISSUE artifact for '{artifact_name}'.")
         except Exception as e:

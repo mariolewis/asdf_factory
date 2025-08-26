@@ -106,6 +106,7 @@ class UX_Spec_Agent:
             1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
             2.  **Modify Body Only**: Your changes should only be in the body of the document to incorporate the PM's feedback. Do not regenerate the entire document from scratch.
             3.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document, including the preserved header.
+            4.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
 
             **--- INPUT 1: Current Draft ---**
             ```markdown

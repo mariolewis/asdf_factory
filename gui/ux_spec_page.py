@@ -1,13 +1,13 @@
 # gui/ux_spec_page.py
 
 import logging
+import markdown
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
 
 from gui.ui_ux_spec_page import Ui_UXSpecPage
 from gui.worker import Worker
 from master_orchestrator import MasterOrchestrator
-from agents.agent_ux_spec import UX_Spec_Agent
 
 class UXSpecPage(QWidget):
     """
@@ -41,10 +41,14 @@ class UXSpecPage(QWidget):
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
-        """Disables or enables the page and updates the main status bar."""
-        self.setEnabled(not is_busy)
-        main_window = self.parent()
-        if main_window and hasattr(main_window, 'statusBar'):
+        """Disables or enables the main window and updates the status bar."""
+        main_window = self.window()
+        if not main_window:
+            self.setEnabled(not is_busy) # Fallback
+            return
+
+        main_window.setEnabled(not is_busy)
+        if hasattr(main_window, 'statusBar'):
             if is_busy:
                 self.ui.specTextEdit.setText(message)
                 main_window.statusBar().showMessage(message)
@@ -84,7 +88,7 @@ class UXSpecPage(QWidget):
         """Handles the result from the worker thread."""
         try:
             self.ux_spec_draft = draft_text
-            self.ui.specTextEdit.setText(self.ux_spec_draft)
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft)) # Corrected line
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -108,7 +112,7 @@ class UXSpecPage(QWidget):
         """Handles the result from the refinement worker thread."""
         try:
             self.ux_spec_draft = new_draft
-            self.ui.specTextEdit.setText(self.ux_spec_draft)
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft)) # Corrected line
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The UX/UI Specification has been refined based on your feedback.")
             self.state_changed.emit()
@@ -127,16 +131,22 @@ class UXSpecPage(QWidget):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            self._set_ui_busy(True, "Finalizing UX/UI Specification...")
-            # This final orchestrator step is quick, so we run it in the main thread
-            # but keep the busy indicator for good UX.
-            success = self.orchestrator.handle_ux_spec_completion(final_spec)
-            self._set_ui_busy(False)
+            self._execute_task(self._task_finalize_spec, self._handle_finalization_result, final_spec,
+                               status_message="Saving design to .json file for external graphical review...")
 
+    def _task_finalize_spec(self, final_spec, **kwargs):
+        """Background task for the finalization step."""
+        return self.orchestrator.handle_ux_spec_completion(final_spec)
+
+    def _handle_finalization_result(self, success):
+        """Handles the result of the finalization task."""
+        try:
             if success:
                 QMessageBox.information(self, "Success", "Success: UX/UI Specification approved and saved. Proceeding to Application Specification.")
                 logging.debug("on_approve_clicked: Emitting ux_spec_complete signal.")
                 self.ux_spec_complete.emit()
             else:
-                error_msg = self.orchestrator.active_ux_spec.get('error', 'An unknown error occurred.')
+                error_msg = self.orchestrator.task_awaiting_approval.get('error', 'An unknown error occurred.')
                 QMessageBox.critical(self, "Error", f"Failed to finalize the UX/UI Specification:\n{error_msg}")
+        finally:
+            self._set_ui_busy(False)

@@ -4,6 +4,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 import logging
+import markdown
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
 
@@ -83,7 +84,7 @@ class CodingStandardPage(QWidget):
         """Handles the result from the worker thread."""
         try:
             self.coding_standard_draft = standard_draft
-            self.ui.standardTextEdit.setText(self.coding_standard_draft)
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft)) # Corrected line
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
         finally:
@@ -104,7 +105,7 @@ class CodingStandardPage(QWidget):
         """Handles the result from the refinement worker thread."""
         try:
             self.coding_standard_draft = new_draft
-            self.ui.standardTextEdit.setText(self.coding_standard_draft)
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft)) # Corrected line
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The coding standard has been refined based on your feedback.")
             self.state_changed.emit()
@@ -123,7 +124,7 @@ class CodingStandardPage(QWidget):
         # This corrected regex finds the "Date: " line and replaces the rest of the line
         date_updated_draft = re.sub(
             r"(Date: ).*",
-            r"\g" + current_date,
+            r"\g<1>" + current_date,
             refined_draft
         )
 
