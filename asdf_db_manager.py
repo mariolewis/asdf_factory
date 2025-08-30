@@ -77,15 +77,22 @@ class ASDFDBManager:
             is_build_automated BOOLEAN NOT NULL DEFAULT 1, build_script_file_name TEXT,
             coding_standard_text TEXT, development_plan_text TEXT, integration_plan_text TEXT,
             ui_test_plan_text TEXT, test_execution_command TEXT,
+            integration_settings TEXT,
             version_control_enabled BOOLEAN NOT NULL DEFAULT 1
         );"""
         self._execute_query(create_projects_table)
         create_cr_register_table = """
         CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
             cr_id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
-            request_type TEXT NOT NULL DEFAULT 'CHANGE_REQUEST', description TEXT NOT NULL,
+            title TEXT,
+            request_type TEXT NOT NULL DEFAULT 'BACKLOG_ITEM', description TEXT NOT NULL,
             creation_timestamp TEXT NOT NULL, last_modified_timestamp TEXT, status TEXT NOT NULL,
             impact_rating TEXT, impact_analysis_details TEXT, impacted_artifact_ids TEXT,
+            display_order INTEGER NOT NULL DEFAULT 0,
+            priority TEXT,
+            complexity TEXT,
+            external_id TEXT UNIQUE,
+            external_url TEXT,
             linked_cr_id INTEGER,
             FOREIGN KEY (project_id) REFERENCES Projects (project_id),
             FOREIGN KEY (linked_cr_id) REFERENCES ChangeRequestRegister (cr_id)
@@ -246,16 +253,31 @@ class ASDFDBManager:
         self._execute_query(query, (template_id,))
 
     def get_all_change_requests_for_project(self, project_id: str) -> list:
-        return self._execute_query("SELECT * FROM ChangeRequestRegister WHERE project_id = ? ORDER BY creation_timestamp DESC", (project_id,), fetch="all")
+        return self._execute_query("SELECT * FROM ChangeRequestRegister WHERE project_id = ? ORDER BY display_order ASC", (project_id,), fetch="all")
 
-    def add_change_request(self, project_id: str, description: str, request_type: str = 'CHANGE_REQUEST') -> int:
+    def add_change_request(self, project_id: str, title: str, description: str, request_type: str = 'BACKLOG_ITEM', external_id: str = None, priority: str = None, complexity: str = None) -> int:
         timestamp = datetime.now(timezone.utc).isoformat()
-        cursor = self._execute_query("INSERT INTO ChangeRequestRegister (project_id, description, creation_timestamp, status, request_type) VALUES (?, ?, ?, ?, ?)", (project_id, description, timestamp, "RAISED", request_type))
+        max_order_row = self._execute_query("SELECT MAX(display_order) FROM ChangeRequestRegister WHERE project_id = ?", (project_id,), fetch="one")
+        new_order = (max_order_row[0] or 0) + 1 if max_order_row else 1
+
+        cursor = self._execute_query(
+            "INSERT INTO ChangeRequestRegister (project_id, title, description, creation_timestamp, status, request_type, display_order, external_id, priority, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (project_id, title, description, timestamp, "RAISED", request_type, new_order, external_id, priority, complexity)
+        )
         return cursor.lastrowid
 
-    def add_bug_report(self, project_id: str, description: str, severity: str) -> int:
+    def add_bug_report(self, project_id: str, description: str, severity: str, complexity: str = None) -> int:
         timestamp = datetime.now(timezone.utc).isoformat()
-        cursor = self._execute_query("INSERT INTO ChangeRequestRegister (project_id, request_type, description, creation_timestamp, status, impact_rating) VALUES (?, ?, ?, ?, ?, ?)", (project_id, 'BUG_REPORT', description, timestamp, 'RAISED', severity))
+        max_order_row = self._execute_query("SELECT MAX(display_order) FROM ChangeRequestRegister WHERE project_id = ?", (project_id,), fetch="one")
+        new_order = (max_order_row[0] or 0) + 1 if max_order_row else 1
+
+        # Generate a title for the bug report from the description
+        title = f"Bug: {description[:50]}" + ("..." if len(description) > 50 else "")
+
+        cursor = self._execute_query(
+            "INSERT INTO ChangeRequestRegister (project_id, title, request_type, description, creation_timestamp, status, impact_rating, display_order, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (project_id, title, 'BUG_REPORT', description, timestamp, 'RAISED', severity, new_order, complexity)
+        )
         return cursor.lastrowid
 
     def delete_all_change_requests_for_project(self, project_id: str):
@@ -275,6 +297,42 @@ class ASDFDBManager:
 
     def get_cr_by_id(self, cr_id: int):
         return self._execute_query("SELECT * FROM ChangeRequestRegister WHERE cr_id = ?", (cr_id,), fetch="one")
+
+    def get_cr_by_external_id(self, project_id: str, external_id: str):
+        """Retrieves a CR by its unique external tool ID to prevent duplicates."""
+        return self._execute_query(
+            "SELECT * FROM ChangeRequestRegister WHERE project_id = ? AND external_id = ?",
+            (project_id, external_id),
+            fetch="one"
+        )
+
+    def batch_update_cr_order(self, order_mapping: list[tuple[int, int]]):
+        """
+        Updates the display_order for multiple CRs in a single transaction.
+
+        Args:order_mapping (list[tuple[int, int]]): A list of tuples, where each
+                                                tuple is (new_display_order, cr_id).
+        """
+        if not order_mapping:
+            return
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.executemany(
+                    "UPDATE ChangeRequestRegister SET display_order = ? WHERE cr_id = ?",
+                    order_mapping
+                )
+                conn.commit()
+                logging.info(f"Successfully batch-updated display order for {len(order_mapping)} items.")
+        except sqlite3.Error as e:
+            logging.error(f"Failed to batch-update CR display order: {e}")
+            raise
+
+    def update_cr_external_link(self, cr_id: int, external_id: str, external_url: str):
+        """Updates a CR with its external ID and URL after a successful sync."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        query = "UPDATE ChangeRequestRegister SET external_id = ?, external_url = ?, last_modified_timestamp = ? WHERE cr_id = ?"
+        self._execute_query(query, (external_id, external_url, timestamp, cr_id))
 
     def save_orchestration_state(self, project_id: str, current_phase: str, current_step: str, state_details: str, timestamp: str):
         self._execute_query("INSERT OR REPLACE INTO OrchestrationState (project_id, current_phase, current_step, state_details, last_updated) VALUES (?, ?, ?, ?, ?)", (project_id, current_phase, current_step, state_details, timestamp))
@@ -305,10 +363,31 @@ class ASDFDBManager:
         query = "UPDATE ChangeRequestRegister SET status = ?, last_modified_timestamp = ? WHERE cr_id = ?"
         self._execute_query(query, (new_status, timestamp, cr_id))
 
-    def update_change_request(self, cr_id: int, new_description: str):
+    def update_change_request(self, cr_id: int, new_data: dict):
+        """
+        Updates a CR record with new data from the edit dialog, resets its
+        status to 'RAISED', and clears the previous impact analysis.
+        """
         timestamp = datetime.now(timezone.utc).isoformat()
-        query = "UPDATE ChangeRequestRegister SET description = ?, impact_rating = NULL, impact_analysis_details = NULL, last_modified_timestamp = ? WHERE cr_id = ?"
-        self._execute_query(query, (new_description, timestamp, cr_id))
+        new_description = new_data.get('description')
+        new_complexity = new_data.get('complexity')
+        new_priority = new_data.get('severity') # The dialog uses the 'severity' field for priority
+
+        # Determine if we are updating the 'priority' or 'impact_rating' column
+        cr_details = self.get_cr_by_id(cr_id)
+        if not cr_details:
+            raise ValueError(f"Could not find CR with ID {cr_id} to update.")
+
+        if cr_details['request_type'] == 'BUG_REPORT':
+            # For bugs, severity is stored in 'impact_rating' and we don't want to clear it
+            query = "UPDATE ChangeRequestRegister SET description = ?, complexity = ?, impact_rating = ?, status = 'RAISED', impact_analysis_details = NULL, last_modified_timestamp = ? WHERE cr_id = ?"
+            params = (new_description, new_complexity, new_priority, timestamp, cr_id)
+        else:
+            # For backlog items, priority is stored in 'priority'
+            query = "UPDATE ChangeRequestRegister SET description = ?, complexity = ?, priority = ?, status = 'RAISED', impact_analysis_details = NULL, impact_rating = NULL, last_modified_timestamp = ? WHERE cr_id = ?"
+            params = (new_description, new_complexity, new_priority, timestamp, cr_id)
+
+        self._execute_query(query, params)
 
     def get_cr_by_linked_id(self, parent_cr_id: int):
         return self._execute_query("SELECT * FROM ChangeRequestRegister WHERE linked_cr_id = ?", (parent_cr_id,), fetch="one")

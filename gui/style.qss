@@ -174,11 +174,12 @@ QTabBar::tab:selected, QTabBar::tab:hover {
     color: #F0F0F0;
 }
 
-/* ---- Tables & Trees ---- */
-QTreeView, QTableView {
+/* ---- Tables, Trees & Lists ---- */
+QTreeView, QTableView, QListWidget {
     background-color: #1E1E1E; /* Match frame background */
-    border: none;
+    border: 1px solid #4A4A4A; /* Add a subtle border for lists */
     alternate-background-color: #252526;
+    border-radius: 4px; /* Add rounded corners for standalone lists */
 }
 
 QHeaderView::section {
@@ -189,8 +190,9 @@ QHeaderView::section {
     font-weight: 500;
 }
 
-QTableView::item:selected, QTreeView::item:selected {
+QTableView::item:selected, QTreeView::item:selected, QListWidget::item:selected {
     background-color: #007ACC;
+    color: #F0F0F0;
 }
 
 /* ---- Menus ---- */
@@ -206,6 +208,15 @@ QMenu {
 
 QMenu::item:selected {
     background-color: #007ACC;
+}
+
+MenuBar::item:disabled, QMenu::item:disabled {
+    color: #888888;
+    background-color: transparent;
+}
+
+QMenu::item:disabled {
+    color: #888888;
 }
 
 /* ---- Headers & Special Labels ---- */
@@ -277,4 +288,63 @@ QLabel[objectName="infoLabel"] {
     border-radius: 4px;
     padding: 8px;
     font-style: italic;
+}
+
+/* ---- Radio Buttons ---- */
+QRadioButton::indicator {
+    width: 12px;
+    height: 12px;
+    border: 1px solid #666666;
+    border-radius: 6px;
+    background-color: #2A2A2B;
+}
+
+QRadioButton::indicator:checked {
+    background-color: #007ACC; /* Standard Accent Color */
+}
+
+QRadioButton::indicator:checked:hover {
+    background-color: #2098EE; /* Lighter blue for hover */
+}
+
+/* ---- ScrollBar ---- */
+QScrollBar:vertical {
+    border: 1px solid #4A4A4A;
+    background: #2A2A2B;
+    width: 15px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:vertical {
+    background: #4A4A4A;
+    min-height: 20px;
+    border-radius: 7px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #5A5A5A;
+}
+
+QScrollBar:horizontal {
+    border: 1px solid #4A4A4A;
+    background: #2A2A2B;
+    height: 15px;
+    margin: 0px 0px 0px 0px;
+}
+QScrollBar::handle:horizontal {
+    background: #4A4A4A;
+    min-width: 20px;
+    border-radius: 7px;
+}
+QScrollBar::handle:horizontal:hover {
+    background: #5A5A5A;
+}
+
+/* Hide the up/down/left/right arrows */
+QScrollBar::add-line, QScrollBar::sub-line {
+    border: none;
+    background: none;
+    width: 0px;
+    height: 0px;
+}
+QScrollBar::add-page, QScrollBar::sub-page {
+    background: none;
 }

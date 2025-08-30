@@ -30,13 +30,20 @@ from gui.preflight_check_page import PreflightCheckPage
 from gui.decision_page import DecisionPage
 from gui.raise_request_dialog import RaiseRequestDialog
 from gui.cr_details_dialog import CRDetailsDialog
+from gui.import_issue_dialog import ImportIssueDialog
 from gui.documents_page import DocumentsPage
 from gui.reports_page import ReportsPage
 from gui.manual_ui_testing_page import ManualUITestingPage
 from gui.project_complete_page import ProjectCompletePage
+from gui.project_settings_dialog import ProjectSettingsDialog
 from gui.cr_management_page import CRManagementPage
 from gui.ux_spec_page import UXSpecPage
+from gui.backlog_ratification_page import BacklogRatificationPage
+from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.worker import Worker
+
+from gui.import_issue_dialog import ImportIssueDialog
+from agents.agent_integration_pmt import IntegrationAgentPMT
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -59,6 +66,9 @@ class ASDFMainWindow(QMainWindow):
         self.ui.centralwidget.layout().setStretch(0, 0) # Index 0 is verticalActionBar (no stretch)
         self.ui.centralwidget.layout().setStretch(1, 1) # Index 1 is mainSplitter (takes all stretch)
         self.ui.verticalLayout_actionBar.setContentsMargins(2, 8, 2, 8) # left, top, right, bottom
+
+        self.ui.mainSplitter.setChildrenCollapsible(False)
+        self.ui.mainSplitter.setSizes([350, 850])
 
         self._create_pages()
         self._setup_file_tree()
@@ -105,6 +115,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.cr_management_page)
         self.ux_spec_page = UXSpecPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.ux_spec_page)
+        self.backlog_ratification_page = BacklogRatificationPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.backlog_ratification_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -159,7 +171,7 @@ class ASDFMainWindow(QMainWindow):
         self.button_group_sidebar.addButton(self.button_view_explorer)
 
         self.button_raise_request = QToolButton()
-        self.button_raise_request.setToolTip("Raise a new Change Request or Bug Report")
+        self.button_raise_request.setToolTip("Add a new Backlog Item or Bug Report")
         self.button_raise_request.setIcon(QIcon(str(icons_path / "add_request.png")))
         self.ui.verticalLayout_actionBar.addWidget(self.button_raise_request)
 
@@ -185,6 +197,10 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionManage_CRs_Bugs.setIcon(icon)
         self.ui.menuProject.addAction(self.ui.actionManage_CRs_Bugs)
         self.ui.toolBar.addAction(self.ui.actionManage_CRs_Bugs)
+
+        # --- Project Settings Menu Action ---
+        self.actionProject_Settings = QAction("Project Settings...", self)
+        self.ui.menuProject.addAction(self.actionProject_Settings)
 
         # Debug menu setup
         for phase in FactoryPhase:
@@ -226,6 +242,7 @@ class ASDFMainWindow(QMainWindow):
         # Project Menu Actions
         self.ui.actionView_Documents.triggered.connect(self.on_view_documents)
         self.ui.actionView_Reports.triggered.connect(self.on_view_reports)
+        self.actionProject_Settings.triggered.connect(self.on_show_project_settings)
 
         # Run Menu & Top Toolbar Actions
         self.ui.actionProceed.triggered.connect(self.on_proceed)
@@ -276,9 +293,16 @@ class ASDFMainWindow(QMainWindow):
         self.cr_management_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.cr_management_page.edit_cr.connect(self.on_cr_edit_action)
         self.cr_management_page.delete_cr.connect(self.on_cr_delete_action)
+        self.cr_management_page.add_new_item.connect(self.on_raise_cr)
         self.cr_management_page.analyze_cr.connect(self.on_cr_analyze_action)
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
+        self.cr_management_page.proceed_to_tech_spec.connect(self.on_proceed_to_tech_spec)
+        self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
+        self.cr_management_page.import_from_tool.connect(self.on_import_from_tool)
+        self.cr_management_page.sync_items_to_tool.connect(self.on_sync_items_to_tool)
+        self.cr_management_page.save_new_order.connect(self.orchestrator.handle_save_cr_order)
         self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
+        self.backlog_ratification_page.backlog_ratified.connect(self.on_backlog_ratified)
 
     def _reset_all_pages_for_new_project(self):
         """Iterates through all page widgets and calls their reset method if it exists."""
@@ -407,6 +431,7 @@ class ASDFMainWindow(QMainWindow):
         current_phase_enum = self.orchestrator.current_phase
         display_phase_name = self.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
         git_branch = self.orchestrator.get_current_git_branch()
+        self.actionProject_Settings.setEnabled(is_project_active)
 
         # Access is_genesis_complete as a property (no parentheses)
         genesis_complete = self.orchestrator.is_genesis_complete
@@ -418,7 +443,7 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionStop_Export_Project.setEnabled(is_project_active)
 
         self.ui.actionManage_CRs_Bugs.setEnabled(is_project_active) # Now always enabled if project is active
-        self.ui.actionManage_CRs_Bugs.setToolTip("View and manage the CR/Bug register")
+        self.ui.actionManage_CRs_Bugs.setToolTip("View and manage the Project Backlog")
 
         project_root = ""
         if is_project_active:
@@ -496,14 +521,37 @@ class ASDFMainWindow(QMainWindow):
             logging.error(f"Could not process CR selection: {e}")
 
     def on_cr_edit_action(self, cr_id: int):
-        """Handles the signal to edit a CR."""
-        QMessageBox.information(self, "Action Triggered", f"Received signal to EDIT Change Request: {cr_id}")
-        # In the future, this will call: self.orchestrator.handle_edit_cr_action(cr_id)
+        """Handles the signal to edit an item by opening a pre-populated dialog."""
+        details = self.orchestrator.get_cr_details_by_id(cr_id)
+        if not details:
+            QMessageBox.critical(self, "Error", f"Could not retrieve details for item ID {cr_id}.")
+            return
+
+        # Create the dialog and configure it for editing using the new method
+        dialog = RaiseRequestDialog(self)
+        dialog.set_edit_mode(details)
+
+        # Show the dialog and save the full results on "OK"
+        if dialog.exec():
+            new_data = dialog.get_data()
+            success = self.orchestrator.save_edited_change_request(cr_id, new_data)
+
+            if success:
+                QMessageBox.information(self, "Success", f"Item ID {cr_id} was updated successfully.")
+                self.update_ui_after_state_change() # Refresh all views
+            else:
+                QMessageBox.critical(self, "Error", f"Failed to update item ID {cr_id}.")
 
     def on_cr_delete_action(self, cr_id: int):
-        """Handles the signal to delete a CR."""
-        QMessageBox.information(self, "Action Triggered", f"Received signal to DELETE Change Request: {cr_id}")
-        # In the future, this will call: self.orchestrator.handle_delete_cr_action(cr_id)
+        """Handles the signal to delete a CR after user confirmation."""
+        reply = QMessageBox.question(self, "Confirm Deletion",
+                                    f"Are you sure you want to permanently delete this item (ID: {cr_id})?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.orchestrator.handle_delete_cr_action(cr_id)
+            # Refresh the UI to show the item has been removed or to handle a linked-item confirmation
+            self.update_ui_after_state_change()
 
     def on_cr_analyze_action(self, cr_id: int):
         """Handles the signal to run impact analysis on a CR in a background thread."""
@@ -545,6 +593,76 @@ class ASDFMainWindow(QMainWindow):
         # This is the crucial change: connect the FINISHED signal
         worker.signals.finished.connect(self._on_background_task_finished)
         self.threadpool.start(worker)
+
+    def on_backlog_ratified(self, final_items: list):
+        """Saves the final backlog in a background thread."""
+        self.setEnabled(False)
+        self.statusBar().showMessage("Saving ratified backlog items to database...")
+
+        worker = Worker(self._task_ratify_backlog, final_items)
+        worker.signals.result.connect(self._handle_ratification_result)
+        worker.signals.error.connect(self._on_background_task_error) # Re-use generic error handler
+        self.threadpool.start(worker)
+
+    def _on_background_task_error(self, error_tuple):
+        """A generic handler for errors from background worker threads."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        error_msg = f"An unexpected error occurred in a background task:\n{error_tuple[1]}"
+        logging.error(error_msg, exc_info=error_tuple)
+        QMessageBox.critical(self, "Background Task Error", error_msg)
+
+    def _task_ratify_backlog(self, final_items, **kwargs):
+        """Background worker task to save the backlog."""
+        self.orchestrator.handle_backlog_ratification(final_items)
+        return True
+
+    def _handle_ratification_result(self, success):
+        """Handles the result of the background ratification task."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        if success:
+            self.update_ui_after_state_change()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to save the ratified backlog.")
+
+    def on_import_from_tool(self):
+        """Handles the user's request to import an item from an external tool."""
+        dialog = ImportIssueDialog(self)
+        if dialog.exec():
+            import_data = dialog.get_data()
+
+            self.setEnabled(False)
+            self.statusBar().showMessage("Importing item(s) from external tool...")
+
+            worker = Worker(self._task_import_issues, import_data)
+            worker.signals.result.connect(self._handle_import_result)
+            worker.signals.error.connect(self._on_background_task_error)
+            # This is the crucial change: connect to the robust, existing handler
+            worker.signals.finished.connect(self._on_background_task_finished)
+            self.threadpool.start(worker)
+
+    def _task_import_issues(self, import_data, **kwargs):
+        """Background worker task that calls the orchestrator to fetch and filter issues."""
+        # This method's logic is correct and remains the same
+        return self.orchestrator.handle_import_from_tool(import_data)
+
+    def _handle_import_result(self, new_issues: list):
+        """Handles the result data from the import task, but does not update the UI."""
+        if new_issues is not None:
+            total_found = len(new_issues)
+            if total_found > 0:
+                # Save the successfully fetched and filtered items to the database
+                self.orchestrator.add_imported_backlog_items(new_issues)
+
+            # Use QTimer to show the message after the event loop has had a chance to process
+            QTimer.singleShot(100, lambda: QMessageBox.information(self, "Import Complete", f"Successfully imported {total_found} new item(s) into the backlog."))
+        # The UI refresh is now handled by _on_background_task_finished
+
+    def on_proceed_to_tech_spec(self):
+        """Handles the signal to begin the Technical Specification phase."""
+        self.orchestrator.handle_proceed_to_tech_spec()
+        self.update_ui_after_state_change()
 
     def _handle_implementation_result(self, cr_id: int, success: bool, error=None):
         """Handles showing the result message of the background implementation task."""
@@ -596,7 +714,9 @@ class ASDFMainWindow(QMainWindow):
             "TEST_ENVIRONMENT_SETUP": self.test_env_page,
             "CODING_STANDARD_GENERATION": self.coding_standard_page,
             "PLANNING": self.planning_page,
+            "BACKLOG_RATIFICATION": self.backlog_ratification_page,
             "GENESIS": self.genesis_page,
+            "BACKLOG_VIEW": self.cr_management_page,
             "VIEWING_PROJECT_HISTORY": self.load_project_page,
             "AWAITING_PREFLIGHT_RESOLUTION": self.preflight_check_page,
             "VIEWING_DOCUMENTS": self.documents_page,
@@ -817,6 +937,22 @@ class ASDFMainWindow(QMainWindow):
         self._check_mandatory_settings()
         self.update_ui_after_state_change()
 
+    def on_show_project_settings(self):
+        """Opens the project-specific settings dialog."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "Please load a project to view its settings.")
+            return
+
+        current_settings = self.orchestrator.get_project_integration_settings()
+        dialog = ProjectSettingsDialog(current_settings, self)
+
+        if dialog.exec():
+            new_settings = dialog.get_data()
+            self.orchestrator.save_project_integration_settings(new_settings)
+            # Refresh the backlog page UI in case button states need to change
+            self.cr_management_page.prepare_for_display()
+            QMessageBox.information(self, "Success", "Project settings have been saved.")
+
     def on_about(self):
         QMessageBox.about(self, "About ASDF", "<h3>Autonomous Software Development Factory (ASDF)</h3><p>Version 0.8 (PySide6 Migration)</p><p>This application uses AI to assist in the end-to-end creation of software.</p>")
 
@@ -939,13 +1075,16 @@ class ASDFMainWindow(QMainWindow):
             request_type = data["request_type"]
             description = data["description"]
             severity = data["severity"]
+            complexity = data["complexity"]
 
             success = False
             if request_type == "CHANGE_REQUEST":
-                self.orchestrator.save_new_change_request(description)
+                # Pass complexity to the orchestrator
+                self.orchestrator.save_new_change_request(description, complexity=complexity)
                 success = True
             elif request_type == "BUG_REPORT":
-                success = self.orchestrator.save_bug_report(description, severity)
+                # Pass complexity to the orchestrator
+                success = self.orchestrator.save_bug_report(description, severity, complexity=complexity)
 
             if success:
                 QMessageBox.information(self, "Success", f"{request_type.replace('_', ' ').title()} has been successfully logged.")
@@ -962,6 +1101,7 @@ class ASDFMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Project", "Please create or load a project to manage requests.")
             return
 
+        self.previous_phase = self.orchestrator.current_phase # <-- ADD THIS LINE
         self.orchestrator.handle_view_cr_register_action()
         self.update_ui_after_state_change()
 
@@ -1033,3 +1173,47 @@ class ASDFMainWindow(QMainWindow):
         # The orchestrator will now re-trigger the integration task in the background,
         # so we just need to update the UI to show its progress.
         self.update_ui_after_state_change()
+
+    def on_sync_items_to_tool(self, cr_ids: list):
+        """Handles the request to sync a list of items to the external tool."""
+        if not cr_ids:
+            QMessageBox.warning(self, "No Items to Sync", "No valid, unsynced items were selected.")
+            return
+
+        reply = QMessageBox.question(self, "Confirm Sync",
+                                    f"You have selected {len(cr_ids)} item(s) to create in the external tool. Proceed?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.setEnabled(False)
+            self.statusBar().showMessage(f"Syncing {len(cr_ids)} item(s)...")
+
+            worker = Worker(self._task_sync_items, cr_ids)
+            worker.signals.result.connect(self._handle_sync_result)
+            worker.signals.error.connect(self._on_background_task_error)
+            worker.signals.finished.connect(self._on_background_task_finished)
+            self.threadpool.start(worker)
+
+    def _task_sync_items(self, cr_ids: list, **kwargs):
+        """Background worker task that calls the orchestrator to sync issues."""
+        return self.orchestrator.handle_sync_to_tool(cr_ids)
+
+    def _handle_sync_result(self, result_dict: dict):
+        """Handles the summary report from the background sync task."""
+        succeeded = result_dict.get('succeeded', 0)
+        failed = result_dict.get('failed', 0)
+        errors = result_dict.get('errors', [])
+
+        summary_message = f"Sync complete.\n\nSuccessfully created: {succeeded} item(s)\nFailed to create: {failed} item(s)"
+
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle("Sync Report")
+        msg_box.setText(summary_message)
+
+        if errors:
+            detailed_errors = "\n".join([f"- Item ID {e['id']}: {e['reason']}" for e in errors])
+            msg_box.setDetailedText(f"Failure Details:\n{detailed_errors}")
+
+        QTimer.singleShot(100, lambda: msg_box.exec())
+        # The UI refresh is handled by _on_background_task_finished, which is connected to the worker's 'finished' signal

@@ -17,7 +17,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFrame, QHBoxLayout,
     QHeaderView, QLabel, QPushButton, QSizePolicy,
-    QSpacerItem, QTableView, QVBoxLayout, QWidget)
+    QSpacerItem, QStackedWidget, QTableView, QVBoxLayout,
+    QWidget)
 
 class Ui_CRManagementPage(object):
     def setupUi(self, CRManagementPage):
@@ -47,6 +48,11 @@ class Ui_CRManagementPage(object):
 
         self.crTableView = QTableView(CRManagementPage)
         self.crTableView.setObjectName(u"crTableView")
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(1)
+        sizePolicy.setHeightForWidth(self.crTableView.sizePolicy().hasHeightForWidth())
+        self.crTableView.setSizePolicy(sizePolicy)
         self.crTableView.setSelectionMode(QAbstractItemView.SingleSelection)
         self.crTableView.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.crTableView.setSortingEnabled(True)
@@ -60,29 +66,71 @@ class Ui_CRManagementPage(object):
 
         self.horizontalLayout.addWidget(self.backButton)
 
-        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
 
-        self.editButton = QPushButton(CRManagementPage)
-        self.editButton.setObjectName(u"editButton")
+        self.actionButtonStackedWidget = QStackedWidget(CRManagementPage)
+        self.actionButtonStackedWidget.setObjectName(u"actionButtonStackedWidget")
+        self.normalModePage = QWidget()
+        self.normalModePage.setObjectName(u"normalModePage")
+        self.horizontalLayout_2 = QHBoxLayout(self.normalModePage)
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalLayout_2.setContentsMargins(0, 0, 0, 0)
+        self.addNewItemButton = QPushButton(self.normalModePage)
+        self.addNewItemButton.setObjectName(u"addNewItemButton")
 
-        self.horizontalLayout.addWidget(self.editButton)
+        self.horizontalLayout_2.addWidget(self.addNewItemButton)
 
-        self.deleteButton = QPushButton(CRManagementPage)
-        self.deleteButton.setObjectName(u"deleteButton")
+        self.reorderButton = QPushButton(self.normalModePage)
+        self.reorderButton.setObjectName(u"reorderButton")
 
-        self.horizontalLayout.addWidget(self.deleteButton)
+        self.horizontalLayout_2.addWidget(self.reorderButton)
 
-        self.analyzeButton = QPushButton(CRManagementPage)
-        self.analyzeButton.setObjectName(u"analyzeButton")
+        self.clearSelectionButton = QPushButton(self.normalModePage)
+        self.clearSelectionButton.setObjectName(u"clearSelectionButton")
 
-        self.horizontalLayout.addWidget(self.analyzeButton)
+        self.horizontalLayout_2.addWidget(self.clearSelectionButton)
 
-        self.implementButton = QPushButton(CRManagementPage)
-        self.implementButton.setObjectName(u"implementButton")
+        self.proceedToTechSpecButton = QPushButton(self.normalModePage)
+        self.proceedToTechSpecButton.setObjectName(u"proceedToTechSpecButton")
 
-        self.horizontalLayout.addWidget(self.implementButton)
+        self.horizontalLayout_2.addWidget(self.proceedToTechSpecButton)
+
+        self.moreActionsButton = QPushButton(self.normalModePage)
+        self.moreActionsButton.setObjectName(u"moreActionsButton")
+
+        self.horizontalLayout_2.addWidget(self.moreActionsButton)
+
+        self.actionButtonStackedWidget.addWidget(self.normalModePage)
+        self.reorderModePage = QWidget()
+        self.reorderModePage.setObjectName(u"reorderModePage")
+        self.horizontalLayout_3 = QHBoxLayout(self.reorderModePage)
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
+        self.moveUpButton = QPushButton(self.reorderModePage)
+        self.moveUpButton.setObjectName(u"moveUpButton")
+
+        self.horizontalLayout_3.addWidget(self.moveUpButton)
+
+        self.moveDownButton = QPushButton(self.reorderModePage)
+        self.moveDownButton.setObjectName(u"moveDownButton")
+
+        self.horizontalLayout_3.addWidget(self.moveDownButton)
+
+        self.cancelReorderButton = QPushButton(self.reorderModePage)
+        self.cancelReorderButton.setObjectName(u"cancelReorderButton")
+
+        self.horizontalLayout_3.addWidget(self.cancelReorderButton)
+
+        self.saveOrderButton = QPushButton(self.reorderModePage)
+        self.saveOrderButton.setObjectName(u"saveOrderButton")
+
+        self.horizontalLayout_3.addWidget(self.saveOrderButton)
+
+        self.actionButtonStackedWidget.addWidget(self.reorderModePage)
+
+        self.horizontalLayout.addWidget(self.actionButtonStackedWidget)
 
 
         self.verticalLayout.addLayout(self.horizontalLayout)
@@ -95,12 +143,17 @@ class Ui_CRManagementPage(object):
 
     def retranslateUi(self, CRManagementPage):
         CRManagementPage.setWindowTitle(QCoreApplication.translate("CRManagementPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("CRManagementPage", u"Change && Bug Management", None))
+        self.headerLabel.setText(QCoreApplication.translate("CRManagementPage", u"Project Backlog", None))
         self.instructionLabel.setText(QCoreApplication.translate("CRManagementPage", u"Select an item from the register to view available actions. Implementation is enabled for items with an 'IMPACT_ANALYZED' status after the main development plan is complete.", None))
-        self.backButton.setText(QCoreApplication.translate("CRManagementPage", u"<-- Back to Main Workflow", None))
-        self.editButton.setText(QCoreApplication.translate("CRManagementPage", u"Edit Item", None))
-        self.deleteButton.setText(QCoreApplication.translate("CRManagementPage", u"Delete Item", None))
-        self.analyzeButton.setText(QCoreApplication.translate("CRManagementPage", u"Run Impact Analysis", None))
-        self.implementButton.setText(QCoreApplication.translate("CRManagementPage", u"Implement Item", None))
+        self.backButton.setText(QCoreApplication.translate("CRManagementPage", u"< Back", None))
+        self.addNewItemButton.setText(QCoreApplication.translate("CRManagementPage", u"Add New Item...", None))
+        self.reorderButton.setText(QCoreApplication.translate("CRManagementPage", u"Reorder Backlog", None))
+        self.clearSelectionButton.setText(QCoreApplication.translate("CRManagementPage", u"Clear Selection", None))
+        self.proceedToTechSpecButton.setText(QCoreApplication.translate("CRManagementPage", u"Proceed to Technical Specification", None))
+        self.moreActionsButton.setText(QCoreApplication.translate("CRManagementPage", u"More Actions...", None))
+        self.moveUpButton.setText(QCoreApplication.translate("CRManagementPage", u"Move Up", None))
+        self.moveDownButton.setText(QCoreApplication.translate("CRManagementPage", u"Move Down", None))
+        self.cancelReorderButton.setText(QCoreApplication.translate("CRManagementPage", u"Cancel", None))
+        self.saveOrderButton.setText(QCoreApplication.translate("CRManagementPage", u"Save Order", None))
     # retranslateUi
 

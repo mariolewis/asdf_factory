@@ -82,6 +82,28 @@ class Ui_RaiseRequestDialog(object):
 
         self.verticalLayout.addWidget(self.severityWidget)
 
+        self.complexityWidget = QWidget(RaiseRequestDialog)
+        self.complexityWidget.setObjectName(u"complexityWidget")
+        self.formLayout_2 = QFormLayout(self.complexityWidget)
+        self.formLayout_2.setObjectName(u"formLayout_2")
+        self.formLayout_2.setContentsMargins(0, 0, 0, 0)
+        self.complexityLabel = QLabel(self.complexityWidget)
+        self.complexityLabel.setObjectName(u"complexityLabel")
+
+        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.LabelRole, self.complexityLabel)
+
+        self.complexityComboBox = QComboBox(self.complexityWidget)
+        self.complexityComboBox.addItem("")
+        self.complexityComboBox.addItem("")
+        self.complexityComboBox.addItem("")
+        self.complexityComboBox.addItem("")
+        self.complexityComboBox.setObjectName(u"complexityComboBox")
+
+        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.FieldRole, self.complexityComboBox)
+
+
+        self.verticalLayout.addWidget(self.complexityWidget)
+
         self.buttonBox = QDialogButtonBox(RaiseRequestDialog)
         self.buttonBox.setObjectName(u"buttonBox")
         self.buttonBox.setStandardButtons(QDialogButtonBox.Cancel|QDialogButtonBox.Save)
@@ -95,16 +117,22 @@ class Ui_RaiseRequestDialog(object):
     # setupUi
 
     def retranslateUi(self, RaiseRequestDialog):
-        RaiseRequestDialog.setWindowTitle(QCoreApplication.translate("RaiseRequestDialog", u"Create New Request", None))
-        self.headerLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Create New Request", None))
+        RaiseRequestDialog.setWindowTitle(QCoreApplication.translate("RaiseRequestDialog", u"Add New Backlog Item", None))
+        self.headerLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Add New Backlog Item", None))
         self.typeGroupBox.setTitle(QCoreApplication.translate("RaiseRequestDialog", u"Request Type", None))
-        self.crRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Change Request", None))
+        self.crRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Backlog Item", None))
         self.bugRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Bug Report", None))
         self.descriptionLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Description:", None))
         self.severityLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Severity:", None))
         self.severityComboBox.setItemText(0, QCoreApplication.translate("RaiseRequestDialog", u"Minor", None))
         self.severityComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Medium", None))
         self.severityComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Major", None))
+
+        self.complexityLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Complexity:", None))
+        self.complexityComboBox.setItemText(0, "")
+        self.complexityComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Small", None))
+        self.complexityComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Medium", None))
+        self.complexityComboBox.setItemText(3, QCoreApplication.translate("RaiseRequestDialog", u"Large", None))
 
     # retranslateUi
 

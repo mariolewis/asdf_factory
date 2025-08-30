@@ -41,7 +41,11 @@ def initialize_database(db_manager: ASDFDBManager):
         "OPENAI_CONTEXT_LIMIT": ("380000", "Default context limit for OpenAI."),
         "ANTHROPIC_CONTEXT_LIMIT": ("600000", "Default context limit for Anthropic."),
         "LOCALPHI3_CONTEXT_LIMIT": ("380000", "Default context limit for local Phi-3."),
-        "ENTERPRISE_CONTEXT_LIMIT": ("128000", "Default context limit for enterprise models.")
+        "ENTERPRISE_CONTEXT_LIMIT": ("128000", "Default context limit for enterprise models."),
+        "INTEGRATION_PROVIDER": ("None", "The selected external project management tool provider."),
+        "INTEGRATION_URL": ("", "The base URL for the external tool's API."),
+        "INTEGRATION_USERNAME": ("", "The username or email for the integration account."),
+        "INTEGRATION_API_TOKEN": ("", "The API token for the integration account.")
     }
 
     all_config = db_manager.get_all_config_values()

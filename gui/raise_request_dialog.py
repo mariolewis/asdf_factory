@@ -28,10 +28,39 @@ class RaiseRequestDialog(QDialog):
         self.ui.bugRadioButton.toggled.connect(self._update_ui_for_type)
         self.ui.crRadioButton.toggled.connect(self._update_ui_for_type)
 
+    def set_edit_mode(self, details: dict):
+        """Configures the dialog for editing an existing item."""
+        self.setWindowTitle("Edit Backlog Item")
+        self.ui.headerLabel.setText("Edit Backlog Item")
+
+        # Pre-populate fields
+        self.ui.descriptionTextEdit.setText(details.get('description', ''))
+        self.ui.complexityComboBox.setCurrentText(details.get('complexity', ''))
+
+        # Handle priority/severity pre-population
+        request_type = details.get('request_type')
+        if request_type == 'BUG_REPORT':
+            self.ui.bugRadioButton.setChecked(True)
+            priority_value = details.get('impact_rating', '')
+            self.ui.severityComboBox.setCurrentText(priority_value)
+        else:
+            self.ui.crRadioButton.setChecked(True)
+            priority_value = details.get('priority', '')
+            # We need to make the severity widget visible and set its value
+            self.ui.severityWidget.setVisible(True)
+            self.ui.severityLabel.setText("Priority:")
+            self.ui.severityComboBox.setCurrentText(priority_value)
+
+        # Disable the type-switching radio buttons during an edit
+        self.ui.typeGroupBox.setEnabled(False)
+
     def _update_ui_for_type(self):
-        """Shows or hides the severity dropdown based on the selected request type."""
-        is_bug_report = self.ui.bugRadioButton.isChecked()
-        self.ui.severityWidget.setVisible(is_bug_report)
+        """Shows the priority/severity dropdown and updates its label."""
+        self.ui.severityWidget.setVisible(True) # Always visible now
+        if self.ui.bugRadioButton.isChecked():
+            self.ui.severityLabel.setText("Severity:")
+        else:
+            self.ui.severityLabel.setText("Priority:")
 
     def on_save(self):
         """Validates input before accepting the dialog."""
@@ -51,5 +80,6 @@ class RaiseRequestDialog(QDialog):
         return {
             "request_type": request_type,
             "description": self.ui.descriptionTextEdit.toPlainText().strip(),
-            "severity": self.ui.severityComboBox.currentText() if request_type == "BUG_REPORT" else None
+            "severity": self.ui.severityComboBox.currentText(), # Always get the current text
+            "complexity": self.ui.complexityComboBox.currentText()
         }

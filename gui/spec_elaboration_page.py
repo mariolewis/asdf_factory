@@ -300,10 +300,31 @@ class SpecElaborationPage(QWidget):
 
 
     def on_approve_spec_clicked(self):
+        """Saves the final spec and triggers the backlog generation in a background thread."""
         final_spec = self.ui.specDraftTextEdit.toPlainText()
         if not final_spec.strip():
             QMessageBox.warning(self, "Approval Failed", "The specification cannot be empty.")
             return
-        self.orchestrator.finalize_and_save_app_spec(final_spec)
-        QMessageBox.information(self, "Success", "Success: Specification approved and saved.")
-        self.spec_elaboration_complete.emit()
+
+        self._execute_task(self._task_approve_and_generate_backlog, self._handle_approval_result, final_spec,
+                        status_message="Generating backlog from specification...")
+
+    def _task_approve_and_generate_backlog(self, final_spec_text, **kwargs):
+        """Background worker task to save the spec and generate the backlog."""
+        self.orchestrator.finalize_and_save_app_spec(final_spec_text)
+        # The orchestrator's phase is now BACKLOG_RATIFICATION
+        return True
+
+    def _handle_approval_result(self, success):
+        """Handles the result of the background task."""
+        # First, switch away from the processing page
+        self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+        # Then, clear the busy status bar and re-enable the main window
+        self._set_ui_busy(False)
+
+        # Finally, show the result and emit the completion signal
+        if success:
+            QMessageBox.information(self, "Success", "Specification approved. Proceeding to Backlog Ratification.")
+            self.spec_elaboration_complete.emit()
+        else:
+            QMessageBox.critical(self, "Error", "The approval and backlog generation process failed.")

@@ -11,6 +11,7 @@ import textwrap
 import git
 
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
+from agents.agent_integration_pmt import IntegrationAgentPMT
 from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_ux_triage import UX_Triage_Agent
 from agents.agent_ux_spec import UX_Spec_Agent
@@ -45,6 +46,8 @@ class EnvironmentFailureException(Exception):
 class FactoryPhase(Enum):
     """Enumeration for the main factory F-Phases."""
     IDLE = auto()
+    BACKLOG_VIEW = auto()
+    BACKLOG_RATIFICATION = auto()
     UX_UI_DESIGN = auto()
     AWAITING_UX_UI_PHASE_DECISION = auto()
     AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION = auto()
@@ -171,6 +174,8 @@ class MasterOrchestrator:
 
     PHASE_DISPLAY_NAMES = {
         FactoryPhase.IDLE: "Idle",
+        FactoryPhase.BACKLOG_VIEW: "Backlog Overview",
+        FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
         FactoryPhase.UX_UI_DESIGN: "User Experience & Interface Design",
         FactoryPhase.AWAITING_UX_UI_PHASE_DECISION: "Awaiting UX/UI Phase Decision",
         FactoryPhase.AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION: "UX/UI Phase Recommendation",
@@ -880,19 +885,19 @@ class MasterOrchestrator:
 
     def finalize_and_save_app_spec(self, spec_draft: str):
         """
-        Applies the standard header, saves the final application spec to the
-        database, a .md file, and a formatted .docx file, and transitions to the next phase.
+        Saves the final application spec, then calls the PlanningAgent to generate
+        the initial backlog, and transitions to the BACKLOG_RATIFICATION phase.
         """
         if not self.project_id:
             logging.error("Cannot save application spec; no active project.")
             return
 
         try:
+            # The existing logic to save the document remains the same
             final_doc_with_header = self.prepend_standard_header(
                 document_content=spec_draft,
                 document_type="Application Specification"
             )
-
             self.db_manager.update_project_field(self.project_id, "final_spec_text", final_doc_with_header)
 
             project_details = self.db_manager.get_project_by_id(self.project_id)
@@ -907,6 +912,7 @@ class MasterOrchestrator:
 
                 # Generate and save the formatted .docx file for human use
                 spec_file_path_docx = docs_dir / "application_spec.docx"
+                from agents.agent_report_generator import ReportGeneratorAgent
                 report_generator = ReportGeneratorAgent()
                 docx_bytes = report_generator.generate_text_document_docx(
                     title=f"Application Specification - {self.project_name}",
@@ -916,10 +922,230 @@ class MasterOrchestrator:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(spec_file_path_docx, "docs: Add formatted Application Specification (docx)")
 
-            self.set_phase("TECHNICAL_SPECIFICATION")
+            # --- SAFEGUARD CHECK ---
+            existing_backlog = self.db_manager.get_all_change_requests_for_project(self.project_id)
+            if existing_backlog:
+                logging.warning("Backlog already exists. Skipping generation and proceeding to Backlog View.")
+                self.set_phase("BACKLOG_VIEW")
+                return
+            # --- END SAFEGUARD ---
+
+            # --- NEW LOGIC ---
+            logging.info("Application spec saved. Now generating initial backlog for ratification.")
+            from agents.agent_planning_app_target import PlanningAgent_AppTarget
+            planning_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
+
+            # Use the full spec text (with header) for the agent
+            backlog_items_json = planning_agent.generate_backlog_items(final_doc_with_header)
+
+            # Store the generated items for the ratification screen to use
+            self.task_awaiting_approval = {"generated_backlog_items": backlog_items_json}
+
+            self.set_phase("BACKLOG_RATIFICATION")
+            # --- END NEW LOGIC ---
 
         except Exception as e:
             logging.error(f"Failed to finalize and save application spec: {e}")
+            self.task_awaiting_approval = {"error": str(e)}
+
+    def handle_backlog_ratification(self, final_backlog_items: list):
+        """
+        Takes the final list of backlog items from the ratification screen,
+        saves them to the database, and transitions to the backlog view.
+        """
+        if not self.project_id:
+            logging.error("Cannot ratify backlog; no active project.")
+            return
+
+        try:
+            logging.info(f"Saving {len(final_backlog_items)} ratified backlog items to the database.")
+            db_manager = self.db_manager
+            for item in final_backlog_items:
+                # The add_change_request method now handles setting the display_order automatically
+                db_manager.add_change_request(
+                    project_id=self.project_id,
+                    title=item.get('title', 'Untitled Item'),
+                    description=item.get('description', ''),
+                    request_type='BACKLOG_ITEM',
+                    priority=item.get('priority'),
+                    complexity=item.get('complexity')
+                )
+                # Note: We will add saving priority/complexity in a future step.
+
+            self.task_awaiting_approval = None
+            self.set_phase("BACKLOG_VIEW")
+            logging.info("Backlog ratification complete. Transitioning to BACKLOG_VIEW.")
+
+        except Exception as e:
+            logging.error(f"An error occurred during backlog ratification: {e}")
+            self.task_awaiting_approval = {"error": str(e)}
+            # Consider where to transition on error, perhaps back to ratification
+            self.set_phase("BACKLOG_RATIFICATION")
+
+    def handle_proceed_to_tech_spec(self):
+        """Transitions the factory to the Technical Specification phase."""
+        logging.info("PM has approved the backlog. Proceeding to Technical Specification.")
+        self.set_phase("TECHNICAL_SPECIFICATION")
+
+    def get_project_integration_settings(self) -> dict:
+        """
+        Retrieves and parses the integration_settings JSON for the active project.
+        """
+        if not self.project_id:
+            return {}
+
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        if not project_details or not project_details['integration_settings']:
+            return {}
+
+        settings_json = project_details['integration_settings']
+        if settings_json:
+            try:
+                return json.loads(settings_json)
+            except json.JSONDecodeError:
+                logging.warning(f"Could not parse integration_settings JSON for project {self.project_id}")
+                return {}
+        return {}
+
+    def save_project_integration_settings(self, settings_dict: dict):
+        """
+        Converts the settings dictionary to JSON and saves it to the active project.
+        """
+        if not self.project_id:
+            logging.error("Cannot save project settings; no active project.")
+            return
+
+        try:
+            settings_json = json.dumps(settings_dict)
+            self.db_manager.update_project_field(
+                project_id=self.project_id,
+                field_name="integration_settings",
+                value=settings_json
+            )
+            logging.info(f"Successfully saved integration settings for project {self.project_id}")
+        except Exception as e:
+            logging.error(f"Failed to save project integration settings: {e}")
+            raise
+
+    def handle_import_from_tool(self, import_data: dict) -> list:
+        """
+        Handles fetching and filtering issues from an external tool.
+        This method is designed to be run in a background thread.
+        """
+        if not self.project_id:
+            raise Exception("No active project for import.")
+
+        # 1. Fetch integration settings from DB
+        db = self.db_manager
+        provider = db.get_config_value("INTEGRATION_PROVIDER")
+        url = db.get_config_value("INTEGRATION_URL")
+        username = db.get_config_value("INTEGRATION_USERNAME")
+        token = db.get_config_value("INTEGRATION_API_TOKEN")
+
+        if not all([provider, url, username, token]) or provider == "None":
+            raise ValueError("Integration is not configured. Please check your Settings.")
+
+        # 2. Instantiate agent and build query
+        agent = IntegrationAgentPMT(provider, url, username, token)
+        import_mode = import_data.get("mode")
+        import_value = import_data.get("value")
+
+        query = ""
+        if import_mode == "id":
+            # Standard JQL format for a single issue key
+            query = f'issueKey = "{import_value.upper()}"'
+        else: # mode is "query"
+            query = import_value
+
+        # 3. Call agent and filter out duplicates
+        logging.info(f"Searching for external issues with query: {query}")
+        found_issues = agent.search_issues(query)
+
+        new_issues_to_import = []
+        for issue in found_issues:
+            external_id = issue.get('id')
+            if external_id:
+                existing = db.get_cr_by_external_id(self.project_id, external_id)
+                if not existing:
+                    new_issues_to_import.append(issue)
+                else:
+                    logging.warning(f"Skipping import of '{external_id}'; it already exists in the backlog.")
+
+        return new_issues_to_import
+
+    def add_imported_backlog_items(self, items_to_add: list):
+        """Takes a list of new items from the import process and saves them to the backlog."""
+        if not self.project_id:
+            logging.error("Cannot add imported items; no active project.")
+            return
+
+        logging.info(f"Adding {len(items_to_add)} new imported items to the backlog.")
+        for item in items_to_add:
+            self.db_manager.add_change_request(
+                project_id=self.project_id,
+                title=item.get('title', 'Untitled Imported Item'),
+                description=item.get('description', 'No description provided.'),
+                external_id=item.get('id')
+            )
+
+    def handle_sync_to_tool(self, cr_ids: list) -> dict:
+        """
+        Handles syncing a list of ASDF backlog items to the external tool.
+        This is designed to be run in a background thread.
+        """
+        if not self.project_id:
+            raise Exception("No active project for sync.")
+
+        # 1. Fetch all required settings from global and project-level configs
+        db = self.db_manager
+        global_provider = db.get_config_value("INTEGRATION_PROVIDER")
+        url = db.get_config_value("INTEGRATION_URL")
+        username = db.get_config_value("INTEGRATION_USERNAME")
+        token = db.get_config_value("INTEGRATION_API_TOKEN")
+
+        project_settings = self.get_project_integration_settings()
+        project_provider = project_settings.get("provider")
+        project_key = project_settings.get("project_key")
+        issue_type_id = project_settings.get("issue_type_id")
+
+        # 2. Validate that all settings are present
+        if not all([global_provider, url, username, token]) or global_provider == "None":
+            raise ValueError("Global integration credentials are not configured in File -> Settings.")
+        if not all([project_provider, project_key, issue_type_id]) or project_provider == "None":
+            raise ValueError("Project-specific integration settings (Provider, Key, ID) are not configured in Project -> Project Settings.")
+
+        # 3. Instantiate agent and prepare for batch processing
+        agent = IntegrationAgentPMT(project_provider, url, username, token)
+        synced_items = []
+        failed_items = []
+
+        logging.info(f"Attempting to sync {len(cr_ids)} items to {project_provider}...")
+
+        # 4. Loop through each item and sync it, handling partial failures
+        for cr_id in cr_ids:
+            item_details = db.get_cr_by_id(cr_id)
+            if not item_details:
+                failed_items.append({"id": cr_id, "reason": "Item not found in database."})
+                continue
+
+            if item_details['external_id']:
+                logging.warning(f"Skipping sync for CR-{cr_id}; it has already been synced as '{item_details['external_id']}'.")
+                continue
+
+            try:
+                result = agent.create_issue(
+                    title=item_details['title'],
+                    description=item_details['description'],
+                    project_key=project_key,
+                    issue_type_id=issue_type_id
+                )
+                db.update_cr_external_link(cr_id, result['key'], result['url'])
+                synced_items.append({"id": cr_id, "external_key": result['key']})
+            except Exception as e:
+                logging.error(f"Failed to sync CR-{cr_id}: {e}")
+                failed_items.append({"id": cr_id, "reason": str(e)})
+
+        return {"succeeded": len(synced_items), "failed": len(failed_items), "errors": failed_items}
 
     def finalize_and_save_complexity_assessment(self, assessment_json_str: str):
         """
@@ -1773,21 +1999,18 @@ class MasterOrchestrator:
         else:
             logging.warning(f"Received 'Raise CR' action in an unexpected phase: {self.current_phase.name}")
 
-    def save_new_change_request(self, description: str, request_type: str = 'CHANGE_REQUEST'):
-        """
-        Saves a new, standard functional enhancement CR to the database.
-        """
+    def save_new_change_request(self, description: str, request_type: str = 'BACKLOG_ITEM', complexity: str = None):
+        """Saves a new, standard functional enhancement CR to the database."""
         if not self.project_id:
             logging.error("Cannot save change request; no active project.")
             return
 
         try:
-            self.db_manager.add_change_request(self.project_id, description, request_type)
-            # --- THIS IS THE FIX ---
-            # Instead of transitioning to a non-existent UI, we now transition back
-            # to the CR management screen so the user can see the new entry.
-            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
-            # --- END OF FIX ---
+            # Generate a title from the description
+            title = description.split('\n')[0] # Use first line as title
+            title = (title[:75] + '...') if len(title) > 75 else title
+            self.db_manager.add_change_request(self.project_id, title, description, request_type, complexity=complexity)
+            self.set_phase("BACKLOG_VIEW")
             logging.info("Successfully saved new Functional Enhancement CR.")
         except Exception as e:
             logging.error(f"Failed to save new change request: {e}")
@@ -1802,10 +2025,8 @@ class MasterOrchestrator:
         else:
             logging.warning(f"Received 'Report Bug' action in an unexpected phase: {self.current_phase.name}")
 
-    def save_bug_report(self, description: str, severity: str) -> bool:
-        """
-        Saves a new bug report to the database via the DAO.
-        """
+    def save_bug_report(self, description: str, severity: str, complexity: str = None) -> bool:
+        """Saves a new bug report to the database via the DAO."""
         if not self.project_id:
             logging.error("Cannot save bug report; no active project.")
             return False
@@ -1815,10 +2036,8 @@ class MasterOrchestrator:
             return False
 
         try:
-            # Corrected: Direct call to the db_manager
-            self.db_manager.add_bug_report(self.project_id, description, severity)
-
-            self.set_phase("GENESIS")
+            self.db_manager.add_bug_report(self.project_id, description, severity, complexity=complexity)
+            self.set_phase("BACKLOG_VIEW")
             logging.info("Successfully saved new bug report and returned to Genesis phase.")
             return True
         except Exception as e:
@@ -1827,12 +2046,10 @@ class MasterOrchestrator:
 
     def handle_view_cr_register_action(self):
         """
-        Transitions the factory into the state for viewing and selecting a CR
-        from the register.
+        Transitions the factory into the state for viewing the Project Backlog.
         """
-        # This action is allowed from any post-genesis phase.
-        logging.info("PM chose to 'Manage CRs / Bugs'. Transitioning to selection screen.")
-        self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
+        logging.info("PM chose to 'View Project Backlog'. Transitioning to the backlog screen.")
+        self.set_phase("BACKLOG_VIEW")
 
     def handle_implement_cr_action(self, cr_id: int, **kwargs):
         """
@@ -2016,29 +2233,23 @@ class MasterOrchestrator:
         self.active_cr_id_for_edit = cr_id
         self.set_phase("EDITING_CHANGE_REQUEST")
 
-    def save_edited_change_request(self, new_description: str) -> bool:
+    def save_edited_change_request(self, cr_id: int, new_data: dict) -> bool:
         """
-        Saves the updated description for the currently active change request
+        Saves the updated data for a specific change request
         and resets its impact analysis.
         """
-        if self.active_cr_id_for_edit is None:
-            logging.error("Attempted to save an edited CR but no active_cr_id_for_edit is set.")
-            return False
-
-        if not new_description or not new_description.strip():
-            logging.warning("Cannot save empty change request description.")
+        new_description = new_data.get("description", "").strip()
+        if not new_description:
+            logging.warning("Cannot save empty backlog item description.")
             return False
 
         try:
-            cr_id_to_update = self.active_cr_id_for_edit
-            self.db_manager.update_change_request(cr_id_to_update, new_description)
-
-            self.active_cr_id_for_edit = None
-            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
-            logging.info(f"Successfully saved edits for CR ID: {cr_id_to_update}")
+            # Pass the full dictionary to the db manager
+            self.db_manager.update_change_request(cr_id, new_data)
+            logging.info(f"Successfully saved edits for item ID: {cr_id}")
             return True
         except Exception as e:
-            logging.error(f"Failed to save edited change request for CR ID {self.active_cr_id_for_edit}: {e}")
+            logging.error(f"Failed to save edited backlog item for ID {cr_id}: {e}")
             return False
 
     def get_active_cr_details_for_edit(self) -> dict | None:
@@ -2137,6 +2348,17 @@ class MasterOrchestrator:
                 })
 
         return sorted(report_data, key=lambda x: x['id'])
+
+    def handle_save_cr_order(self, order_mapping: list):
+        """Handles the request to save the new display order for backlog items."""
+        if not order_mapping:
+            return
+        try:
+            self.db_manager.batch_update_cr_order(order_mapping)
+            self.is_project_dirty = True
+        except Exception as e:
+            logging.error(f"Failed to save new CR order: {e}")
+            # Optionally, signal back to the UI that there was an error
 
     def resume_project(self):
         """

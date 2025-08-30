@@ -70,16 +70,16 @@
            </layout>
           </widget>
           <widget class="QWidget" name="changesTab">
-           <attribute name="title">
-            <string>Changes</string>
-           </attribute>
-           <layout class="QVBoxLayout" name="verticalLayout_3">
-            <item>
-             <widget class="QTableView" name="crTableView"/>
-            </item>
-           </layout>
+            <attribute name="title">
+             <string>Backlog</string>
+            </attribute>
+                <layout class="QVBoxLayout" name="verticalLayout_3">
+                 <item>
+                  <widget class="QTableView" name="crTableView"/>
+                 </item>
+                 </layout>
+           </widget>
           </widget>
-         </widget>
         </item>
        </layout>
       </widget>
@@ -292,14 +292,14 @@
     <string>View project reports</string>
    </property>
   </action>
-  <action name="actionManage_CRs_Bugs">
-   <property name="text">
-    <string>Change &amp;&amp; Bug Management</string>
-   </property>
-   <property name="toolTip">
-    <string>View and manage the CR/Bug register</string>
-   </property>
-  </action>
+   <action name="actionManage_CRs_Bugs">
+     <property name="text">
+       <string>Project Backlog</string>
+     </property>
+    <property name="toolTip">
+   <string>View and manage the Project Backlog</string>
+  </property>
+   </action>
   <action name="actionUndo">
    <property name="text">
     <string>&amp;Undo</string>

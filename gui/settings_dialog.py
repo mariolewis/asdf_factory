@@ -4,6 +4,7 @@ import logging
 import shutil
 import os
 from pathlib import Path
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
@@ -11,7 +12,7 @@ from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTabWidget, QWidget,
                                QFormLayout, QLabel, QComboBox, QStackedWidget,
                                QLineEdit, QSpinBox, QDialogButtonBox, QSpacerItem,
-                               QSizePolicy, QMessageBox, QHBoxLayout)
+                               QSizePolicy, QMessageBox, QHBoxLayout, QListWidget)
 
 from master_orchestrator import MasterOrchestrator
 
@@ -132,6 +133,27 @@ class SettingsDialog(QDialog):
         self.remove_template_button = QPushButton("Remove Selected")
         self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
 
+        # --- Integrations Tab Widgets
+        self.integrations_tab = QWidget()
+        self.provider_list = QListWidget()
+        self.provider_list.addItems(["None", "Jira"]) # Add more providers here in the future
+        self.provider_list.setMaximumWidth(150)
+
+        self.integrations_stacked_widget = QStackedWidget()
+
+        # Page for when no provider is selected
+        self.no_provider_page = QWidget()
+        self.no_provider_page.setLayout(QVBoxLayout())
+        self.no_provider_page.layout().addWidget(QLabel("No integration provider selected."))
+        self.no_provider_page.layout().addStretch()
+
+        # Page for Jira settings
+        self.jira_page = QWidget()
+        self.jira_url_input = QLineEdit()
+        self.jira_username_input = QLineEdit()
+        self.jira_token_input = QLineEdit()
+        self.jira_token_input.setEchoMode(QLineEdit.Password)
+
     def _create_layouts(self):
         """Creates and arranges layouts for the dialog."""
         llm_tab_layout = QVBoxLayout(self.llm_providers_tab)
@@ -193,6 +215,22 @@ class SettingsDialog(QDialog):
         template_button_layout.addWidget(self.remove_template_button)
         templates_tab_layout.addLayout(template_button_layout)
 
+        # --- Integrations Tab Layout
+        integrations_main_layout = QHBoxLayout(self.integrations_tab)
+        integrations_main_layout.addWidget(self.provider_list)
+
+        # Add pages to the stacked widget
+        self.integrations_stacked_widget.addWidget(self.no_provider_page)
+
+        jira_layout = QFormLayout(self.jira_page)
+        jira_layout.addRow("Jira URL (e.g., your-org.atlassian.net):", self.jira_url_input)
+        jira_layout.addRow("Username (Email):", self.jira_username_input)
+        jira_layout.addRow("API Token:", self.jira_token_input)
+        self.integrations_stacked_widget.addWidget(self.jira_page)
+
+        integrations_main_layout.addWidget(self.integrations_stacked_widget)
+
+        self.tab_widget.addTab(self.integrations_tab, "Integrations")
         self.tab_widget.addTab(self.templates_tab, "Templates")
         self.tab_widget.addTab(self.llm_providers_tab, "LLM Providers")
         self.tab_widget.addTab(self.factory_behavior_tab, "Factory Behavior")
@@ -318,6 +356,17 @@ class SettingsDialog(QDialog):
         self.project_path_input.setText(get_val("DEFAULT_PROJECT_PATH"))
         self.archive_path_input.setText(get_val("DEFAULT_ARCHIVE_PATH"))
 
+        # --- Populate Integrations
+        provider = get_val("INTEGRATION_PROVIDER", "None")
+        # Find the item and get its row number to set the selection
+        matching_items = self.provider_list.findItems(provider, Qt.MatchExactly)
+        if matching_items:
+            row = self.provider_list.row(matching_items[0])
+            self.provider_list.setCurrentRow(row)
+        self.jira_url_input.setText(get_val("INTEGRATION_URL"))
+        self.jira_username_input.setText(get_val("INTEGRATION_USERNAME"))
+        self.jira_token_input.setText(get_val("INTEGRATION_API_TOKEN"))
+
         self.on_provider_changed()
         self._populate_templates_tab()
 
@@ -325,6 +374,7 @@ class SettingsDialog(QDialog):
         self.provider_combo_box.currentTextChanged.connect(self.on_provider_changed)
         self.button_box.accepted.connect(self.save_settings_and_accept)
         self.button_box.rejected.connect(self.reject)
+        self.provider_list.currentRowChanged.connect(self.on_integration_provider_changed)
         self.add_template_button.clicked.connect(self._on_add_template_clicked)
         self.remove_template_button.clicked.connect(self._on_remove_template_clicked)
 
@@ -338,6 +388,11 @@ class SettingsDialog(QDialog):
         page_to_show = page_map.get(provider_name)
         if page_to_show:
             self.provider_stacked_widget.setCurrentWidget(page_to_show)
+
+    def on_integration_provider_changed(self, index):
+        """Switches the configuration page based on the selected provider."""
+        # Index 0 is "None", Index 1 is "Jira"
+        self.integrations_stacked_widget.setCurrentIndex(index)
 
     def save_settings_and_accept(self):
         """Saves all settings from all tabs to the database."""
@@ -363,7 +418,11 @@ class SettingsDialog(QDialog):
                 "CONTEXT_WINDOW_CHAR_LIMIT": str(self.context_limit_spin_box.value()),
                 "LOGGING_LEVEL": self.logging_combo_box.currentText(),
                 "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
-                "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text()
+                "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text(),
+                "INTEGRATION_PROVIDER": self.provider_list.currentItem().text(),
+                "INTEGRATION_URL": self.jira_url_input.text(),
+                "INTEGRATION_USERNAME": self.jira_username_input.text(),
+                "INTEGRATION_API_TOKEN": self.jira_token_input.text()
             }
 
             provider = settings_to_save["SELECTED_LLM_PROVIDER"]

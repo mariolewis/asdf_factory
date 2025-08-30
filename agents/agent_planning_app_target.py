@@ -3,6 +3,7 @@
 import logging
 import textwrap
 import json
+import re
 from llm_service import LLMService
 from asdf_db_manager import ASDFDBManager
 
@@ -20,6 +21,48 @@ class PlanningAgent_AppTarget:
         self.llm_service = llm_service
         self.db_manager = db_manager
         logging.info("PlanningAgent_AppTarget initialized.")
+
+    def generate_backlog_items(self, final_spec_text: str) -> str:
+        """
+        Analyzes an application specification and deconstructs it into a
+        structured list of backlog items with suggested priority and complexity.
+        """
+        logging.info("PlanningAgent: Generating initial backlog items from specification...")
+
+        prompt = textwrap.dedent(f"""
+            You are an expert Agile Business Analyst. Your task is to deconstruct a detailed Application Specification into a structured list of backlog items in JSON format.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element in the array must be a JSON object `{{}}` representing one backlog item.
+            2.  **JSON Object Schema:** Each task object MUST have these four keys:
+                - `title`: A concise, user-story-style title for the backlog item (e.g., "As a user, I can reset my password").
+                - `description`: A more detailed, 1-2 sentence description of the feature or task.
+                - `priority`: Your suggested priority for this item. Must be one of: "High", "Medium", or "Low".
+                - `complexity`: Your estimated complexity for this item. Must be one of: "Small", "Medium", or "Large".
+            3.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
+
+            **--- INPUT: Application Specification ---**
+            {final_spec_text}
+            **--- End of Specification ---**
+
+            **--- Generated Backlog (JSON Array Output) ---**
+        """)
+
+        try:
+            response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
+            # Robustly find and extract the JSON array block using regex
+            json_match = re.search(r'\[.*\]', response_json_str, re.DOTALL)
+            if not json_match:
+                raise ValueError("LLM response did not contain a valid JSON array.")
+
+            cleaned_response = json_match.group(0)
+            parsed_json = json.loads(cleaned_response) # Full validation
+            logging.info(f"Successfully generated {len(parsed_json)} backlog items.")
+            return cleaned_response
+        except Exception as e:
+            logging.error(f"Failed to generate backlog items: {e}")
+            error_response = [{"error": "Failed to generate a valid backlog.", "details": str(e)}]
+            return json.dumps(error_response)
 
     def _summarize_text(self, text: str, document_type: str) -> str:
         """Helper to summarize long texts to fit context windows."""
