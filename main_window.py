@@ -72,7 +72,6 @@ class ASDFMainWindow(QMainWindow):
 
         self._create_pages()
         self._setup_file_tree()
-        self._setup_cr_register_view()
         self._create_menus_and_toolbar()
         self._connect_signals()
 
@@ -139,14 +138,6 @@ class ASDFMainWindow(QMainWindow):
         self.ui.projectFilesTreeView.hideColumn(3) # Date Modified
         self.ui.projectFilesTreeView.setHeaderHidden(True)
         self.ui.projectFilesTreeView.setContextMenuPolicy(Qt.CustomContextMenu)
-
-    def _setup_cr_register_view(self):
-        """Initializes the model and view for the 'Changes' tab table."""
-        self.cr_model = QStandardItemModel(self)
-        self.ui.crTableView.setModel(self.cr_model)
-        # Configure static properties of the view
-        self.ui.crTableView.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.ui.crTableView.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
     def _create_menus_and_toolbar(self):
         """Programmatically creates dynamic menus and toolbar actions."""
@@ -284,7 +275,6 @@ class ASDFMainWindow(QMainWindow):
         self.decision_page.option2_selected.connect(self.on_decision_option2)
         self.decision_page.option3_selected.connect(self.on_decision_option3)
         self.ui.projectFilesTreeView.customContextMenuRequested.connect(self.on_file_tree_context_menu)
-        self.ui.crTableView.doubleClicked.connect(self.on_cr_double_clicked)
         self.documents_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.reports_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.manual_ui_testing_page.go_to_documents.connect(self.on_view_documents)
@@ -463,63 +453,6 @@ class ASDFMainWindow(QMainWindow):
             self.treeViewInfoLabel.setVisible(True)
             self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or load an archive.")
 
-    def update_cr_register_view(self):
-        """
-        Fetches CRs/Bugs for the active project and populates the 'Changes' table.
-        """
-        self.cr_model.clear()
-        self.cr_model.setHorizontalHeaderLabels(['ID', 'Type', 'Status', 'Description'])
-
-        # Set column resizing rules
-        header = self.ui.crTableView.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # ID
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents) # Type
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # Status
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch) # Description
-
-        if not self.orchestrator.project_id:
-            return # No project active, leave the table empty
-
-        try:
-            change_requests = self.orchestrator.get_all_change_requests()
-            for cr in change_requests:
-                type_display = cr['request_type'].replace('_', ' ').title()
-                if type_display == "Change Request":
-                    type_display = "CR"
-                elif type_display == "Bug Report":
-                    type_display = "Bug"
-
-                id_item = QStandardItem(str(cr['cr_id']))
-                type_item = QStandardItem(type_display)
-                status_item = QStandardItem(cr['status'])
-                desc_item = QStandardItem(cr['description'])
-                self.cr_model.appendRow([id_item, type_item, status_item, desc_item])
-
-        except Exception as e:
-            logging.error(f"Failed to update CR register view: {e}")
-
-    def on_cr_double_clicked(self, index):
-        """
-        Handles the event when a user double-clicks an item in the CR table.
-        """
-        if not index.isValid():
-            return
-
-        selected_row = index.row()
-        cr_id_item = self.cr_model.item(selected_row, 0)
-        if not cr_id_item:
-            return
-
-        try:
-            cr_id = int(cr_id_item.text())
-            cr_details = self.orchestrator.get_cr_details_by_id(cr_id)
-            if cr_details:
-                # Create and show our new, custom dialog
-                dialog = CRDetailsDialog(cr_details, self)
-                dialog.exec()
-        except (ValueError, TypeError) as e:
-            logging.error(f"Could not process CR selection: {e}")
-
     def on_cr_edit_action(self, cr_id: int):
         """Handles the signal to edit an item by opening a pre-populated dialog."""
         details = self.orchestrator.get_cr_details_by_id(cr_id)
@@ -697,7 +630,6 @@ class ASDFMainWindow(QMainWindow):
         #if not is_project_active:
         #    self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
         #    return
-        self.update_cr_register_view()
         self.update_static_ui_elements()
 
         current_phase = self.orchestrator.current_phase

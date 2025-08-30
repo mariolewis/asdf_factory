@@ -19,8 +19,7 @@ from PySide6.QtGui import (QAction, QBrush, QColor, QConicalGradient,
 from PySide6.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
     QMainWindow, QMenu, QMenuBar, QSizePolicy,
     QSplitter, QStackedWidget, QStatusBar, QTabWidget,
-    QTableView, QToolBar, QTreeView, QVBoxLayout,
-    QWidget)
+    QToolBar, QTreeView, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -110,16 +109,6 @@ class Ui_MainWindow(object):
         self.verticalLayout_2.addWidget(self.projectFilesTreeView)
 
         self.projectNavigationTabs.addTab(self.filesTab, "")
-        self.changesTab = QWidget()
-        self.changesTab.setObjectName(u"changesTab")
-        self.verticalLayout_3 = QVBoxLayout(self.changesTab)
-        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.crTableView = QTableView(self.changesTab)
-        self.crTableView.setObjectName(u"crTableView")
-
-        self.verticalLayout_3.addWidget(self.crTableView)
-
-        self.projectNavigationTabs.addTab(self.changesTab, "")
 
         self.leftPanelLayout.addWidget(self.projectNavigationTabs)
 
@@ -271,7 +260,6 @@ class Ui_MainWindow(object):
         self.actionToggleProjectPanel.setText(QCoreApplication.translate("MainWindow", u"Toggle Project Panel", None))
         self.actionToggleNotificationPanel.setText(QCoreApplication.translate("MainWindow", u"Toggle Notification Panel", None))
         self.projectNavigationTabs.setTabText(self.projectNavigationTabs.indexOf(self.filesTab), QCoreApplication.translate("MainWindow", u"Files", None))
-        self.projectNavigationTabs.setTabText(self.projectNavigationTabs.indexOf(self.changesTab), QCoreApplication.translate("MainWindow", u"Backlog", None))
         self.welcomeLabel.setText(QCoreApplication.translate("MainWindow", u"Welcome to ASDF. Please create a New Project or Load an Archived Project to begin.", None))
         self.phaseLabel.setText(QCoreApplication.translate("MainWindow", u"This is where the UI for a specific project phase will be rendered.", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"&File", None))
