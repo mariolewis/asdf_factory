@@ -176,7 +176,7 @@ class TestEnvPage(QWidget):
             self._populate_test_command()
 
     def on_export_clicked(self):
-        """Exports all setup steps to a single .docx file in the project's _docs folder."""
+        """Exports all setup steps to a single .docx file in the project's docs folder."""
         if not self.setup_tasks:
             QMessageBox.warning(self, "No Content", "There are no setup steps to export.")
             return
@@ -187,7 +187,7 @@ class TestEnvPage(QWidget):
                 raise IOError("Project root folder not found.")
 
             project_root = Path(project_details['project_root_folder'])
-            docs_dir = project_root / "_docs"
+            docs_dir = project_root / "docs"
             docs_dir.mkdir(exist_ok=True) # Ensure the directory exists
 
             project_name = self.orchestrator.project_name or "project"

@@ -73,8 +73,8 @@ class EnvSetupPage(QWidget):
                 return
 
             # Create the project directory structure now.
-            docs_dir = project_path / "_docs"
-            uploads_dir = docs_dir / "_uploads"
+            docs_dir = project_path / "docs"
+            uploads_dir = docs_dir / "uploads"
             project_path.mkdir(parents=True, exist_ok=True)
             docs_dir.mkdir(exist_ok=True)
             uploads_dir.mkdir(exist_ok=True)

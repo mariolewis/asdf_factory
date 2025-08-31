@@ -56,6 +56,7 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator = orchestrator
         self.last_known_phase = None
         self.previous_phase = FactoryPhase.IDLE
+        self.current_tree_root_path = None
 
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
@@ -138,6 +139,17 @@ class ASDFMainWindow(QMainWindow):
         self.ui.projectFilesTreeView.hideColumn(3) # Date Modified
         self.ui.projectFilesTreeView.setHeaderHidden(True)
         self.ui.projectFilesTreeView.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.file_system_model.rowsInserted.connect(self.on_directory_updated)
+
+    def on_directory_updated(self, parent_index, first, last):
+        """
+        Slot to auto-expand a directory when a new item is added to it.
+        """
+        # The 'first' argument is the row number of the new item within its parent.
+        new_item_index = self.file_system_model.index(first, 0, parent_index)
+        if new_item_index.isValid() and self.file_system_model.isDir(new_item_index):
+            # Use a timer to ensure the view has processed the insertion before we expand
+            QTimer.singleShot(50, lambda: self.ui.projectFilesTreeView.expand(new_item_index))
 
     def _create_menus_and_toolbar(self):
         """Programmatically creates dynamic menus and toolbar actions."""
@@ -442,10 +454,17 @@ class ASDFMainWindow(QMainWindow):
                 project_root = project_details['project_root_folder']
 
         if project_root and Path(project_root).exists():
-            root_path_obj = Path(project_root)
-            self.file_system_model.setRootPath("")
-            self.file_system_model.setRootPath(str(root_path_obj.parent))
-            self.ui.projectFilesTreeView.setRootIndex(self.file_system_model.index(project_root))
+            # Check if we are setting the root for the first time or changing projects
+            if self.current_tree_root_path != project_root:
+                self.current_tree_root_path = project_root
+                root_path_obj = Path(project_root)
+                self.file_system_model.setRootPath("") # Reset the model's root
+                self.file_system_model.setRootPath(str(root_path_obj.parent))
+                self.ui.projectFilesTreeView.setRootIndex(self.file_system_model.index(project_root))
+
+                # Use a delayed, one-time call to expandAll to ensure the model has loaded
+                QTimer.singleShot(250, self.ui.projectFilesTreeView.expandAll)
+
             self.ui.projectFilesTreeView.setVisible(True)
             self.treeViewInfoLabel.setVisible(False)
         else:

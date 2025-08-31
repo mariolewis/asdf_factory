@@ -394,13 +394,13 @@ class MasterOrchestrator:
             raise
 
     def save_uploaded_brief_files(self, uploaded_files: list) -> list[str]:
-        """Copies uploaded brief files to the project's _docs/_uploads directory and commits them."""
+        """Copies uploaded brief files to the project's docs/uploads directory and commits them."""
         if not self.project_id: return []
         project_details = self.db_manager.get_project_by_id(self.project_id)
         if not project_details: return []
 
         project_root = Path(project_details['project_root_folder'])
-        uploads_dir = project_root / "_docs" / "_uploads"
+        uploads_dir = project_root / "docs" / "uploads"
         uploads_dir.mkdir(parents=True, exist_ok=True)
 
         saved_paths = []
@@ -421,7 +421,7 @@ class MasterOrchestrator:
         return saved_paths
 
     def save_text_brief_as_file(self, brief_content: str) -> str | None:
-        """Saves a text-based project brief to a markdown file in the _uploads directory and commits it."""
+        """Saves a text-based project brief to a markdown file in the uploads directory and commits it."""
         if not self.project_id: return None
 
         try:
@@ -429,8 +429,8 @@ class MasterOrchestrator:
             if not project_details: return None
 
             project_root = Path(project_details['project_root_folder'])
-            # Corrected Path: Point to the _uploads sub-directory
-            uploads_dir = project_root / "_docs" / "_uploads"
+            # Corrected Path: Point to the uploads sub-directory
+            uploads_dir = project_root / "docs" / "uploads"
             uploads_dir.mkdir(parents=True, exist_ok=True)
 
             brief_file_path = uploads_dir / "project_brief.md"
@@ -798,7 +798,7 @@ class MasterOrchestrator:
 
             # --- Finalize and Save the UX Spec Artifact ---
             project_root = Path(project_details['project_root_folder'])
-            docs_dir = project_root / "_docs"
+            docs_dir = project_root / "docs"
 
             # Save the Markdown file for system use
             ux_spec_file_path_md = docs_dir / "ux_ui_specification.md"
@@ -903,7 +903,7 @@ class MasterOrchestrator:
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
-                docs_dir = project_root / "_docs"
+                docs_dir = project_root / "docs"
 
                 # Save the Markdown file for system use
                 spec_file_path_md = docs_dir / "application_spec.md"
@@ -1164,7 +1164,7 @@ class MasterOrchestrator:
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
-                docs_dir = project_root / "_docs"
+                docs_dir = project_root / "docs"
                 docs_dir.mkdir(exist_ok=True)
 
                 # Save the raw JSON file for system use
@@ -1208,7 +1208,7 @@ class MasterOrchestrator:
             project_details = db.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
-                docs_dir = project_root / "_docs"
+                docs_dir = project_root / "docs"
 
                 # Save the Markdown file for system use
                 spec_file_path_md = docs_dir / "technical_spec.md"
@@ -1254,7 +1254,7 @@ class MasterOrchestrator:
             project_details = db.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
-                docs_dir = project_root / "_docs"
+                docs_dir = project_root / "docs"
 
                 # Save the Markdown file for system use
                 standard_file_path_md = docs_dir / "coding_standard.md"
@@ -1297,7 +1297,7 @@ class MasterOrchestrator:
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
-                docs_dir = project_root / "_docs"
+                docs_dir = project_root / "docs"
                 docs_dir.mkdir(exist_ok=True)
 
                 # Save the raw JSON file for system use
@@ -1679,7 +1679,7 @@ class MasterOrchestrator:
                 return
 
             project_root = Path(project_details['project_root_folder'])
-            docs_dir = project_root / "_docs"
+            docs_dir = project_root / "docs"
 
             implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
             doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
@@ -1876,7 +1876,7 @@ class MasterOrchestrator:
                 raise FileNotFoundError("Project root folder not found for integration phase.")
 
             project_root_path = Path(project_details['project_root_folder'])
-            docs_dir = project_root_path / "_docs"
+            docs_dir = project_root_path / "docs"
 
             if progress_callback: progress_callback("Analyzing project for integration points...")
 
