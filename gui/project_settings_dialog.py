@@ -32,18 +32,18 @@ class ProjectSettingsDialog(QDialog):
         """Pre-populates the dialog with the project's current settings."""
         provider = settings.get("provider", "None")
 
-        # Find and set the provider in the combo box
         provider_index = self.ui.providerComboBox.findText(provider, Qt.MatchFixedString)
         if provider_index >= 0:
             self.ui.providerComboBox.setCurrentIndex(provider_index)
 
-        # Manually trigger the page switch in case the initial index is not 0
         self.on_provider_changed(provider_index)
 
-        # Populate the Jira-specific fields
         if provider == "Jira":
             self.ui.projectKeyLineEdit.setText(settings.get("project_key", ""))
-            self.ui.issueTypeIdLineEdit.setText(settings.get("issue_type_id", ""))
+            # Pre-populate with common defaults if not set
+            self.ui.epicTypeIdLineEdit.setText(settings.get("epic_type_id", "10001"))
+            self.ui.storyTypeIdLineEdit.setText(settings.get("story_type_id", "10004"))
+            self.ui.taskTypeIdLineEdit.setText(settings.get("task_type_id", "10003"))
 
     def get_data(self) -> dict:
         """Returns the new settings from the dialog in a structured dictionary."""
@@ -55,8 +55,9 @@ class ProjectSettingsDialog(QDialog):
             return {
                 "provider": "Jira",
                 "project_key": self.ui.projectKeyLineEdit.text().strip(),
-                "issue_type_id": self.ui.issueTypeIdLineEdit.text().strip()
+                "epic_type_id": self.ui.epicTypeIdLineEdit.text().strip(),
+                "story_type_id": self.ui.storyTypeIdLineEdit.text().strip(),
+                "task_type_id": self.ui.taskTypeIdLineEdit.text().strip()
             }
 
-        # Return a default for any future providers that might be added to the UI
         return {"provider": provider}

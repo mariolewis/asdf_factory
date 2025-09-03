@@ -292,10 +292,7 @@ class ASDFMainWindow(QMainWindow):
         self.manual_ui_testing_page.go_to_documents.connect(self.on_view_documents)
         self.manual_ui_testing_page.testing_complete.connect(self.update_ui_after_state_change)
         self.project_complete_page.export_project.connect(self.on_stop_export_project)
-        self.cr_management_page.back_to_workflow.connect(self.on_back_to_workflow)
-        self.cr_management_page.edit_cr.connect(self.on_cr_edit_action)
         self.cr_management_page.delete_cr.connect(self.on_cr_delete_action)
-        self.cr_management_page.add_new_item.connect(self.on_raise_cr)
         self.cr_management_page.analyze_cr.connect(self.on_cr_analyze_action)
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
         self.cr_management_page.proceed_to_tech_spec.connect(self.on_proceed_to_tech_spec)
@@ -1020,31 +1017,17 @@ class ASDFMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Project", "Please create or load a project before raising a request.")
             return
 
-        dialog = RaiseRequestDialog(self, initial_request_type="CHANGE_REQUEST")
+        dialog = RaiseRequestDialog(self)
         if dialog.exec():
             data = dialog.get_data()
-            request_type = data["request_type"]
-            description = data["description"]
-            severity = data["severity"]
-            complexity = data["complexity"]
-
-            success = False
-            if request_type == "CHANGE_REQUEST":
-                # Pass complexity to the orchestrator
-                self.orchestrator.save_new_change_request(description, complexity=complexity)
-                success = True
-            elif request_type == "BUG_REPORT":
-                # Pass complexity to the orchestrator
-                success = self.orchestrator.save_bug_report(description, severity, complexity=complexity)
+            # FIX: Call the new, unified orchestrator method. Parent is None as it's a top-level request.
+            success, _ = self.orchestrator.add_new_backlog_item(data, parent_cr_id=None)
 
             if success:
-                QMessageBox.information(self, "Success", f"{request_type.replace('_', ' ').title()} has been successfully logged.")
-                # --- THIS IS THE FIX ---
-                # Trigger a full UI update to refresh all tables and state.
-                self.update_ui_after_state_change()
-                # --- END OF FIX ---
+                QMessageBox.information(self, "Success", f"{data['request_type'].replace('_', ' ').title()} has been successfully logged.")
+                self.update_ui_after_state_change() # Refresh all views
             else:
-                QMessageBox.critical(self, "Error", f"Failed to save the {request_type.replace('_', ' ').title()}.")
+                QMessageBox.critical(self, "Error", f"Failed to save the {data['request_type'].replace('_', ' ').title()}.")
 
     def on_manage_crs(self):
         """Switches to the CR Management page."""
@@ -1065,10 +1048,12 @@ class ASDFMainWindow(QMainWindow):
         dialog = RaiseRequestDialog(self, initial_request_type="BUG_REPORT")
         if dialog.exec():
             data = dialog.get_data()
-            success = self.orchestrator.save_bug_report(data["description"], data["severity"])
+            # FIX: Call the new, unified orchestrator method. Parent is None as it's a top-level request.
+            success, _ = self.orchestrator.add_new_backlog_item(data, parent_cr_id=None)
+
             if success:
                 QMessageBox.information(self, "Success", "Bug Report has been successfully logged.")
-                self.update_cr_register_view()
+                self.update_ui_after_state_change()
             else:
                 QMessageBox.critical(self, "Error", "Failed to save the Bug Report.")
 
@@ -1132,8 +1117,8 @@ class ASDFMainWindow(QMainWindow):
             return
 
         reply = QMessageBox.question(self, "Confirm Sync",
-                                    f"You have selected {len(cr_ids)} item(s) to create in the external tool. Proceed?",
-                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                                     f"You have selected {len(cr_ids)} item(s) to create in the external tool. Proceed?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
             self.setEnabled(False)
@@ -1154,17 +1139,33 @@ class ASDFMainWindow(QMainWindow):
         succeeded = result_dict.get('succeeded', 0)
         failed = result_dict.get('failed', 0)
         errors = result_dict.get('errors', [])
+        synced_items = result_dict.get('synced_items', [])
 
-        summary_message = f"Sync complete.\n\nSuccessfully created: {succeeded} item(s)\nFailed to create: {failed} item(s)"
+        summary_message = ""
+        # --- NEW: Custom message for single vs. multiple items ---
+        if succeeded == 1 and failed == 0:
+            key = synced_items[0]['external_key'] if synced_items else 'N/A'
+            summary_message = f"Sync complete.\n\nSuccessfully created Jira issue: {key}"
+        else:
+            summary_message = f"Sync complete.\n\nSuccessfully created: {succeeded} item(s)\nFailed to create: {failed} item(s)"
+        # --- END NEW ---
 
         msg_box = QMessageBox(self)
         msg_box.setIcon(QMessageBox.Information)
         msg_box.setWindowTitle("Sync Report")
         msg_box.setText(summary_message)
 
+        details = ""
+        # Only add synced items to details if there were more than one, or if there were failures.
+        if len(synced_items) > 1 or failed > 0:
+            created_keys = "\n".join([f"- {item['external_key']} (ASDF ID: {item['id']})" for item in synced_items])
+            details += f"Successfully Created Issues:\n{created_keys}\n\n"
+
         if errors:
             detailed_errors = "\n".join([f"- Item ID {e['id']}: {e['reason']}" for e in errors])
-            msg_box.setDetailedText(f"Failure Details:\n{detailed_errors}")
+            details += f"Failure Details:\n{detailed_errors}"
+
+        if details:
+            msg_box.setDetailedText(details.strip())
 
         QTimer.singleShot(100, lambda: msg_box.exec())
-        # The UI refresh is handled by _on_background_task_finished, which is connected to the worker's 'finished' signal

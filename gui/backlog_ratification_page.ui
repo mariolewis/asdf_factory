@@ -43,7 +43,7 @@
    <item>
     <widget class="QLabel" name="instructionLabel">
      <property name="text">
-      <string>The AI has generated the following backlog items. Review them below. You can edit any item by double-clicking its cell. Use the buttons to add new items or delete selected ones before ratifying the final backlog.</string>
+      <string>The AI has generated the following backlog hierarchy. Review the items below. You can edit any item by double-clicking it. Use the buttons or right-click an item to add or delete items before ratifying the final backlog.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -51,14 +51,14 @@
     </widget>
    </item>
    <item>
-    <widget class="QTableView" name="backlogTableView"/>
+    <widget class="QTreeView" name="backlogTreeView"/>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
      <item>
-      <widget class="QPushButton" name="addItemButton">
+      <widget class="QPushButton" name="addEpicButton">
        <property name="text">
-        <string>Add New Item</string>
+        <string>Add Epic</string>
        </property>
       </widget>
      </item>

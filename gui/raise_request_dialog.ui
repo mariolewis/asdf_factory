@@ -25,133 +25,114 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="typeGroupBox">
-     <property name="title">
-      <string>Request Type</string>
+    <layout class="QFormLayout" name="formLayout">
+     <property name="fieldGrowthPolicy">
+      <enum>QFormLayout::ExpandingFieldsGrow</enum>
      </property>
-     <layout class="QHBoxLayout" name="horizontalLayout">
-      <item>
-       <widget class="QRadioButton" name="crRadioButton">
+     <item row="0" column="0">
+      <widget class="QLabel" name="typeLabel">
+       <property name="text">
+        <string>Request Type:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="0" column="1">
+      <widget class="QComboBox" name="typeComboBox">
+       <item>
         <property name="text">
          <string>Backlog Item</string>
         </property>
-        <property name="checked">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QRadioButton" name="bugRadioButton">
+       </item>
+       <item>
         <property name="text">
          <string>Bug Report</string>
         </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QLabel" name="descriptionLabel">
-     <property name="text">
-      <string>Description:</string>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QTextEdit" name="descriptionTextEdit"/>
-   </item>
-   <item>
-    <widget class="QWidget" name="severityWidget" native="true">
-     <layout class="QFormLayout" name="formLayout">
-      <property name="leftMargin">
-       <number>0</number>
-      </property>
-      <property name="topMargin">
-       <number>0</number>
-      </property>
-      <property name="rightMargin">
-       <number>0</number>
-      </property>
-      <property name="bottomMargin">
-       <number>0</number>
-      </property>
-      <item row="0" column="0">
-       <widget class="QLabel" name="severityLabel">
+       </item>
+       <item>
         <property name="text">
-         <string>Severity:</string>
+         <string>Feature</string>
         </property>
-       </widget>
-      </item>
-      <item row="0" column="1">
-       <widget class="QComboBox" name="severityComboBox">
-        <item>
-         <property name="text">
-          <string>Minor</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>Medium</string>
-         </property>
-        </item>
-        <item>
-         <property name="text">
-          <string>Major</string>
-         </property>
-        </item>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QWidget" name="complexityWidget" native="true">
-    <layout class="QFormLayout" name="formLayout_2">
-    <property name="leftMargin">
-        <number>0</number>
-    </property>
-    <property name="topMargin">
-        <number>0</number>
-    </property>
-    <property name="rightMargin">
-        <number>0</number>
-    </property>
-    <property name="bottomMargin">
-        <number>0</number>
-    </property>
-    <item row="0" column="0">
-        <widget class="QLabel" name="complexityLabel">
+       </item>
+       <item>
         <property name="text">
+         <string>Epic</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="1" column="0">
+      <widget class="QLabel" name="parentLabel">
+       <property name="text">
+        <string>Parent:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QComboBox" name="parentComboBox"/>
+     </item>
+     <item row="2" column="0">
+      <widget class="QLabel" name="descriptionLabel">
+       <property name="text">
+        <string>Description:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="2" column="1">
+      <widget class="QTextEdit" name="descriptionTextEdit"/>
+     </item>
+     <item row="3" column="0">
+      <widget class="QLabel" name="priorityLabel">
+       <property name="text">
+        <string>Priority:</string>
+       </property>
+      </widget>
+     </item>
+     <item row="3" column="1">
+      <widget class="QComboBox" name="priorityComboBox">
+       <item>
+        <property name="text">
+         <string>Low</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Medium</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>High</string>
+        </property>
+       </item>
+      </widget>
+     </item>
+     <item row="4" column="0">
+      <widget class="QLabel" name="complexityLabel">
+       <property name="text">
         <string>Complexity:</string>
-        </property>
-        </widget>
-    </item>
-    <item row="0" column="1">
-        <widget class="QComboBox" name="complexityComboBox">
-        <item>
+       </property>
+      </widget>
+     </item>
+     <item row="4" column="1">
+      <widget class="QComboBox" name="complexityComboBox">
+       <item>
         <property name="text">
-        <string/>
+         <string>Small</string>
         </property>
-        </item>
-        <item>
+       </item>
+       <item>
         <property name="text">
-        <string>Small</string>
+         <string>Medium</string>
         </property>
-        </item>
-        <item>
+       </item>
+       <item>
         <property name="text">
-        <string>Medium</string>
+         <string>Large</string>
         </property>
-        </item>
-        <item>
-        <property name="text">
-        <string>Large</string>
-        </property>
-        </item>
-        </widget>
-    </item>
+       </item>
+      </widget>
+     </item>
     </layout>
-    </widget>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">

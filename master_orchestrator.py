@@ -47,6 +47,9 @@ class FactoryPhase(Enum):
     """Enumeration for the main factory F-Phases."""
     IDLE = auto()
     BACKLOG_VIEW = auto()
+    SPRINT_PLANNING = auto()
+    SPRINT_IN_PROGRESS = auto()
+    SPRINT_REVIEW = auto()
     BACKLOG_RATIFICATION = auto()
     UX_UI_DESIGN = auto()
     AWAITING_UX_UI_PHASE_DECISION = auto()
@@ -175,6 +178,9 @@ class MasterOrchestrator:
     PHASE_DISPLAY_NAMES = {
         FactoryPhase.IDLE: "Idle",
         FactoryPhase.BACKLOG_VIEW: "Backlog Overview",
+        FactoryPhase.SPRINT_PLANNING: "Sprint Planning",
+        FactoryPhase.SPRINT_IN_PROGRESS: "Sprint in Progress",
+        FactoryPhase.SPRINT_REVIEW: "Sprint Review",
         FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
         FactoryPhase.UX_UI_DESIGN: "User Experience & Interface Design",
         FactoryPhase.AWAITING_UX_UI_PHASE_DECISION: "Awaiting UX/UI Phase Decision",
@@ -948,39 +954,54 @@ class MasterOrchestrator:
             logging.error(f"Failed to finalize and save application spec: {e}")
             self.task_awaiting_approval = {"error": str(e)}
 
-    def handle_backlog_ratification(self, final_backlog_items: list):
+    def handle_backlog_ratification(self, final_backlog_hierarchy: list):
         """
-        Takes the final list of backlog items from the ratification screen,
-        saves them to the database, and transitions to the backlog view.
+        Takes the final, nested list of backlog items from the ratification screen,
+        and saves them recursively to the database to create the hierarchy.
         """
         if not self.project_id:
             logging.error("Cannot ratify backlog; no active project.")
             return
 
         try:
-            logging.info(f"Saving {len(final_backlog_items)} ratified backlog items to the database.")
-            db_manager = self.db_manager
-            for item in final_backlog_items:
-                # The add_change_request method now handles setting the display_order automatically
-                db_manager.add_change_request(
-                    project_id=self.project_id,
-                    title=item.get('title', 'Untitled Item'),
-                    description=item.get('description', ''),
-                    request_type='BACKLOG_ITEM',
-                    priority=item.get('priority'),
-                    complexity=item.get('complexity')
-                )
-                # Note: We will add saving priority/complexity in a future step.
+            logging.info(f"Saving {len(final_backlog_hierarchy)} ratified top-level backlog items to the database.")
+            # Start the recursive save process with no parent
+            for item_data in final_backlog_hierarchy:
+                self._save_backlog_item_recursive(item_data, parent_id=None)
 
             self.task_awaiting_approval = None
             self.set_phase("BACKLOG_VIEW")
             logging.info("Backlog ratification complete. Transitioning to BACKLOG_VIEW.")
 
         except Exception as e:
-            logging.error(f"An error occurred during backlog ratification: {e}")
+            logging.error(f"An error occurred during backlog ratification: {e}", exc_info=True)
             self.task_awaiting_approval = {"error": str(e)}
-            # Consider where to transition on error, perhaps back to ratification
             self.set_phase("BACKLOG_RATIFICATION")
+
+    def _save_backlog_item_recursive(self, item_data: dict, parent_id: int | None):
+        """Recursively saves a backlog item and its children to the database."""
+        # Extract children before saving, as they are not columns in the table
+        features = item_data.pop("features", [])
+        user_stories = item_data.pop("user_stories", [])
+
+        # Save the current item to get its new ID
+        new_item_id = self.db_manager.add_change_request(
+            project_id=self.project_id,
+            title=item_data.get('title', 'Untitled Item'),
+            description=item_data.get('description', ''),
+            request_type=item_data.get('type', 'BACKLOG_ITEM'),
+            priority=item_data.get('priority'),
+            complexity=item_data.get('complexity'),
+            parent_cr_id=parent_id
+        )
+
+        # Now, recurse for any children, passing the new ID as their parent_id
+        if features:
+            for feature_data in features:
+                self._save_backlog_item_recursive(feature_data, parent_id=new_item_id)
+        if user_stories:
+            for story_data in user_stories:
+                self._save_backlog_item_recursive(story_data, parent_id=new_item_id)
 
     def handle_proceed_to_tech_spec(self):
         """Transitions the factory to the Technical Specification phase."""
@@ -1069,35 +1090,56 @@ class MasterOrchestrator:
                 if not existing:
                     new_issues_to_import.append(issue)
                 else:
+                    # --- ADD THIS DEBUG LINE ---
+                    print(f"DEBUG: Found existing record in DB: {dict(existing)}")
                     logging.warning(f"Skipping import of '{external_id}'; it already exists in the backlog.")
 
         return new_issues_to_import
 
     def add_imported_backlog_items(self, items_to_add: list):
-        """Takes a list of new items from the import process and saves them to the backlog."""
+        """Takes a list of new items from the import process and saves them to the backlog, preserving hierarchy."""
         if not self.project_id:
             logging.error("Cannot add imported items; no active project.")
             return
 
         logging.info(f"Adding {len(items_to_add)} new imported items to the backlog.")
+        db = self.db_manager
+
         for item in items_to_add:
-            self.db_manager.add_change_request(
+            parent_cr_id = None
+            parent_info = item.get('parent')
+
+            # Check if the imported item has a parent in the Jira data
+            if parent_info and parent_info.get('key'):
+                parent_external_id = parent_info.get('key')
+                # Find the local parent in our database by looking up its external_id
+                local_parent = db.get_cr_by_external_id(self.project_id, parent_external_id)
+
+                if local_parent:
+                    parent_cr_id = local_parent['cr_id']
+                else:
+                    logging.warning(f"Could not find local parent for imported issue '{item.get('id')}'. Parent with external key '{parent_external_id}' has not been imported yet. Item will be added at the top level.")
+
+            # Add the new item to the database with the determined parent_cr_id
+            db.add_change_request(
                 project_id=self.project_id,
                 title=item.get('title', 'Untitled Imported Item'),
                 description=item.get('description', 'No description provided.'),
-                external_id=item.get('id')
+                external_id=item.get('id'),
+                parent_cr_id=parent_cr_id
             )
 
     def handle_sync_to_tool(self, cr_ids: list) -> dict:
         """
-        Handles syncing a list of ASDF backlog items to the external tool.
-        This is designed to be run in a background thread.
+        Handles syncing a list of ASDF backlog items to the external tool,
+        including their hierarchical parent information and correct issue types.
         """
         if not self.project_id:
             raise Exception("No active project for sync.")
 
-        # 1. Fetch all required settings from global and project-level configs
         db = self.db_manager
+
+        # 1. Fetch all required settings
         global_provider = db.get_config_value("INTEGRATION_PROVIDER")
         url = db.get_config_value("INTEGRATION_URL")
         username = db.get_config_value("INTEGRATION_USERNAME")
@@ -1106,38 +1148,66 @@ class MasterOrchestrator:
         project_settings = self.get_project_integration_settings()
         project_provider = project_settings.get("provider")
         project_key = project_settings.get("project_key")
-        issue_type_id = project_settings.get("issue_type_id")
 
-        # 2. Validate that all settings are present
+        # Fetch the three distinct type IDs
+        epic_type_id = project_settings.get("epic_type_id")
+        story_type_id = project_settings.get("story_type_id")
+        task_type_id = project_settings.get("task_type_id")
+
+        # 2. Validate settings
         if not all([global_provider, url, username, token]) or global_provider == "None":
             raise ValueError("Global integration credentials are not configured in File -> Settings.")
-        if not all([project_provider, project_key, issue_type_id]) or project_provider == "None":
-            raise ValueError("Project-specific integration settings (Provider, Key, ID) are not configured in Project -> Project Settings.")
+        if not all([project_provider, project_key, epic_type_id, story_type_id, task_type_id]):
+            raise ValueError("Project-specific integration settings (Provider, Key, and all Type IDs) must be configured in Project -> Project Settings.")
 
-        # 3. Instantiate agent and prepare for batch processing
         agent = IntegrationAgentPMT(project_provider, url, username, token)
         synced_items = []
         failed_items = []
-
         logging.info(f"Attempting to sync {len(cr_ids)} items to {project_provider}...")
 
-        # 4. Loop through each item and sync it, handling partial failures
+        # 3. Loop through each item to sync
         for cr_id in cr_ids:
             item_details = db.get_cr_by_id(cr_id)
             if not item_details:
                 failed_items.append({"id": cr_id, "reason": "Item not found in database."})
                 continue
 
-            if item_details['external_id']:
-                logging.warning(f"Skipping sync for CR-{cr_id}; it has already been synced as '{item_details['external_id']}'.")
+            # 4. Intelligently select the correct Issue Type ID
+            item_type = item_details['request_type']
+            issue_type_id_to_use = None
+            if item_type == 'EPIC':
+                issue_type_id_to_use = epic_type_id
+            elif item_type == 'FEATURE':
+                issue_type_id_to_use = story_type_id
+            elif item_type in ['BACKLOG_ITEM', 'BUG_REPORT']:
+                issue_type_id_to_use = task_type_id
+
+            if not issue_type_id_to_use:
+                failed_items.append({"id": cr_id, "reason": f"No Jira Issue Type ID configured for item type '{item_type}'."})
                 continue
 
+            # 5. Find parent information
+            parent_feature = None
+            parent_epic = None
+            if item_details['parent_cr_id']:
+                parent_details = db.get_cr_by_id(item_details['parent_cr_id'])
+                if parent_details and parent_details['request_type'] == 'FEATURE':
+                    parent_feature = parent_details
+                    if parent_details['parent_cr_id']:
+                        epic_details = db.get_cr_by_id(parent_details['parent_cr_id'])
+                        if epic_details and epic_details['request_type'] == 'EPIC':
+                            parent_epic = epic_details
+                elif parent_details and parent_details['request_type'] == 'EPIC':
+                    parent_epic = parent_details
+
+            # 6. Call the agent with the complete data package
             try:
                 result = agent.create_issue(
                     title=item_details['title'],
                     description=item_details['description'],
                     project_key=project_key,
-                    issue_type_id=issue_type_id
+                    issue_type_id=issue_type_id_to_use,
+                    parent_epic=parent_epic
                 )
                 db.update_cr_external_link(cr_id, result['key'], result['url'])
                 synced_items.append({"id": cr_id, "external_key": result['key']})
@@ -1145,7 +1215,7 @@ class MasterOrchestrator:
                 logging.error(f"Failed to sync CR-{cr_id}: {e}")
                 failed_items.append({"id": cr_id, "reason": str(e)})
 
-        return {"succeeded": len(synced_items), "failed": len(failed_items), "errors": failed_items}
+        return {"succeeded": len(synced_items), "failed": len(failed_items), "errors": failed_items, "synced_items": synced_items}
 
     def finalize_and_save_complexity_assessment(self, assessment_json_str: str):
         """
@@ -1999,22 +2069,6 @@ class MasterOrchestrator:
         else:
             logging.warning(f"Received 'Raise CR' action in an unexpected phase: {self.current_phase.name}")
 
-    def save_new_change_request(self, description: str, request_type: str = 'BACKLOG_ITEM', complexity: str = None):
-        """Saves a new, standard functional enhancement CR to the database."""
-        if not self.project_id:
-            logging.error("Cannot save change request; no active project.")
-            return
-
-        try:
-            # Generate a title from the description
-            title = description.split('\n')[0] # Use first line as title
-            title = (title[:75] + '...') if len(title) > 75 else title
-            self.db_manager.add_change_request(self.project_id, title, description, request_type, complexity=complexity)
-            self.set_phase("BACKLOG_VIEW")
-            logging.info("Successfully saved new Functional Enhancement CR.")
-        except Exception as e:
-            logging.error(f"Failed to save new change request: {e}")
-
     def handle_report_bug_action(self):
         """
         Transitions the factory into the state for reporting a new bug.
@@ -2024,25 +2078,6 @@ class MasterOrchestrator:
             self.set_phase("REPORTING_OPERATIONAL_BUG")
         else:
             logging.warning(f"Received 'Report Bug' action in an unexpected phase: {self.current_phase.name}")
-
-    def save_bug_report(self, description: str, severity: str, complexity: str = None) -> bool:
-        """Saves a new bug report to the database via the DAO."""
-        if not self.project_id:
-            logging.error("Cannot save bug report; no active project.")
-            return False
-
-        if not description or not description.strip():
-            logging.warning("Cannot save empty bug report description.")
-            return False
-
-        try:
-            self.db_manager.add_bug_report(self.project_id, description, severity, complexity=complexity)
-            self.set_phase("BACKLOG_VIEW")
-            logging.info("Successfully saved new bug report and returned to Genesis phase.")
-            return True
-        except Exception as e:
-            logging.error(f"Failed to save new bug report: {e}")
-            return False
 
     def handle_view_cr_register_action(self):
         """
@@ -2235,22 +2270,87 @@ class MasterOrchestrator:
 
     def save_edited_change_request(self, cr_id: int, new_data: dict) -> bool:
         """
-        Saves the updated data for a specific change request
-        and resets its impact analysis.
+        Saves the updated data for a specific change request. This is now called
+        by the pop-up editor on the backlog page.
         """
-        new_description = new_data.get("description", "").strip()
-        if not new_description:
-            logging.warning("Cannot save empty backlog item description.")
-            return False
-
         try:
-            # Pass the full dictionary to the db manager
+            # The db_manager.update_change_request method is designed to take the dictionary
             self.db_manager.update_change_request(cr_id, new_data)
             logging.info(f"Successfully saved edits for item ID: {cr_id}")
             return True
         except Exception as e:
             logging.error(f"Failed to save edited backlog item for ID {cr_id}: {e}")
             return False
+
+    def add_new_backlog_item(self, data: dict, parent_cr_id: int | None) -> tuple[bool, int | None]:
+        """
+        Adds a new backlog item of any type, linking it to a parent.
+        Returns a tuple of (success, new_id).
+        """
+        try:
+            item_type = data.get("request_type", "BACKLOG_ITEM")
+            title = data.get("title")
+            description = data.get("description")
+
+            # FIX: If title is missing (from RaiseRequestDialog), generate one
+            if not title and description:
+                title = description.split('\n')[0]
+                title = (title[:75] + '...') if len(title) > 75 else title
+
+            if not title or not description:
+                logging.warning("Cannot save item with empty title or description.")
+                return False, None
+
+            new_id = None
+            if item_type == "BUG_REPORT":
+                # FIX: Add bug report via the generic method to support parenting
+                new_id = self.db_manager.add_change_request(
+                    project_id=self.project_id,
+                    title=title,
+                    description=description,
+                    request_type='BUG_REPORT',
+                    impact_rating=data.get("severity"), # Pass severity to the correct field
+                    complexity=data.get("complexity"),
+                    parent_cr_id=parent_cr_id
+                )
+            else: # For EPIC, FEATURE, BACKLOG_ITEM
+                new_id = self.db_manager.add_change_request(
+                    project_id=self.project_id,
+                    title=title,
+                    description=description,
+                    request_type=item_type,
+                    priority=data.get("priority"),
+                    complexity=data.get("complexity"),
+                    parent_cr_id=parent_cr_id
+                )
+
+            logging.info(f"Successfully added new backlog item '{title}' (ID: {new_id}).")
+            return True, new_id
+        except Exception as e:
+            logging.error(f"Failed to add new backlog item: {e}", exc_info=True)
+            return False, None
+
+    def delete_backlog_item(self, cr_id: int) -> bool:
+        """
+        Initiates the recursive deletion of a backlog item and all its descendants.
+        """
+        logging.info(f"Initiating deletion for CR ID: {cr_id} and its children.")
+        try:
+            self._recursive_delete_cr(cr_id)
+            return True
+        except Exception as e:
+            logging.error(f"An error occurred during recursive deletion for root CR ID {cr_id}: {e}")
+            return False
+
+    def _recursive_delete_cr(self, cr_id: int):
+        """Helper method to recursively delete a CR and its children."""
+        children = self.db_manager.get_children_of_cr(cr_id)
+        for child in children:
+            self._recursive_delete_cr(child['cr_id'])
+
+        # After all children are deleted, delete the parent
+        self.db_manager.delete_change_request(cr_id)
+        logging.debug(f"Deleted CR ID: {cr_id}")
 
     def get_active_cr_details_for_edit(self) -> dict | None:
         """
@@ -3689,3 +3789,48 @@ class MasterOrchestrator:
             return None
 
         return path
+
+    def get_full_backlog_hierarchy(self) -> list:
+        """
+        Queries the database and builds a complete, nested list of dictionaries
+        representing the entire project backlog hierarchy, including top-level items
+        and items parented directly to epics.
+        """
+        if not self.project_id:
+            return []
+
+        try:
+            top_level_items = self.db_manager.get_top_level_items_for_project(self.project_id)
+            full_hierarchy = []
+
+            for item_row in top_level_items:
+                item_dict = dict(item_row)
+                item_id = item_dict['cr_id']
+
+                # If the top-level item is an Epic, fetch its children
+                if item_dict.get('request_type') == 'EPIC':
+                    # Fetch all Features that are children of this Epic
+                    features = self.db_manager.get_features_for_epic(self.project_id, item_id)
+                    feature_list = []
+                    for feature_row in features:
+                        feature_dict = dict(feature_row)
+                        items = self.db_manager.get_items_for_feature(self.project_id, feature_dict['cr_id'])
+                        feature_dict['user_stories'] = [dict(item) for item in items]
+                        feature_list.append(feature_dict)
+
+                    # --- NEW: Also find any items parented DIRECTLY to the Epic ---
+                    # The get_items_for_feature DAO method works here as it just queries by parent_id
+                    direct_items = self.db_manager.get_items_for_feature(self.project_id, item_id)
+                    if direct_items:
+                        # The UI's rendering code expects children under a 'features' key to be displayed.
+                        # We will combine the actual features with these direct items into one list for display.
+                        feature_list.extend([dict(item) for item in direct_items])
+
+                    item_dict['features'] = feature_list
+
+                full_hierarchy.append(item_dict)
+
+            return full_hierarchy
+        except Exception as e:
+            logging.error(f"Failed to build full backlog hierarchy: {e}", exc_info=True)
+            return []

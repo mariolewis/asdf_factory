@@ -16,9 +16,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QDialog,
-    QDialogButtonBox, QFormLayout, QGroupBox, QHBoxLayout,
-    QLabel, QRadioButton, QSizePolicy, QTextEdit,
-    QVBoxLayout, QWidget)
+    QDialogButtonBox, QFormLayout, QLabel, QSizePolicy,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_RaiseRequestDialog(object):
     def setupUi(self, RaiseRequestDialog):
@@ -33,76 +32,71 @@ class Ui_RaiseRequestDialog(object):
 
         self.verticalLayout.addWidget(self.headerLabel)
 
-        self.typeGroupBox = QGroupBox(RaiseRequestDialog)
-        self.typeGroupBox.setObjectName(u"typeGroupBox")
-        self.horizontalLayout = QHBoxLayout(self.typeGroupBox)
-        self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.crRadioButton = QRadioButton(self.typeGroupBox)
-        self.crRadioButton.setObjectName(u"crRadioButton")
-        self.crRadioButton.setChecked(True)
+        self.formLayout = QFormLayout()
+        self.formLayout.setObjectName(u"formLayout")
+        self.formLayout.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        self.typeLabel = QLabel(RaiseRequestDialog)
+        self.typeLabel.setObjectName(u"typeLabel")
 
-        self.horizontalLayout.addWidget(self.crRadioButton)
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.typeLabel)
 
-        self.bugRadioButton = QRadioButton(self.typeGroupBox)
-        self.bugRadioButton.setObjectName(u"bugRadioButton")
+        self.typeComboBox = QComboBox(RaiseRequestDialog)
+        self.typeComboBox.addItem("")
+        self.typeComboBox.addItem("")
+        self.typeComboBox.addItem("")
+        self.typeComboBox.addItem("")
+        self.typeComboBox.setObjectName(u"typeComboBox")
 
-        self.horizontalLayout.addWidget(self.bugRadioButton)
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.typeComboBox)
 
+        self.parentLabel = QLabel(RaiseRequestDialog)
+        self.parentLabel.setObjectName(u"parentLabel")
 
-        self.verticalLayout.addWidget(self.typeGroupBox)
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.LabelRole, self.parentLabel)
+
+        self.parentComboBox = QComboBox(RaiseRequestDialog)
+        self.parentComboBox.setObjectName(u"parentComboBox")
+
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.FieldRole, self.parentComboBox)
 
         self.descriptionLabel = QLabel(RaiseRequestDialog)
         self.descriptionLabel.setObjectName(u"descriptionLabel")
 
-        self.verticalLayout.addWidget(self.descriptionLabel)
+        self.formLayout.setWidget(2, QFormLayout.ItemRole.LabelRole, self.descriptionLabel)
 
         self.descriptionTextEdit = QTextEdit(RaiseRequestDialog)
         self.descriptionTextEdit.setObjectName(u"descriptionTextEdit")
 
-        self.verticalLayout.addWidget(self.descriptionTextEdit)
+        self.formLayout.setWidget(2, QFormLayout.ItemRole.FieldRole, self.descriptionTextEdit)
 
-        self.severityWidget = QWidget(RaiseRequestDialog)
-        self.severityWidget.setObjectName(u"severityWidget")
-        self.formLayout = QFormLayout(self.severityWidget)
-        self.formLayout.setObjectName(u"formLayout")
-        self.formLayout.setContentsMargins(0, 0, 0, 0)
-        self.severityLabel = QLabel(self.severityWidget)
-        self.severityLabel.setObjectName(u"severityLabel")
+        self.priorityLabel = QLabel(RaiseRequestDialog)
+        self.priorityLabel.setObjectName(u"priorityLabel")
 
-        self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.severityLabel)
+        self.formLayout.setWidget(3, QFormLayout.ItemRole.LabelRole, self.priorityLabel)
 
-        self.severityComboBox = QComboBox(self.severityWidget)
-        self.severityComboBox.addItem("")
-        self.severityComboBox.addItem("")
-        self.severityComboBox.addItem("")
-        self.severityComboBox.setObjectName(u"severityComboBox")
+        self.priorityComboBox = QComboBox(RaiseRequestDialog)
+        self.priorityComboBox.addItem("")
+        self.priorityComboBox.addItem("")
+        self.priorityComboBox.addItem("")
+        self.priorityComboBox.setObjectName(u"priorityComboBox")
 
-        self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.severityComboBox)
+        self.formLayout.setWidget(3, QFormLayout.ItemRole.FieldRole, self.priorityComboBox)
 
-
-        self.verticalLayout.addWidget(self.severityWidget)
-
-        self.complexityWidget = QWidget(RaiseRequestDialog)
-        self.complexityWidget.setObjectName(u"complexityWidget")
-        self.formLayout_2 = QFormLayout(self.complexityWidget)
-        self.formLayout_2.setObjectName(u"formLayout_2")
-        self.formLayout_2.setContentsMargins(0, 0, 0, 0)
-        self.complexityLabel = QLabel(self.complexityWidget)
+        self.complexityLabel = QLabel(RaiseRequestDialog)
         self.complexityLabel.setObjectName(u"complexityLabel")
 
-        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.LabelRole, self.complexityLabel)
+        self.formLayout.setWidget(4, QFormLayout.ItemRole.LabelRole, self.complexityLabel)
 
-        self.complexityComboBox = QComboBox(self.complexityWidget)
-        self.complexityComboBox.addItem("")
+        self.complexityComboBox = QComboBox(RaiseRequestDialog)
         self.complexityComboBox.addItem("")
         self.complexityComboBox.addItem("")
         self.complexityComboBox.addItem("")
         self.complexityComboBox.setObjectName(u"complexityComboBox")
 
-        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.FieldRole, self.complexityComboBox)
+        self.formLayout.setWidget(4, QFormLayout.ItemRole.FieldRole, self.complexityComboBox)
 
 
-        self.verticalLayout.addWidget(self.complexityWidget)
+        self.verticalLayout.addLayout(self.formLayout)
 
         self.buttonBox = QDialogButtonBox(RaiseRequestDialog)
         self.buttonBox.setObjectName(u"buttonBox")
@@ -119,20 +113,23 @@ class Ui_RaiseRequestDialog(object):
     def retranslateUi(self, RaiseRequestDialog):
         RaiseRequestDialog.setWindowTitle(QCoreApplication.translate("RaiseRequestDialog", u"Add New Backlog Item", None))
         self.headerLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Add New Backlog Item", None))
-        self.typeGroupBox.setTitle(QCoreApplication.translate("RaiseRequestDialog", u"Request Type", None))
-        self.crRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Backlog Item", None))
-        self.bugRadioButton.setText(QCoreApplication.translate("RaiseRequestDialog", u"Bug Report", None))
+        self.typeLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Request Type:", None))
+        self.typeComboBox.setItemText(0, QCoreApplication.translate("RaiseRequestDialog", u"Backlog Item", None))
+        self.typeComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Bug Report", None))
+        self.typeComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Feature", None))
+        self.typeComboBox.setItemText(3, QCoreApplication.translate("RaiseRequestDialog", u"Epic", None))
+
+        self.parentLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Parent:", None))
         self.descriptionLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Description:", None))
-        self.severityLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Severity:", None))
-        self.severityComboBox.setItemText(0, QCoreApplication.translate("RaiseRequestDialog", u"Minor", None))
-        self.severityComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Medium", None))
-        self.severityComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Major", None))
+        self.priorityLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Priority:", None))
+        self.priorityComboBox.setItemText(0, QCoreApplication.translate("RaiseRequestDialog", u"Low", None))
+        self.priorityComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Medium", None))
+        self.priorityComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"High", None))
 
         self.complexityLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Complexity:", None))
-        self.complexityComboBox.setItemText(0, "")
-        self.complexityComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Small", None))
-        self.complexityComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Medium", None))
-        self.complexityComboBox.setItemText(3, QCoreApplication.translate("RaiseRequestDialog", u"Large", None))
+        self.complexityComboBox.setItemText(0, QCoreApplication.translate("RaiseRequestDialog", u"Small", None))
+        self.complexityComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Medium", None))
+        self.complexityComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Large", None))
 
     # retranslateUi
 

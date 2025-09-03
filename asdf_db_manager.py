@@ -94,6 +94,8 @@ class ASDFDBManager:
             external_id TEXT UNIQUE,
             external_url TEXT,
             linked_cr_id INTEGER,
+            parent_cr_id INTEGER,
+            FOREIGN KEY (parent_cr_id) REFERENCES ChangeRequestRegister (cr_id),
             FOREIGN KEY (project_id) REFERENCES Projects (project_id),
             FOREIGN KEY (linked_cr_id) REFERENCES ChangeRequestRegister (cr_id)
         );"""
@@ -255,14 +257,46 @@ class ASDFDBManager:
     def get_all_change_requests_for_project(self, project_id: str) -> list:
         return self._execute_query("SELECT * FROM ChangeRequestRegister WHERE project_id = ? ORDER BY display_order ASC", (project_id,), fetch="all")
 
-    def add_change_request(self, project_id: str, title: str, description: str, request_type: str = 'BACKLOG_ITEM', external_id: str = None, priority: str = None, complexity: str = None) -> int:
+    def get_top_level_items_for_project(self, project_id: str) -> list:
+        """Retrieves all top-level items (those without a parent) for a project."""
+        return self._execute_query(
+            "SELECT * FROM ChangeRequestRegister WHERE project_id = ? AND parent_cr_id IS NULL ORDER BY display_order ASC",
+            (project_id,),
+            fetch="all"
+        )
+
+    def get_features_for_epic(self, project_id: str, epic_id: int) -> list:
+        """Retrieves all FEATURE items linked to a specific EPIC."""
+        return self._execute_query(
+            "SELECT * FROM ChangeRequestRegister WHERE project_id = ? AND request_type = 'FEATURE' AND parent_cr_id = ? ORDER BY display_order ASC",
+            (project_id, epic_id),
+            fetch="all"
+        )
+
+    def get_items_for_feature(self, project_id: str, feature_id: int) -> list:
+        """Retrieves all BACKLOG_ITEM and BUG_REPORT items linked to a specific FEATURE."""
+        return self._execute_query(
+            "SELECT * FROM ChangeRequestRegister WHERE project_id = ? AND request_type IN ('BACKLOG_ITEM', 'BUG_REPORT') AND parent_cr_id = ? ORDER BY display_order ASC",
+            (project_id, feature_id),
+            fetch="all"
+        )
+
+    def get_children_of_cr(self, parent_cr_id: int) -> list:
+        """Retrieves all direct children of a given parent CR item."""
+        return self._execute_query(
+            "SELECT * FROM ChangeRequestRegister WHERE parent_cr_id = ?",
+            (parent_cr_id,),
+            fetch="all"
+        )
+
+    def add_change_request(self, project_id: str, title: str, description: str, request_type: str = 'BACKLOG_ITEM', external_id: str = None, priority: str = None, complexity: str = None, parent_cr_id: int = None, impact_rating: str = None) -> int:
         timestamp = datetime.now(timezone.utc).isoformat()
         max_order_row = self._execute_query("SELECT MAX(display_order) FROM ChangeRequestRegister WHERE project_id = ?", (project_id,), fetch="one")
         new_order = (max_order_row[0] or 0) + 1 if max_order_row else 1
 
         cursor = self._execute_query(
-            "INSERT INTO ChangeRequestRegister (project_id, title, description, creation_timestamp, status, request_type, display_order, external_id, priority, complexity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (project_id, title, description, timestamp, "RAISED", request_type, new_order, external_id, priority, complexity)
+            "INSERT INTO ChangeRequestRegister (project_id, title, description, creation_timestamp, status, request_type, display_order, external_id, priority, complexity, parent_cr_id, impact_rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (project_id, title, description, timestamp, "RAISED", request_type, new_order, external_id, priority, complexity, parent_cr_id, impact_rating)
         )
         return cursor.lastrowid
 

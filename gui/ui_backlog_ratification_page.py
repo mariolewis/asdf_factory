@@ -17,7 +17,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QHeaderView,
     QLabel, QPushButton, QSizePolicy, QSpacerItem,
-    QTableView, QVBoxLayout, QWidget)
+    QTreeView, QVBoxLayout, QWidget)
 
 class Ui_BacklogRatificationPage(object):
     def setupUi(self, BacklogRatificationPage):
@@ -45,17 +45,17 @@ class Ui_BacklogRatificationPage(object):
 
         self.verticalLayout.addWidget(self.instructionLabel)
 
-        self.backlogTableView = QTableView(BacklogRatificationPage)
-        self.backlogTableView.setObjectName(u"backlogTableView")
+        self.backlogTreeView = QTreeView(BacklogRatificationPage)
+        self.backlogTreeView.setObjectName(u"backlogTreeView")
 
-        self.verticalLayout.addWidget(self.backlogTableView)
+        self.verticalLayout.addWidget(self.backlogTreeView)
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.addItemButton = QPushButton(BacklogRatificationPage)
-        self.addItemButton.setObjectName(u"addItemButton")
+        self.addEpicButton = QPushButton(BacklogRatificationPage)
+        self.addEpicButton.setObjectName(u"addEpicButton")
 
-        self.horizontalLayout.addWidget(self.addItemButton)
+        self.horizontalLayout.addWidget(self.addEpicButton)
 
         self.deleteItemButton = QPushButton(BacklogRatificationPage)
         self.deleteItemButton.setObjectName(u"deleteItemButton")
@@ -83,8 +83,8 @@ class Ui_BacklogRatificationPage(object):
     def retranslateUi(self, BacklogRatificationPage):
         BacklogRatificationPage.setWindowTitle(QCoreApplication.translate("BacklogRatificationPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("BacklogRatificationPage", u"Backlog Ratification", None))
-        self.instructionLabel.setText(QCoreApplication.translate("BacklogRatificationPage", u"The AI has generated the following backlog items. Review them below. You can edit any item by double-clicking its cell. Use the buttons to add new items or delete selected ones before ratifying the final backlog.", None))
-        self.addItemButton.setText(QCoreApplication.translate("BacklogRatificationPage", u"Add New Item", None))
+        self.instructionLabel.setText(QCoreApplication.translate("BacklogRatificationPage", u"The AI has generated the following backlog hierarchy. Review the items below. You can edit any item by double-clicking it. Use the buttons or right-click an item to add or delete items before ratifying the final backlog.", None))
+        self.addEpicButton.setText(QCoreApplication.translate("BacklogRatificationPage", u"Add Epic", None))
         self.deleteItemButton.setText(QCoreApplication.translate("BacklogRatificationPage", u"Delete Selected Item", None))
         self.ratifyButton.setText(QCoreApplication.translate("BacklogRatificationPage", u"Ratify Backlog", None))
     # retranslateUi

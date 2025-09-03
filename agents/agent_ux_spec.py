@@ -57,10 +57,11 @@ class UX_Spec_Agent:
             2.  **Markdown Format:** The entire output must be a well-structured Markdown document.
             3.  **Required Sections (if no template is provided):** If no template is given, you MUST generate a document containing the following sections, using the exact heading names provided:
                 - `## 1. User Personas`
-                - `## 2. Core User Journeys`
-                - `## 3. Features & User Stories`
-                - `## 4. Inferred Screens & Components`
-                - `## 5. Draft Theming & Style Guide`
+                - `## 2. Epics`
+                - `## 3. Features (grouped by Epic)`
+                - `## 4. User Stories (grouped by Feature)`
+                - `## 5. Inferred Screens & Components`
+                - `## 6. Draft Theming & Style Guide`
             4.  **Content Generation:** For each section, generate detailed and logical content based on the inputs. For the Style Guide, propose a clean, modern, and professional theme suitable for the application type.
 
             ---

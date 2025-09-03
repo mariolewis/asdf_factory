@@ -24,7 +24,7 @@ class Ui_ProjectSettingsDialog(object):
     def setupUi(self, ProjectSettingsDialog):
         if not ProjectSettingsDialog.objectName():
             ProjectSettingsDialog.setObjectName(u"ProjectSettingsDialog")
-        ProjectSettingsDialog.resize(500, 200)
+        ProjectSettingsDialog.resize(500, 250)
         ProjectSettingsDialog.setModal(True)
         self.verticalLayout = QVBoxLayout(ProjectSettingsDialog)
         self.verticalLayout.setObjectName(u"verticalLayout")
@@ -80,15 +80,35 @@ class Ui_ProjectSettingsDialog(object):
 
         self.formLayout_2.setWidget(0, QFormLayout.ItemRole.FieldRole, self.projectKeyLineEdit)
 
-        self.issueTypeIdLabel = QLabel(self.jiraPage)
-        self.issueTypeIdLabel.setObjectName(u"issueTypeIdLabel")
+        self.epicTypeIdLabel = QLabel(self.jiraPage)
+        self.epicTypeIdLabel.setObjectName(u"epicTypeIdLabel")
 
-        self.formLayout_2.setWidget(1, QFormLayout.ItemRole.LabelRole, self.issueTypeIdLabel)
+        self.formLayout_2.setWidget(1, QFormLayout.ItemRole.LabelRole, self.epicTypeIdLabel)
 
-        self.issueTypeIdLineEdit = QLineEdit(self.jiraPage)
-        self.issueTypeIdLineEdit.setObjectName(u"issueTypeIdLineEdit")
+        self.epicTypeIdLineEdit = QLineEdit(self.jiraPage)
+        self.epicTypeIdLineEdit.setObjectName(u"epicTypeIdLineEdit")
 
-        self.formLayout_2.setWidget(1, QFormLayout.ItemRole.FieldRole, self.issueTypeIdLineEdit)
+        self.formLayout_2.setWidget(1, QFormLayout.ItemRole.FieldRole, self.epicTypeIdLineEdit)
+
+        self.storyTypeIdLabel = QLabel(self.jiraPage)
+        self.storyTypeIdLabel.setObjectName(u"storyTypeIdLabel")
+
+        self.formLayout_2.setWidget(2, QFormLayout.ItemRole.LabelRole, self.storyTypeIdLabel)
+
+        self.storyTypeIdLineEdit = QLineEdit(self.jiraPage)
+        self.storyTypeIdLineEdit.setObjectName(u"storyTypeIdLineEdit")
+
+        self.formLayout_2.setWidget(2, QFormLayout.ItemRole.FieldRole, self.storyTypeIdLineEdit)
+
+        self.taskTypeIdLabel = QLabel(self.jiraPage)
+        self.taskTypeIdLabel.setObjectName(u"taskTypeIdLabel")
+
+        self.formLayout_2.setWidget(3, QFormLayout.ItemRole.LabelRole, self.taskTypeIdLabel)
+
+        self.taskTypeIdLineEdit = QLineEdit(self.jiraPage)
+        self.taskTypeIdLineEdit.setObjectName(u"taskTypeIdLineEdit")
+
+        self.formLayout_2.setWidget(3, QFormLayout.ItemRole.FieldRole, self.taskTypeIdLineEdit)
 
         self.providerStackedWidget.addWidget(self.jiraPage)
 
@@ -113,6 +133,9 @@ class Ui_ProjectSettingsDialog(object):
         self.buttonBox.accepted.connect(ProjectSettingsDialog.accept)
         self.buttonBox.rejected.connect(ProjectSettingsDialog.reject)
 
+        self.providerStackedWidget.setCurrentIndex(1)
+
+
         QMetaObject.connectSlotsByName(ProjectSettingsDialog)
     # setupUi
 
@@ -129,9 +152,8 @@ class Ui_ProjectSettingsDialog(object):
 #if QT_CONFIG(tooltip)
         self.projectKeyLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"The short code for your project in Jira (e.g., ASDF, PROJ).", None))
 #endif // QT_CONFIG(tooltip)
-        self.issueTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Issue Type ID:", None))
-#if QT_CONFIG(tooltip)
-        self.issueTypeIdLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"The numeric ID for the issue type to create (e.g., 10001 for 'Task').", None))
-#endif // QT_CONFIG(tooltip)
+        self.epicTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Epic Type ID:", None))
+        self.storyTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Story Type ID:", None))
+        self.taskTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Task Type ID:", None))
     # retranslateUi
 

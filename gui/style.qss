@@ -348,3 +348,20 @@ QScrollBar::add-line, QScrollBar::sub-line {
 QScrollBar::add-page, QScrollBar::sub-page {
     background: none;
 }
+
+/* ---- TreeView Branch Arrows ---- */
+QTreeView::branch {
+    background: transparent;
+}
+
+QTreeView::branch:has-children:!has-siblings:closed,
+QTreeView::branch:closed:has-children:has-siblings {
+    border-image: none;
+    image: url(./gui/icons/chevron_right.svg);
+}
+
+QTreeView::branch:open:has-children:!has-siblings,
+QTreeView::branch:open:has-children:has-siblings {
+    border-image: none;
+    image: url(./gui/icons/chevron_down.svg);
+}

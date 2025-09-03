@@ -1,23 +1,20 @@
 import logging
-from datetime import datetime
-from PySide6.QtWidgets import QWidget, QMessageBox, QHeaderView, QAbstractItemView, QMenu
-from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction
+from PySide6.QtWidgets import (QWidget, QMessageBox, QHeaderView, QAbstractItemView, QMenu, QTreeView,
+                               QDialog, QVBoxLayout, QLineEdit, QTextEdit, QDialogButtonBox, QComboBox)
+from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QColor
 from PySide6.QtCore import Signal, Qt, QItemSelectionModel
+from datetime import datetime
 
 from gui.ui_cr_management_page import Ui_CRManagementPage
 from master_orchestrator import MasterOrchestrator
-from gui.cr_details_dialog import CRDetailsDialog
+from gui.raise_request_dialog import RaiseRequestDialog
+
+# Note: The EditItemDialog is now handled by the more capable RaiseRequestDialog in edit mode.
 
 class CRManagementPage(QWidget):
-    """
-    The logic handler for the Project Backlog page.
-    """
-    back_to_workflow = Signal()
-    add_new_item = Signal()
-    sync_items_to_tool = Signal(list) # Changed from single to list
+    sync_items_to_tool = Signal(list)
     implement_cr = Signal(int)
     analyze_cr = Signal(int)
-    edit_cr = Signal(int)
     delete_cr = Signal(int)
     proceed_to_tech_spec = Signal()
     import_from_tool = Signal()
@@ -29,17 +26,14 @@ class CRManagementPage(QWidget):
         self.ui = Ui_CRManagementPage()
         self.ui.setupUi(self)
         self.is_reorder_mode = False
-        self.cached_model_state = []
-
         self.model = QStandardItemModel(self)
-        self.ui.crTableView.setModel(self.model)
-
+        self.ui.crTreeView.setModel(self.model)
         self._create_more_actions_menu()
-        self._configure_table_view()
+        self._configure_tree_view()
         self.connect_signals()
+        self._exit_reorder_mode(refresh=False)
 
     def _create_more_actions_menu(self):
-        """Creates the QMenu and QActions for the 'More Actions...' button."""
         self.more_actions_menu = QMenu(self)
         self.edit_action = self.more_actions_menu.addAction("Edit Item")
         self.delete_action = self.more_actions_menu.addAction("Delete Item")
@@ -48,363 +42,379 @@ class CRManagementPage(QWidget):
         self.implement_action = self.more_actions_menu.addAction("Implement Item")
         self.more_actions_menu.addSeparator()
         self.import_action = self.more_actions_menu.addAction("Import from Tool...")
-        self.sync_action = self.more_actions_menu.addAction("Sync to Tool") # Text is now dynamic
-
+        self.sync_action = self.more_actions_menu.addAction("Sync to Tool")
         self.ui.moreActionsButton.setMenu(self.more_actions_menu)
 
-    def prepare_for_display(self):
-        """Called by the main window to refresh the data and set button states."""
-        self.update_cr_table()
+    def _configure_tree_view(self):
+        self.model.setHorizontalHeaderLabels(['#', 'Title', 'Type', 'Status', 'Priority/Severity', 'Complexity', 'Last Modified'])
+        self.ui.crTreeView.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.ui.crTreeView.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.ui.crTreeView.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.ui.crTreeView.setSortingEnabled(False)
+        self.ui.crTreeView.header().setStretchLastSection(False)
 
-        project_settings = self.orchestrator.get_project_integration_settings()
-        provider = project_settings.get("provider", "None")
-        is_integration_configured = provider != "None"
+        # Set specific widths for columns for better default layout
+        self.ui.crTreeView.setColumnWidth(0, 100)    # Number
+        self.ui.crTreeView.setColumnWidth(1, 350)   # Title
+        self.ui.crTreeView.setColumnWidth(2, 100)   # Type
+        self.ui.crTreeView.setColumnWidth(3, 120)   # Status
+        self.ui.crTreeView.setColumnWidth(4, 110)   # Priority/Severity
+        self.ui.crTreeView.setColumnWidth(5, 100)   # Complexity
+        self.ui.crTreeView.setColumnWidth(6, 120)   # Last Modified
 
-        # Dynamically set menu text
-        self.import_action.setText(f"Import from {provider}..." if is_integration_configured else "Import from Tool...")
-        self.sync_action.setText(f"Sync to {provider}" if is_integration_configured else "Sync to Tool")
+        # Allow the Title column to be resized by the user, which enables the scrollbar
+        self.ui.crTreeView.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
 
-        self.import_action.setEnabled(is_integration_configured)
-        self._on_selection_changed(None, None)
+        # Allow the Title column to be resized by the user, which enables the scrollbar
+        self.ui.crTreeView.header().setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
 
     def connect_signals(self):
-        """Connects widget signals to the appropriate slots."""
-        self.ui.backButton.clicked.connect(self.back_to_workflow.emit)
-        self.ui.crTableView.clicked.connect(self.on_table_clicked)
-        self.ui.crTableView.doubleClicked.connect(self.on_cr_double_clicked)
-        self.ui.crTableView.selectionModel().selectionChanged.connect(self._on_selection_changed)
-
-        # Page-level buttons
-        self.ui.addNewItemButton.clicked.connect(self.add_new_item.emit)
+        self.ui.primaryActionButton.clicked.connect(self.on_primary_action_clicked)
+        self.ui.addNewItemButton.clicked.connect(self.on_add_item_clicked)
         self.ui.reorderButton.clicked.connect(self.on_reorder_clicked)
-        self.ui.clearSelectionButton.clicked.connect(self.on_clear_selection_clicked)
-        self.ui.proceedToTechSpecButton.clicked.connect(self.proceed_to_tech_spec.emit)
-
-        # Actions from the "More Actions..." menu
+        self.ui.cancelReorderButton.clicked.connect(self.on_cancel_reorder_clicked)
+        self.ui.saveOrderButton.clicked.connect(self.on_save_order_clicked)
+        self.ui.moveUpButton.clicked.connect(self.on_move_up_clicked)
+        self.ui.moveDownButton.clicked.connect(self.on_move_down_clicked)
+        self.ui.crTreeView.selectionModel().selectionChanged.connect(self._on_selection_changed)
+        self.ui.crTreeView.doubleClicked.connect(self.on_edit_clicked)
+        self.ui.crTreeView.customContextMenuRequested.connect(self.show_context_menu)
         self.edit_action.triggered.connect(self.on_edit_clicked)
-        self.delete_action.triggered.connect(self.on_delete_clicked)
+        self.delete_action.triggered.connect(self.on_delete_item)
         self.analyze_action.triggered.connect(self.on_analyze_clicked)
         self.implement_action.triggered.connect(self.on_implement_clicked)
         self.import_action.triggered.connect(self.import_from_tool.emit)
         self.sync_action.triggered.connect(self.on_sync_clicked)
 
-        # Reorder Mode Buttons
-        self.ui.cancelReorderButton.clicked.connect(self.on_cancel_reorder_clicked)
-        self.ui.saveOrderButton.clicked.connect(self.on_save_order_clicked)
-        self.ui.moveUpButton.clicked.connect(self.on_move_up_clicked)
-        self.ui.moveDownButton.clicked.connect(self.on_move_down_clicked)
+    def prepare_for_display(self):
+        self.update_backlog_view()
 
-    def on_clear_selection_clicked(self):
-        """Clears the current table selection."""
-        self.ui.crTableView.clearSelection()
-
-    def on_table_clicked(self, index):
-        """Clears the selection if the user clicks on an empty area of the table."""
-        if not index.isValid():
-            self.ui.crTableView.clearSelection()
-
-    def _configure_table_view(self):
-        """Sets up the initial properties for the table view."""
-        self.ui.crTableView.setSelectionMode(QAbstractItemView.ExtendedSelection) # Enable multi-select
-        self.ui.crTableView.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.ui.crTableView.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.ui.crTableView.horizontalHeader().setVisible(True)
-        self.ui.crTableView.verticalHeader().setVisible(False)
-
-    def _on_selection_changed(self, selected, deselected):
-        """Enables/disables actions based on selection and the current UI mode."""
-        selection_model = self.ui.crTableView.selectionModel()
-        has_selection = selection_model.hasSelection()
-
-        if self.is_reorder_mode:
-            # Handle button states for reorder mode
-            if not has_selection:
-                self.ui.moveUpButton.setEnabled(False)
-                self.ui.moveDownButton.setEnabled(False)
-            else:
-                selected_row = selection_model.selectedRows()[0].row()
-                # Boundary check: Only enable move up if not the first item
-                self.ui.moveUpButton.setEnabled(selected_row > 0)
-                # Boundary check: Only enable move down if not the last item
-                self.ui.moveDownButton.setEnabled(selected_row < self.model.rowCount() - 1)
-        else:
-            # Handle button states for normal mode
-            self.ui.moreActionsButton.setEnabled(True)
-
-            # Default item-specific actions to disabled
-            self.edit_action.setEnabled(False)
-            self.delete_action.setEnabled(False)
-            self.analyze_action.setEnabled(False)
-            self.implement_action.setEnabled(False)
-            self.sync_action.setEnabled(False)
-
-            if has_selection:
-                selected_rows = selection_model.selectedRows()
-
-                # Edit is only enabled for a single selection
-                if len(selected_rows) == 1:
-                    details = self._get_selected_cr_details(suppress_warning=True)
-                    if details:
-                        is_raised = details.get('status') == 'RAISED'
-                        is_analyzed = details.get('status') == 'IMPACT_ANALYZED'
-                        genesis_complete = self.orchestrator.is_genesis_complete
-
-                        if is_raised or is_analyzed:
-                            self.edit_action.setEnabled(True)
-                        self.analyze_action.setEnabled(True)
-                        if is_analyzed and genesis_complete:
-                            self.implement_action.setEnabled(True)
-
-                # Delete and Sync can work on multiple items
-                self.delete_action.setEnabled(True)
-
-                can_sync = False
-                for index in selected_rows:
-                    details = self._get_cr_details_for_row(index.row())
-                    if details and not details.get('external_id'):
-                        can_sync = True
-                        break
-
-                project_settings = self.orchestrator.get_project_integration_settings()
-                provider = project_settings.get("provider", "None")
-                if provider != "None":
-                    self.sync_action.setEnabled(can_sync)
-
-    def on_reorder_clicked(self):
-        """Enters the UI reordering mode."""
-        self._enter_reorder_mode()
-
-    def _enter_reorder_mode(self):
-        """Switches the UI to reorder mode."""
-        self.ui.crTableView.clearSelection()
-        self.is_reorder_mode = True
-        self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.reorderModePage)
-        self.ui.crTableView.setDragDropMode(QAbstractItemView.InternalMove)
-        self.ui.crTableView.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.ui.crTableView.setSortingEnabled(False) # Disable sorting during reorder
-
-        # Cache the current order
-        self.cached_model_state = []
-        for row in range(self.model.rowCount()):
-            row_items = [self.model.item(row, col).clone() for col in range(self.model.columnCount())]
-            self.cached_model_state.append(row_items)
-
-        # Initial button state
-        self.ui.moveUpButton.setEnabled(False)
-        self.ui.moveDownButton.setEnabled(False)
-
-    def _exit_reorder_mode(self, restore_state=False):
-        """Switches the UI back to normal mode."""
-        if restore_state:
-            self.model.clear()
-            # Re-apply header labels after clearing the model
-            self.model.setHorizontalHeaderLabels(['#', 'Type', 'Status', 'Description', 'Priority', 'Complexity', 'External ID', 'Last Modified'])
-            self._configure_table_view()
-            for row_items in self.cached_model_state:
-                self.model.appendRow(row_items)
-
-        self.is_reorder_mode = False
-        self.cached_model_state = []
-        self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.normalModePage)
-        self.ui.crTableView.setDragDropMode(QAbstractItemView.NoDragDrop)
-        self.ui.crTableView.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.ui.crTableView.setSortingEnabled(True)
-
-    def on_move_up_clicked(self):
-        """Moves the selected item up one row."""
-        selection_model = self.ui.crTableView.selectionModel()
-        if not selection_model.hasSelection():
-            return
-
-        current_row = selection_model.selectedRows()[0].row()
-        if current_row > 0:
-            row_items = self.model.takeRow(current_row)
-            self.model.insertRow(current_row - 1, row_items)
-            # Re-select the moved item
-            new_index = self.model.index(current_row - 1, 0)
-            selection_model.setCurrentIndex(new_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
-
-    def on_move_down_clicked(self):
-        """Moves the selected item down one row."""
-        selection_model = self.ui.crTableView.selectionModel()
-        if not selection_model.hasSelection():
-            return
-
-        current_row = selection_model.selectedRows()[0].row()
-        if current_row < self.model.rowCount() - 1:
-            row_items = self.model.takeRow(current_row)
-            self.model.insertRow(current_row + 1, row_items)
-            # Re-select the moved item
-            new_index = self.model.index(current_row + 1, 0)
-            selection_model.setCurrentIndex(new_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
-
-    def on_cancel_reorder_clicked(self):
-        """Cancels reordering and restores the original table state."""
-        self._exit_reorder_mode(restore_state=True)
-
-    def on_save_order_clicked(self):
-        """Saves the new item order to the database."""
-        if not self.is_reorder_mode:
-            return
-
-        order_mapping = []
-        for row in range(self.model.rowCount()):
-            cr_id_item = self.model.item(row, 0)
-            cr_id = cr_id_item.data(Qt.UserRole) # Use data role instead of text
-            # display_order is 1-based, row is 0-based
-            order_mapping.append((row + 1, cr_id))
-
-        self.save_new_order.emit(order_mapping)
-        self._exit_reorder_mode()
-        self.update_cr_table()
-        QMessageBox.information(self, "Success", "The new backlog order has been saved.")
-
-    def update_cr_table(self):
-        """
-        Fetches all CRs/Bugs for the active project and populates the table.
-        """
+    def update_backlog_view(self):
+        selection_model = self.ui.crTreeView.selectionModel()
+        selection_model.blockSignals(True)
         self.model.clear()
-        self.model.setHorizontalHeaderLabels(['#', 'Title', 'Type', 'Status', 'Description', 'Priority', 'Complexity', 'External ID', 'Last Modified'])
-
-        project_id = self.orchestrator.project_id
-        if not project_id:
-            return
+        self._configure_tree_view()
+        self.ui.crTreeView.header().setVisible(True)
 
         try:
-            change_requests = self.orchestrator.get_all_change_requests()
-            for i, cr in enumerate(change_requests, 1):
-                type_display = cr['request_type'].replace('_', ' ').title()
-                if type_display == "Change Request":
-                    type_display = "CR"
-                elif type_display == "Bug Report":
-                    type_display = "Bug"
-
-                ts_string = cr['last_modified_timestamp'] or cr['creation_timestamp']
-                formatted_date = "N/A"
-                if ts_string:
-                    try:
-                        dt_obj = datetime.fromisoformat(ts_string)
-                        formatted_date = dt_obj.astimezone().strftime('%x')
-                    except (ValueError, TypeError):
-                        formatted_date = "Invalid Date"
-
-                display_id_item = QStandardItem(str(i))
-                display_id_item.setData(cr['cr_id'], Qt.UserRole)
-
-                title_item = QStandardItem(cr['title'])
-                type_item = QStandardItem(type_display)
-                status_item = QStandardItem(cr['status'])
-                desc_item = QStandardItem(cr['description'])
-                priority_to_display = cr['priority'] or cr['impact_rating'] or 'N/A'
-                priority_item = QStandardItem(priority_to_display)
-                complexity_item = QStandardItem(cr['complexity'] or 'N/A')
-                external_id_item = QStandardItem(cr['external_id'] or '')
-                modified_item = QStandardItem(formatted_date)
-
-                self.model.appendRow([display_id_item, title_item, type_item, status_item, desc_item, priority_item, complexity_item, external_id_item, modified_item])
-
+            full_hierarchy = self.orchestrator.get_full_backlog_hierarchy()
+            if full_hierarchy:
+                self._populate_from_dict(self.model.invisibleRootItem(), full_hierarchy)
+                self.ui.crTreeView.expandAll()
         except Exception as e:
-            logging.error(f"Failed to update CR Management table: {e}")
-            QMessageBox.critical(self, "Error", f"Failed to load project backlog:\n{e}")
+            logging.error(f"Failed to populate backlog tree view: {e}", exc_info=True)
 
-        # Configure column resizing rules
-        header = self.ui.crTableView.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents) # '#'
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive) # Title
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents) # Type
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents) # Status
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Interactive) # Description
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents) # Priority
-        header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents) # Complexity
-        header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents) # External ID
-        header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents) # Last Modified
+        self.model.layoutChanged.emit()
+        selection_model.blockSignals(False)
+        self._on_selection_changed()
 
-        # Set reasonable initial widths for the interactive columns
-        self.ui.crTableView.setColumnWidth(1, 250) # Title
-        self.ui.crTableView.setColumnWidth(4, 350) # Description
+    def _populate_from_dict(self, parent_item, items, prefix=""):
+        status_colors = { "IMPACT_ANALYZED": QColor("#007ACC"), "IMPLEMENTATION_IN_PROGRESS": QColor("#FFC66D"), "COMPLETED": QColor("#6A8759"), "DEBUG_PM_ESCALATION": QColor("#CC7832"), "KNOWN_ISSUE": QColor("#CC7832") }
+        priority_colors = { "High": QColor("#CC7832"), "Major": QColor("#CC7832"), "Medium": QColor("#FFC66D"), "Low": QColor("#6A8759"), "Minor": QColor("#6A8759") }
+        complexity_colors = {"Large": QColor("#CC7832"), "Medium": QColor("#FFC66D"), "Small": QColor("#6A8759")}
 
-    def _get_cr_details_for_row(self, row):
-        """Helper to get CR details for a specific row index."""
-        if row < 0 or row >= self.model.rowCount():
-            return None
-        id_item = self.model.item(row, 0)
-        if not id_item:
-            return None
-        try:
-            cr_id = id_item.data(Qt.UserRole) # Use data role instead of text
-            return self.orchestrator.get_cr_details_by_id(cr_id)
-        except (ValueError, TypeError):
-            return None
+        for i, item_data in enumerate(items, 1):
+            current_prefix = f"{prefix}{i}"
+            num_item = QStandardItem(current_prefix)
+            num_item.setData(item_data, Qt.UserRole)
+            title_item = QStandardItem(item_data['title'])
 
-    def _get_selected_cr_details(self, suppress_warning=False):
-        """Gets the full details of the first selected row."""
-        selection_model = self.ui.crTableView.selectionModel()
-        if not selection_model.hasSelection():
-            if not suppress_warning:
-                QMessageBox.warning(self, "No Selection", "Please select an item from the table first.")
-            return None
-        return self._get_cr_details_for_row(selection_model.selectedRows()[0].row())
+            timestamp_str = item_data.get('last_modified_timestamp') or item_data.get('creation_timestamp')
+            formatted_date = ""
+            if timestamp_str:
+                try:
+                    dt_object = datetime.fromisoformat(timestamp_str)
+                    formatted_date = dt_object.strftime('%x')
+                except ValueError:
+                    formatted_date = timestamp_str.split('T')[0]
 
-    def on_cr_double_clicked(self, index):
-        """
-        Handles the event when a user double-clicks an item in the CR table.
-        """
-        if not index.isValid():
-            return
+            last_modified_item = QStandardItem(formatted_date)
+            type_item = QStandardItem(item_data['request_type'].replace('_', ' ').title())
+            status_item = QStandardItem(item_data['status'])
+            priority = item_data.get('priority') or item_data.get('impact_rating') or ''
+            priority_item = QStandardItem(priority)
+            complexity = item_data.get('complexity') or ''
+            complexity_item = QStandardItem(complexity)
 
-        selected_row = index.row()
-        cr_id_item = self.model.item(selected_row, 0)
-        if not cr_id_item:
-            return
+            if item_data['status'] in status_colors: status_item.setForeground(status_colors[item_data['status']])
+            if priority in priority_colors: priority_item.setForeground(priority_colors[priority])
+            if complexity in complexity_colors: complexity_item.setForeground(complexity_colors[complexity])
 
-        try:
-            cr_id = cr_id_item.data(Qt.UserRole) # Use the stored real ID
-            if cr_id is None: return
+            parent_item.appendRow([num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item])
 
-            cr_details = self.orchestrator.get_cr_details_by_id(cr_id)
-            if cr_details:
-                dialog = CRDetailsDialog(cr_details, self)
-                dialog.exec()
-        except Exception as e:
-            logging.error(f"Could not process CR double-click: {e}")
+            if "features" in item_data and item_data["features"]:
+                self._populate_from_dict(num_item, item_data["features"], prefix=f"{current_prefix}.")
+            elif "user_stories" in item_data and item_data["user_stories"]:
+                self._populate_from_dict(num_item, item_data["user_stories"], prefix=f"{current_prefix}.")
 
-    def on_edit_clicked(self):
-        details = self._get_selected_cr_details()
-        if details: self.edit_cr.emit(details['cr_id'])
+    def _get_selected_item_and_data(self):
+        selection_model = self.ui.crTreeView.selectionModel()
+        if not selection_model.hasSelection(): return None, None
+        index = selection_model.selectedRows()[0]
+        num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+        if not num_item: return None, None
+        return num_item, num_item.data(Qt.UserRole)
 
-    def on_delete_clicked(self):
-        selection_model = self.ui.crTableView.selectionModel()
+    def show_context_menu(self, position):
+        index = self.ui.crTreeView.indexAt(position)
+        menu = QMenu(self)
+        add_epic_action = QAction("Add New Epic", self)
+        add_epic_action.triggered.connect(lambda: self.on_add_item_clicked("EPIC"))
+        menu.addAction(add_epic_action)
+
+        if index.isValid():
+            item, item_data = self._get_selected_item_and_data()
+            if item_data:
+                item_type = item_data.get("request_type")
+                if item_type == "EPIC":
+                    add_feature_action = QAction("Add Feature to this Epic...", self)
+                    add_feature_action.triggered.connect(lambda: self.on_add_item_clicked("FEATURE"))
+                    menu.addAction(add_feature_action)
+                elif item_type == "FEATURE":
+                    add_story_action = QAction("Add Backlog Item to this Feature...", self)
+                    add_story_action.triggered.connect(lambda: self.on_add_item_clicked("BACKLOG_ITEM"))
+                    menu.addAction(add_story_action)
+
+                menu.addSeparator()
+                delete_action = QAction("Delete Selected Item(s)", self)
+                delete_action.triggered.connect(self.on_delete_item)
+                menu.addAction(delete_action)
+
+        menu.exec(self.ui.crTreeView.viewport().mapToGlobal(position))
+
+    def _get_parent_candidates_for_dialog(self):
+        """Traverses the model to get formatted names and IDs for parent selection."""
+        candidates = {"epics": [], "features": []}
+        root = self.model.invisibleRootItem()
+        for i in range(root.rowCount()):
+            epic_item = root.child(i, 0)
+            epic_data = epic_item.data(Qt.UserRole)
+            epic_text = f"{epic_item.text()}: {epic_data['title']}"
+            candidates["epics"].append((epic_text, epic_data['cr_id']))
+            for j in range(epic_item.rowCount()):
+                feature_item = epic_item.child(j, 0)
+                feature_data = feature_item.data(Qt.UserRole)
+                feature_text = f"{feature_item.text()}: {feature_data['title']}"
+                candidates["features"].append((feature_text, feature_data['cr_id']))
+        return candidates
+
+    def on_add_item_clicked(self, item_type_to_add=None, is_sibling=False):
+        parent_id = None
+        item, data = self._get_selected_item_and_data()
+        initial_type = "BACKLOG_ITEM"
+
+        if item_type_to_add:
+            initial_type = item_type_to_add
+            if is_sibling and data:
+                index = self.ui.crTreeView.selectionModel().selectedRows()[0]
+                parent_index = index.parent()
+                if parent_index.isValid():
+                    parent_item = self.model.itemFromIndex(parent_index.siblingAtColumn(0))
+                    parent_id = parent_item.data(Qt.UserRole).get("cr_id") if parent_item else None
+            elif data:
+                parent_id = data.get("cr_id")
+        elif data:
+             parent_type = data.get("request_type")
+             if parent_type in ["EPIC", "FEATURE"]:
+                parent_id = data.get("cr_id")
+
+        parent_candidates = self._get_parent_candidates_for_dialog()
+        dialog = RaiseRequestDialog(self, orchestrator=self.orchestrator, parent_candidates=parent_candidates, initial_request_type=initial_type)
+
+        if dialog.exec():
+            new_data = dialog.get_data()
+            final_parent_id = new_data.get("parent_id") or parent_id
+
+            success, _ = self.orchestrator.add_new_backlog_item(new_data, final_parent_id)
+            if success:
+                self.update_backlog_view()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save the new item.")
+
+    def on_delete_item(self):
+        selection_model = self.ui.crTreeView.selectionModel()
         if not selection_model.hasSelection():
             QMessageBox.warning(self, "No Selection", "Please select item(s) to delete.")
             return
 
-        ids_to_delete = [self.model.item(index.row(), 0).data(Qt.UserRole) for index in selection_model.selectedRows()]
-        for cr_id in ids_to_delete:
-            self.delete_cr.emit(cr_id)
+        selected_rows = selection_model.selectedRows()
+        item_names = [self.model.itemFromIndex(index.siblingAtColumn(1)).text() for index in selected_rows]
+
+        reply = QMessageBox.question(self, "Confirm Deletion", f"Are you sure you want to permanently delete {len(item_names)} item(s) and all their children?\n - {', '.join(item_names)}", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            ids_to_delete = []
+            for index in selected_rows:
+                num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+                if num_item and num_item.data(Qt.UserRole):
+                    ids_to_delete.append(num_item.data(Qt.UserRole)['cr_id'])
+
+            for cr_id in ids_to_delete:
+                self.orchestrator.delete_backlog_item(cr_id)
+            self.update_backlog_view()
+
+    def on_edit_clicked(self):
+        item, data = self._get_selected_item_and_data()
+        if not data: return
+
+        parent_candidates = self._get_parent_candidates_for_dialog()
+        dialog = RaiseRequestDialog(self, orchestrator=self.orchestrator, parent_candidates=parent_candidates)
+        dialog.set_edit_mode(data)
+
+        if dialog.exec():
+            new_data = dialog.get_data()
+            if self.orchestrator.save_edited_change_request(data['cr_id'], new_data):
+                self.update_backlog_view()
+            else:
+                QMessageBox.critical(self, "Error", "Failed to save changes.")
 
     def on_analyze_clicked(self):
-        details = self._get_selected_cr_details()
-        if details: self.analyze_cr.emit(details['cr_id'])
+        item, data = self._get_selected_item_and_data()
+        if data and data.get('request_type') in ["BACKLOG_ITEM", "BUG_REPORT"]: self.analyze_cr.emit(data['cr_id'])
 
     def on_implement_clicked(self):
-        details = self._get_selected_cr_details()
-        if details: self.implement_cr.emit(details['cr_id'])
+        item, data = self._get_selected_item_and_data()
+        if data and data.get('request_type') in ["BACKLOG_ITEM", "BUG_REPORT"]: self.implement_cr.emit(data['cr_id'])
 
     def on_sync_clicked(self):
-        """Gathers all selected, unsynced items and emits a signal."""
-        selection_model = self.ui.crTableView.selectionModel()
+        selection_model = self.ui.crTreeView.selectionModel()
         if not selection_model.hasSelection():
-            QMessageBox.warning(self, "No Selection", "Please select item(s) to sync.")
+            QMessageBox.warning(self, "No Selection", "Please select one or more items to sync.")
             return
 
-        ids_to_sync = []
+        cr_ids_to_sync = []
         for index in selection_model.selectedRows():
-            details = self._get_cr_details_for_row(index.row())
-            if details and not details.get('external_id'):
-                ids_to_sync.append(details['cr_id'])
+            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+            data = num_item.data(Qt.UserRole)
+            if data and not data.get('external_id'):
+                cr_ids_to_sync.append(data['cr_id'])
 
-        if ids_to_sync:
-            self.sync_items_to_tool.emit(ids_to_sync)
+        if cr_ids_to_sync:
+            self.sync_items_to_tool.emit(cr_ids_to_sync)
         else:
-            QMessageBox.information(self, "Already Synced", "All selected items have already been synced.")
+            QMessageBox.information(self, "Already Synced", "All selected items have already been synced to the external tool.")
 
+    def on_reorder_clicked(self):
+        self.is_reorder_mode = True
+        self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.reorderModePage)
+        self.ui.crTreeView.setDragDropMode(QAbstractItemView.InternalMove)
+        self.ui.crTreeView.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.ui.crTreeView.setSortingEnabled(False)
+        self._on_selection_changed()
+
+    def _exit_reorder_mode(self, refresh=True):
+        self.is_reorder_mode = False
+        self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.normalModePage)
+        self.ui.crTreeView.setDragDropMode(QAbstractItemView.NoDragDrop)
+        self.ui.crTreeView.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.ui.crTreeView.setSortingEnabled(False) # Keep sorting disabled to preserve order
+        if refresh: self.update_backlog_view()
+
+    def on_cancel_reorder_clicked(self):
+        self._exit_reorder_mode(refresh=True)
+
+    def on_save_order_clicked(self):
+        if not self.is_reorder_mode: return
+        order_mapping = []
+
+        def recurse_and_map(parent_item):
+            for i in range(parent_item.rowCount()):
+                child_item = parent_item.child(i, 0)
+                child_data = child_item.data(Qt.UserRole)
+                order_mapping.append((i + 1, child_data['cr_id']))
+                if child_item.hasChildren():
+                    recurse_and_map(child_item)
+
+        recurse_and_map(self.model.invisibleRootItem())
+        self.orchestrator.handle_save_cr_order(order_mapping)
+        self._exit_reorder_mode(refresh=True)
+        QMessageBox.information(self, "Success", "The new backlog order has been saved.")
+
+    def on_move_up_clicked(self):
+        selection_model = self.ui.crTreeView.selectionModel()
+        if not selection_model.hasSelection(): return
+        index = selection_model.selectedRows()[0]
+        if not index.isValid() or index.row() == 0: return
+        parent_index = index.parent()
+        parent_item = self.model.itemFromIndex(parent_index) if parent_index.isValid() else self.model.invisibleRootItem()
+        row = index.row()
+        row_items = parent_item.takeRow(row)
+        parent_item.insertRow(row - 1, row_items)
+        new_index = self.model.index(row - 1, 0, parent_index)
+        selection_model.select(new_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
+
+    def on_move_down_clicked(self):
+        selection_model = self.ui.crTreeView.selectionModel()
+        if not selection_model.hasSelection(): return
+        index = selection_model.selectedRows()[0]
+        if not index.isValid(): return
+        parent_index = index.parent()
+        parent_item = self.model.itemFromIndex(parent_index) or self.model.invisibleRootItem()
+        row = index.row()
+        if row >= parent_item.rowCount() - 1: return
+        row_items = parent_item.takeRow(row)
+        parent_item.insertRow(row + 1, row_items)
+        new_index = self.model.index(row + 1, 0, parent_index)
+        selection_model.select(new_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
+
+    def on_primary_action_clicked(self):
+        button_text = self.ui.primaryActionButton.text()
+        if "Technical Specification" in button_text:
+            self.proceed_to_tech_spec.emit()
+        elif "Sprint" in button_text:
+            QMessageBox.information(self, "Not Implemented", "Sprint Planning will be implemented in a future scene.")
+
+    def _on_selection_changed(self):
+        has_items = self.model.rowCount() > 0
+        self.ui.reorderButton.setEnabled(has_items)
+
+        project_id = self.orchestrator.project_id
+        if not project_id: return
+        project_details = self.orchestrator.db_manager.get_project_by_id(project_id)
+        if project_details and project_details['tech_spec_text']:
+            self.ui.primaryActionButton.setText("Plan Sprint")
+            self.ui.primaryActionButton.setVisible(True)
+        else:
+            self.ui.primaryActionButton.setText("Proceed to Technical Specification")
+            self.ui.primaryActionButton.setVisible(has_items)
+
+        selection_model = self.ui.crTreeView.selectionModel()
+        has_selection = selection_model.hasSelection()
+        selected_rows = selection_model.selectedRows()
+
+        self.ui.moreActionsButton.setEnabled(has_selection)
+        if not has_selection:
+            for action in [self.edit_action, self.delete_action, self.analyze_action, self.implement_action, self.sync_action]:
+                action.setEnabled(False)
+            return
+
+        # Enable actions that work on multiple selections
+        self.delete_action.setEnabled(True)
+
+        # Logic for single-selection actions (Edit, Analyze, Implement)
+        if len(selected_rows) == 1:
+            item, data = self._get_selected_item_and_data()
+            if data:
+                item_type = data.get("request_type", "")
+                item_status = data.get("status", "")
+                self.edit_action.setEnabled(True)
+
+                can_analyze = item_type in ["BACKLOG_ITEM", "BUG_REPORT"]
+                is_analyzed = item_status == 'IMPACT_ANALYZED'
+
+                self.analyze_action.setEnabled(can_analyze)
+                self.implement_action.setEnabled(can_analyze and is_analyzed)
+        else:
+            self.edit_action.setEnabled(False)
+            self.analyze_action.setEnabled(False)
+            self.implement_action.setEnabled(False)
+
+        # Logic for sync action (works on multiple selections)
+        can_sync = False
+        for index in selected_rows:
+            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+            if num_item:
+                data = num_item.data(Qt.UserRole)
+                if data and not data.get('external_id'):
+                    can_sync = True
+                    break
+        self.sync_action.setEnabled(can_sync)

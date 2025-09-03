@@ -30,15 +30,29 @@ class PlanningAgent_AppTarget:
         logging.info("PlanningAgent: Generating initial backlog items from specification...")
 
         prompt = textwrap.dedent(f"""
-            You are an expert Agile Business Analyst. Your task is to deconstruct a detailed Application Specification into a structured list of backlog items in JSON format.
+            You are an expert Agile Business Analyst. Your task is to deconstruct an Application Specification into a structured list of backlog items in JSON format.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element in the array must be a JSON object `{{}}` representing one backlog item.
-            2.  **JSON Object Schema:** Each task object MUST have these four keys:
-                - `title`: A concise, user-story-style title for the backlog item (e.g., "As a user, I can reset my password").
-                - `description`: A more detailed, 1-2 sentence description of the feature or task.
-                - `priority`: Your suggested priority for this item. Must be one of: "High", "Medium", or "Low".
-                - `complexity`: Your estimated complexity for this item. Must be one of: "Small", "Medium", or "Large".
+            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]` where each root object represents an **Epic**.
+
+            2.  **Nested JSON Schema:** You MUST adhere to the following nested structure:
+                * Each **Epic object** in the root array must have these keys:
+                    * `"type"`: The constant string "EPIC".
+                    * `"title"`: A high-level title for the epic.
+                    * `"description"`: A 1-2 sentence description of the epic's goal.
+                    * `"features"`: An array `[]` containing one or more **Feature objects**.
+                * Each **Feature object** inside the `"features"` array must have these keys:
+                    * `"type"`: The constant string "FEATURE".
+                    * `"title"`: A title for the specific feature.
+                    * `"description"`: A description of the feature.
+                    * `"user_stories"`: An array `[]` containing one or more **User Story objects**.
+                * Each **User Story object** inside the `"user_stories"` array must have these keys:
+                    * `"type"`: The constant string "BACKLOG_ITEM".
+                    * `"title"`: A concise, user-story-style title.
+                    * `"description"`: A more detailed description of the story.
+                    * `"priority"`: Your suggested priority ("High", "Medium", or "Low").
+                    * `"complexity"`: Your estimated complexity ("Small", "Medium", or "Large").
+
             3.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
             **--- INPUT: Application Specification ---**
