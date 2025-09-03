@@ -87,7 +87,7 @@ class ASDFDBManager:
             title TEXT,
             request_type TEXT NOT NULL DEFAULT 'BACKLOG_ITEM', description TEXT NOT NULL,
             creation_timestamp TEXT NOT NULL, last_modified_timestamp TEXT, status TEXT NOT NULL,
-            impact_rating TEXT, impact_analysis_details TEXT, impacted_artifact_ids TEXT,
+            impact_rating TEXT, impact_analysis_details TEXT, impacted_artifact_ids TEXT, technical_preview_text TEXT,
             display_order INTEGER NOT NULL DEFAULT 0,
             priority TEXT,
             complexity TEXT,
@@ -391,6 +391,14 @@ class ASDFDBManager:
         timestamp = datetime.now(timezone.utc).isoformat()
         query = "UPDATE ChangeRequestRegister SET impact_rating = ?, impact_analysis_details = ?, impacted_artifact_ids = ?, status = 'IMPACT_ANALYZED', last_modified_timestamp = ? WHERE cr_id = ?"
         self._execute_query(query, (rating, details, ids_json, timestamp, cr_id))
+
+    def update_cr_technical_preview(self, cr_id: int, preview_text: str):
+        """Updates a CR with the generated technical preview text and sets its
+        status to TECHNICAL_PREVIEW_COMPLETE.
+        """
+        timestamp = datetime.now(timezone.utc).isoformat()
+        query = "UPDATE ChangeRequestRegister SET technical_preview_text = ?, status = 'TECHNICAL_PREVIEW_COMPLETE', last_modified_timestamp = ? WHERE cr_id = ?"
+        self._execute_query(query, (preview_text, timestamp, cr_id))
 
     def update_cr_status(self, cr_id: int, new_status: str):
         timestamp = datetime.now(timezone.utc).isoformat()

@@ -299,6 +299,7 @@ class ASDFMainWindow(QMainWindow):
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
         self.cr_management_page.import_from_tool.connect(self.on_import_from_tool)
         self.cr_management_page.sync_items_to_tool.connect(self.on_sync_items_to_tool)
+        self.cr_management_page.generate_technical_preview.connect(self.on_generate_tech_preview_action)
         self.cr_management_page.save_new_order.connect(self.orchestrator.handle_save_cr_order)
         self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
         self.backlog_ratification_page.backlog_ratified.connect(self.on_backlog_ratified)
@@ -522,6 +523,43 @@ class ASDFMainWindow(QMainWindow):
         else:
             error_msg = str(error[1]) if error else "An unknown error occurred."
             QTimer.singleShot(100, lambda: QMessageBox.critical(self, "Analysis Failed", f"Failed to run impact analysis for CR-{cr_id}:\n{error_msg}"))
+
+    def on_generate_tech_preview_action(self, cr_id: int):
+        """Handles the signal to generate a technical preview in a background thread."""
+        self.setEnabled(False)
+        self.statusBar().showMessage(f"Generating technical preview for CR-{cr_id}...")
+
+        # Have the worker task return both the cr_id and the result text
+        worker = Worker(lambda cr_id, **kwargs: (cr_id, self.orchestrator.handle_generate_technical_preview(cr_id)), cr_id)
+        worker.signals.result.connect(self._handle_tech_preview_result)
+        worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
+
+    def _handle_tech_preview_result(self, result_tuple):
+        """Displays the technical preview and prompts the user to acknowledge it."""
+        cr_id, preview_text = result_tuple
+
+        # Check if the agent returned an error message
+        if preview_text.strip().startswith("### Error"):
+            QMessageBox.critical(self, "Preview Failed", f"Failed to generate technical preview for CR-{cr_id}:\n{preview_text}")
+            return
+
+        html_content = preview_text
+
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle(f"Technical Preview for CR-{cr_id}")
+        msg_box.setText("The AI has generated the following technical preview of the required changes. Please review and acknowledge to make this item eligible for a sprint.")
+        msg_box.setDetailedText(html_content)
+
+        acknowledge_button = msg_box.addButton("Acknowledge & Continue", QMessageBox.AcceptRole)
+        msg_box.addButton(QMessageBox.Cancel)
+        msg_box.exec()
+
+        if msg_box.clickedButton() == acknowledge_button:
+            self.orchestrator.handle_acknowledge_technical_preview(cr_id, preview_text)
+            # A full UI update is needed to refresh the backlog's status colors and button states
+            self.update_ui_after_state_change()
 
     def _handle_integration_result(self):
         """Called when the integration worker is finished. Triggers a final UI update."""

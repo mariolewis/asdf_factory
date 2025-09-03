@@ -2720,6 +2720,59 @@ class MasterOrchestrator:
 
         return success, output
 
+    def handle_generate_technical_preview(self, cr_id: int) -> str:
+        """
+        Orchestrates the generation of a technical preview for a specific CR.
+        This is designed to be called from a background worker.
+
+        Returns:
+            A string containing the Markdown summary of the preview, or an error message.
+        """
+        logging.info(f"Orchestrator: Generating technical preview for CR ID: {cr_id}.")
+        try:
+            if not self.project_id:
+                raise Exception("Cannot generate preview; no active project.")
+            if not self.llm_service:
+                raise Exception("Cannot generate preview: LLM Service is not configured.")
+
+            db = self.db_manager
+            cr_details = db.get_cr_by_id(cr_id)
+            project_details = db.get_project_by_id(self.project_id)
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+
+            if not cr_details or not project_details:
+                raise Exception(f"Could not retrieve details for CR-{cr_id} or project.")
+
+            rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=2)
+
+            agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
+            preview_summary = agent.generate_technical_preview(
+                change_request_desc=cr_details['description'],
+                final_spec_text=project_details['final_spec_text'],
+                rowd_json=rowd_json
+            )
+
+            # The summary is returned directly to the worker, not saved here.
+            return preview_summary
+
+        except Exception as e:
+            error_msg = f"Failed to generate technical preview for CR-{cr_id}: {e}"
+            logging.error(error_msg, exc_info=True)
+            return f"### Error\n{error_msg}"
+
+    def handle_acknowledge_technical_preview(self, cr_id: int, preview_text: str):
+        """
+        Saves the acknowledged technical preview to the database and updates the
+        CR status to indicate it is ready for sprint planning.
+        """
+        logging.info(f"Orchestrator: Acknowledging and saving technical preview for CR ID: {cr_id}.")
+        try:
+            self.db_manager.update_cr_technical_preview(cr_id, preview_text)
+            self.is_project_dirty = True
+        except Exception as e:
+            logging.error(f"Failed to acknowledge technical preview for CR-{cr_id}: {e}", exc_info=True)
+            # For now, logging is sufficient. We can add more robust UI error feedback later if needed.
+
     def prepend_standard_header(self, document_content: str, document_type: str) -> str:
         """
         Prepends a standard project header, including a version number

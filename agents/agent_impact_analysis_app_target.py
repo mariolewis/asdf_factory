@@ -73,3 +73,41 @@ class ImpactAnalysisAgent_AppTarget:
             error_msg = f"An unexpected error occurred during impact analysis: {e}"
             logging.error(error_msg)
             return None, error_msg, None
+
+    def generate_technical_preview(self, change_request_desc: str, final_spec_text: str, rowd_json: str) -> str:
+        """
+        Analyzes a change request and provides a human-readable technical summary
+        of the anticipated changes to the codebase.
+
+        Returns:
+            A string containing the summary, or an error message on failure.
+        """
+        import textwrap
+        try:
+            prompt = textwrap.dedent(f"""
+                You are a senior solutions architect. Your task is to analyze a change request and the current state of a project to provide a concise, high-level technical preview of the required work.
+
+                **MANDATORY INSTRUCTIONS:**
+                1.  **Raw Markdown Only:** Your entire response MUST be only the raw content of a Markdown bulleted list. Do not include any preamble, conversational text, HTML tags, or markdown fences. The first character of your response must be a `-` or `*`.
+                2.  **Analyze Holistically:** Review the change request, the application specification, and the list of existing code artifacts (RoWD).
+                3.  **Identify Key Changes:** Determine which existing files will likely need modification and identify any new files that will need to be created.
+                4.  **Focus on "What", Not "How":** The summary should state *what* will change (e.g., "Modify the `UserService` class," "Create a new `api/endpoint.py` file"), not the specific lines of code.
+
+                **--- INPUTS ---**
+                **1. Change Request Description:** {change_request_desc}
+                **2. Finalized Application Specification:** {final_spec_text}
+                **3. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):** {rowd_json}
+
+                **--- Technical Preview Summary (Raw Markdown Bulleted List) ---**
+            """)
+
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            if not response_text or response_text.startswith("Error:"):
+                raise ValueError(f"LLM returned an error or empty response: {response_text}")
+
+            return response_text.strip()
+
+        except Exception as e:
+            error_msg = f"An unexpected error occurred during technical preview generation: {e}"
+            logging.error(error_msg, exc_info=True)
+            return f"Error: Could not generate technical preview. Details: {e}"
