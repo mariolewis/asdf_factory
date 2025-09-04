@@ -70,6 +70,11 @@ class Ui_CRManagementPage(object):
 
         self.horizontalLayout_2.addWidget(self.addNewItemButton)
 
+        self.saveBacklogButton = QPushButton(self.normalModePage)
+        self.saveBacklogButton.setObjectName(u"saveBacklogButton")
+
+        self.horizontalLayout_2.addWidget(self.saveBacklogButton)
+
         self.reorderButton = QPushButton(self.normalModePage)
         self.reorderButton.setObjectName(u"reorderButton")
 
@@ -135,6 +140,7 @@ class Ui_CRManagementPage(object):
         self.headerLabel.setText(QCoreApplication.translate("CRManagementPage", u"Project Backlog", None))
         self.instructionLabel.setText(QCoreApplication.translate("CRManagementPage", u"Manage the project hierarchy. Double-click to edit an item. Right-click an item to add children or delete.", None))
         self.addNewItemButton.setText(QCoreApplication.translate("CRManagementPage", u"Add New Item...", None))
+        self.saveBacklogButton.setText(QCoreApplication.translate("CRManagementPage", u"Save Backlog...", None))
         self.reorderButton.setText(QCoreApplication.translate("CRManagementPage", u"Reorder Backlog", None))
         self.primaryActionButton.setText(QCoreApplication.translate("CRManagementPage", u"Primary Action", None))
         self.moreActionsButton.setText(QCoreApplication.translate("CRManagementPage", u"More Actions...", None))

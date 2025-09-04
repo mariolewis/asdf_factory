@@ -1,13 +1,15 @@
 import logging
 from PySide6.QtWidgets import (QWidget, QMessageBox, QHeaderView, QAbstractItemView, QMenu, QTreeView,
-                               QDialog, QVBoxLayout, QLineEdit, QTextEdit, QDialogButtonBox, QComboBox)
+                               QDialog, QVBoxLayout, QLineEdit, QTextEdit, QDialogButtonBox, QComboBox, QFileDialog)
 from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QColor
-from PySide6.QtCore import Signal, Qt, QItemSelectionModel
+from PySide6.QtCore import Signal, Qt, QItemSelectionModel, QThreadPool
 from datetime import datetime
+from pathlib import Path
 
 from gui.ui_cr_management_page import Ui_CRManagementPage
 from master_orchestrator import MasterOrchestrator
 from gui.raise_request_dialog import RaiseRequestDialog
+from gui.worker import Worker
 
 # Note: The EditItemDialog is now handled by the more capable RaiseRequestDialog in edit mode.
 
@@ -20,12 +22,14 @@ class CRManagementPage(QWidget):
     import_from_tool = Signal()
     save_new_order = Signal(list)
     generate_technical_preview = Signal(int)
+    request_ui_refresh = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
         self.ui = Ui_CRManagementPage()
         self.ui.setupUi(self)
+        self.threadpool = QThreadPool()
         self.is_reorder_mode = False
         self.model = QStandardItemModel(self)
         self.ui.crTreeView.setModel(self.model)
@@ -81,6 +85,7 @@ class CRManagementPage(QWidget):
         self.ui.crTreeView.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self.ui.crTreeView.doubleClicked.connect(self.on_edit_clicked)
         self.ui.crTreeView.customContextMenuRequested.connect(self.show_context_menu)
+        self.ui.saveBacklogButton.clicked.connect(self.on_save_backlog_clicked)
         self.edit_action.triggered.connect(self.on_edit_clicked)
         self.delete_action.triggered.connect(self.on_delete_item)
         self.analyze_action.triggered.connect(self.on_analyze_clicked)
@@ -369,8 +374,43 @@ class CRManagementPage(QWidget):
         button_text = self.ui.primaryActionButton.text()
         if "Technical Specification" in button_text:
             self.proceed_to_tech_spec.emit()
-        elif "Sprint" in button_text:
-            QMessageBox.information(self, "Not Implemented", "Sprint Planning will be implemented in a future scene.")
+        elif "Plan Sprint" in button_text:
+            selection_model = self.ui.crTreeView.selectionModel()
+            if not selection_model.hasSelection():
+                QMessageBox.warning(self, "No Selection", "Please select one or more items to run the Sprint Plan.")
+                return
+
+            eligible_ids = []
+            ineligible_items = []
+            for index in selection_model.selectedRows():
+                num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+                data = num_item.data(Qt.UserRole)
+                if data and data.get('status') == 'TECHNICAL_PREVIEW_COMPLETE':
+                    eligible_ids.append(data['cr_id'])
+                elif data:
+                    ineligible_items.append(data.get('title', f"CR-{data.get('cr_id')}"))
+
+            if not eligible_ids:
+                QMessageBox.warning(self, "No Eligible Items", "None of the selected items are ready for a sprint. An item must have a status of 'TECHNICAL_PREVIEW_COMPLETE' to be included.")
+                return
+
+            if ineligible_items:
+                QMessageBox.information(self, "Some Items Skipped", f"The following items are not ready for a sprint and will be ignored:\n\n - {', '.join(ineligible_items)}")
+
+            # Run the pre-execution check in a background thread
+            self.window().setEnabled(False)
+            self.window().statusBar().showMessage("Running sprint pre-execution check...")
+
+            worker = Worker(self.orchestrator.run_sprint_pre_execution_check, eligible_ids)
+            worker.signals.finished.connect(self._on_pre_execution_check_finished)
+            self.threadpool.start(worker)
+
+    def _on_pre_execution_check_finished(self):
+        """Called when the background pre-execution check is complete."""
+        self.window().setEnabled(True)
+        self.window().statusBar().clearMessage()
+        # The orchestrator's state has now changed, so we trigger a UI refresh
+        self.request_ui_refresh.emit()
 
     def _on_selection_changed(self):
         has_items = self.model.rowCount() > 0
@@ -379,27 +419,31 @@ class CRManagementPage(QWidget):
         project_id = self.orchestrator.project_id
         if not project_id: return
         project_details = self.orchestrator.db_manager.get_project_by_id(project_id)
+        selection_model = self.ui.crTreeView.selectionModel()
+        has_selection = selection_model.hasSelection()
+
         if project_details and project_details['tech_spec_text']:
             self.ui.primaryActionButton.setText("Plan Sprint")
             self.ui.primaryActionButton.setVisible(True)
+            # Enable Plan Sprint button if there's a selection
+            self.ui.primaryActionButton.setEnabled(has_selection)
         else:
             self.ui.primaryActionButton.setText("Proceed to Technical Specification")
             self.ui.primaryActionButton.setVisible(has_items)
+            self.ui.primaryActionButton.setEnabled(has_items) # Should be enabled if items exist
 
-        selection_model = self.ui.crTreeView.selectionModel()
-        has_selection = selection_model.hasSelection()
         selected_rows = selection_model.selectedRows()
 
         self.ui.moreActionsButton.setEnabled(has_selection)
         if not has_selection:
-            for action in [self.edit_action, self.delete_action, self.analyze_action, self.implement_action, self.sync_action]:
+            for action in [self.edit_action, self.delete_action, self.analyze_action, self.implement_action, self.tech_preview_action, self.sync_action]:
                 action.setEnabled(False)
             return
 
         # Enable actions that work on multiple selections
         self.delete_action.setEnabled(True)
 
-        # Logic for single-selection actions (Edit, Analyze, Implement)
+        # Logic for single-selection actions (Edit, Analyze, Implement, Tech Preview)
         if len(selected_rows) == 1:
             item, data = self._get_selected_item_and_data()
             if data:
@@ -418,6 +462,7 @@ class CRManagementPage(QWidget):
             self.edit_action.setEnabled(False)
             self.analyze_action.setEnabled(False)
             self.implement_action.setEnabled(False)
+            self.tech_preview_action.setEnabled(False)
 
         # Logic for sync action (works on multiple selections)
         can_sync = False
@@ -429,3 +474,53 @@ class CRManagementPage(QWidget):
                     can_sync = True
                     break
         self.sync_action.setEnabled(can_sync)
+
+    def on_save_backlog_clicked(self):
+        """Handles the user's request to save the backlog to an XLSX file."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "An active project is required to save the backlog.")
+            return
+
+        try:
+            project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise ValueError("Project root folder is not set.")
+
+            project_root = Path(project_details['project_root_folder'])
+            backlog_dir = project_root / "backlog"
+            backlog_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = backlog_dir / f"{self.orchestrator.project_name}_Backlog_{timestamp}.xlsx"
+
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save Backlog As", str(default_filename), "Excel Files (*.xlsx)")
+
+            if file_path:
+                self.window().setEnabled(False)
+                self.window().statusBar().showMessage("Generating and saving backlog report...")
+                worker = Worker(self._task_save_backlog, file_path)
+                worker.signals.result.connect(self._handle_save_backlog_result)
+                worker.signals.error.connect(self._on_pre_execution_check_finished) # Can reuse this handler for errors
+                self.threadpool.start(worker)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to prepare for backlog export:\n{e}")
+
+    def _task_save_backlog(self, file_path, **kwargs):
+        """Background worker task to get XLSX data and save it."""
+        xlsx_bytes_io = self.orchestrator.export_backlog_to_xlsx()
+        if xlsx_bytes_io:
+            with open(file_path, 'wb') as f:
+                f.write(xlsx_bytes_io.getbuffer())
+            return (True, file_path)
+        return (False, "Failed to generate backlog data.")
+
+    def _handle_save_backlog_result(self, result):
+        """Handles the result of the background save task."""
+        self.window().setEnabled(True)
+        self.window().statusBar().clearMessage()
+        success, message = result
+        if success:
+            QMessageBox.information(self, "Success", f"Successfully saved backlog to:\n{message}")
+        else:
+            QMessageBox.critical(self, "Error", f"Failed to save backlog: {message}")

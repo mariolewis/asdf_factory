@@ -12,6 +12,8 @@ from io import BytesIO
 import json
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+import pandas as pd
+from datetime import datetime
 
 class ReportGeneratorAgent:
     """
@@ -226,6 +228,102 @@ class ReportGeneratorAgent:
 
                 p_id = document.add_paragraph(f"ID: {task.get('micro_spec_id', 'N/A')}")
                 p_id.paragraph_format.left_indent = Inches(0.25)
+
+        # Save document to an in-memory buffer
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer
+
+    def generate_backlog_xlsx(self, backlog_data: list) -> BytesIO:
+        """
+        Generates an .xlsx file for the full project backlog.
+
+        Args:
+            backlog_data (list): The hierarchical list of backlog item dictionaries.
+
+        Returns:
+            BytesIO: An in-memory byte stream of the generated .xlsx file.
+        """
+        flat_list = []
+
+        def flatten_hierarchy(items, prefix=""):
+            for i, item in enumerate(items, 1):
+                current_prefix = f"{prefix}{i}"
+
+                timestamp_str = item.get('last_modified_timestamp') or item.get('creation_timestamp')
+                formatted_date = ""
+                if timestamp_str:
+                    try:
+                        dt_object = datetime.fromisoformat(timestamp_str)
+                        formatted_date = dt_object.strftime('%Y-%m-%d %H:%M')
+                    except ValueError:
+                        formatted_date = timestamp_str.split('T')[0]
+
+                record = {
+                    '#': current_prefix,
+                    'Title': item.get('title', 'N/A'),
+                    'Type': item.get('request_type', 'N/A').replace('_', ' ').title(),
+                    'Status': item.get('status', 'N/A'),
+                    'Priority/Severity': item.get('priority') or item.get('impact_rating') or '',
+                    'Complexity': item.get('complexity', ''),
+                    'Last Modified': formatted_date
+                }
+                flat_list.append(record)
+
+                if "features" in item:
+                    flatten_hierarchy(item["features"], prefix=f"{current_prefix}.")
+                if "user_stories" in item:
+                    flatten_hierarchy(item["user_stories"], prefix=f"{current_prefix}.")
+
+        flatten_hierarchy(backlog_data)
+
+        df = pd.DataFrame(flat_list)
+
+        # Save dataframe to an in-memory buffer
+        output_buffer = BytesIO()
+        with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Project Backlog')
+
+        output_buffer.seek(0)
+        return output_buffer
+
+    def generate_sprint_plan_docx(self, project_name: str, sprint_items: list, plan_data: list) -> BytesIO:
+        """
+        Generates a formatted .docx file for the Sprint Plan.
+
+        Args:
+            project_name (str): The name of the project.
+            sprint_items (list): The list of backlog items in the sprint scope.
+            plan_data (list): The list of development tasks in the plan.
+
+        Returns:
+            BytesIO: An in-memory byte stream of the generated .docx file.
+        """
+        document = Document()
+
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        document.add_heading(f"Sprint Plan: {project_name}", level=1)
+        document.add_paragraph(f"Generated on: {timestamp}")
+
+        document.add_heading('Sprint Scope', level=2)
+        if not sprint_items:
+            document.add_paragraph("No items were included in this sprint.")
+        else:
+            for item in sprint_items:
+                document.add_paragraph(item.get('title', 'Untitled Item'), style='List Bullet')
+
+        document.add_heading('Implementation Plan', level=2)
+        if not plan_data or (isinstance(plan_data, list) and plan_data and plan_data[0].get("error")):
+            document.add_paragraph("No implementation plan was generated.")
+        else:
+            for i, task in enumerate(plan_data, 1):
+                p = document.add_paragraph()
+                p.add_run(f"Task {i}: {task.get('component_name', 'N/A')}").bold = True
+
+                document.add_paragraph(f"File Path: {task.get('component_file_path', 'N/A')}")
+                p_desc = document.add_paragraph(f"Description: {task.get('task_description', 'No description.')}")
+                p_desc.paragraph_format.left_indent = Inches(0.25)
 
         # Save document to an in-memory buffer
         doc_buffer = BytesIO()

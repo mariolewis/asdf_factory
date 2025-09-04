@@ -90,6 +90,13 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="saveBacklogButton">
+           <property name="text">
+            <string>Save Backlog...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QPushButton" name="reorderButton">
            <property name="text">
             <string>Reorder Backlog</string>

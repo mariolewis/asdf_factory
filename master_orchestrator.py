@@ -38,6 +38,7 @@ from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
 from agents.agent_project_scoping import ProjectScopingAgent
 from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
+from agents.agent_sprint_pre_execution_check import SprintPreExecutionCheckAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -48,6 +49,7 @@ class FactoryPhase(Enum):
     IDLE = auto()
     BACKLOG_VIEW = auto()
     SPRINT_PLANNING = auto()
+    AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION = auto()
     SPRINT_IN_PROGRESS = auto()
     SPRINT_REVIEW = auto()
     BACKLOG_RATIFICATION = auto()
@@ -179,6 +181,7 @@ class MasterOrchestrator:
         FactoryPhase.IDLE: "Idle",
         FactoryPhase.BACKLOG_VIEW: "Backlog Overview",
         FactoryPhase.SPRINT_PLANNING: "Sprint Planning",
+        FactoryPhase.AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION: "Sprint Pre-Execution Check",
         FactoryPhase.SPRINT_IN_PROGRESS: "Sprint in Progress",
         FactoryPhase.SPRINT_REVIEW: "Sprint Review",
         FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
@@ -1342,7 +1345,7 @@ class MasterOrchestrator:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(standard_file_path_docx, "docs: Add formatted Coding Standard (docx)")
 
-            self.set_phase("PLANNING")
+            self.set_phase("BACKLOG_VIEW")
 
         except Exception as e:
             logging.error(f"Failed to finalize and save coding standard: {e}")
@@ -2449,6 +2452,47 @@ class MasterOrchestrator:
 
         return sorted(report_data, key=lambda x: x['id'])
 
+    def export_backlog_to_xlsx(self):
+        """
+        Fetches the full backlog hierarchy and calls the ReportGeneratorAgent
+        to create an XLSX file in memory.
+
+        Returns:
+            A BytesIO object containing the XLSX file data, or None on failure.
+        """
+        logging.info("Orchestrating backlog export to XLSX format.")
+        try:
+            backlog_data = self.get_full_backlog_hierarchy()
+            if not backlog_data:
+                logging.warning("No backlog data found to export.")
+                return None
+
+            report_agent = ReportGeneratorAgent()
+            return report_agent.generate_backlog_xlsx(backlog_data)
+        except Exception as e:
+            logging.error(f"Failed to orchestrate backlog export: {e}", exc_info=True)
+            return None
+
+    def export_sprint_plan_to_docx(self, sprint_items: list, plan_json_str: str):
+        """
+        Calls the ReportGeneratorAgent to create a DOCX file for the sprint plan.
+
+        Args:
+            sprint_items (list): The list of backlog items in the sprint scope.
+            plan_json_str (str): The JSON string of the implementation plan.
+
+        Returns:
+            A BytesIO object containing the DOCX file data, or None on failure.
+        """
+        logging.info("Orchestrating sprint plan export to DOCX format.")
+        try:
+            plan_data = json.loads(plan_json_str)
+            report_agent = ReportGeneratorAgent()
+            return report_agent.generate_sprint_plan_docx(self.project_name, sprint_items, plan_data)
+        except Exception as e:
+            logging.error(f"Failed to orchestrate sprint plan export: {e}", exc_info=True)
+            return None
+
     def handle_save_cr_order(self, order_mapping: list):
         """Handles the request to save the new display order for backlog items."""
         if not order_mapping:
@@ -2772,6 +2816,95 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to acknowledge technical preview for CR-{cr_id}: {e}", exc_info=True)
             # For now, logging is sufficient. We can add more robust UI error feedback later if needed.
+
+    def run_sprint_pre_execution_check(self, selected_cr_ids: list, **kwargs):
+        """
+        Orchestrates the pre-execution check for a set of selected sprint items.
+        """
+        logging.info(f"Running pre-execution check for {len(selected_cr_ids)} sprint items.")
+        try:
+            db = self.db_manager
+
+            # 1. Gather context for the agent
+            selected_items = [dict(db.get_cr_by_id(cr_id)) for cr_id in selected_cr_ids]
+            full_backlog_hierarchy = self.get_full_backlog_hierarchy()
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            rowd = [dict(row) for row in all_artifacts]
+
+            # 2. Instantiate and run the agent
+            agent = SprintPreExecutionCheckAgent(llm_service=self.llm_service)
+            report_json_str = agent.run_check(
+                selected_items_json=json.dumps(selected_items, indent=2),
+                rowd_json=json.dumps(rowd, indent=2),
+                full_backlog_json=json.dumps(full_backlog_hierarchy, indent=2)
+            )
+
+            # 3. Process the agent's report
+            report_data = json.loads(report_json_str)
+
+            # Store the selected items and the report for the next phase
+            self.task_awaiting_approval = {
+                "selected_sprint_items": selected_items,
+                "pre_execution_report": report_data.get("pre_execution_report")
+            }
+
+            logging.info("Pre-execution check complete. Awaiting PM resolution.")
+            # We will create this new phase in the next step
+            self.set_phase("AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION")
+
+        except Exception as e:
+            logging.error(f"Failed during sprint pre-execution check: {e}", exc_info=True)
+            # If the check fails, we fall back to the backlog view
+            self.set_phase("BACKLOG_VIEW")
+            # We can also store the error to show it in the UI later
+            self.task_awaiting_approval = {"error": str(e)}
+
+    def generate_sprint_implementation_plan(self, sprint_items: list) -> str:
+        """
+        Generates a detailed, step-by-step implementation plan for a given
+        set of sprint items by calling the appropriate planning agent.
+
+        Args:
+            sprint_items (list): A list of backlog item dictionaries for the sprint.
+
+        Returns:
+            A JSON string representing the detailed implementation plan.
+        """
+        logging.info(f"Generating implementation plan for {len(sprint_items)} sprint items.")
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            rowd_json = json.dumps([dict(row) for row in all_artifacts])
+
+            # Consolidate the descriptions of all items into a single request
+            combined_description = "\n\n---\n\n".join(
+                [f"Title: {item['title']}\nDescription: {item['description']}" for item in sprint_items]
+            )
+
+            # The RefactoringPlannerAgent is suitable here as it's designed to create
+            # a technical plan based on a description of changes to an existing codebase.
+            planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
+            new_plan_str = planner_agent.create_refactoring_plan(
+                change_request_desc=combined_description,
+                final_spec_text=project_details['final_spec_text'],
+                tech_spec_text=project_details['tech_spec_text'],
+                rowd_json=rowd_json,
+                source_code_context=None # We don't need specific source files for the high-level plan
+            )
+
+            # Validate the plan and return it
+            response_data = json.loads(new_plan_str)
+            if isinstance(response_data, list) and len(response_data) > 0 and response_data[0].get("error"):
+                raise Exception(f"Planning agent failed: {response_data[0]['error']}")
+
+            logging.info("Successfully generated sprint implementation plan.")
+            return new_plan_str
+
+        except Exception as e:
+            logging.error(f"Failed to generate sprint implementation plan: {e}", exc_info=True)
+            # Return a valid JSON with an error message
+            return json.dumps([{"error": f"Failed to generate plan: {e}"}])
 
     def prepend_standard_header(self, document_content: str, document_type: str) -> str:
         """

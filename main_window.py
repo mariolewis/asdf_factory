@@ -40,6 +40,7 @@ from gui.cr_management_page import CRManagementPage
 from gui.ux_spec_page import UXSpecPage
 from gui.backlog_ratification_page import BacklogRatificationPage
 from agents.agent_integration_pmt import IntegrationAgentPMT
+from gui.sprint_planning_page import SprintPlanningPage
 from gui.worker import Worker
 
 from gui.import_issue_dialog import ImportIssueDialog
@@ -117,6 +118,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.ux_spec_page)
         self.backlog_ratification_page = BacklogRatificationPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.backlog_ratification_page)
+        self.sprint_planning_page = SprintPlanningPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.sprint_planning_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -301,8 +304,10 @@ class ASDFMainWindow(QMainWindow):
         self.cr_management_page.sync_items_to_tool.connect(self.on_sync_items_to_tool)
         self.cr_management_page.generate_technical_preview.connect(self.on_generate_tech_preview_action)
         self.cr_management_page.save_new_order.connect(self.orchestrator.handle_save_cr_order)
+        self.cr_management_page.request_ui_refresh.connect(self.update_ui_after_state_change)
         self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
         self.backlog_ratification_page.backlog_ratified.connect(self.on_backlog_ratified)
+        self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
 
     def _reset_all_pages_for_new_project(self):
         """Iterates through all page widgets and calls their reset method if it exists."""
@@ -711,7 +716,7 @@ class ASDFMainWindow(QMainWindow):
             "IMPLEMENTING_CHANGE_REQUEST": self.cr_management_page,
             "PROJECT_COMPLETED": self.project_complete_page,
             "UX_UI_DESIGN": self.ux_spec_page,
-        }
+            }
 
         # Disconnect all signals from the generic decision page to prevent multiple triggers
         with warnings.catch_warnings():
@@ -806,6 +811,59 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.option1_selected.connect(self.on_integration_confirmed)
             self.decision_page.option2_selected.connect(self.on_stop_export_project)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION":
+            task = self.orchestrator.task_awaiting_approval or {}
+            report = task.get("pre_execution_report", {})
+            dependencies = report.get("missing_dependencies", [])
+            conflicts = report.get("technical_conflicts", [])
+            advice = report.get("sequencing_advice", [])
+
+            details_html = "<h3>AI Analysis Report</h3>"
+            if not dependencies and not conflicts and not advice:
+                details_html += "<p><b>Success:</b> No potential issues were found.</p>"
+            else:
+                if dependencies:
+                    details_html += "<h4>Missing Dependencies</h4><ul>"
+                    for item in dependencies:
+                        details_html += f"<li>{item}</li>"
+                    details_html += "</ul>"
+                if conflicts:
+                    details_html += "<h4>Potential Technical Conflicts</h4><ul>"
+                    for item in conflicts:
+                        details_html += f"<li>{item}</li>"
+                    details_html += "</ul>"
+                if advice:
+                    details_html += "<h4>Architectural Sequencing Advice</h4><ul>"
+                    for item in advice:
+                        details_html += f"<li>{item}</li>"
+                    details_html += "</ul>"
+
+            self.decision_page.configure(
+                header="Sprint Pre-Execution Check",
+                instruction="The AI has analyzed the selected items and generated the following report. Please review it before proceeding.",
+                details=details_html,
+                option1_text="Acknowledge & Proceed to Planning",
+                option2_text="Cancel Sprint"
+            )
+            self.decision_page.option1_selected.connect(self.on_pre_execution_check_proceed)
+            self.decision_page.option2_selected.connect(self.on_pre_execution_check_cancel)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "SPRINT_PLANNING":
+            page_to_show = self.sprint_planning_page
+            logging.debug(f"update_ui_after_state_change: Preparing Sprint Planning page.")
+
+            # Get the selected items from the orchestrator's pending task
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            selected_items = task_data.get("selected_sprint_items", [])
+
+            if not selected_items:
+                logging.warning("Navigated to Sprint Planning page without any selected items (likely from Debug menu).")
+
+            # Pass the selected items to the page, which fixes the crash
+            page_to_show.prepare_for_display(selected_items)
+            self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
         elif current_phase_name == "DEBUG_PM_ESCALATION":
             task_details = self.orchestrator.task_awaiting_approval or {}
@@ -991,6 +1049,32 @@ class ASDFMainWindow(QMainWindow):
     def on_declarative_execute_manual(self):
         """Handles the user's choice to apply the change manually and skip automated execution."""
         self.orchestrator.handle_declarative_checkpoint_decision("WILL_EXECUTE_MANUALLY")
+        self.update_ui_after_state_change()
+
+    def on_pre_execution_check_proceed(self):
+        """Handles the user's choice to proceed to the sprint planning workspace."""
+        logging.info("PM acknowledged pre-execution report. Proceeding to Sprint Planning.")
+        self.orchestrator.set_phase("SPRINT_PLANNING")
+        self.update_ui_after_state_change()
+
+    def on_pre_execution_check_cancel(self):
+        """Handles the user's choice to cancel the sprint after reviewing the pre-execution check."""
+        logging.info("PM cancelled sprint after pre-execution check. Returning to Backlog.")
+        self.orchestrator.task_awaiting_approval = None # Clear the pending task
+        self.orchestrator.set_phase("BACKLOG_VIEW")
+        self.update_ui_after_state_change()
+
+    def on_pre_execution_check_proceed(self):
+        """Handles the user's choice to proceed to the sprint planning workspace."""
+        logging.info("PM acknowledged pre-execution report. Proceeding to Sprint Planning.")
+        self.orchestrator.set_phase("SPRINT_PLANNING")
+        self.update_ui_after_state_change()
+
+    def on_sprint_cancelled(self):
+        """Handles the user cancelling the sprint planning phase."""
+        logging.info("Sprint planning cancelled by user. Returning to Backlog.")
+        self.orchestrator.task_awaiting_approval = None # Clear any pending data
+        self.orchestrator.set_phase("BACKLOG_VIEW")
         self.update_ui_after_state_change()
 
     def on_ux_phase_decision_start(self):
