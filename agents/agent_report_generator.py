@@ -330,3 +330,59 @@ class ReportGeneratorAgent:
         document.save(doc_buffer)
         doc_buffer.seek(0)
         return doc_buffer
+
+    def generate_pre_execution_report_docx(self, project_name: str, selected_items: list, report_data: dict) -> BytesIO:
+        """
+        Generates a formatted .docx file for the Pre-Execution Check report.
+
+        Args:
+            project_name (str): The name of the project.
+            selected_items (list): A list of the backlog items that were analyzed.
+            report_data (dict): The analysis result containing dependencies, conflicts, and advice.
+
+        Returns:
+            BytesIO: An in-memory byte stream of the generated .docx file.
+        """
+        document = Document()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        document.add_heading(f"Sprint Pre-Execution Check Report: {project_name}", level=1)
+        document.add_paragraph(f"Generated on: {timestamp}")
+
+        document.add_heading('Selected Items for Analysis', level=2)
+        if not selected_items:
+            document.add_paragraph("No items were selected for analysis.")
+        else:
+            for item in selected_items:
+                item_id = item.get('hierarchical_id', item.get('cr_id', 'N/A'))
+                item_title = item.get('title', 'Untitled Item')
+                document.add_paragraph(f"{item_id}: {item_title}", style='List Bullet')
+
+        document.add_heading('AI Analysis Report', level=2)
+        dependencies = report_data.get("missing_dependencies", [])
+        conflicts = report_data.get("technical_conflicts", [])
+        advice = report_data.get("sequencing_advice", [])
+
+        if not dependencies and not conflicts and not advice:
+            document.add_paragraph("No potential issues were found.")
+
+        if dependencies:
+            document.add_heading('Missing Dependencies', level=3)
+            for item in dependencies:
+                document.add_paragraph(item, style='List Bullet')
+
+        if conflicts:
+            document.add_heading('Potential Technical Conflicts', level=3)
+            for item in conflicts:
+                document.add_paragraph(item, style='List Bullet')
+
+        if advice:
+            document.add_heading('Architectural Sequencing Advice', level=3)
+            for item in advice:
+                document.add_paragraph(item, style='List Bullet')
+
+        # Save document to an in-memory buffer
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer

@@ -2493,6 +2493,30 @@ class MasterOrchestrator:
             logging.error(f"Failed to orchestrate sprint plan export: {e}", exc_info=True)
             return None
 
+    def export_pre_execution_report_to_docx(self, report_context: dict):
+        """
+        Calls the ReportGeneratorAgent to create a DOCX for the pre-execution report.
+
+        Args:
+            report_context (dict): The data stored in task_awaiting_approval,
+                                containing selected items and the report.
+
+        Returns:
+            A BytesIO object containing the DOCX file data, or None on failure.
+        """
+        logging.info("Orchestrating pre-execution report export to DOCX format.")
+        try:
+            selected_items = report_context.get("selected_sprint_items", [])
+            report_data = report_context.get("pre_execution_report", {})
+
+            report_agent = ReportGeneratorAgent()
+            return report_agent.generate_pre_execution_report_docx(
+                self.project_name, selected_items, report_data
+            )
+        except Exception as e:
+            logging.error(f"Failed to orchestrate pre-execution report export: {e}", exc_info=True)
+            return None
+
     def handle_save_cr_order(self, order_mapping: list):
         """Handles the request to save the new display order for backlog items."""
         if not order_mapping:

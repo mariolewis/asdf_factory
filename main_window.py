@@ -9,7 +9,10 @@ import sys
 import warnings
 
 from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
-                               QInputDialog, QMessageBox, QFileSystemModel, QMenu, QVBoxLayout, QHeaderView, QAbstractItemView, QStyle, QToolButton, QButtonGroup)
+                               QInputDialog, QMessageBox, QFileSystemModel, QMenu,
+                               QVBoxLayout, QHeaderView, QAbstractItemView,
+                               QStyle, QToolButton, QButtonGroup, QPushButton,
+                               QSpacerItem, QSizePolicy, QFileDialog)
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem, QIcon
 from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize, QTimer
 from PySide6.QtCore import QThreadPool
@@ -812,9 +815,24 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.option2_selected.connect(self.on_stop_export_project)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
+        # This is the NEW block to replace the old one
         elif current_phase_name == "AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION":
             task = self.orchestrator.task_awaiting_approval or {}
             report = task.get("pre_execution_report", {})
+
+            # --- Start of New/Corrected Logic ---
+            # First, find and remove any dynamic buttons added in a previous run
+            for button in self.decision_page.findChildren(QPushButton, "dynamicSaveButton"):
+                button.deleteLater()
+
+            # Dynamically create, connect, and insert the new button
+            save_button = QPushButton("Save Report...")
+            save_button.setObjectName("dynamicSaveButton") # Give it a name to find it later
+            save_button.clicked.connect(self.on_save_pre_execution_report_clicked)
+            # Index 1 inserts the button after the spacer but before the main option buttons
+            self.decision_page.ui.buttonLayout.insertWidget(1, save_button)
+            # --- End of New/Corrected Logic ---
+
             dependencies = report.get("missing_dependencies", [])
             conflicts = report.get("technical_conflicts", [])
             advice = report.get("sequencing_advice", [])
@@ -1076,6 +1094,52 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator.task_awaiting_approval = None # Clear any pending data
         self.orchestrator.set_phase("BACKLOG_VIEW")
         self.update_ui_after_state_change()
+
+    def on_save_pre_execution_report_clicked(self):
+        """Handles the request to save the pre-execution report to a DOCX file."""
+        try:
+            report_context = self.orchestrator.task_awaiting_approval
+            if not report_context:
+                QMessageBox.warning(self, "No Report", "No report data is available to save.")
+                return
+
+            project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
+            project_root = Path(project_details['project_root_folder'])
+            sprint_dir = project_root / "sprint"
+            sprint_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = sprint_dir / f"{self.orchestrator.project_name}_Pre-Execution_Report_{timestamp}.docx"
+
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save Pre-Execution Report", str(default_filename), "Word Documents (*.docx)")
+
+            if file_path:
+                self.setEnabled(False)
+                self.statusBar().showMessage("Generating and saving report...")
+                worker = Worker(self._task_save_pre_execution_report, file_path, report_context)
+                worker.signals.result.connect(self._handle_save_report_result)
+                worker.signals.error.connect(self._on_background_task_error)
+                worker.signals.finished.connect(self._on_background_task_finished)
+                self.threadpool.start(worker)
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"An error occurred while preparing to save the report:\n{e}")
+
+    def _task_save_pre_execution_report(self, file_path, report_context, **kwargs):
+        """Background worker task to get DOCX data and save it."""
+        docx_bytes = self.orchestrator.export_pre_execution_report_to_docx(report_context)
+        if docx_bytes:
+            with open(file_path, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+            return (True, file_path)
+        return (False, "Failed to generate report data.")
+
+    def _handle_save_report_result(self, result):
+        """Handles the result of the background save task."""
+        success, message = result
+        if success:
+            QMessageBox.information(self, "Success", f"Successfully saved report to:\n{message}")
+        else:
+            QMessageBox.critical(self, "Error", f"Failed to save report: {message}")
 
     def on_ux_phase_decision_start(self):
         """Handles the PM's choice to start the UX/UI phase."""
