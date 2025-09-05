@@ -64,7 +64,13 @@ class SprintPlanningPage(QWidget):
         self.ui.sprintScopeListWidget.customContextMenuRequested.connect(self.show_sprint_scope_context_menu)
         self.ui.sprintScopeListWidget.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.ui.savePlanButton.clicked.connect(self.on_save_plan_clicked)
+        self.ui.sprintScopeListWidget.itemSelectionChanged.connect(self._on_selection_changed)
         # We will connect startSprintButton later
+
+    def _on_selection_changed(self):
+        """Enables or disables the 'Remove from Sprint' button based on selection."""
+        has_selection = len(self.ui.sprintScopeListWidget.selectedItems()) > 0
+        self.ui.removeFromSprintButton.setEnabled(has_selection)
 
     def on_item_double_clicked(self, item: QListWidgetItem):
         """Displays the full details of a double-clicked item in a custom dialog."""
@@ -72,17 +78,19 @@ class SprintPlanningPage(QWidget):
         if not item_data:
             return
 
+        hierarchical_id = item_data.get('hierarchical_id', '')
         title = item_data.get('title', 'No Title')
+        display_title = f"{hierarchical_id}: {title}" if hierarchical_id else title
         description = item_data.get('description', 'No description provided.')
         analysis = item_data.get('technical_preview_text', '')
 
-        md_text = f"### {title}\n\n**Description:**\n\n{description}"
+        md_text = f"### {display_title}\n\n**Description:**\n\n{description}"
         if analysis:
             md_text += f"\n\n---\n\n**Technical Preview:**\n\n{analysis}"
 
         details_html = markdown.markdown(md_text)
 
-        dialog = DetailsDialog(f"Details for: {title}", details_html, self)
+        dialog = DetailsDialog(f"Details for: {display_title}", details_html, self)
         dialog.exec()
 
     def show_sprint_scope_context_menu(self, position):
@@ -119,6 +127,8 @@ class SprintPlanningPage(QWidget):
         else:
             self.run_plan_generation_task()
 
+        self._on_selection_changed()
+
     def prepare_for_display(self, selected_items: list = None):
         """Loads sprint data into the UI and triggers plan generation."""
         if selected_items is None:
@@ -146,6 +156,8 @@ class SprintPlanningPage(QWidget):
         else:
             self.ui.implementationPlanTextEdit.setText("No items in sprint scope.")
             self._update_metrics()
+
+        self._on_selection_changed()
 
     def run_plan_generation_task(self):
         """Initiates the background task to generate the implementation plan."""

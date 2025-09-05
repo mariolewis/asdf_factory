@@ -16,12 +16,12 @@ from gui.worker import Worker
 class CRManagementPage(QWidget):
     sync_items_to_tool = Signal(list)
     implement_cr = Signal(int)
-    analyze_cr = Signal(int)
+    analyze_cr = Signal(dict)
     delete_cr = Signal(int)
     proceed_to_tech_spec = Signal()
     import_from_tool = Signal()
     save_new_order = Signal(list)
-    generate_technical_preview = Signal(int)
+    generate_technical_preview = Signal(dict)
     request_ui_refresh = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
@@ -123,6 +123,7 @@ class CRManagementPage(QWidget):
 
         for i, item_data in enumerate(items, 1):
             current_prefix = f"{prefix}{i}"
+            item_data['hierarchical_id'] = current_prefix
             num_item = QStandardItem(current_prefix)
             num_item.setData(item_data, Qt.UserRole)
             title_item = QStandardItem(item_data['title'])
@@ -277,7 +278,7 @@ class CRManagementPage(QWidget):
 
     def on_analyze_clicked(self):
         item, data = self._get_selected_item_and_data()
-        if data and data.get('request_type') in ["BACKLOG_ITEM", "BUG_REPORT"]: self.analyze_cr.emit(data['cr_id'])
+        if data and data.get('request_type') in ["BACKLOG_ITEM", "BUG_REPORT"]: self.analyze_cr.emit(data)
 
     def on_implement_clicked(self):
         item, data = self._get_selected_item_and_data()
@@ -287,7 +288,7 @@ class CRManagementPage(QWidget):
         """Handles the signal to generate a technical preview for a CR."""
         item, data = self._get_selected_item_and_data()
         if data:
-            self.generate_technical_preview.emit(data['cr_id'])
+            self.generate_technical_preview.emit(data)
 
     def on_sync_clicked(self):
         selection_model = self.ui.crTreeView.selectionModel()

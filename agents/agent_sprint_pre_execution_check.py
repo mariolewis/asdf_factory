@@ -43,14 +43,15 @@ class SprintPreExecutionCheckAgent:
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
             2.  **JSON Schema:** The JSON object MUST have a single key "pre_execution_report" which contains an object with three keys: "missing_dependencies", "technical_conflicts", and "sequencing_advice". Each of these keys must hold an array of strings.
-            3.  **Analysis:**
-                -   **Missing Dependencies:** Analyze the 'selected_sprint_items'. If an item logically depends on another item from the 'full_project_backlog' that is NOT included in the sprint, list it as a warning. For example, if "Implement User Profile Page" is in the sprint but "Implement User Authentication" is not.
-                -   **Technical Conflicts:** Analyze the 'technical_preview_text' of the selected items. If two or more items propose conflicting changes to the same file or component (e.g., one wants to rename a function that another wants to modify), flag this as a conflict.
-                -   **Architectural Sequencing Advice:** Review the selected items and suggest a more efficient or logical implementation order if one exists. For example, "Recommend implementing the database model changes before the API endpoint."
-            4.  **No Issues:** If you find no issues in a category, return an empty array `[]` for that key. If there are no issues at all, return an object with three empty arrays.
-            5.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
+            3.  **Use Hierarchical IDs:** When referring to any backlog item in your report, you MUST use its user-facing 'hierarchical_id' (e.g., "1.2.1"), NOT its internal 'cr_id'.
+            4.  **Analysis:**
+                -   **Missing Dependencies:** Analyze the 'selected_sprint_items'. If an item logically depends on another item from the 'full_project_backlog' that is NOT included in the sprint, list it as a warning.
+                -   **Technical Conflicts:** Analyze the 'technical_preview_text' of the selected items. If two or more items propose conflicting changes to the same file or component, flag this as a conflict.
+                -   **Architectural Sequencing Advice:** Review the selected items and suggest a more efficient or logical implementation order if one exists.
+            5.  **No Issues:** If you find no issues in a category, return an empty array `[]` for that key.
+            6.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
 
-            **--- INPUT 1: Full Project Backlog (for dependency checking) ---**
+            **--- INPUT 1: Full Project Backlog (Each item has a 'hierarchical_id') ---**
             ```json
             {full_backlog_json}
             ```
@@ -65,7 +66,7 @@ class SprintPreExecutionCheckAgent:
             {rowd_json}
             ```
 
-            **--- Pre-Execution Check Report (JSON Output) ---**
+            **--- Pre-Execution Check Report (JSON Output, using 'hierarchical_id') ---**
         """)
 
         try:

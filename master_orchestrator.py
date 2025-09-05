@@ -2849,9 +2849,25 @@ class MasterOrchestrator:
         try:
             db = self.db_manager
 
-            # 1. Gather context for the agent
-            selected_items = [dict(db.get_cr_by_id(cr_id)) for cr_id in selected_cr_ids]
-            full_backlog_hierarchy = self.get_full_backlog_hierarchy()
+            # --- Start of Corrected Logic ---
+            # 1. Gather context for the agent, now with hierarchical numbers
+            full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
+
+            # Create a flat map for easy lookup of the enriched data
+            flat_backlog = {}
+            def flatten_hierarchy(items):
+                for item in items:
+                    flat_backlog[item['cr_id']] = item
+                    if "features" in item:
+                        flatten_hierarchy(item["features"])
+                    if "user_stories" in item:
+                        flatten_hierarchy(item["user_stories"])
+            flatten_hierarchy(full_backlog_with_ids)
+
+            # Use the map to get the full item data, including hierarchical_id
+            selected_items = [flat_backlog[cr_id] for cr_id in selected_cr_ids if cr_id in flat_backlog]
+            # --- End of Corrected Logic ---
+
             all_artifacts = db.get_all_artifacts_for_project(self.project_id)
             rowd = [dict(row) for row in all_artifacts]
 
@@ -2860,27 +2876,23 @@ class MasterOrchestrator:
             report_json_str = agent.run_check(
                 selected_items_json=json.dumps(selected_items, indent=2),
                 rowd_json=json.dumps(rowd, indent=2),
-                full_backlog_json=json.dumps(full_backlog_hierarchy, indent=2)
+                full_backlog_json=json.dumps(full_backlog_with_ids, indent=2)
             )
 
             # 3. Process the agent's report
             report_data = json.loads(report_json_str)
 
-            # Store the selected items and the report for the next phase
             self.task_awaiting_approval = {
                 "selected_sprint_items": selected_items,
                 "pre_execution_report": report_data.get("pre_execution_report")
             }
 
             logging.info("Pre-execution check complete. Awaiting PM resolution.")
-            # We will create this new phase in the next step
             self.set_phase("AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION")
 
         except Exception as e:
             logging.error(f"Failed during sprint pre-execution check: {e}", exc_info=True)
-            # If the check fails, we fall back to the backlog view
             self.set_phase("BACKLOG_VIEW")
-            # We can also store the error to show it in the UI later
             self.task_awaiting_approval = {"error": str(e)}
 
     def generate_sprint_implementation_plan(self, sprint_items: list) -> str:
@@ -4044,3 +4056,23 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to build full backlog hierarchy: {e}", exc_info=True)
             return []
+
+    def _get_backlog_with_hierarchical_numbers(self) -> list:
+        """
+        Traverses the full backlog and adds a user-facing 'hierarchical_id'
+        to each item's dictionary representation.
+        """
+        full_hierarchy = self.get_full_backlog_hierarchy()
+
+        def recurse_and_add_ids(items, prefix=""):
+            for i, item in enumerate(items, 1):
+                current_prefix = f"{prefix}{i}"
+                item['hierarchical_id'] = current_prefix
+
+                # The hierarchy can have features with user_stories, or items directly under epics
+                children_key = "features" if "features" in item else "user_stories"
+                if children_key in item:
+                    recurse_and_add_ids(item[children_key], prefix=f"{current_prefix}.")
+
+        recurse_and_add_ids(full_hierarchy)
+        return full_hierarchy

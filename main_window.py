@@ -511,10 +511,13 @@ class ASDFMainWindow(QMainWindow):
             # Refresh the UI to show the item has been removed or to handle a linked-item confirmation
             self.update_ui_after_state_change()
 
-    def on_cr_analyze_action(self, cr_id: int):
+    def on_cr_analyze_action(self, item_data: dict):
         """Handles the signal to run impact analysis on a CR in a background thread."""
+        cr_id = item_data.get('cr_id')
+        display_id = item_data.get('hierarchical_id', f"CR-{cr_id}")
+
         self.setEnabled(False)
-        self.statusBar().showMessage(f"Running impact analysis for CR-{cr_id}...")
+        self.statusBar().showMessage(f"Running impact analysis for item {display_id}...")
 
         worker = Worker(self.orchestrator.handle_run_impact_analysis_action, cr_id)
         # Connect the result/error signals to the data handler
@@ -532,10 +535,13 @@ class ASDFMainWindow(QMainWindow):
             error_msg = str(error[1]) if error else "An unknown error occurred."
             QTimer.singleShot(100, lambda: QMessageBox.critical(self, "Analysis Failed", f"Failed to run impact analysis for CR-{cr_id}:\n{error_msg}"))
 
-    def on_generate_tech_preview_action(self, cr_id: int):
+    def on_generate_tech_preview_action(self, item_data: dict):
         """Handles the signal to generate a technical preview in a background thread."""
+        cr_id = item_data.get('cr_id')
+        display_id = item_data.get('hierarchical_id', f"CR-{cr_id}")
+
         self.setEnabled(False)
-        self.statusBar().showMessage(f"Generating technical preview for CR-{cr_id}...")
+        self.statusBar().showMessage(f"Generating technical preview for item {display_id}...")
 
         # Have the worker task return both the cr_id and the result text
         worker = Worker(lambda cr_id, **kwargs: (cr_id, self.orchestrator.handle_generate_technical_preview(cr_id)), cr_id)
@@ -819,25 +825,34 @@ class ASDFMainWindow(QMainWindow):
         elif current_phase_name == "AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION":
             task = self.orchestrator.task_awaiting_approval or {}
             report = task.get("pre_execution_report", {})
+            selected_items = task.get("selected_sprint_items", [])
 
-            # --- Start of New/Corrected Logic ---
-            # First, find and remove any dynamic buttons added in a previous run
+            # Find and remove any dynamic buttons added in a previous run
             for button in self.decision_page.findChildren(QPushButton, "dynamicSaveButton"):
                 button.deleteLater()
 
             # Dynamically create, connect, and insert the new button
             save_button = QPushButton("Save Report...")
-            save_button.setObjectName("dynamicSaveButton") # Give it a name to find it later
+            save_button.setObjectName("dynamicSaveButton")
             save_button.clicked.connect(self.on_save_pre_execution_report_clicked)
-            # Index 1 inserts the button after the spacer but before the main option buttons
             self.decision_page.ui.buttonLayout.insertWidget(1, save_button)
-            # --- End of New/Corrected Logic ---
+
+            # --- Start of New/Corrected HTML Generation ---
+            details_html = "<h3>Selected Items for Analysis</h3><ul>"
+            if not selected_items:
+                details_html += "<li>No items were selected.</li>"
+            else:
+                for item in selected_items:
+                    display_id = item.get('hierarchical_id', item.get('cr_id', 'N/A'))
+                    title = item.get('title', 'Untitled Item')
+                    details_html += f"<li><b>{display_id}:</b> {title}</li>"
+            details_html += "</ul><hr>"
+            details_html += "<h3>AI Analysis Report</h3>"
 
             dependencies = report.get("missing_dependencies", [])
             conflicts = report.get("technical_conflicts", [])
             advice = report.get("sequencing_advice", [])
 
-            details_html = "<h3>AI Analysis Report</h3>"
             if not dependencies and not conflicts and not advice:
                 details_html += "<p><b>Success:</b> No potential issues were found.</p>"
             else:
@@ -856,6 +871,7 @@ class ASDFMainWindow(QMainWindow):
                     for item in advice:
                         details_html += f"<li>{item}</li>"
                     details_html += "</ul>"
+            # --- End of New/Corrected HTML Generation ---
 
             self.decision_page.configure(
                 header="Sprint Pre-Execution Check",

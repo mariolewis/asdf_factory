@@ -311,7 +311,9 @@ class ReportGeneratorAgent:
             document.add_paragraph("No items were included in this sprint.")
         else:
             for item in sprint_items:
-                document.add_paragraph(item.get('title', 'Untitled Item'), style='List Bullet')
+                item_id = item.get('hierarchical_id', 'N/A')
+                item_title = item.get('title', 'Untitled Item')
+                document.add_paragraph(f"{item_id}: {item_title}", style='List Bullet')
 
         document.add_heading('Implementation Plan', level=2)
         if not plan_data or (isinstance(plan_data, list) and plan_data and plan_data[0].get("error")):
@@ -354,7 +356,7 @@ class ReportGeneratorAgent:
             document.add_paragraph("No items were selected for analysis.")
         else:
             for item in selected_items:
-                item_id = item.get('hierarchical_id', item.get('cr_id', 'N/A'))
+                item_id = item.get('hierarchical_id', 'N/A')
                 item_title = item.get('title', 'Untitled Item')
                 document.add_paragraph(f"{item_id}: {item_title}", style='List Bullet')
 
