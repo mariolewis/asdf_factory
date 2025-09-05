@@ -30,6 +30,7 @@ class RefactoringPlannerAgent_AppTarget:
         """
         Generates a detailed, sequential plan of micro-specifications to implement a change,
         optionally using the full source code of impacted components for higher accuracy.
+        This version internally handles dependency and sequencing analysis.
         """
         try:
             source_code_context_str = "# No specific source code provided for review.\n"
@@ -42,12 +43,13 @@ class RefactoringPlannerAgent_AppTarget:
             You are an expert Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format to implement a given change request by modifying an existing codebase.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Adhere to Existing Tech Stack:** You MUST analyze the provided Technical Specification. The plan you create must ONLY use the programming language, frameworks, and libraries already defined in that specification. Do not introduce new languages.
-            2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element must be a JSON object `{{}}` representing one micro-specification.
-            3.  **JSON Object Schema:** Each JSON object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
-            4.  **Modify, Don't Recreate:** The plan should focus on modifying existing components identified in the RoWD and Source Code Context. Only plan for new components if the change request explicitly requires them.
-            5.  **Non-Destructive Changes:** For `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE` types, the `task_description` MUST contain only the specific change snippet (e.g., a single SQL `ALTER TABLE` statement).
-            6.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
+            1.  **Internal Pre-Analysis:** Before creating the plan, you MUST analyze the 'Change Request to Implement' (which may contain multiple items). Identify any dependencies between items, potential technical conflicts (e.g., two items modifying the same function), and determine the most logical implementation sequence. The final plan you generate MUST already be in this optimal sequence.
+            2.  **Adhere to Existing Tech Stack:** You MUST analyze the provided Technical Specification. The plan you create must ONLY use the programming language, frameworks, and libraries already defined in that specification. Do not introduce new languages.
+            3.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element must be a JSON object `{{}}` representing one micro-specification.
+            4.  **JSON Object Schema:** Each JSON object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
+            5.  **Modify, Don't Recreate:** The plan should focus on modifying existing components identified in the RoWD and Source Code Context. Only plan for new components if the change request explicitly requires them.
+            6.  **Non-Destructive Changes:** For `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE` types, the `task_description` MUST contain only the specific change snippet (e.g., a single SQL `ALTER TABLE` statement).
+            7.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
             **--- INPUTS ---**
             **1. Technical Specification (Defines the programming language and stack):**

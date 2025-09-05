@@ -38,7 +38,6 @@ from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
 from agents.agent_project_scoping import ProjectScopingAgent
 from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
-from agents.agent_sprint_pre_execution_check import SprintPreExecutionCheckAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -49,7 +48,6 @@ class FactoryPhase(Enum):
     IDLE = auto()
     BACKLOG_VIEW = auto()
     SPRINT_PLANNING = auto()
-    AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION = auto()
     SPRINT_IN_PROGRESS = auto()
     SPRINT_REVIEW = auto()
     BACKLOG_RATIFICATION = auto()
@@ -70,12 +68,8 @@ class FactoryPhase(Enum):
     MANUAL_UI_TESTING = auto()
     AWAITING_PM_DECLARATIVE_CHECKPOINT = auto()
     AWAITING_PREFLIGHT_RESOLUTION = auto()
-    RAISING_CHANGE_REQUEST = auto()
     AWAITING_IMPACT_ANALYSIS_CHOICE = auto()
-    AWAITING_INITIAL_IMPACT_ANALYSIS = auto()
     IMPLEMENTING_CHANGE_REQUEST = auto()
-    EDITING_CHANGE_REQUEST = auto()
-    REPORTING_OPERATIONAL_BUG = auto()
     AWAITING_LINKED_DELETE_CONFIRMATION = auto()
     DEBUG_PM_ESCALATION = auto()
     VIEWING_DOCUMENTS = auto()
@@ -181,7 +175,6 @@ class MasterOrchestrator:
         FactoryPhase.IDLE: "Idle",
         FactoryPhase.BACKLOG_VIEW: "Backlog Overview",
         FactoryPhase.SPRINT_PLANNING: "Sprint Planning",
-        FactoryPhase.AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION: "Sprint Pre-Execution Check",
         FactoryPhase.SPRINT_IN_PROGRESS: "Sprint in Progress",
         FactoryPhase.SPRINT_REVIEW: "Sprint Review",
         FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
@@ -202,12 +195,8 @@ class MasterOrchestrator:
         FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
         FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
         FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
-        FactoryPhase.RAISING_CHANGE_REQUEST: "Raise New Change Request",
         FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis Choice",
-        FactoryPhase.AWAITING_INITIAL_IMPACT_ANALYSIS: "Initial Impact Analysis",
         FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
-        FactoryPhase.EDITING_CHANGE_REQUEST: "Edit Change Request",
-        FactoryPhase.REPORTING_OPERATIONAL_BUG: "Report Operational Bug",
         FactoryPhase.AWAITING_LINKED_DELETE_CONFIRMATION: "Confirm Linked Deletion",
         FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
         FactoryPhase.VIEWING_DOCUMENTS: "Viewing Project Documents",
@@ -243,10 +232,7 @@ class MasterOrchestrator:
             FactoryPhase.MANUAL_UI_TESTING,
             FactoryPhase.DEBUG_PM_ESCALATION,
             FactoryPhase.AWAITING_PM_TRIAGE_INPUT,
-            FactoryPhase.RAISING_CHANGE_REQUEST,
             FactoryPhase.IMPLEMENTING_CHANGE_REQUEST,
-            FactoryPhase.EDITING_CHANGE_REQUEST,
-            FactoryPhase.REPORTING_OPERATIONAL_BUG,
             FactoryPhase.IDLE
         ]
         if self.current_phase in post_genesis_phases:
@@ -993,6 +979,7 @@ class MasterOrchestrator:
             title=item_data.get('title', 'Untitled Item'),
             description=item_data.get('description', ''),
             request_type=item_data.get('type', 'BACKLOG_ITEM'),
+            status='TO_DO',  # Set the initial status for ratified items
             priority=item_data.get('priority'),
             complexity=item_data.get('complexity'),
             parent_cr_id=parent_id
@@ -2059,29 +2046,6 @@ class MasterOrchestrator:
             logging.error(f"An unexpected error occurred during UI test result evaluation: {e}")
             self.escalate_for_manual_debug(str(e))
 
-    def handle_raise_cr_action(self):
-        """
-        Handles the logic for when the PM clicks 'Raise New Change Request'.
-
-        This transitions the factory into the state for capturing the details
-        of the new change request.
-        """
-        if self.current_phase == FactoryPhase.GENESIS:
-            logging.info("PM initiated 'Raise New Change Request'. Transitioning to CR input screen.")
-            self.set_phase("RAISING_CHANGE_REQUEST")
-        else:
-            logging.warning(f"Received 'Raise CR' action in an unexpected phase: {self.current_phase.name}")
-
-    def handle_report_bug_action(self):
-        """
-        Transitions the factory into the state for reporting a new bug.
-        """
-        if self.current_phase == FactoryPhase.GENESIS:
-            logging.info("PM initiated 'Report Bug'. Transitioning to bug reporting screen.")
-            self.set_phase("REPORTING_OPERATIONAL_BUG")
-        else:
-            logging.warning(f"Received 'Report Bug' action in an unexpected phase: {self.current_phase.name}")
-
     def handle_view_cr_register_action(self):
         """
         Transitions the factory into the state for viewing the Project Backlog.
@@ -2176,38 +2140,6 @@ class MasterOrchestrator:
             logging.warning(f"PM chose to proceed with a stale impact analysis for CR-{cr_id}.")
             self.handle_implement_cr_action(cr_id)
 
-    def handle_run_impact_analysis_action(self, cr_id: int, **kwargs):
-        """
-        Orchestrates the running of an impact analysis for a specific CR.
-        """
-        logging.info(f"PM has requested to run impact analysis for CR ID: {cr_id}.")
-        try:
-            if not self.llm_service:
-                raise Exception("Cannot run impact analysis: LLM Service is not configured.")
-
-            db = self.db_manager
-            cr_details = db.get_cr_by_id(cr_id)
-            project_details = db.get_project_by_id(self.project_id)
-            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-
-            rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=4)
-
-            agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
-            rating, summary, impacted_ids = agent.analyze_impact(
-                change_request_desc=cr_details['description'],
-                final_spec_text=project_details['final_spec_text'],
-                rowd_json=rowd_json
-            )
-
-            if rating is None:
-                raise Exception(f"ImpactAnalysisAgent failed: {summary}")
-
-            db.update_cr_impact_analysis(cr_id, rating, summary, impacted_ids)
-            logging.info(f"Successfully ran and saved impact analysis for CR ID: {cr_id}.")
-
-        except Exception as e:
-            logging.error(f"Failed to run impact analysis for CR ID {cr_id}: {e}")
-
     def handle_delete_cr_action(self, cr_id_to_delete: int):
         """
         Handles the deletion of a CR, now with checks for linked CRs.
@@ -2259,18 +2191,6 @@ class MasterOrchestrator:
             self.task_awaiting_approval = None
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
-    def handle_edit_cr_action(self, cr_id: int):
-        """
-        Transitions the factory into the state for editing a specific CR
-        and stores the ID of that CR.
-
-        Args:
-            cr_id (int): The ID of the change request to be edited.
-        """
-        logging.info(f"PM initiated 'Edit' for CR ID: {cr_id}. Transitioning to CR editing screen.")
-        self.active_cr_id_for_edit = cr_id
-        self.set_phase("EDITING_CHANGE_REQUEST")
-
     def save_edited_change_request(self, cr_id: int, new_data: dict) -> bool:
         """
         Saves the updated data for a specific change request. This is now called
@@ -2288,6 +2208,7 @@ class MasterOrchestrator:
     def add_new_backlog_item(self, data: dict, parent_cr_id: int | None) -> tuple[bool, int | None]:
         """
         Adds a new backlog item of any type, linking it to a parent.
+        Assigns an initial status of CHANGE_REQUEST or BUG_RAISED.
         Returns a tuple of (success, new_id).
         """
         try:
@@ -2306,22 +2227,25 @@ class MasterOrchestrator:
 
             new_id = None
             if item_type == "BUG_REPORT":
-                # FIX: Add bug report via the generic method to support parenting
+                # Add bug report with BUG_RAISED status
                 new_id = self.db_manager.add_change_request(
                     project_id=self.project_id,
                     title=title,
                     description=description,
                     request_type='BUG_REPORT',
+                    status='BUG_RAISED',
                     impact_rating=data.get("severity"), # Pass severity to the correct field
                     complexity=data.get("complexity"),
                     parent_cr_id=parent_cr_id
                 )
             else: # For EPIC, FEATURE, BACKLOG_ITEM
+                # Add other items with CHANGE_REQUEST status
                 new_id = self.db_manager.add_change_request(
                     project_id=self.project_id,
                     title=title,
                     description=description,
                     request_type=item_type,
+                    status='CHANGE_REQUEST',
                     priority=data.get("priority"),
                     complexity=data.get("complexity"),
                     parent_cr_id=parent_cr_id
@@ -2828,29 +2752,13 @@ class MasterOrchestrator:
             logging.error(error_msg, exc_info=True)
             return f"### Error\n{error_msg}"
 
-    def handle_acknowledge_technical_preview(self, cr_id: int, preview_text: str):
+    def initiate_sprint_planning(self, selected_cr_ids: list, **kwargs):
         """
-        Saves the acknowledged technical preview to the database and updates the
-        CR status to indicate it is ready for sprint planning.
+        Prepares the context for the SPRINT_PLANNING phase.
+        This is called by the UI when the 'Plan Sprint' button is clicked.
         """
-        logging.info(f"Orchestrator: Acknowledging and saving technical preview for CR ID: {cr_id}.")
+        logging.info(f"Initiating sprint planning for {len(selected_cr_ids)} items.")
         try:
-            self.db_manager.update_cr_technical_preview(cr_id, preview_text)
-            self.is_project_dirty = True
-        except Exception as e:
-            logging.error(f"Failed to acknowledge technical preview for CR-{cr_id}: {e}", exc_info=True)
-            # For now, logging is sufficient. We can add more robust UI error feedback later if needed.
-
-    def run_sprint_pre_execution_check(self, selected_cr_ids: list, **kwargs):
-        """
-        Orchestrates the pre-execution check for a set of selected sprint items.
-        """
-        logging.info(f"Running pre-execution check for {len(selected_cr_ids)} sprint items.")
-        try:
-            db = self.db_manager
-
-            # --- Start of Corrected Logic ---
-            # 1. Gather context for the agent, now with hierarchical numbers
             full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
 
             # Create a flat map for easy lookup of the enriched data
@@ -2864,36 +2772,82 @@ class MasterOrchestrator:
                         flatten_hierarchy(item["user_stories"])
             flatten_hierarchy(full_backlog_with_ids)
 
-            # Use the map to get the full item data, including hierarchical_id
+            # Get the full data for the selected items
             selected_items = [flat_backlog[cr_id] for cr_id in selected_cr_ids if cr_id in flat_backlog]
-            # --- End of Corrected Logic ---
-
-            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-            rowd = [dict(row) for row in all_artifacts]
-
-            # 2. Instantiate and run the agent
-            agent = SprintPreExecutionCheckAgent(llm_service=self.llm_service)
-            report_json_str = agent.run_check(
-                selected_items_json=json.dumps(selected_items, indent=2),
-                rowd_json=json.dumps(rowd, indent=2),
-                full_backlog_json=json.dumps(full_backlog_with_ids, indent=2)
-            )
-
-            # 3. Process the agent's report
-            report_data = json.loads(report_json_str)
 
             self.task_awaiting_approval = {
-                "selected_sprint_items": selected_items,
-                "pre_execution_report": report_data.get("pre_execution_report")
+                "selected_sprint_items": selected_items
             }
+            self.set_phase("SPRINT_PLANNING")
+        except Exception as e:
+            logging.error(f"Failed during sprint initiation: {e}", exc_info=True)
+            self.set_phase("BACKLOG_VIEW") # Go back on error
+            self.task_awaiting_approval = {"error": str(e)}
 
-            logging.info("Pre-execution check complete. Awaiting PM resolution.")
-            self.set_phase("AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION")
+    def handle_acknowledge_technical_preview(self, cr_id: int, preview_text: str):
+        """
+        Saves the acknowledged technical preview to the database and updates the
+        CR status to indicate it is ready for sprint planning.
+        """
+        logging.info(f"Orchestrator: Acknowledging and saving technical preview for CR ID: {cr_id}.")
+        try:
+            self.db_manager.update_cr_technical_preview(cr_id, preview_text)
+            self.is_project_dirty = True
+        except Exception as e:
+            logging.error(f"Failed to acknowledge technical preview for CR-{cr_id}: {e}", exc_info=True)
+            # For now, logging is sufficient. We can add more robust UI error feedback later if needed.
+
+    def run_full_analysis(self, cr_id: int, **kwargs):
+        """
+        Orchestrates a full analysis (impact + technical) for a CR item.
+        Updates the database with all results and sets status to IMPACT_ANALYZED.
+        """
+        logging.info(f"Orchestrator: Running full analysis for CR ID: {cr_id}.")
+        db = self.db_manager
+        # Inside the run_full_analysis method...
+        try:
+            if not self.project_id:
+                raise Exception("Cannot run analysis; no active project.")
+            if not self.llm_service:
+                raise Exception("Cannot run analysis: LLM Service is not configured.")
+
+            # Get all necessary context for the analysis
+            cr_details = db.get_cr_by_id(cr_id)
+            project_details = db.get_project_by_id(self.project_id)
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+
+            if not cr_details or not project_details:
+                raise Exception(f"Could not retrieve details for CR-{cr_id} or project.")
+
+            rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=2)
+            agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
+
+            # --- Reverted to Single, Robust Call ---
+            analysis_result = agent.run_full_analysis(
+                change_request_desc=cr_details['description'],
+                final_spec_text=project_details['final_spec_text'],
+                rowd_json=rowd_json
+            )
+
+            if not analysis_result:
+                raise Exception("Analysis agent returned no result.")
+            # --- End of Change ---
+
+            # Use the single database method with the result
+            db.update_cr_full_analysis(
+                cr_id=cr_id,
+                rating=analysis_result.get("impact_rating"),
+                details=analysis_result.get("impact_summary"),
+                artifact_ids=analysis_result.get("impacted_artifact_ids", []),
+                preview_text=analysis_result.get("technical_preview")
+            )
+            logging.info(f"Successfully ran and saved full analysis for CR ID: {cr_id}. Status set to IMPACT_ANALYZED.")
 
         except Exception as e:
-            logging.error(f"Failed during sprint pre-execution check: {e}", exc_info=True)
-            self.set_phase("BACKLOG_VIEW")
-            self.task_awaiting_approval = {"error": str(e)}
+            error_msg = f"Failed to run full analysis for CR-{cr_id}: {e}"
+            logging.error(error_msg, exc_info=True)
+            # The status is not changed if the process fails, allowing the user to retry.
+            raise  # Re-raise the exception to be caught by the UI worker handler
 
     def generate_sprint_implementation_plan(self, sprint_items: list) -> str:
         """

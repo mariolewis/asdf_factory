@@ -221,7 +221,7 @@ QMenu::item:disabled {
 
 /* ---- Headers & Special Labels ---- */
 QLabel[objectName^="headerLabel"] {
-    font-size: 18pt;
+    font-size: 14pt;
     font-weight: bold;
     padding-bottom: 5px;
 }

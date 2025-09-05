@@ -519,7 +519,7 @@ class ASDFMainWindow(QMainWindow):
         self.setEnabled(False)
         self.statusBar().showMessage(f"Running impact analysis for item {display_id}...")
 
-        worker = Worker(self.orchestrator.handle_run_impact_analysis_action, cr_id)
+        worker = Worker(self.orchestrator.run_full_analysis, cr_id)
         # Connect the result/error signals to the data handler
         worker.signals.result.connect(lambda: self._handle_analysis_result(cr_id, True))
         worker.signals.error.connect(lambda err: self._handle_analysis_result(cr_id, False, err))
@@ -819,69 +819,6 @@ class ASDFMainWindow(QMainWindow):
             )
             self.decision_page.option1_selected.connect(self.on_integration_confirmed)
             self.decision_page.option2_selected.connect(self.on_stop_export_project)
-            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
-
-        # This is the NEW block to replace the old one
-        elif current_phase_name == "AWAITING_SPRINT_PRE_EXECUTION_CHECK_RESOLUTION":
-            task = self.orchestrator.task_awaiting_approval or {}
-            report = task.get("pre_execution_report", {})
-            selected_items = task.get("selected_sprint_items", [])
-
-            # Find and remove any dynamic buttons added in a previous run
-            for button in self.decision_page.findChildren(QPushButton, "dynamicSaveButton"):
-                button.deleteLater()
-
-            # Dynamically create, connect, and insert the new button
-            save_button = QPushButton("Save Report...")
-            save_button.setObjectName("dynamicSaveButton")
-            save_button.clicked.connect(self.on_save_pre_execution_report_clicked)
-            self.decision_page.ui.buttonLayout.insertWidget(1, save_button)
-
-            # --- Start of New/Corrected HTML Generation ---
-            details_html = "<h3>Selected Items for Analysis</h3><ul>"
-            if not selected_items:
-                details_html += "<li>No items were selected.</li>"
-            else:
-                for item in selected_items:
-                    display_id = item.get('hierarchical_id', item.get('cr_id', 'N/A'))
-                    title = item.get('title', 'Untitled Item')
-                    details_html += f"<li><b>{display_id}:</b> {title}</li>"
-            details_html += "</ul><hr>"
-            details_html += "<h3>AI Analysis Report</h3>"
-
-            dependencies = report.get("missing_dependencies", [])
-            conflicts = report.get("technical_conflicts", [])
-            advice = report.get("sequencing_advice", [])
-
-            if not dependencies and not conflicts and not advice:
-                details_html += "<p><b>Success:</b> No potential issues were found.</p>"
-            else:
-                if dependencies:
-                    details_html += "<h4>Missing Dependencies</h4><ul>"
-                    for item in dependencies:
-                        details_html += f"<li>{item}</li>"
-                    details_html += "</ul>"
-                if conflicts:
-                    details_html += "<h4>Potential Technical Conflicts</h4><ul>"
-                    for item in conflicts:
-                        details_html += f"<li>{item}</li>"
-                    details_html += "</ul>"
-                if advice:
-                    details_html += "<h4>Architectural Sequencing Advice</h4><ul>"
-                    for item in advice:
-                        details_html += f"<li>{item}</li>"
-                    details_html += "</ul>"
-            # --- End of New/Corrected HTML Generation ---
-
-            self.decision_page.configure(
-                header="Sprint Pre-Execution Check",
-                instruction="The AI has analyzed the selected items and generated the following report. Please review it before proceeding.",
-                details=details_html,
-                option1_text="Acknowledge & Proceed to Planning",
-                option2_text="Cancel Sprint"
-            )
-            self.decision_page.option1_selected.connect(self.on_pre_execution_check_proceed)
-            self.decision_page.option2_selected.connect(self.on_pre_execution_check_cancel)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "SPRINT_PLANNING":
@@ -1250,7 +1187,7 @@ class ASDFMainWindow(QMainWindow):
         dialog = RaiseRequestDialog(self, initial_request_type="BUG_REPORT")
         if dialog.exec():
             data = dialog.get_data()
-            # FIX: Call the new, unified orchestrator method. Parent is None as it's a top-level request.
+            # Call the new, unified orchestrator method. Parent is None as it's a top-level request.
             success, _ = self.orchestrator.add_new_backlog_item(data, parent_cr_id=None)
 
             if success:

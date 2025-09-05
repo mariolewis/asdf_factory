@@ -9,6 +9,7 @@ from pathlib import Path
 from gui.ui_cr_management_page import Ui_CRManagementPage
 from master_orchestrator import MasterOrchestrator
 from gui.raise_request_dialog import RaiseRequestDialog
+from gui.cr_details_dialog import CRDetailsDialog
 from gui.worker import Worker
 
 # Note: The EditItemDialog is now handled by the more capable RaiseRequestDialog in edit mode.
@@ -83,12 +84,12 @@ class CRManagementPage(QWidget):
         self.ui.moveUpButton.clicked.connect(self.on_move_up_clicked)
         self.ui.moveDownButton.clicked.connect(self.on_move_down_clicked)
         self.ui.crTreeView.selectionModel().selectionChanged.connect(self._on_selection_changed)
-        self.ui.crTreeView.doubleClicked.connect(self.on_edit_clicked)
+        self.ui.crTreeView.doubleClicked.connect(self.on_item_double_clicked)
         self.ui.crTreeView.customContextMenuRequested.connect(self.show_context_menu)
         self.ui.saveBacklogButton.clicked.connect(self.on_save_backlog_clicked)
         self.edit_action.triggered.connect(self.on_edit_clicked)
         self.delete_action.triggered.connect(self.on_delete_item)
-        self.analyze_action.triggered.connect(self.on_analyze_clicked)
+        self.analyze_action.triggered.connect(self.on_run_full_analysis_clicked)
         self.implement_action.triggered.connect(self.on_implement_clicked)
         self.tech_preview_action.triggered.connect(self.on_generate_tech_preview_clicked)
         self.import_action.triggered.connect(self.import_from_tool.emit)
@@ -124,8 +125,13 @@ class CRManagementPage(QWidget):
         for i, item_data in enumerate(items, 1):
             current_prefix = f"{prefix}{i}"
             item_data['hierarchical_id'] = current_prefix
+            full_title_tooltip = item_data.get('title', 'N/A')
+
             num_item = QStandardItem(current_prefix)
+            # --- THIS IS THE CRITICAL MISSING LINE ---
             num_item.setData(item_data, Qt.UserRole)
+            # --- END OF FIX ---
+
             title_item = QStandardItem(item_data['title'])
 
             timestamp_str = item_data.get('last_modified_timestamp') or item_data.get('creation_timestamp')
@@ -145,9 +151,14 @@ class CRManagementPage(QWidget):
             complexity = item_data.get('complexity') or ''
             complexity_item = QStandardItem(complexity)
 
+            # Set colors
             if item_data['status'] in status_colors: status_item.setForeground(status_colors[item_data['status']])
             if priority in priority_colors: priority_item.setForeground(priority_colors[priority])
             if complexity in complexity_colors: complexity_item.setForeground(complexity_colors[complexity])
+
+            # Add Tooltips
+            for cell_item in [num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item]:
+                cell_item.setToolTip(full_title_tooltip)
 
             parent_item.appendRow([num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item])
 
@@ -165,8 +176,11 @@ class CRManagementPage(QWidget):
         return num_item, num_item.data(Qt.UserRole)
 
     def show_context_menu(self, position):
+        """Creates and shows a context menu on right-click."""
         index = self.ui.crTreeView.indexAt(position)
         menu = QMenu(self)
+
+        # Actions that are always available
         add_epic_action = QAction("Add New Epic", self)
         add_epic_action.triggered.connect(lambda: self.on_add_item_clicked("EPIC"))
         menu.addAction(add_epic_action)
@@ -174,7 +188,13 @@ class CRManagementPage(QWidget):
         if index.isValid():
             item, item_data = self._get_selected_item_and_data()
             if item_data:
-                item_type = item_data.get("request_type")
+                item_type = item_data.get("type")
+
+                menu.addSeparator()
+                edit_action = QAction("Edit Item...", self)
+                edit_action.triggered.connect(self.on_edit_clicked)
+                menu.addAction(edit_action)
+
                 if item_type == "EPIC":
                     add_feature_action = QAction("Add Feature to this Epic...", self)
                     add_feature_action.triggered.connect(lambda: self.on_add_item_clicked("FEATURE"))
@@ -207,6 +227,10 @@ class CRManagementPage(QWidget):
                 candidates["features"].append((feature_text, feature_data['cr_id']))
         return candidates
 
+    def on_item_double_clicked(self, index):
+        """Handles opening the edit dialog when an item is double-clicked."""
+        self.on_edit_clicked()
+
     def on_add_item_clicked(self, item_type_to_add=None, is_sibling=False):
         parent_id = None
         item, data = self._get_selected_item_and_data()
@@ -236,6 +260,9 @@ class CRManagementPage(QWidget):
 
             success, _ = self.orchestrator.add_new_backlog_item(new_data, final_parent_id)
             if success:
+                # Add success feedback message
+                item_type_display = new_data['request_type'].replace('_', ' ').title()
+                QMessageBox.information(self, "Success", f"Successfully added new item: '{item_type_display}'.")
                 self.update_backlog_view()
             else:
                 QMessageBox.critical(self, "Error", "Failed to save the new item.")
@@ -275,6 +302,13 @@ class CRManagementPage(QWidget):
                 self.update_backlog_view()
             else:
                 QMessageBox.critical(self, "Error", "Failed to save changes.")
+
+    def on_run_full_analysis_clicked(self):
+        """Handles the new 'Run Full Analysis' action."""
+        item, data = self._get_selected_item_and_data()
+        if data:
+            # Re-using the existing analyze_cr signal for this enhanced action
+            self.analyze_cr.emit(data)
 
     def on_analyze_clicked(self):
         item, data = self._get_selected_item_and_data()
@@ -372,13 +406,24 @@ class CRManagementPage(QWidget):
         selection_model.select(new_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
 
     def on_primary_action_clicked(self):
+        """
+        Handles the click event for the primary, context-sensitive action button on the page.
+
+        The button's behavior changes based on the project's current phase.
+        - If no technical specification exists, the button is labeled "Proceed to Technical Specification"
+          and this method emits the `proceed_to_tech_spec` signal.
+        - If a technical specification exists, the button becomes "Plan Sprint". In this mode,
+          this method gathers all selected backlog items, filters them for an eligible status
+          ('TO DO' or 'IMPACT_ANALYZED'), and then calls the orchestrator's `initiate_sprint_planning`
+          method in a background thread to begin the sprint planning workflow.
+        """
         button_text = self.ui.primaryActionButton.text()
         if "Technical Specification" in button_text:
             self.proceed_to_tech_spec.emit()
         elif "Plan Sprint" in button_text:
             selection_model = self.ui.crTreeView.selectionModel()
             if not selection_model.hasSelection():
-                QMessageBox.warning(self, "No Selection", "Please select one or more items to run the Sprint Plan.")
+                QMessageBox.warning(self, "No Selection", "Please select one or more items to include in the Sprint Plan.")
                 return
 
             eligible_ids = []
@@ -386,24 +431,24 @@ class CRManagementPage(QWidget):
             for index in selection_model.selectedRows():
                 num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
                 data = num_item.data(Qt.UserRole)
-                if data and data.get('status') == 'TECHNICAL_PREVIEW_COMPLETE':
+                # Updated eligibility check for the new workflow
+                if data and data.get('status') in ['TO_DO', 'IMPACT_ANALYZED']:
                     eligible_ids.append(data['cr_id'])
                 elif data:
-                    ineligible_items.append(data.get('title', f"CR-{data.get('cr_id')}"))
+                    ineligible_items.append(data.get('hierarchical_id', f"ID-{data.get('cr_id')}"))
 
             if not eligible_ids:
-                QMessageBox.warning(self, "No Eligible Items", "None of the selected items are ready for a sprint. An item must have a status of 'TECHNICAL_PREVIEW_COMPLETE' to be included.")
+                QMessageBox.warning(self, "No Eligible Items", "None of the selected items are ready for a sprint. An item must have a status of 'TO DO' or 'IMPACT_ANALYZED' to be included.")
                 return
 
             if ineligible_items:
                 QMessageBox.information(self, "Some Items Skipped", f"The following items are not ready for a sprint and will be ignored:\n\n - {', '.join(ineligible_items)}")
 
-            # Run the pre-execution check in a background thread
+            # Use the new, streamlined sprint initiator
             self.window().setEnabled(False)
-            self.window().statusBar().showMessage("Running sprint pre-execution check...")
-
-            worker = Worker(self.orchestrator.run_sprint_pre_execution_check, eligible_ids)
-            worker.signals.finished.connect(self._on_pre_execution_check_finished)
+            self.window().statusBar().showMessage("Initiating sprint planning...")
+            worker = Worker(self.orchestrator.initiate_sprint_planning, eligible_ids)
+            worker.signals.finished.connect(self._on_pre_execution_check_finished) # Can be reused
             self.threadpool.start(worker)
 
     def _on_pre_execution_check_finished(self):
@@ -423,18 +468,21 @@ class CRManagementPage(QWidget):
         selection_model = self.ui.crTreeView.selectionModel()
         has_selection = selection_model.hasSelection()
 
-        if project_details and project_details['tech_spec_text']:
-            self.ui.primaryActionButton.setText("Plan Sprint")
-            self.ui.primaryActionButton.setVisible(True)
-            # Enable Plan Sprint button if there's a selection
-            self.ui.primaryActionButton.setEnabled(has_selection)
-        else:
-            self.ui.primaryActionButton.setText("Proceed to Technical Specification")
-            self.ui.primaryActionButton.setVisible(has_items)
-            self.ui.primaryActionButton.setEnabled(has_items) # Should be enabled if items exist
+        # --- CORRECTED LOGIC ---
+        # The "Plan Sprint" button is the primary action and should always be visible.
+        # It is enabled only when the user has selected one or more items.
+        self.ui.primaryActionButton.setVisible(True)
+        self.ui.primaryActionButton.setEnabled(has_selection)
 
-        selected_rows = selection_model.selectedRows()
+        # The "Proceed to Technical Specification" button is a one-time action.
+        # It is only visible if a tech spec has NOT yet been created.
+        # CORRECTED to use bracket notation as per the programming standard.
+        tech_spec_exists = bool(project_details and 'tech_spec_text' in project_details.keys() and project_details['tech_spec_text'])
+        self.ui.proceedToTechSpecButton.setVisible(not tech_spec_exists and has_items)
+        self.ui.proceedToTechSpecButton.setEnabled(not tech_spec_exists and has_items)
+        # --- END OF CORRECTION ---
 
+        # Control the "More Actions..." menu
         self.ui.moreActionsButton.setEnabled(has_selection)
         if not has_selection:
             for action in [self.edit_action, self.delete_action, self.analyze_action, self.implement_action, self.tech_preview_action, self.sync_action]:
@@ -444,22 +492,22 @@ class CRManagementPage(QWidget):
         # Enable actions that work on multiple selections
         self.delete_action.setEnabled(True)
 
-        # Logic for single-selection actions (Edit, Analyze, Implement, Tech Preview)
-        if len(selected_rows) == 1:
+        # Logic for single-selection actions
+        if len(selection_model.selectedRows()) == 1:
             item, data = self._get_selected_item_and_data()
             if data:
-                item_type = data.get("request_type", "")
                 item_status = data.get("status", "")
                 self.edit_action.setEnabled(True)
 
-                can_analyze = item_type in ["BACKLOG_ITEM", "BUG_REPORT"]
-                is_impact_analyzed = item_status == 'IMPACT_ANALYZED'
-                is_preview_complete = item_status == 'TECHNICAL_PREVIEW_COMPLETE'
+                # Enable "Run Full Analysis" only for new manual items
+                can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED"]
+                self.analyze_action.setEnabled(can_analyze)
 
-                self.analyze_action.setEnabled(can_analyze and not is_impact_analyzed and not is_preview_complete)
-                self.tech_preview_action.setEnabled(can_analyze and is_impact_analyzed)
-                self.implement_action.setEnabled(can_analyze and is_preview_complete)
+                # These actions are now obsolete in the new workflow
+                self.implement_action.setEnabled(False)
+                self.tech_preview_action.setEnabled(False)
         else:
+            # Disable single-selection actions if multiple items are selected
             self.edit_action.setEnabled(False)
             self.analyze_action.setEnabled(False)
             self.implement_action.setEnabled(False)
@@ -467,7 +515,7 @@ class CRManagementPage(QWidget):
 
         # Logic for sync action (works on multiple selections)
         can_sync = False
-        for index in selected_rows:
+        for index in selection_model.selectedRows():
             num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
             if num_item:
                 data = num_item.data(Qt.UserRole)

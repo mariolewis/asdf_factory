@@ -289,14 +289,14 @@ class ASDFDBManager:
             fetch="all"
         )
 
-    def add_change_request(self, project_id: str, title: str, description: str, request_type: str = 'BACKLOG_ITEM', external_id: str = None, priority: str = None, complexity: str = None, parent_cr_id: int = None, impact_rating: str = None) -> int:
+    def add_change_request(self, project_id: str, title: str, description: str, request_type: str = 'BACKLOG_ITEM', status: str = 'CHANGE_REQUEST', external_id: str = None, priority: str = None, complexity: str = None, parent_cr_id: int = None, impact_rating: str = None) -> int:
         timestamp = datetime.now(timezone.utc).isoformat()
         max_order_row = self._execute_query("SELECT MAX(display_order) FROM ChangeRequestRegister WHERE project_id = ?", (project_id,), fetch="one")
         new_order = (max_order_row[0] or 0) + 1 if max_order_row else 1
 
         cursor = self._execute_query(
             "INSERT INTO ChangeRequestRegister (project_id, title, description, creation_timestamp, status, request_type, display_order, external_id, priority, complexity, parent_cr_id, impact_rating) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (project_id, title, description, timestamp, "RAISED", request_type, new_order, external_id, priority, complexity, parent_cr_id, impact_rating)
+            (project_id, title, description, timestamp, status, request_type, new_order, external_id, priority, complexity, parent_cr_id, impact_rating)
         )
         return cursor.lastrowid
 
@@ -391,6 +391,27 @@ class ASDFDBManager:
         timestamp = datetime.now(timezone.utc).isoformat()
         query = "UPDATE ChangeRequestRegister SET impact_rating = ?, impact_analysis_details = ?, impacted_artifact_ids = ?, status = 'IMPACT_ANALYZED', last_modified_timestamp = ? WHERE cr_id = ?"
         self._execute_query(query, (rating, details, ids_json, timestamp, cr_id))
+
+    def update_cr_full_analysis(self, cr_id: int, rating: str, details: str, artifact_ids: list[str], preview_text: str):
+        logging.debug(f"DB MANAGER: Received preview_text='{preview_text[:200]}...' for cr_id={cr_id}")
+        """
+        Updates a CR with the full, consolidated analysis results in a single transaction.
+        Sets the status to IMPACT_ANALYZED.
+        """
+        ids_json = json.dumps(artifact_ids)
+        timestamp = datetime.now(timezone.utc).isoformat()
+        query = """
+            UPDATE ChangeRequestRegister SET
+                impact_rating = ?,
+                impact_analysis_details = ?,
+                impacted_artifact_ids = ?,
+                technical_preview_text = ?,
+                status = 'IMPACT_ANALYZED',
+                last_modified_timestamp = ?
+            WHERE cr_id = ?
+        """
+        params = (rating, details, ids_json, preview_text, timestamp, cr_id)
+        self._execute_query(query, params)
 
     def update_cr_technical_preview(self, cr_id: int, preview_text: str):
         """Updates a CR with the generated technical preview text and sets its

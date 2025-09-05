@@ -11,6 +11,7 @@ class CRDetailsDialog(QDialog):
         super().__init__(parent)
         self.ui = Ui_CRDetailsDialog()
         self.ui.setupUi(self)
+        self.ui.headerLabel.setWordWrap
 
         self.connect_signals()
         self.set_details(cr_details)
