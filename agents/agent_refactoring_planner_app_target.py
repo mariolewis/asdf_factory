@@ -50,6 +50,7 @@ class RefactoringPlannerAgent_AppTarget:
             5.  **Modify, Don't Recreate:** The plan should focus on modifying existing components identified in the RoWD and Source Code Context. Only plan for new components if the change request explicitly requires them.
             6.  **Non-Destructive Changes:** For `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE` types, the `task_description` MUST contain only the specific change snippet (e.g., a single SQL `ALTER TABLE` statement).
             7.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
+            8.  **Avoid Ambiguous Formatting:** The `task_description` content will be rendered as rich text. To prevent formatting errors, you MUST NOT use the pipe character ('|') or sequences of hyphens ('---') within the description text.
 
             **--- INPUTS ---**
             **1. Technical Specification (Defines the programming language and stack):**
