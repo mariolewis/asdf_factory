@@ -22,20 +22,23 @@ class PlanningAgent_AppTarget:
         self.db_manager = db_manager
         logging.info("PlanningAgent_AppTarget initialized.")
 
-    def generate_backlog_items(self, final_spec_text: str) -> str:
+    def generate_backlog_items(self, final_spec_text: str, tech_spec_text: str) -> str:
         """
-        Analyzes an application specification and deconstructs it into a
-        structured list of backlog items with suggested priority and complexity.
+        Analyzes an application specification and a technical specification
+        to deconstruct them into a structured list of backlog items with
+        suggested priority and complexity.
         """
         logging.info("PlanningAgent: Generating initial backlog items from specification...")
 
         prompt = textwrap.dedent(f"""
-            You are an expert Agile Business Analyst. Your task is to deconstruct an Application Specification into a structured list of backlog items in JSON format.
+            You are an expert Agile Business Analyst with deep technical knowledge. Your task is to deconstruct an Application Specification into a structured list of backlog items in JSON format, using the accompanying Technical Specification for context.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]` where each root object represents an **Epic**.
 
-            2.  **Nested JSON Schema:** You MUST adhere to the following nested structure:
+            2.  **Use Technical Context:** You MUST analyze the Technical Specification to inform the breakdown. The generated features and user stories should reflect the chosen architecture and technology stack (e.g., creating items for setting up specific database tables, API endpoints, or UI components mentioned in the tech spec).
+
+            3.  **Nested JSON Schema:** You MUST adhere to the following nested structure:
                 * Each **Epic object** in the root array must have these keys:
                     * `"type"`: The constant string "EPIC".
                     * `"title"`: A high-level title for the epic.
@@ -53,11 +56,15 @@ class PlanningAgent_AppTarget:
                     * `"priority"`: Your suggested priority ("High", "Medium", or "Low").
                     * `"complexity"`: Your estimated complexity ("Small", "Medium", or "Large").
 
-            3.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
+            4.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
-            **--- INPUT: Application Specification ---**
+            **--- INPUT 1: Application Specification (The "What") ---**
             {final_spec_text}
-            **--- End of Specification ---**
+            --- End of Application Specification ---
+
+            **--- INPUT 2: Technical Specification (The "How") ---**
+            {tech_spec_text}
+            --- End of Technical Specification ---
 
             **--- Generated Backlog (JSON Array Output) ---**
         """)

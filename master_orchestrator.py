@@ -880,15 +880,14 @@ class MasterOrchestrator:
 
     def finalize_and_save_app_spec(self, spec_draft: str):
         """
-        Saves the final application spec, then calls the PlanningAgent to generate
-        the initial backlog, and transitions to the BACKLOG_RATIFICATION phase.
+        Saves the final application spec, a .md file, and a formatted .docx file,
+        then transitions to the TECHNICAL_SPECIFICATION phase.
         """
         if not self.project_id:
             logging.error("Cannot save application spec; no active project.")
             return
 
         try:
-            # The existing logic to save the document remains the same
             final_doc_with_header = self.prepend_standard_header(
                 document_content=spec_draft,
                 document_type="Application Specification"
@@ -917,27 +916,10 @@ class MasterOrchestrator:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(spec_file_path_docx, "docs: Add formatted Application Specification (docx)")
 
-            # --- SAFEGUARD CHECK ---
-            existing_backlog = self.db_manager.get_all_change_requests_for_project(self.project_id)
-            if existing_backlog:
-                logging.warning("Backlog already exists. Skipping generation and proceeding to Backlog View.")
-                self.set_phase("BACKLOG_VIEW")
-                return
-            # --- END SAFEGUARD ---
-
-            # --- NEW LOGIC ---
-            logging.info("Application spec saved. Now generating initial backlog for ratification.")
-            from agents.agent_planning_app_target import PlanningAgent_AppTarget
-            planning_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
-
-            # Use the full spec text (with header) for the agent
-            backlog_items_json = planning_agent.generate_backlog_items(final_doc_with_header)
-
-            # Store the generated items for the ratification screen to use
-            self.task_awaiting_approval = {"generated_backlog_items": backlog_items_json}
-
-            self.set_phase("BACKLOG_RATIFICATION")
-            # --- END NEW LOGIC ---
+            # --- THIS IS THE CHANGE ---
+            # The workflow now proceeds to the technical specification phase.
+            self.set_phase("TECHNICAL_SPECIFICATION")
+            # --- END OF CHANGE ---
 
         except Exception as e:
             logging.error(f"Failed to finalize and save application spec: {e}")
@@ -992,11 +974,6 @@ class MasterOrchestrator:
         if user_stories:
             for story_data in user_stories:
                 self._save_backlog_item_recursive(story_data, parent_id=new_item_id)
-
-    def handle_proceed_to_tech_spec(self):
-        """Transitions the factory to the Technical Specification phase."""
-        logging.info("PM has approved the backlog. Proceeding to Technical Specification.")
-        self.set_phase("TECHNICAL_SPECIFICATION")
 
     def get_project_integration_settings(self) -> dict:
         """
@@ -1295,8 +1272,8 @@ class MasterOrchestrator:
 
     def finalize_and_save_coding_standard(self, standard_draft: str):
         """
-        Saves the final coding standard to the database, a .md file, and a
-        formatted .docx file, and transitions to the next phase.
+        Saves the final coding standard, then calls the PlanningAgent to generate
+        the initial backlog, and transitions to the BACKLOG_RATIFICATION phase.
         """
         if not self.project_id:
             logging.error("Cannot save coding standard; no active project.")
@@ -1332,7 +1309,23 @@ class MasterOrchestrator:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(standard_file_path_docx, "docs: Add formatted Coding Standard (docx)")
 
-            self.set_phase("BACKLOG_VIEW")
+            # --- NEW LOGIC ---
+            # Generate the initial backlog now that all technical specs are complete.
+            logging.info("Coding standard saved. Now generating initial backlog for ratification.")
+            from agents.agent_planning_app_target import PlanningAgent_AppTarget
+            planning_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
+
+            # Pass both the app spec and the new tech spec to the agent.
+            backlog_items_json = planning_agent.generate_backlog_items(
+                final_spec_text=project_details['final_spec_text'],
+                tech_spec_text=project_details['tech_spec_text']
+            )
+
+            # Store the generated items for the ratification screen to use
+            self.task_awaiting_approval = {"generated_backlog_items": backlog_items_json}
+
+            self.set_phase("BACKLOG_RATIFICATION")
+            # --- END NEW LOGIC ---
 
         except Exception as e:
             logging.error(f"Failed to finalize and save coding standard: {e}")

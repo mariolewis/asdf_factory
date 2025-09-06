@@ -324,7 +324,7 @@ class SpecElaborationPage(QWidget):
 
         # Finally, show the result and emit the completion signal
         if success:
-            QMessageBox.information(self, "Success", "Specification approved. Proceeding to Backlog Ratification.")
+            QMessageBox.information(self, "Success", "Specification approved. Proceeding to Technical Specification.")
             self.spec_elaboration_complete.emit()
         else:
             QMessageBox.critical(self, "Error", "The approval and backlog generation process failed.")

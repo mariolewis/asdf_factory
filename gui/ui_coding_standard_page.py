@@ -121,6 +121,25 @@ class Ui_CodingStandardPage(object):
         self.verticalLayout_3.addLayout(self.horizontalLayout)
 
         self.stackedWidget.addWidget(self.reviewPage)
+        self.processingPage = QWidget()
+        self.processingPage.setObjectName(u"processingPage")
+        self.verticalLayout_4 = QVBoxLayout(self.processingPage)
+        self.verticalLayout_4.setObjectName(u"verticalLayout_4")
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_4.addItem(self.verticalSpacer_2)
+
+        self.processingLabel = QLabel(self.processingPage)
+        self.processingLabel.setObjectName(u"processingLabel")
+        self.processingLabel.setAlignment(Qt.AlignCenter)
+
+        self.verticalLayout_4.addWidget(self.processingLabel)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_4.addItem(self.verticalSpacer_3)
+
+        self.stackedWidget.addWidget(self.processingPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
 
@@ -140,5 +159,6 @@ class Ui_CodingStandardPage(object):
         self.feedbackLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Provide feedback for refinement (optional):", None))
         self.refineButton.setText(QCoreApplication.translate("CodingStandardPage", u"Submit Feedback & Refine", None))
         self.approveButton.setText(QCoreApplication.translate("CodingStandardPage", u"Approve Coding Standard", None))
+        self.processingLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Processing... Please wait.", None))
     # retranslateUi
 

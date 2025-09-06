@@ -104,13 +104,6 @@
           </widget>
          </item>
          <item>
-          <widget class="QPushButton" name="proceedToTechSpecButton">
-           <property name="text">
-            <string>Proceed to Technical Specification</string>
-           </property>
-          </widget>
-         </item>
-         <item>
           <widget class="QPushButton" name="primaryActionButton">
            <property name="text">
             <string>Plan Sprint</string>

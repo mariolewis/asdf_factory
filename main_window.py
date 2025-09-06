@@ -301,7 +301,6 @@ class ASDFMainWindow(QMainWindow):
         self.cr_management_page.delete_cr.connect(self.on_cr_delete_action)
         self.cr_management_page.analyze_cr.connect(self.on_cr_analyze_action)
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
-        self.cr_management_page.proceed_to_tech_spec.connect(self.on_proceed_to_tech_spec)
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
         self.cr_management_page.import_from_tool.connect(self.on_import_from_tool)
         self.cr_management_page.sync_items_to_tool.connect(self.on_sync_items_to_tool)
@@ -659,11 +658,6 @@ class ASDFMainWindow(QMainWindow):
             # Use QTimer to show the message after the event loop has had a chance to process
             QTimer.singleShot(100, lambda: QMessageBox.information(self, "Import Complete", f"Successfully imported {total_found} new item(s) into the backlog."))
         # The UI refresh is now handled by _on_background_task_finished
-
-    def on_proceed_to_tech_spec(self):
-        """Handles the signal to begin the Technical Specification phase."""
-        self.orchestrator.handle_proceed_to_tech_spec()
-        self.update_ui_after_state_change()
 
     def _handle_implementation_result(self, cr_id: int, success: bool, error=None):
         """Handles showing the result message of the background implementation task."""

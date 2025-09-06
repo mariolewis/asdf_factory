@@ -80,11 +80,6 @@ class Ui_CRManagementPage(object):
 
         self.horizontalLayout_2.addWidget(self.reorderButton)
 
-        self.proceedToTechSpecButton = QPushButton(self.normalModePage)
-        self.proceedToTechSpecButton.setObjectName(u"proceedToTechSpecButton")
-
-        self.horizontalLayout_2.addWidget(self.proceedToTechSpecButton)
-
         self.primaryActionButton = QPushButton(self.normalModePage)
         self.primaryActionButton.setObjectName(u"primaryActionButton")
 
@@ -147,7 +142,6 @@ class Ui_CRManagementPage(object):
         self.addNewItemButton.setText(QCoreApplication.translate("CRManagementPage", u"Add New Item...", None))
         self.saveBacklogButton.setText(QCoreApplication.translate("CRManagementPage", u"Save Backlog...", None))
         self.reorderButton.setText(QCoreApplication.translate("CRManagementPage", u"Reorder Backlog", None))
-        self.proceedToTechSpecButton.setText(QCoreApplication.translate("CRManagementPage", u"Proceed to Technical Specification", None))
         self.primaryActionButton.setText(QCoreApplication.translate("CRManagementPage", u"Plan Sprint", None))
         self.moreActionsButton.setText(QCoreApplication.translate("CRManagementPage", u"More Actions...", None))
         self.reorderLabel.setText(QCoreApplication.translate("CRManagementPage", u"<b>Reorder Mode Active</b>", None))

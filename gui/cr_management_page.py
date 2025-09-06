@@ -19,7 +19,6 @@ class CRManagementPage(QWidget):
     implement_cr = Signal(int)
     analyze_cr = Signal(dict)
     delete_cr = Signal(int)
-    proceed_to_tech_spec = Signal()
     import_from_tool = Signal()
     save_new_order = Signal(list)
     generate_technical_preview = Signal(dict)
@@ -407,49 +406,37 @@ class CRManagementPage(QWidget):
 
     def on_primary_action_clicked(self):
         """
-        Handles the click event for the primary, context-sensitive action button on the page.
-
-        The button's behavior changes based on the project's current phase.
-        - If no technical specification exists, the button is labeled "Proceed to Technical Specification"
-          and this method emits the `proceed_to_tech_spec` signal.
-        - If a technical specification exists, the button becomes "Plan Sprint". In this mode,
-          this method gathers all selected backlog items, filters them for an eligible status
-          ('TO DO' or 'IMPACT_ANALYZED'), and then calls the orchestrator's `initiate_sprint_planning`
-          method in a background thread to begin the sprint planning workflow.
+        Handles the click event for the primary action button, which is now always "Plan Sprint".
         """
-        button_text = self.ui.primaryActionButton.text()
-        if "Technical Specification" in button_text:
-            self.proceed_to_tech_spec.emit()
-        elif "Plan Sprint" in button_text:
-            selection_model = self.ui.crTreeView.selectionModel()
-            if not selection_model.hasSelection():
-                QMessageBox.warning(self, "No Selection", "Please select one or more items to include in the Sprint Plan.")
-                return
+        selection_model = self.ui.crTreeView.selectionModel()
+        if not selection_model.hasSelection():
+            QMessageBox.warning(self, "No Selection", "Please select one or more items to include in the Sprint Plan.")
+            return
 
-            eligible_ids = []
-            ineligible_items = []
-            for index in selection_model.selectedRows():
-                num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
-                data = num_item.data(Qt.UserRole)
-                # Updated eligibility check for the new workflow
-                if data and data.get('status') in ['TO_DO', 'IMPACT_ANALYZED']:
-                    eligible_ids.append(data['cr_id'])
-                elif data:
-                    ineligible_items.append(data.get('hierarchical_id', f"ID-{data.get('cr_id')}"))
+        eligible_ids = []
+        ineligible_items = []
+        for index in selection_model.selectedRows():
+            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+            data = num_item.data(Qt.UserRole)
+            # Updated eligibility check for the new workflow
+            if data and data.get('status') in ['TO_DO', 'IMPACT_ANALYZED']:
+                eligible_ids.append(data['cr_id'])
+            elif data:
+                ineligible_items.append(data.get('hierarchical_id', f"ID-{data.get('cr_id')}"))
 
-            if not eligible_ids:
-                QMessageBox.warning(self, "No Eligible Items", "None of the selected items are ready for a sprint. An item must have a status of 'TO DO' or 'IMPACT_ANALYZED' to be included.")
-                return
+        if not eligible_ids:
+            QMessageBox.warning(self, "No Eligible Items", "None of the selected items are ready for a sprint. An item must have a status of 'TO DO' or 'IMPACT_ANALYZED' to be included.")
+            return
 
-            if ineligible_items:
-                QMessageBox.information(self, "Some Items Skipped", f"The following items are not ready for a sprint and will be ignored:\n\n - {', '.join(ineligible_items)}")
+        if ineligible_items:
+            QMessageBox.information(self, "Some Items Skipped", f"The following items are not ready for a sprint and will be ignored:\n\n - {', '.join(ineligible_items)}")
 
-            # Use the new, streamlined sprint initiator
-            self.window().setEnabled(False)
-            self.window().statusBar().showMessage("Initiating sprint planning...")
-            worker = Worker(self.orchestrator.initiate_sprint_planning, eligible_ids)
-            worker.signals.finished.connect(self._on_pre_execution_check_finished) # Can be reused
-            self.threadpool.start(worker)
+        # Use the new, streamlined sprint initiator
+        self.window().setEnabled(False)
+        self.window().statusBar().showMessage("Initiating sprint planning...")
+        worker = Worker(self.orchestrator.initiate_sprint_planning, eligible_ids)
+        worker.signals.finished.connect(self._on_pre_execution_check_finished) # Can be reused
+        self.threadpool.start(worker)
 
     def _on_pre_execution_check_finished(self):
         """Called when the background pre-execution check is complete."""
@@ -478,8 +465,9 @@ class CRManagementPage(QWidget):
         # It is only visible if a tech spec has NOT yet been created.
         # CORRECTED to use bracket notation as per the programming standard.
         tech_spec_exists = bool(project_details and 'tech_spec_text' in project_details.keys() and project_details['tech_spec_text'])
-        self.ui.proceedToTechSpecButton.setVisible(not tech_spec_exists and has_items)
-        self.ui.proceedToTechSpecButton.setEnabled(not tech_spec_exists and has_items)
+        # The button itself will be removed from the UI, but we keep this check
+        # in case it's needed for other logic. The button's visibility is now irrelevant.
+
         # --- END OF CORRECTION ---
 
         # Control the "More Actions..." menu
@@ -502,6 +490,7 @@ class CRManagementPage(QWidget):
                 # Enable "Run Full Analysis" only for new manual items
                 can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED"]
                 self.analyze_action.setEnabled(can_analyze)
+
 
                 # These actions are now obsolete in the new workflow
                 self.implement_action.setEnabled(False)

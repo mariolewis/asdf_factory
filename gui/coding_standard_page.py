@@ -55,6 +55,7 @@ class CodingStandardPage(QWidget):
         main_window.setEnabled(not is_busy)
         if hasattr(main_window, 'statusBar'):
             if is_busy:
+                self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
                 main_window.statusBar().showMessage(message)
             else:
                 main_window.statusBar().clearMessage()
@@ -131,16 +132,51 @@ class CodingStandardPage(QWidget):
         return date_updated_draft
 
     def on_approve_clicked(self):
-        """Saves the final coding standard and proceeds to the next phase."""
-        final_standard = self.ui.standardTextEdit.toPlainText()
-        if not final_standard.strip():
+        """
+        Confirms approval with the user, then triggers the background task
+        for finalization and backlog generation.
+        """
+        self.final_standard_for_processing = self.ui.standardTextEdit.toPlainText()
+        if not self.final_standard_for_processing.strip():
             QMessageBox.warning(self, "Approval Failed", "The coding standard cannot be empty.")
             return
 
+        reply = QMessageBox.question(self, "Approve Coding Standard",
+                                    "The Coding Standard has been approved and will be saved.\n\nThe system will now proceed to generate the initial project backlog based on all specifications. This may take a moment.",
+                                    QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Ok)
+
+        if reply == QMessageBox.Ok:
+            self.run_approval_and_generation_task()
+
+    def run_approval_and_generation_task(self):
+        """Initiates the background worker for the finalization process."""
+        self.ui.headerLabel.setText("Backlog Generation")
+        self._execute_task(self._task_approve_and_generate_backlog,
+                        self._handle_approval_result,
+                        self.final_standard_for_processing,
+                        status_message="Generating backlog from specification...")
+
+    def _task_approve_and_generate_backlog(self, final_standard, **kwargs):
+        """
+        Background worker task that calls the orchestrator to save the coding
+        standard and generate the backlog.
+        """
         self.orchestrator.finalize_and_save_coding_standard(final_standard)
-        QMessageBox.information(self, "Success", "Success: Coding Standard approved and saved.")
-        self.orchestrator.is_project_dirty = True
-        self.coding_standard_complete.emit()
+        # The orchestrator's phase is now BACKLOG_RATIFICATION
+        return True
+
+    def _handle_approval_result(self, success):
+        """Handles the result of the background finalization task."""
+        try:
+            if success:
+                self.orchestrator.is_project_dirty = True
+                self.coding_standard_complete.emit()
+            else:
+                QMessageBox.critical(self, "Error", "The finalization and backlog generation process failed.")
+        finally:
+            self._set_ui_busy(False)
+            # Switch back to the review page in case the user needs to see it again
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
 
     def _task_generate_standard(self, **kwargs):
         """The actual function that runs in the background."""
