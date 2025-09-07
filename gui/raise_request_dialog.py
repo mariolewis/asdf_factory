@@ -81,8 +81,8 @@ class RaiseRequestDialog(QDialog):
         recurse_and_add(self.parent_candidates)
 
     def set_edit_mode(self, details: dict):
+        """Configures the dialog for editing an existing item."""
         self.setWindowTitle("Edit Backlog Item")
-        #... (rest of the method is unchanged)
         self.ui.headerLabel.setText(f"Edit Item: {details.get('title')}")
 
         request_type = details.get('request_type')
@@ -91,7 +91,18 @@ class RaiseRequestDialog(QDialog):
             self.ui.typeComboBox.setCurrentText(type_text_list[0])
 
         self._update_ui_for_type()
-        self.ui.descriptionTextEdit.setText(details.get('description', ''))
+
+        # FIX: Combine description, analysis, and preview for display
+        description = details.get('description', 'No description provided.')
+        analysis = details.get('impact_analysis_details')
+        preview = details.get('technical_preview_text')
+
+        display_text = description
+        if analysis and analysis.strip():
+            display_text += f"\n\n---\n**Impact Analysis Summary**\n{analysis}"
+        if preview and preview.strip():
+            display_text += f"\n\n---\n**Technical Preview**\n{preview}"
+        self.ui.descriptionTextEdit.setText(display_text)
 
         priority_value = details.get('priority') or details.get('impact_rating', '')
         self.ui.priorityComboBox.setCurrentText(priority_value)

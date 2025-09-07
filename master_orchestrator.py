@@ -951,23 +951,27 @@ class MasterOrchestrator:
 
     def _save_backlog_item_recursive(self, item_data: dict, parent_id: int | None):
         """Recursively saves a backlog item and its children to the database."""
-        # Extract children before saving, as they are not columns in the table
         features = item_data.pop("features", [])
         user_stories = item_data.pop("user_stories", [])
 
-        # Save the current item to get its new ID
+        request_type = item_data.get('type', 'BACKLOG_ITEM')
+
+        # FIX: Determine status based on item type
+        status = "TO_DO"  # Default for Backlog Items
+        if request_type in ["EPIC", "FEATURE"]:
+            status = ""  # Epics and Features have a neutral, blank status
+
         new_item_id = self.db_manager.add_change_request(
             project_id=self.project_id,
             title=item_data.get('title', 'Untitled Item'),
             description=item_data.get('description', ''),
-            request_type=item_data.get('type', 'BACKLOG_ITEM'),
-            status='TO_DO',  # Set the initial status for ratified items
+            request_type=request_type,
+            status=status,
             priority=item_data.get('priority'),
             complexity=item_data.get('complexity'),
             parent_cr_id=parent_id
         )
 
-        # Now, recurse for any children, passing the new ID as their parent_id
         if features:
             for feature_data in features:
                 self._save_backlog_item_recursive(feature_data, parent_id=new_item_id)

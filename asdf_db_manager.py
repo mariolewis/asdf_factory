@@ -428,29 +428,45 @@ class ASDFDBManager:
 
     def update_change_request(self, cr_id: int, new_data: dict):
         """
-        Updates a CR record with new data from the edit dialog, resets its
-        status to 'RAISED', and clears the previous impact analysis.
+        Updates a CR record with new data. If the status was IMPACT_ANALYZED,
+        it reverts to its base state; otherwise, the status is preserved.
         """
         timestamp = datetime.now(timezone.utc).isoformat()
         new_description = new_data.get('description')
         new_complexity = new_data.get('complexity')
-        new_priority = new_data.get('severity') # The dialog uses the 'severity' field for priority
 
-        # Determine if we are updating the 'priority' or 'impact_rating' column
         cr_details = self.get_cr_by_id(cr_id)
         if not cr_details:
             raise ValueError(f"Could not find CR with ID {cr_id} to update.")
 
-        if cr_details['request_type'] == 'BUG_REPORT':
-            # For bugs, severity is stored in 'impact_rating' and we don't want to clear it
-            query = "UPDATE ChangeRequestRegister SET description = ?, complexity = ?, impact_rating = ?, status = 'RAISED', impact_analysis_details = NULL, last_modified_timestamp = ? WHERE cr_id = ?"
-            params = (new_description, new_complexity, new_priority, timestamp, cr_id)
-        else:
-            # For backlog items, priority is stored in 'priority'
-            query = "UPDATE ChangeRequestRegister SET description = ?, complexity = ?, priority = ?, status = 'RAISED', impact_analysis_details = NULL, impact_rating = NULL, last_modified_timestamp = ? WHERE cr_id = ?"
-            params = (new_description, new_complexity, new_priority, timestamp, cr_id)
+        # Determine the new status based on the required logic
+        current_status = cr_details['status']
+        request_type = cr_details['request_type']
+        new_status = current_status # Default to keeping the status the same
 
-        self._execute_query(query, params)
+        if current_status == 'IMPACT_ANALYZED':
+            if request_type == 'BUG_REPORT':
+                new_status = 'BUG_RAISED'
+            else: # For BACKLOG_ITEM, CHANGE_REQUEST
+                new_status = 'CHANGE_REQUEST'
+
+        # Prepare query parts
+        base_query = "UPDATE ChangeRequestRegister SET description = ?, complexity = ?, status = ?, last_modified_timestamp = ?, impact_analysis_details = NULL"
+        params = [new_description, new_complexity, new_status, timestamp]
+
+        if request_type == 'BUG_REPORT':
+            new_severity = new_data.get('severity')
+            query_extension = ", impact_rating = ?"
+            params.append(new_severity)
+        else:
+            new_priority = new_data.get('priority')
+            query_extension = ", priority = ?, impact_rating = NULL"
+            params.append(new_priority)
+
+        final_query = f"{base_query}{query_extension} WHERE cr_id = ?"
+        params.append(cr_id)
+
+        self._execute_query(final_query, tuple(params))
 
     def get_cr_by_linked_id(self, parent_cr_id: int):
         return self._execute_query("SELECT * FROM ChangeRequestRegister WHERE linked_cr_id = ?", (parent_cr_id,), fetch="one")

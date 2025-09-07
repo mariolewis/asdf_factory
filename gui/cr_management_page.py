@@ -76,7 +76,6 @@ class CRManagementPage(QWidget):
 
     def connect_signals(self):
         self.ui.primaryActionButton.clicked.connect(self.on_primary_action_clicked)
-        self.ui.addNewItemButton.clicked.disconnect()
         self.ui.addNewItemButton.clicked.connect(self.on_add_item_clicked)
         self.ui.reorderButton.clicked.connect(self.on_reorder_clicked)
         self.ui.cancelReorderButton.clicked.connect(self.on_cancel_reorder_clicked)
@@ -292,7 +291,7 @@ class CRManagementPage(QWidget):
         item, data = self._get_selected_item_and_data()
         if not data: return
 
-        parent_candidates = self._get_parent_candidates_for_dialog()
+        parent_candidates = self.orchestrator._get_backlog_with_hierarchical_numbers()
         dialog = RaiseRequestDialog(self, orchestrator=self.orchestrator, parent_candidates=parent_candidates)
         dialog.set_edit_mode(data)
 
