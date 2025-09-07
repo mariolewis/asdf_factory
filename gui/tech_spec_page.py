@@ -125,15 +125,35 @@ class TechSpecPage(QWidget):
             self._set_ui_busy(False)
 
     def on_approve_clicked(self):
+        """
+        Finalizes the tech spec by running the save and commit operations in a
+        background thread to keep the UI responsive.
+        """
         final_tech_spec = self.ui.techSpecTextEdit.toPlainText()
         if not final_tech_spec.strip():
             QMessageBox.warning(self, "Approval Failed", "The technical specification cannot be empty.")
             return
+
         target_os = self.ui.osComboBox.currentText()
-        self.orchestrator.finalize_and_save_tech_spec(final_tech_spec, target_os)
-        QMessageBox.information(self, "Success", "Success: Technical Specification approved and saved.")
-        self.orchestrator.is_project_dirty = True
-        self.tech_spec_complete.emit()
+        self._execute_task(self._task_approve_spec, self._handle_approval_result, final_tech_spec, target_os,
+                           status_message="Finalizing technical specification...")
+
+    def _task_approve_spec(self, final_spec, target_os, **kwargs):
+        """Background worker task to save the tech spec."""
+        self.orchestrator.finalize_and_save_tech_spec(final_spec, target_os)
+        return True
+
+    def _handle_approval_result(self, success):
+        """Handles the result of the background finalization task."""
+        try:
+            if success:
+                QMessageBox.information(self, "Success", "Success: Technical Specification approved and saved.")
+                self.orchestrator.is_project_dirty = True
+                self.tech_spec_complete.emit()
+            else:
+                QMessageBox.critical(self, "Error", "The finalization process failed.")
+        finally:
+            self._set_ui_busy(False)
 
     def _task_propose_stack(self, target_os, **kwargs):
         # --- Template Loading Logic ---
