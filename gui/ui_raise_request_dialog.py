@@ -45,6 +45,7 @@ class Ui_RaiseRequestDialog(object):
         self.typeComboBox.addItem("")
         self.typeComboBox.addItem("")
         self.typeComboBox.addItem("")
+        self.typeComboBox.addItem("")
         self.typeComboBox.setObjectName(u"typeComboBox")
 
         self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.typeComboBox)
@@ -115,9 +116,10 @@ class Ui_RaiseRequestDialog(object):
         self.headerLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Add New Backlog Item", None))
         self.typeLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Request Type:", None))
         self.typeComboBox.setItemText(0, QCoreApplication.translate("RaiseRequestDialog", u"Backlog Item", None))
-        self.typeComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Bug Report", None))
-        self.typeComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Feature", None))
-        self.typeComboBox.setItemText(3, QCoreApplication.translate("RaiseRequestDialog", u"Epic", None))
+        self.typeComboBox.setItemText(1, QCoreApplication.translate("RaiseRequestDialog", u"Change Request", None))
+        self.typeComboBox.setItemText(2, QCoreApplication.translate("RaiseRequestDialog", u"Bug Report", None))
+        self.typeComboBox.setItemText(3, QCoreApplication.translate("RaiseRequestDialog", u"Feature", None))
+        self.typeComboBox.setItemText(4, QCoreApplication.translate("RaiseRequestDialog", u"Epic", None))
 
         self.parentLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Parent:", None))
         self.descriptionLabel.setText(QCoreApplication.translate("RaiseRequestDialog", u"Description:", None))

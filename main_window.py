@@ -1145,22 +1145,8 @@ class ASDFMainWindow(QMainWindow):
         QMessageBox.critical(self, "Error", error_msg)
 
     def on_raise_cr(self):
-        """Opens the Raise Request dialog and processes the result."""
-        if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please create or load a project before raising a request.")
-            return
-
-        dialog = RaiseRequestDialog(self)
-        if dialog.exec():
-            data = dialog.get_data()
-            # FIX: Call the new, unified orchestrator method. Parent is None as it's a top-level request.
-            success, _ = self.orchestrator.add_new_backlog_item(data, parent_cr_id=None)
-
-            if success:
-                QMessageBox.information(self, "Success", f"{data['request_type'].replace('_', ' ').title()} has been successfully logged.")
-                self.update_ui_after_state_change() # Refresh all views
-            else:
-                QMessageBox.critical(self, "Error", f"Failed to save the {data['request_type'].replace('_', ' ').title()}.")
+        """Delegates the action to the dedicated handler in the CR Management page."""
+        self.cr_management_page.on_add_item_clicked()
 
     def on_manage_crs(self):
         """Switches to the CR Management page."""
@@ -1168,7 +1154,7 @@ class ASDFMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Project", "Please create or load a project to manage requests.")
             return
 
-        self.previous_phase = self.orchestrator.current_phase # <-- ADD THIS LINE
+        self.previous_phase = self.orchestrator.current_phase
         self.orchestrator.handle_view_cr_register_action()
         self.update_ui_after_state_change()
 

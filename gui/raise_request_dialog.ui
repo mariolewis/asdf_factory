@@ -45,6 +45,11 @@
        </item>
        <item>
         <property name="text">
+         <string>Change Request</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
          <string>Bug Report</string>
         </property>
        </item>

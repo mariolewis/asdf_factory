@@ -2229,18 +2229,18 @@ class MasterOrchestrator:
             logging.error(f"Failed to save edited backlog item for ID {cr_id}: {e}")
             return False
 
-    def add_new_backlog_item(self, data: dict, parent_cr_id: int | None) -> tuple[bool, int | None]:
+    def add_new_backlog_item(self, data: dict) -> tuple[bool, int | None]:
         """
         Adds a new backlog item of any type, linking it to a parent.
-        Assigns an initial status of CHANGE_REQUEST or BUG_RAISED.
-        Returns a tuple of (success, new_id).
+        The parent_id is now read directly from the data dictionary.
         """
         try:
-            item_type = data.get("request_type", "BACKLOG_ITEM")
+            parent_cr_id = data.get("parent_id")
+
+            item_type_from_dialog = data.get("request_type")
             title = data.get("title")
             description = data.get("description")
 
-            # FIX: If title is missing (from RaiseRequestDialog), generate one
             if not title and description:
                 title = description.split('\n')[0]
                 title = (title[:75] + '...') if len(title) > 75 else title
@@ -2249,33 +2249,29 @@ class MasterOrchestrator:
                 logging.warning("Cannot save item with empty title or description.")
                 return False, None
 
-            new_id = None
-            if item_type == "BUG_REPORT":
-                # Add bug report with BUG_RAISED status
-                new_id = self.db_manager.add_change_request(
-                    project_id=self.project_id,
-                    title=title,
-                    description=description,
-                    request_type='BUG_REPORT',
-                    status='BUG_RAISED',
-                    impact_rating=data.get("severity"), # Pass severity to the correct field
-                    complexity=data.get("complexity"),
-                    parent_cr_id=parent_cr_id
-                )
-            else: # For EPIC, FEATURE, BACKLOG_ITEM
-                # Add other items with CHANGE_REQUEST status
-                new_id = self.db_manager.add_change_request(
-                    project_id=self.project_id,
-                    title=title,
-                    description=description,
-                    request_type=item_type,
-                    status='CHANGE_REQUEST',
-                    priority=data.get("priority"),
-                    complexity=data.get("complexity"),
-                    parent_cr_id=parent_cr_id
-                )
+            final_request_type = item_type_from_dialog
+            status = ""
 
-            logging.info(f"Successfully added new backlog item '{title}' (ID: {new_id}).")
+            if item_type_from_dialog == "BUG_REPORT":
+                status = "BUG_RAISED"
+            elif item_type_from_dialog == "CHANGE_REQUEST_ITEM":
+                final_request_type = "BACKLOG_ITEM"
+                status = "CHANGE_REQUEST"
+            elif item_type_from_dialog == "BACKLOG_ITEM":
+                status = "TO_DO"
+
+            new_id = self.db_manager.add_change_request(
+                project_id=self.project_id,
+                title=title,
+                description=description,
+                request_type=final_request_type,
+                status=status,
+                priority=data.get("priority") or data.get("severity"),
+                complexity=data.get("complexity"),
+                parent_cr_id=parent_cr_id
+            )
+
+            logging.info(f"Successfully added new backlog item '{title}' (Type: {final_request_type}, Status: {status}, ID: {new_id}).")
             return True, new_id
         except Exception as e:
             logging.error(f"Failed to add new backlog item: {e}", exc_info=True)

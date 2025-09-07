@@ -76,6 +76,7 @@ class CRManagementPage(QWidget):
 
     def connect_signals(self):
         self.ui.primaryActionButton.clicked.connect(self.on_primary_action_clicked)
+        self.ui.addNewItemButton.clicked.disconnect()
         self.ui.addNewItemButton.clicked.connect(self.on_add_item_clicked)
         self.ui.reorderButton.clicked.connect(self.on_reorder_clicked)
         self.ui.cancelReorderButton.clicked.connect(self.on_cancel_reorder_clicked)
@@ -232,41 +233,39 @@ class CRManagementPage(QWidget):
         """Handles opening the edit dialog when an item is double-clicked."""
         self.on_edit_clicked()
 
-    def on_add_item_clicked(self, item_type_to_add=None, is_sibling=False):
-        parent_id = None
-        item, data = self._get_selected_item_and_data()
-        initial_type = "BACKLOG_ITEM"
+    def on_add_item_clicked(self, item_type_to_add=None):
+        """Handles creating a new backlog item by launching a non-blocking dialog."""
+        parent_candidates = self.orchestrator._get_backlog_with_hierarchical_numbers()
+        initial_type = item_type_to_add if item_type_to_add else "BACKLOG_ITEM"
+
+        # FIX: Make the dialog an instance variable to prevent garbage collection.
+        self.dialog = RaiseRequestDialog(self, orchestrator=self.orchestrator, parent_candidates=parent_candidates, initial_request_type=initial_type)
 
         if item_type_to_add:
-            initial_type = item_type_to_add
-            if is_sibling and data:
-                index = self.ui.crTreeView.selectionModel().selectedRows()[0]
-                parent_index = index.parent()
-                if parent_index.isValid():
-                    parent_item = self.model.itemFromIndex(parent_index.siblingAtColumn(0))
-                    parent_id = parent_item.data(Qt.UserRole).get("cr_id") if parent_item else None
-            elif data:
-                parent_id = data.get("cr_id")
-        elif data:
-             parent_type = data.get("request_type")
-             if parent_type in ["EPIC", "FEATURE"]:
-                parent_id = data.get("cr_id")
+            item, data = self._get_selected_item_and_data()
+            if data:
+                parent_id_to_select = data.get("cr_id")
+                for i in range(self.dialog.ui.parentComboBox.count()):
+                    if self.dialog.ui.parentComboBox.itemData(i) == parent_id_to_select:
+                        self.dialog.ui.parentComboBox.setCurrentIndex(i)
+                        break
 
-        parent_candidates = self._get_parent_candidates_for_dialog()
-        dialog = RaiseRequestDialog(self, orchestrator=self.orchestrator, parent_candidates=parent_candidates, initial_request_type=initial_type)
+        self.dialog.accepted.connect(self._on_dialog_accepted)
+        self.dialog.open()
 
-        if dialog.exec():
-            new_data = dialog.get_data()
-            final_parent_id = new_data.get("parent_id") or parent_id
+    def _on_dialog_accepted(self):
+        """Handles the logic after the RaiseRequestDialog is successfully saved."""
+        # FIX: Get data from the persistent instance variable self.dialog.
+        new_data = self.dialog.get_data()
 
-            success, _ = self.orchestrator.add_new_backlog_item(new_data, final_parent_id)
-            if success:
-                # Add success feedback message
-                item_type_display = new_data['request_type'].replace('_', ' ').title()
-                QMessageBox.information(self, "Success", f"Successfully added new item: '{item_type_display}'.")
-                self.update_backlog_view()
-            else:
-                QMessageBox.critical(self, "Error", "Failed to save the new item.")
+        final_parent_id = new_data.get("parent_id")
+
+        success, _ = self.orchestrator.add_new_backlog_item(new_data)
+
+        if success:
+            self.update_backlog_view()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to save the new item.")
 
     def on_delete_item(self):
         selection_model = self.ui.crTreeView.selectionModel()

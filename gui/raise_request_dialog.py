@@ -1,6 +1,10 @@
 # gui/raise_request_dialog.py
 
-from PySide6.QtWidgets import QApplication, QDialog, QMessageBox, QTextEdit, QSizePolicy, QComboBox, QFormLayout
+from PySide6.QtWidgets import (QApplication, QDialog, QMessageBox, QTextEdit,
+                               QSizePolicy, QComboBox, QFormLayout)
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QStandardItemModel, QStandardItem
+
 from gui.ui_raise_request_dialog import Ui_RaiseRequestDialog
 
 class RaiseRequestDialog(QDialog):
@@ -10,43 +14,36 @@ class RaiseRequestDialog(QDialog):
     def __init__(self, parent=None, orchestrator=None, parent_candidates=None, initial_request_type="BACKLOG_ITEM"):
         super().__init__(parent)
         self.orchestrator = orchestrator
-        self.parent_candidates = parent_candidates or {}
+        self.parent_candidates = parent_candidates or []
         self.ui = Ui_RaiseRequestDialog()
         self.ui.setupUi(self)
 
-        # --- EXPERT SOLUTION IMPLEMENTATION ---
+        # FIX: Create our own lookup map to bypass the buggy currentData()
+        self.parent_id_map = {}
 
-        # [cite_start]1. Configure the Title QLabel for Word Wrapping [cite: 2883-2885]
+        # --- Configure Layout and Sizing ---
         self.ui.headerLabel.setWordWrap(True)
-
-        # [cite_start]2. Manage the QComboBox Size Policy [cite: 2897-2898]
         self.ui.parentComboBox.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
-        # [cite_start]3. Configure the QFormLayout [cite: 2907-2908]
         self.ui.formLayout.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-
-        # [cite_start]4. Set a Maximum Width on the QDialog [cite: 2913-2915]
         screen = QApplication.primaryScreen()
         if screen:
             available_width = screen.availableGeometry().width()
-            self.setMaximumWidth(int(available_width * 0.5)) # Max 50% of screen width
-
+            self.setMaximumWidth(int(available_width * 0.6))
         self.setMinimumWidth(650)
-        # --- END OF SOLUTION IMPLEMENTATION ---
 
         self.type_map = {
             "Backlog Item": "BACKLOG_ITEM",
+            "Change Request": "CHANGE_REQUEST_ITEM",
             "Bug Report": "BUG_REPORT",
             "Feature": "FEATURE",
             "Epic": "EPIC"
         }
-
         self.ui.typeComboBox.clear()
         self.ui.typeComboBox.addItems(self.type_map.keys())
 
-        initial_text = [k for k, v in self.type_map.items() if v == initial_request_type][0]
-        if initial_text:
-            self.ui.typeComboBox.setCurrentText(initial_text)
+        initial_text_list = [k for k, v in self.type_map.items() if v == initial_request_type]
+        if initial_text_list:
+            self.ui.typeComboBox.setCurrentText(initial_text_list[0])
 
         self.connect_signals()
         self._update_ui_for_type()
@@ -57,31 +54,44 @@ class RaiseRequestDialog(QDialog):
         self.ui.buttonBox.rejected.connect(self.reject)
         self.ui.typeComboBox.currentTextChanged.connect(self._update_ui_for_type)
 
+    def _populate_parent_combobox(self, valid_parent_types: list):
+        """Populates the parent dropdown and our manual ID map."""
+        self.ui.parentComboBox.clear()
+        self.parent_id_map.clear()
+
+        # Add "(No Parent)" at index 0
+        self.ui.parentComboBox.addItem("(No Parent)")
+        self.parent_id_map[0] = None
+
+        def recurse_and_add(items, indent_level=0):
+            for item in items:
+                item_type = item.get("request_type")
+                if item_type in valid_parent_types:
+                    indent = "  " * indent_level
+                    display_text = f"{indent}{item['hierarchical_id']}: {item['title']}"
+
+                    self.ui.parentComboBox.addItem(display_text)
+                    # Manually map the new index to its cr_id
+                    current_index = self.ui.parentComboBox.count() - 1
+                    self.parent_id_map[current_index] = item['cr_id']
+
+                    if "features" in item and item["features"]:
+                        recurse_and_add(item["features"], indent_level + 1)
+
+        recurse_and_add(self.parent_candidates)
+
     def set_edit_mode(self, details: dict):
-        """Configures the dialog for editing an existing item."""
         self.setWindowTitle("Edit Backlog Item")
+        #... (rest of the method is unchanged)
         self.ui.headerLabel.setText(f"Edit Item: {details.get('title')}")
 
         request_type = details.get('request_type')
-        type_text = [k for k, v in self.type_map.items() if v == request_type][0]
-        if type_text:
-            self.ui.typeComboBox.setCurrentText(type_text)
+        type_text_list = [k for k, v in self.type_map.items() if v == request_type]
+        if type_text_list:
+            self.ui.typeComboBox.setCurrentText(type_text_list[0])
 
         self._update_ui_for_type()
-
-        # Combine description, impact analysis, and tech preview for display
-        description = details.get('description', 'No description provided.')
-        analysis = details.get('impact_analysis_details')
-        preview = details.get('technical_preview_text')
-
-        display_text = description
-        if analysis and analysis.strip():
-            display_text += f"\n\n---\n**Impact Analysis Summary**\n{analysis}"
-
-        if preview and preview.strip():
-            display_text += f"\n\n---\n**Technical Preview**\n{preview}"
-
-        self.ui.descriptionTextEdit.setText(display_text)
+        self.ui.descriptionTextEdit.setText(details.get('description', ''))
 
         priority_value = details.get('priority') or details.get('impact_rating', '')
         self.ui.priorityComboBox.setCurrentText(priority_value)
@@ -91,56 +101,42 @@ class RaiseRequestDialog(QDialog):
         self.ui.parentComboBox.setVisible(False)
         self.ui.parentLabel.setVisible(False)
 
+
     def _update_ui_for_type(self):
         """Shows or hides fields and populates parent dropdown based on the selected item type."""
         selected_type = self.ui.typeComboBox.currentText()
         is_epic = (selected_type == "Epic")
         is_feature = (selected_type == "Feature")
-        is_item = (selected_type in ["Backlog Item", "Bug Report"])
+        is_item = (selected_type in ["Backlog Item", "Change Request", "Bug Report"])
 
-        # Default visibility for non-bug types
+        # Control visibility of fields
         self.ui.priorityLabel.setVisible(is_item)
         self.ui.priorityComboBox.setVisible(is_item)
         self.ui.complexityLabel.setVisible(is_item)
         self.ui.complexityComboBox.setVisible(is_item)
-        self.ui.descriptionLabel.setText("Description:")
 
-        # Handle parent visibility and population
-        self.ui.parentLabel.setVisible(is_feature or is_item)
-        self.ui.parentComboBox.setVisible(is_feature or is_item)
-        self.ui.parentComboBox.clear()
+        parent_visible = not is_epic
+        self.ui.parentLabel.setVisible(parent_visible)
+        self.ui.parentComboBox.setVisible(parent_visible)
+
+        # Filter and populate parent combobox
         if is_feature:
-            self.ui.parentLabel.setText("Parent Epic:")
-            for text, cr_id in self.parent_candidates.get("epics", []):
-                truncated_text = (text[:75] + '...') if len(text) > 75 else text
-                self.ui.parentComboBox.addItem(truncated_text, userData=cr_id)
-                self.ui.parentComboBox.model().item(self.ui.parentComboBox.count() - 1).setToolTip(text)
+            self._populate_parent_combobox(valid_parent_types=["EPIC"])
         elif is_item:
-            self.ui.parentLabel.setText("Parent Feature:")
-            for text, cr_id in self.parent_candidates.get("features", []):
-                truncated_text = (text[:75] + '...') if len(text) > 75 else text
-                self.ui.parentComboBox.addItem(truncated_text, userData=cr_id)
-                self.ui.parentComboBox.model().item(self.ui.parentComboBox.count() - 1).setToolTip(text)
+            self._populate_parent_combobox(valid_parent_types=["EPIC", "FEATURE"])
 
-        # Apply specific overrides for Bug Report type
         if selected_type == "Bug Report":
-            self.ui.priorityLabel.setVisible(False)
-            self.ui.priorityComboBox.setVisible(False)
-            self.ui.complexityLabel.setVisible(False)
-            self.ui.complexityComboBox.setVisible(False)
-            self.ui.descriptionLabel.setText(
-                "Bug Details (Observed/Expected/Steps):"
-            )
-            self.ui.descriptionTextEdit.setPlaceholderText(
-                "Please describe:\n1. Observed Behavior (What is happening?)\n2. Expected Behavior (What should be happening?)\n3. Steps to Reproduce\n4. Exact error message (if any)\n5. Related Backlog Item # (if applicable)"
-            )
+            self.ui.priorityLabel.setText("Severity:")
+            if self.ui.priorityComboBox.count() != 3 or self.ui.priorityComboBox.itemText(0) != "Minor":
+                self.ui.priorityComboBox.clear()
+                self.ui.priorityComboBox.addItems(["Minor", "Medium", "Major"])
+            self.ui.descriptionLabel.setText("Bug Details (Observed/Expected/Steps):")
         else:
-            self.ui.descriptionTextEdit.setPlaceholderText("")
-            # Logic for Priority/Severity combo box content
             self.ui.priorityLabel.setText("Priority:")
             if self.ui.priorityComboBox.count() != 3 or self.ui.priorityComboBox.itemText(0) != "Low":
                 self.ui.priorityComboBox.clear()
                 self.ui.priorityComboBox.addItems(["Low", "Medium", "High"])
+            self.ui.descriptionLabel.setText("Description:")
 
     def on_save(self):
         """Validates input before accepting the dialog."""
@@ -148,22 +144,27 @@ class RaiseRequestDialog(QDialog):
             QMessageBox.warning(self, "Input Required", "The description cannot be empty.")
             return
 
-        selected_type = self.ui.typeComboBox.currentText()
-        if selected_type in ["Feature", "Backlog Item", "Bug Report"]:
-            if self.ui.parentComboBox.currentIndex() == -1:
-                QMessageBox.warning(self, "Input Required", f"A parent must be selected for a {selected_type}.")
-                return
         self.accept()
 
     def get_data(self) -> dict:
         """Returns the data entered into the dialog."""
         selected_type = self.type_map.get(self.ui.typeComboBox.currentText())
+
+        # Get the correct parent_id from our reliable map.
+        parent_id = self.parent_id_map.get(self.ui.parentComboBox.currentIndex())
+
         data = {
             "request_type": selected_type,
             "description": self.ui.descriptionTextEdit.toPlainText().strip(),
-            "parent_id": self.ui.parentComboBox.currentData()
+            # THIS IS THE FIX: Instead of the unreliable isVisible(), we check the item type.
+            "parent_id": parent_id if selected_type != "EPIC" else None
         }
-        if selected_type in ["BACKLOG_ITEM", "BUG_REPORT"]:
+
+        if selected_type in ["BACKLOG_ITEM", "CHANGE_REQUEST_ITEM", "BUG_REPORT"]:
             data["complexity"] = self.ui.complexityComboBox.currentText()
-            data["severity"] = self.ui.priorityComboBox.currentText()
+            if selected_type == "Bug Report":
+                data["severity"] = self.ui.priorityComboBox.currentText()
+            else:
+                data["priority"] = self.ui.priorityComboBox.currentText()
+
         return data
