@@ -45,7 +45,7 @@ class IntegrationAgentPMT:
 
         payload = json.dumps({
             "jql": query,
-            "fields": ["summary", "description", "status", "parent"] # Added "parent" field
+            "fields": ["summary", "description", "status", "parent", "issuetype"] # Added "issuetype"
         })
 
         logging.info(f"--- JIRA API REQUEST ---")
@@ -82,7 +82,8 @@ class IntegrationAgentPMT:
                     'title': fields.get('summary'),
                     'description': description_text,
                     'status': fields.get('status', {}).get('name'),
-                    'parent': fields.get('parent') # Added parent data to the result
+                    'parent': fields.get('parent'),
+                    'issuetype': fields.get('issuetype') # Added the full issuetype object
                 })
             return formatted_issues
 

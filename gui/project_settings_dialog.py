@@ -44,6 +44,8 @@ class ProjectSettingsDialog(QDialog):
             self.ui.epicTypeIdLineEdit.setText(settings.get("epic_type_id", "10001"))
             self.ui.storyTypeIdLineEdit.setText(settings.get("story_type_id", "10004"))
             self.ui.taskTypeIdLineEdit.setText(settings.get("task_type_id", "10003"))
+            self.ui.bugTypeIdLineEdit.setText(settings.get("bug_type_id", ""))
+            self.ui.changeRequestTypeIdLineEdit.setText(settings.get("change_request_type_id", ""))
 
     def get_data(self) -> dict:
         """Returns the new settings from the dialog in a structured dictionary."""
@@ -57,7 +59,9 @@ class ProjectSettingsDialog(QDialog):
                 "project_key": self.ui.projectKeyLineEdit.text().strip(),
                 "epic_type_id": self.ui.epicTypeIdLineEdit.text().strip(),
                 "story_type_id": self.ui.storyTypeIdLineEdit.text().strip(),
-                "task_type_id": self.ui.taskTypeIdLineEdit.text().strip()
+                "task_type_id": self.ui.taskTypeIdLineEdit.text().strip(),
+                "bug_type_id": self.ui.bugTypeIdLineEdit.text().strip(),
+                "change_request_type_id": self.ui.changeRequestTypeIdLineEdit.text().strip()
             }
 
         return {"provider": provider}

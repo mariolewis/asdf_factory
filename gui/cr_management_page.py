@@ -177,23 +177,14 @@ class CRManagementPage(QWidget):
     def show_context_menu(self, position):
         """Creates and shows a context menu on right-click."""
         index = self.ui.crTreeView.indexAt(position)
-        menu = QMenu(self)
-
-        # Actions that are always available
-        add_epic_action = QAction("Add New Epic", self)
-        add_epic_action.triggered.connect(lambda: self.on_add_item_clicked("EPIC"))
-        menu.addAction(add_epic_action)
+        menu = QMenu()
 
         if index.isValid():
             item, item_data = self._get_selected_item_and_data()
             if item_data:
-                item_type = item_data.get("type")
+                item_type = item_data.get("request_type")
 
-                menu.addSeparator()
-                edit_action = QAction("Edit Item...", self)
-                edit_action.triggered.connect(self.on_edit_clicked)
-                menu.addAction(edit_action)
-
+                # Contextual "Add" actions
                 if item_type == "EPIC":
                     add_feature_action = QAction("Add Feature to this Epic...", self)
                     add_feature_action.triggered.connect(lambda: self.on_add_item_clicked("FEATURE"))
@@ -204,9 +195,20 @@ class CRManagementPage(QWidget):
                     menu.addAction(add_story_action)
 
                 menu.addSeparator()
+
+                # Standard actions for any selected item
+                edit_action = QAction("Edit Item...", self)
+                edit_action.triggered.connect(self.on_edit_clicked)
+                menu.addAction(edit_action)
+
                 delete_action = QAction("Delete Selected Item(s)", self)
                 delete_action.triggered.connect(self.on_delete_item)
                 menu.addAction(delete_action)
+        else:
+            # Action for when clicking on empty space
+            add_epic_action = QAction("Add New Epic...", self)
+            add_epic_action.triggered.connect(lambda: self.on_add_item_clicked("EPIC"))
+            menu.addAction(add_epic_action)
 
         menu.exec(self.ui.crTreeView.viewport().mapToGlobal(position))
 

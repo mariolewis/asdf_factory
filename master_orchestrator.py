@@ -1064,36 +1064,60 @@ class MasterOrchestrator:
         return new_issues_to_import
 
     def add_imported_backlog_items(self, items_to_add: list):
-        """Takes a list of new items from the import process and saves them to the backlog, preserving hierarchy."""
+        """Takes a list of new items from the import process and saves them to the backlog, preserving hierarchy and mapping issue types."""
         if not self.project_id:
             logging.error("Cannot add imported items; no active project.")
             return
 
         logging.info(f"Adding {len(items_to_add)} new imported items to the backlog.")
         db = self.db_manager
+        project_settings = self.get_project_integration_settings()
+        epic_type_id = project_settings.get("epic_type_id")
+        story_type_id = project_settings.get("story_type_id")
+        bug_type_id = project_settings.get("bug_type_id")
+        change_request_type_id = project_settings.get("change_request_type_id")
 
         for item in items_to_add:
             parent_cr_id = None
             parent_info = item.get('parent')
+            item_issuetype = item.get('issuetype', {})
+            item_issuetype_id = item_issuetype.get('id') if item_issuetype else None
 
-            # Check if the imported item has a parent in the Jira data
+            # Determine parent link
             if parent_info and parent_info.get('key'):
                 parent_external_id = parent_info.get('key')
-                # Find the local parent in our database by looking up its external_id
                 local_parent = db.get_cr_by_external_id(self.project_id, parent_external_id)
-
                 if local_parent:
                     parent_cr_id = local_parent['cr_id']
                 else:
                     logging.warning(f"Could not find local parent for imported issue '{item.get('id')}'. Parent with external key '{parent_external_id}' has not been imported yet. Item will be added at the top level.")
 
-            # Add the new item to the database with the determined parent_cr_id
+            # Determine request_type and status based on Jira's Issue Type ID
+            request_type = "BACKLOG_ITEM" # Default
+            status = "TO_DO" # Default
+
+            if item_issuetype_id == epic_type_id:
+                request_type = "EPIC"
+                status = "TO_DO" # Epics can have a simple status
+            elif item_issuetype_id == story_type_id:
+                request_type = "FEATURE"
+                status = "TO_DO" # Features can also have a simple status
+            elif item_issuetype_id == bug_type_id:
+                request_type = "BUG_REPORT"
+                status = "BUG_RAISED"
+            elif item_issuetype_id == change_request_type_id:
+                request_type = "BACKLOG_ITEM"
+                status = "CHANGE_REQUEST"
+
+            # Add the new item to the database with the determined attributes
             db.add_change_request(
                 project_id=self.project_id,
                 title=item.get('title', 'Untitled Imported Item'),
                 description=item.get('description', 'No description provided.'),
                 external_id=item.get('id'),
-                parent_cr_id=parent_cr_id
+                parent_cr_id=parent_cr_id,
+                request_type=request_type,
+                status=status
             )
 
     def handle_sync_to_tool(self, cr_ids: list) -> dict:
@@ -1116,16 +1140,20 @@ class MasterOrchestrator:
         project_provider = project_settings.get("provider")
         project_key = project_settings.get("project_key")
 
-        # Fetch the three distinct type IDs
+        # Fetch all five distinct type IDs
         epic_type_id = project_settings.get("epic_type_id")
         story_type_id = project_settings.get("story_type_id")
         task_type_id = project_settings.get("task_type_id")
+        bug_type_id = project_settings.get("bug_type_id")
+        change_request_type_id = project_settings.get("change_request_type_id")
 
-        # 2. Validate settings
+
+        # 2. Validate core settings
         if not all([global_provider, url, username, token]) or global_provider == "None":
             raise ValueError("Global integration credentials are not configured in File -> Settings.")
-        if not all([project_provider, project_key, epic_type_id, story_type_id, task_type_id]):
-            raise ValueError("Project-specific integration settings (Provider, Key, and all Type IDs) must be configured in Project -> Project Settings.")
+        if not all([project_provider, project_key]):
+            raise ValueError("Project-specific integration settings (Provider and Key) must be configured in Project -> Project Settings.")
+
 
         agent = IntegrationAgentPMT(project_provider, url, username, token)
         synced_items = []
@@ -1146,20 +1174,23 @@ class MasterOrchestrator:
                 issue_type_id_to_use = epic_type_id
             elif item_type == 'FEATURE':
                 issue_type_id_to_use = story_type_id
-            elif item_type in ['BACKLOG_ITEM', 'BUG_REPORT']:
-                issue_type_id_to_use = task_type_id
+            elif item_type == 'BUG_REPORT':
+                issue_type_id_to_use = bug_type_id
+            elif item_type == 'BACKLOG_ITEM':
+                # Use the specific Change Request ID if provided, otherwise fall back to the generic Task ID
+                issue_type_id_to_use = change_request_type_id or task_type_id
+
 
             if not issue_type_id_to_use:
-                failed_items.append({"id": cr_id, "reason": f"No Jira Issue Type ID configured for item type '{item_type}'."})
+                failed_items.append({"id": cr_id, "reason": f"No Jira Issue Type ID configured in Project Settings for ASDF type '{item_type}'."})
                 continue
 
             # 5. Find parent information
-            parent_feature = None
             parent_epic = None
             if item_details['parent_cr_id']:
                 parent_details = db.get_cr_by_id(item_details['parent_cr_id'])
+                # Features can be parents, but their parent epic is what matters to Jira
                 if parent_details and parent_details['request_type'] == 'FEATURE':
-                    parent_feature = parent_details
                     if parent_details['parent_cr_id']:
                         epic_details = db.get_cr_by_id(parent_details['parent_cr_id'])
                         if epic_details and epic_details['request_type'] == 'EPIC':

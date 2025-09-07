@@ -105,6 +105,26 @@ class Ui_ProjectSettingsDialog(object):
 
         self.formLayout_2.setWidget(3, QFormLayout.ItemRole.LabelRole, self.taskTypeIdLabel)
 
+        self.bugTypeIdLabel = QLabel(self.jiraPage)
+        self.bugTypeIdLabel.setObjectName(u"bugTypeIdLabel")
+
+        self.formLayout_2.setWidget(4, QFormLayout.ItemRole.LabelRole, self.bugTypeIdLabel)
+
+        self.bugTypeIdLineEdit = QLineEdit(self.jiraPage)
+        self.bugTypeIdLineEdit.setObjectName(u"bugTypeIdLineEdit")
+
+        self.formLayout_2.setWidget(4, QFormLayout.ItemRole.FieldRole, self.bugTypeIdLineEdit)
+
+        self.changeRequestTypeIdLabel = QLabel(self.jiraPage)
+        self.changeRequestTypeIdLabel.setObjectName(u"changeRequestTypeIdLabel")
+
+        self.formLayout_2.setWidget(5, QFormLayout.ItemRole.LabelRole, self.changeRequestTypeIdLabel)
+
+        self.changeRequestTypeIdLineEdit = QLineEdit(self.jiraPage)
+        self.changeRequestTypeIdLineEdit.setObjectName(u"changeRequestTypeIdLineEdit")
+
+        self.formLayout_2.setWidget(5, QFormLayout.ItemRole.FieldRole, self.changeRequestTypeIdLineEdit)
+
         self.taskTypeIdLineEdit = QLineEdit(self.jiraPage)
         self.taskTypeIdLineEdit.setObjectName(u"taskTypeIdLineEdit")
 
@@ -155,5 +175,10 @@ class Ui_ProjectSettingsDialog(object):
         self.epicTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Epic Type ID:", None))
         self.storyTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Story Type ID:", None))
         self.taskTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Task Type ID:", None))
+        self.bugTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Bug Type ID:", None))
+        self.changeRequestTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Change Request Type ID:", None))
+#if QT_CONFIG(tooltip)
+        self.changeRequestTypeIdLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"Optional: The ID for a custom 'Change Request' issue type.", None))
+#endif // QT_CONFIG(tooltip)
     # retranslateUi
 

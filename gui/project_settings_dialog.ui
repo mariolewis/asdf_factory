@@ -114,6 +114,30 @@
             </property>
            </widget>
           </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="bugTypeIdLabel">
+            <property name="text">
+             <string>Jira Bug Type ID:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="bugTypeIdLineEdit"/>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="changeRequestTypeIdLabel">
+            <property name="text">
+             <string>Jira Change Request Type ID:</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="changeRequestTypeIdLineEdit">
+            <property name="toolTip">
+             <string>Optional: The ID for a custom 'Change Request' issue type.</string>
+            </property>
+           </widget>
+          </item>
           <item row="3" column="1">
            <widget class="QLineEdit" name="taskTypeIdLineEdit"/>
           </item>
