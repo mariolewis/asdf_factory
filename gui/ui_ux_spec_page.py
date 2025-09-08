@@ -93,6 +93,25 @@ class Ui_UXSpecPage(object):
         self.verticalLayout_2.addLayout(self.horizontalLayout)
 
         self.stackedWidget.addWidget(self.reviewPage)
+        self.processingPage = QWidget()
+        self.processingPage.setObjectName(u"processingPage")
+        self.verticalLayout_11 = QVBoxLayout(self.processingPage)
+        self.verticalLayout_11.setObjectName(u"verticalLayout_11")
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_11.addItem(self.verticalSpacer_2)
+
+        self.processingLabel = QLabel(self.processingPage)
+        self.processingLabel.setObjectName(u"processingLabel")
+        self.processingLabel.setAlignment(Qt.AlignCenter)
+
+        self.verticalLayout_11.addWidget(self.processingLabel)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_11.addItem(self.verticalSpacer_3)
+
+        self.stackedWidget.addWidget(self.processingPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
 
@@ -110,5 +129,6 @@ class Ui_UXSpecPage(object):
         self.feedbackLabel.setText(QCoreApplication.translate("UXSpecPage", u"Feedback for Refinement (Optional):", None))
         self.refineButton.setText(QCoreApplication.translate("UXSpecPage", u"Submit Feedback && Refine", None))
         self.approveButton.setText(QCoreApplication.translate("UXSpecPage", u"Approve Specification", None))
+        self.processingLabel.setText(QCoreApplication.translate("UXSpecPage", u"Processing... Please wait.", None))
     # retranslateUi
 

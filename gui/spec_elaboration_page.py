@@ -5,6 +5,7 @@ import json
 import re
 from datetime import datetime
 import markdown
+import warnings
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QApplication
 from PySide6.QtCore import Signal, QThreadPool
 
@@ -55,6 +56,10 @@ class SpecElaborationPage(QWidget):
         self.ui.processFilesButton.clicked.connect(self.run_generation_task)
         self.ui.confirmAnalysisButton.clicked.connect(self.on_confirm_analysis_clicked)
         self.ui.cancelProjectButton.clicked.connect(self.on_cancel_project_clicked)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            self.ui.submitFeedbackButton.clicked.disconnect()
+            self.ui.submitForAnalysisButton.clicked.disconnect()
         self.ui.submitFeedbackButton.clicked.connect(self.run_refinement_task)
         self.ui.approveSpecButton.clicked.connect(self.on_approve_spec_clicked)
         self.ui.submitForAnalysisButton.clicked.connect(self.run_refinement_and_analysis_task)

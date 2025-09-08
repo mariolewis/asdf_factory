@@ -2,6 +2,7 @@
 
 import logging
 import markdown
+import warnings
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
 
@@ -37,6 +38,9 @@ class UXSpecPage(QWidget):
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            self.ui.refineButton.clicked.disconnect()
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
 
@@ -50,10 +54,11 @@ class UXSpecPage(QWidget):
         main_window.setEnabled(not is_busy)
         if hasattr(main_window, 'statusBar'):
             if is_busy:
-                self.ui.specTextEdit.setText(message)
+                self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
                 main_window.statusBar().showMessage(message)
             else:
                 main_window.statusBar().clearMessage()
+                self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
 
     def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
         """Generic method to run a task in the background."""

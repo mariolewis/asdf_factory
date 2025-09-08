@@ -177,6 +177,25 @@ class Ui_TechSpecPage(object):
         self.verticalLayout_3.addLayout(self.horizontalLayout_2)
 
         self.stackedWidget.addWidget(self.reviewPage)
+        self.processingPage = QWidget()
+        self.processingPage.setObjectName(u"processingPage")
+        self.verticalLayout_5 = QVBoxLayout(self.processingPage)
+        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_5.addItem(self.verticalSpacer_2)
+
+        self.processingLabel = QLabel(self.processingPage)
+        self.processingLabel.setObjectName(u"processingLabel")
+        self.processingLabel.setAlignment(Qt.AlignCenter)
+
+        self.verticalLayout_5.addWidget(self.processingLabel)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_5.addItem(self.verticalSpacer_3)
+
+        self.stackedWidget.addWidget(self.processingPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
 
@@ -205,5 +224,6 @@ class Ui_TechSpecPage(object):
         self.feedbackLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide feedback for refinement (optional):", None))
         self.refineButton.setText(QCoreApplication.translate("TechSpecPage", u"Submit Feedback & Refine", None))
         self.approveButton.setText(QCoreApplication.translate("TechSpecPage", u"Approve Technical Specification", None))
+        self.processingLabel.setText(QCoreApplication.translate("TechSpecPage", u"Processing... Please wait.", None))
     # retranslateUi
 
