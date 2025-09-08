@@ -15,10 +15,10 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QListWidget, QListWidgetItem, QPushButton, QSizePolicy,
-    QSpacerItem, QSplitter, QTextEdit, QVBoxLayout,
-    QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QGroupBox, QHBoxLayout,
+    QLabel, QListWidget, QListWidgetItem, QPushButton,
+    QSizePolicy, QSpacerItem, QSplitter, QTabWidget,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_SprintPlanningPage(object):
     def setupUi(self, SprintPlanningPage):
@@ -70,11 +70,77 @@ class Ui_SprintPlanningPage(object):
 
         self.verticalLayout_3.addWidget(self.implementationPlanLabel)
 
-        self.implementationPlanTextEdit = QTextEdit(self.implementationPlanWidget)
+        self.planTabWidget = QTabWidget(self.implementationPlanWidget)
+        self.planTabWidget.setObjectName(u"planTabWidget")
+        self.planTab = QWidget()
+        self.planTab.setObjectName(u"planTab")
+        self.verticalLayout_4 = QVBoxLayout(self.planTab)
+        self.verticalLayout_4.setObjectName(u"verticalLayout_4")
+        self.verticalLayout_4.setContentsMargins(0, 0, 0, 0)
+        self.implementationPlanTextEdit = QTextEdit(self.planTab)
         self.implementationPlanTextEdit.setObjectName(u"implementationPlanTextEdit")
         self.implementationPlanTextEdit.setReadOnly(True)
 
-        self.verticalLayout_3.addWidget(self.implementationPlanTextEdit)
+        self.verticalLayout_4.addWidget(self.implementationPlanTextEdit)
+
+        self.planTabWidget.addTab(self.planTab, "")
+        self.advisoryTab = QWidget()
+        self.advisoryTab.setObjectName(u"advisoryTab")
+        self.verticalLayout_5 = QVBoxLayout(self.advisoryTab)
+        self.verticalLayout_5.setObjectName(u"verticalLayout_5")
+        self.verticalLayout_5.setContentsMargins(0, 0, 0, 0)
+        self.advisoryGroupBox = QGroupBox(self.advisoryTab)
+        self.advisoryGroupBox.setObjectName(u"advisoryGroupBox")
+        self.verticalLayout_6 = QVBoxLayout(self.advisoryGroupBox)
+        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
+        self.verticalLayout_6.setContentsMargins(-1, 5, -1, 5)
+        self.advisoryInstructionLabel = QLabel(self.advisoryGroupBox)
+        self.advisoryInstructionLabel.setObjectName(u"advisoryInstructionLabel")
+        self.advisoryInstructionLabel.setWordWrap(True)
+
+        self.verticalLayout_6.addWidget(self.advisoryInstructionLabel)
+
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.runAuditButton = QPushButton(self.advisoryGroupBox)
+        self.runAuditButton.setObjectName(u"runAuditButton")
+
+        self.horizontalLayout_2.addWidget(self.runAuditButton)
+
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
+
+
+        self.verticalLayout_6.addLayout(self.horizontalLayout_2)
+
+        self.auditResultTextEdit = QTextEdit(self.advisoryGroupBox)
+        self.auditResultTextEdit.setObjectName(u"auditResultTextEdit")
+        self.auditResultTextEdit.setReadOnly(True)
+
+        self.verticalLayout_6.addWidget(self.auditResultTextEdit)
+
+        self.horizontalLayout_3 = QHBoxLayout()
+        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
+        self.horizontalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_3.addItem(self.horizontalSpacer_3)
+
+        self.incorporateFeedbackButton = QPushButton(self.advisoryGroupBox)
+        self.incorporateFeedbackButton.setObjectName(u"incorporateFeedbackButton")
+
+        self.horizontalLayout_3.addWidget(self.incorporateFeedbackButton)
+
+
+        self.verticalLayout_6.addLayout(self.horizontalLayout_3)
+
+        self.verticalLayout_6.setStretch(2, 1)
+
+        self.verticalLayout_5.addWidget(self.advisoryGroupBox)
+
+        self.planTabWidget.addTab(self.advisoryTab, "")
+
+        self.verticalLayout_3.addWidget(self.planTabWidget)
 
         self.mainSplitter.addWidget(self.implementationPlanWidget)
 
@@ -123,6 +189,9 @@ class Ui_SprintPlanningPage(object):
 
         self.retranslateUi(SprintPlanningPage)
 
+        self.planTabWidget.setCurrentIndex(0)
+
+
         QMetaObject.connectSlotsByName(SprintPlanningPage)
     # setupUi
 
@@ -131,6 +200,12 @@ class Ui_SprintPlanningPage(object):
         self.headerLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Sprint Planning", None))
         self.sprintScopeLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Sprint Scope", None))
         self.implementationPlanLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Implementation Plan", None))
+        self.planTabWidget.setTabText(self.planTabWidget.indexOf(self.planTab), QCoreApplication.translate("SprintPlanningPage", u"Implementation Plan", None))
+        self.advisoryGroupBox.setTitle("")
+        self.advisoryInstructionLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Audit the plan to ensure the generated code will meet project specifications:", None))
+        self.runAuditButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Run Audit...", None))
+        self.incorporateFeedbackButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Incorporate Feedback...", None))
+        self.planTabWidget.setTabText(self.planTabWidget.indexOf(self.advisoryTab), QCoreApplication.translate("SprintPlanningPage", u"AI Advisory Panel", None))
         self.metricsLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Items: 0 | Total Complexity: 0 story points | Development Tasks: 0", None))
         self.complexityLegendLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"<b>Complexity Estimation:</b> Small = 1 story point, Medium = 3 story points, Large = 5 story points", None))
         self.removeFromSprintButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Remove from Sprint", None))

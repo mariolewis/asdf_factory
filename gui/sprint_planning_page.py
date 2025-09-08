@@ -6,7 +6,7 @@ import markdown
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (QWidget, QMessageBox, QMenu, QListWidgetItem,
-                               QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox, QFileDialog)
+                               QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox, QFileDialog, QLabel)
 from PySide6.QtCore import Signal, Qt, QThreadPool
 from PySide6.QtGui import QAction, QColor
 
@@ -38,6 +38,8 @@ class SprintPlanningPage(QWidget):
     sprint_started = Signal(list)
     sprint_cancelled = Signal()
 
+    # In gui/sprint_planning_page.py
+
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
@@ -48,6 +50,9 @@ class SprintPlanningPage(QWidget):
         self.ui = Ui_SprintPlanningPage()
         self.ui.setupUi(self)
 
+        self.ui.mainSplitter.setChildrenCollapsible(False)
+        self.ui.mainSplitter.setSizes([350, 450])
+
         self.complexity_colors = {
             "Large": QColor("#CC7832"),
             "Medium": QColor("#FFC66D"),
@@ -55,7 +60,27 @@ class SprintPlanningPage(QWidget):
         }
 
         self.ui.sprintScopeListWidget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.connect_signals()
+
+        self._create_audit_menu() # Create the menu
+        self.connect_signals()   # Connect all signals
+
+        self.ui.incorporateFeedbackButton.setEnabled(False)
+        self.ui.runAuditButton.setEnabled(False) # New button is disabled initially
+
+    def _create_audit_menu(self):
+        """Creates the QMenu and QActions for the audit button."""
+        self.audit_menu = QMenu(self)
+        self.security_audit_action = QAction("Security Audit", self)
+        self.scalability_audit_action = QAction("Scalability Audit", self)
+        self.readability_audit_action = QAction("Readability Audit", self)
+        self.best_practices_audit_action = QAction("Best Practices Audit", self)
+
+        self.audit_menu.addAction(self.security_audit_action)
+        self.audit_menu.addAction(self.scalability_audit_action)
+        self.audit_menu.addAction(self.readability_audit_action)
+        self.audit_menu.addAction(self.best_practices_audit_action)
+
+        self.ui.runAuditButton.setMenu(self.audit_menu)
 
     def connect_signals(self):
         """Connects UI element signals to their handler methods."""
@@ -65,7 +90,14 @@ class SprintPlanningPage(QWidget):
         self.ui.sprintScopeListWidget.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.ui.savePlanButton.clicked.connect(self.on_save_plan_clicked)
         self.ui.sprintScopeListWidget.itemSelectionChanged.connect(self._on_selection_changed)
-        # We will connect startSprintButton later
+
+        # Connect the new QActions instead of the old buttons
+        self.security_audit_action.triggered.connect(self.on_security_audit_clicked)
+        self.scalability_audit_action.triggered.connect(self.on_scalability_audit_clicked)
+        self.readability_audit_action.triggered.connect(self.on_readability_audit_clicked)
+        self.best_practices_audit_action.triggered.connect(self.on_best_practices_audit_clicked)
+
+        self.ui.incorporateFeedbackButton.clicked.connect(self.on_incorporate_feedback_clicked)
 
     def _on_selection_changed(self):
         """Enables or disables the 'Remove from Sprint' button based on selection."""
@@ -131,6 +163,7 @@ class SprintPlanningPage(QWidget):
 
     def prepare_for_display(self, selected_items: list = None):
         """Loads sprint data into the UI and triggers plan generation."""
+        self.ui.planTabWidget.setCurrentWidget(self.ui.planTab)
         if selected_items is None:
             selected_items = []
 
@@ -177,7 +210,9 @@ class SprintPlanningPage(QWidget):
     def _handle_plan_generation_result(self, plan_json_str: str):
         """Handles the result from the plan generation worker."""
         self.window().setEnabled(True)
+        self.window().statusBar().clearMessage()
         self.implementation_plan_json = plan_json_str
+        self.ui.planTabWidget.setCurrentWidget(self.ui.planTab)
 
         try:
             plan_data = json.loads(plan_json_str)
@@ -186,11 +221,13 @@ class SprintPlanningPage(QWidget):
                 self.ui.implementationPlanTextEdit.setText(f"Error generating plan:\n\n{error_details}")
                 self.ui.startSprintButton.setEnabled(False)
                 self.ui.savePlanButton.setEnabled(False)
+                self.ui.runAuditButton.setEnabled(False)
             else:
                 formatted_plan = self._format_plan_for_display(plan_data)
                 self.ui.implementationPlanTextEdit.setHtml(formatted_plan)
                 self.ui.startSprintButton.setEnabled(True)
                 self.ui.savePlanButton.setEnabled(True)
+                self.ui.runAuditButton.setEnabled(True)
             self._update_metrics(plan_data)
         except json.JSONDecodeError:
             self.ui.implementationPlanTextEdit.setText(f"Error: Could not parse the generated plan.\n\n{plan_json_str}")
@@ -261,3 +298,108 @@ class SprintPlanningPage(QWidget):
             total_complexity += complexity_map.get(complexity_str, 0)
 
         self.ui.metricsLabel.setText(f"Items: {item_count} | Total Complexity: {total_complexity} story points | Development Tasks: {task_count}")
+
+    # In gui/sprint_planning_page.py ... replace these three methods
+
+    def _run_audit_task(self, audit_type: str):
+        """Generic handler to run a specific audit in a background thread."""
+        if not self.implementation_plan_json:
+            QMessageBox.warning(self, "No Plan", "An implementation plan must be generated before running an audit.")
+            return
+
+        self.ui.runAuditButton.setEnabled(False)
+        self.ui.incorporateFeedbackButton.setEnabled(False)
+
+        self.window().setEnabled(False)
+        self.window().statusBar().showMessage(f"Running {audit_type} Audit...")
+        self.ui.planTabWidget.setCurrentWidget(self.ui.advisoryTab)
+        self.ui.auditResultTextEdit.setText(f"Running {audit_type} Audit...")
+
+        worker = Worker(self.orchestrator.run_sprint_plan_audit, audit_type, self.implementation_plan_json)
+        worker.signals.result.connect(self._handle_audit_result)
+        worker.signals.error.connect(self._on_background_task_error)
+        self.threadpool.start(worker)
+
+    def _on_background_task_error(self, error_tuple):
+        """A generic handler for errors from background worker threads."""
+        self.window().setEnabled(True)
+        self.window().statusBar().clearMessage()
+        error_msg = f"An unexpected error occurred in a background task:\n{error_tuple[1]}"
+        logging.error(error_msg, exc_info=error_tuple)
+        QMessageBox.critical(self, "Background Task Error", error_msg)
+        self.ui.auditResultTextEdit.setText(error_msg)
+
+        self.ui.runAuditButton.setEnabled(True)
+
+    def _handle_audit_result(self, report_markdown: str):
+        """Displays the audit result in the text edit."""
+        self.window().setEnabled(True)
+        self.window().statusBar().clearMessage()
+        self.ui.auditResultTextEdit.setHtml(markdown.markdown(report_markdown))
+
+        self.ui.incorporateFeedbackButton.setEnabled(True)
+        self.ui.runAuditButton.setEnabled(True)
+
+    def on_security_audit_clicked(self):
+        self._run_audit_task("Security")
+
+    def on_scalability_audit_clicked(self):
+        self._run_audit_task("Scalability")
+
+    def on_readability_audit_clicked(self):
+        self._run_audit_task("Readability")
+
+    def on_best_practices_audit_clicked(self):
+        self._run_audit_task("Best Practices")
+
+    def on_incorporate_feedback_clicked(self):
+        """Opens a dialog for the PM to enter refinement instructions."""
+        dialog = IncorporateFeedbackDialog(self)
+        if dialog.exec():
+            feedback = dialog.get_feedback()
+            if feedback:
+                self.run_refinement_task(feedback)
+
+    def run_refinement_task(self, feedback: str):
+        """Initiates the background task to refine the implementation plan."""
+        self.ui.planTabWidget.setCurrentWidget(self.ui.planTab)
+        self.ui.implementationPlanTextEdit.setText("<b>Refining implementation plan based on feedback...</b>")
+        self.window().setEnabled(False)
+        self.window().statusBar().showMessage("Refining implementation plan based on feedback...")
+
+        worker = Worker(self._task_refine_plan, feedback)
+        # We can reuse the same result handler as the initial plan generation
+        worker.signals.result.connect(self._handle_plan_generation_result)
+        worker.signals.error.connect(self._on_background_task_error)
+        self.threadpool.start(worker)
+
+    def _task_refine_plan(self, pm_feedback, **kwargs):
+        """Background worker task that calls the orchestrator to refine the plan."""
+        return self.orchestrator.refine_sprint_implementation_plan(
+            current_plan_json=self.implementation_plan_json,
+            pm_feedback=pm_feedback
+        )
+
+
+class IncorporateFeedbackDialog(QDialog):
+    """A simple dialog to get refinement instructions from the PM."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Incorporate Audit Feedback")
+        self.setMinimumSize(500, 300)
+
+        self.layout = QVBoxLayout(self)
+        self.label = QLabel("Enter your instructions for the AI to refine the plan based on the audit findings:")
+        self.label.setWordWrap(True)
+        self.text_edit = QTextEdit()
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+
+        self.layout.addWidget(self.label)
+        self.layout.addWidget(self.text_edit)
+        self.layout.addWidget(self.button_box)
+
+        self.button_box.accepted.connect(self.accept)
+        self.button_box.rejected.connect(self.reject)
+
+    def get_feedback(self):
+        return self.text_edit.toPlainText().strip()

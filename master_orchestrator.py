@@ -38,6 +38,7 @@ from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from agents.agent_rollback_app_target import RollbackAgent
 from agents.agent_project_scoping import ProjectScopingAgent
 from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
+from agents.agent_plan_auditor import PlanAuditorAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -2919,6 +2920,77 @@ class MasterOrchestrator:
             logging.error(f"Failed to generate sprint implementation plan: {e}", exc_info=True)
             # Return a valid JSON with an error message
             return json.dumps([{"error": f"Failed to generate plan: {e}"}])
+
+    def run_sprint_plan_audit(self, audit_type: str, plan_json: str, **kwargs):
+        """
+        Orchestrates running a specific audit on a sprint implementation plan.
+
+        Args:
+            audit_type (str): The type of audit to run (e.g., "Security").
+            plan_json (str): The JSON string of the implementation plan.
+
+        Returns:
+            A string containing the Markdown-formatted audit report.
+        """
+        logging.info(f"Orchestrator: Running '{audit_type}' audit on sprint plan.")
+        try:
+            if not self.project_id:
+                raise Exception("Cannot run audit; no active project.")
+            if not self.llm_service:
+                raise Exception("Cannot run audit: LLM Service is not configured.")
+
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details:
+                raise Exception(f"Could not retrieve project details for audit.")
+
+            tech_spec_text = project_details['tech_spec_text'] if project_details and project_details['tech_spec_text'] else ''
+
+            agent = PlanAuditorAgent(llm_service=self.llm_service)
+            audit_report = agent.run_audit(
+                audit_type=audit_type,
+                plan_json=plan_json,
+                tech_spec=tech_spec_text
+            )
+            return audit_report
+
+        except Exception as e:
+            error_msg = f"Failed to run sprint plan audit for type '{audit_type}': {e}"
+            logging.error(error_msg, exc_info=True)
+            return f"### Error\n{error_msg}"
+
+    def refine_sprint_implementation_plan(self, current_plan_json: str, pm_feedback: str) -> str:
+        """
+        Orchestrates the refinement of an existing sprint implementation plan.
+
+        Args:
+            current_plan_json (str): The JSON string of the current plan.
+            pm_feedback (str): The PM's instructions for refinement.
+
+        Returns:
+            A JSON string of the new, refined implementation plan.
+        """
+        logging.info("Orchestrator: Refining sprint implementation plan based on PM feedback.")
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            rowd_json = json.dumps([dict(row) for row in all_artifacts])
+
+            agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
+            refined_plan_json = agent.refine_refactoring_plan(
+                current_plan_json=current_plan_json,
+                pm_feedback=pm_feedback,
+                final_spec_text=project_details['final_spec_text'],
+                tech_spec_text=project_details['tech_spec_text'],
+                rowd_json=rowd_json
+            )
+            return refined_plan_json
+
+        except Exception as e:
+            error_msg = f"Failed to refine sprint plan: {e}"
+            logging.error(error_msg, exc_info=True)
+            return json.dumps([{"error": error_msg}])
 
     def prepend_standard_header(self, document_content: str, document_type: str) -> str:
         """

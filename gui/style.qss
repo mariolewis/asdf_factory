@@ -365,3 +365,8 @@ QTreeView::branch:open:has-children:has-siblings {
     border-image: none;
     image: url(./gui/icons/chevron_down.svg);
 }
+
+/* Override for Sprint Planning advisory panel to remove title margin */
+QGroupBox#advisoryGroupBox {
+    margin-top: 0px;
+}
