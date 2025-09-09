@@ -116,6 +116,7 @@ class ASDFDBManager:
             micro_spec_id TEXT,
             dependencies TEXT,
             unit_test_status TEXT,
+            code_summary TEXT,
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );"""
         self._execute_query(create_artifacts_table)
@@ -174,6 +175,14 @@ class ASDFDBManager:
 
     def get_all_artifacts_for_project(self, project_id: str) -> List[sqlite3.Row]:
         return self._execute_query("SELECT * FROM Artifacts WHERE project_id = ? ORDER BY artifact_name", (project_id,), fetch="all")
+
+    def get_artifact_by_path(self, project_id: str, file_path: str) -> Optional[sqlite3.Row]:
+        """Retrieves a single artifact record by its unique file path for a given project."""
+        return self._execute_query(
+            "SELECT * FROM Artifacts WHERE project_id = ? AND file_path = ?",
+            (project_id, file_path),
+            fetch="one"
+        )
 
     def get_component_counts_by_status(self, project_id: str) -> dict[str, int]:
         rows = self._execute_query("SELECT status, COUNT(*) FROM Artifacts WHERE project_id = ? GROUP BY status", (project_id,), fetch="all")
@@ -360,6 +369,31 @@ class ASDFDBManager:
                 logging.info(f"Successfully batch-updated display order for {len(order_mapping)} items.")
         except sqlite3.Error as e:
             logging.error(f"Failed to batch-update CR display order: {e}")
+            raise
+
+    def batch_update_cr_status(self, cr_ids: list[int], new_status: str):
+        """
+        Updates the status for multiple CRs in a single transaction.
+
+        Args:
+            cr_ids (list[int]): A list of cr_id values to update.
+            new_status (str): The new status to set for all specified items.
+        """
+        if not cr_ids:
+            return
+        try:
+            timestamp = datetime.now(timezone.utc).isoformat()
+            placeholders = ', '.join('?' for _ in cr_ids)
+            query = f"UPDATE ChangeRequestRegister SET status = ?, last_modified_timestamp = ? WHERE cr_id IN ({placeholders})"
+            params = (new_status, timestamp) + tuple(cr_ids)
+
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(query, params)
+                conn.commit()
+                logging.info(f"Successfully batch-updated status to '{new_status}' for {len(cr_ids)} items.")
+        except sqlite3.Error as e:
+            logging.error(f"Failed to batch-update CR status: {e}")
             raise
 
     def update_cr_external_link(self, cr_id: int, external_id: str, external_url: str):

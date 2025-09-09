@@ -244,6 +244,7 @@ QProgressBar {
     border-radius: 4px;
     text-align: center;
     color: #F0F0F0;
+    background-color: #2A2A2B; /* This line is new */
 }
 
 QProgressBar::chunk {

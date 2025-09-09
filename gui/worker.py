@@ -11,12 +11,12 @@ class WorkerSignals(QObject):
     - finished: No data
     - error:    tuple (exctype, value, traceback.format_exc())
     - result:   object data returned from processing, anything
-    - progress: str progress update
+    - progress: object (typically a tuple of (status, message))
     """
     finished = Signal()
     error = Signal(tuple)
     result = Signal(object)
-    progress = Signal(str)
+    progress = Signal(object)
 
 class Worker(QRunnable):
     """

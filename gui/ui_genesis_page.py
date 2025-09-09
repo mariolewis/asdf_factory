@@ -15,9 +15,10 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QProgressBar, QPushButton, QSizePolicy, QSpacerItem,
-    QStackedWidget, QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout,
+    QLabel, QProgressBar, QPushButton, QSizePolicy,
+    QSpacerItem, QStackedWidget, QTextEdit, QVBoxLayout,
+    QWidget)
 
 class Ui_GenesisPage(object):
     def setupUi(self, GenesisPage):
@@ -45,17 +46,39 @@ class Ui_GenesisPage(object):
         self.checkpointPage.setObjectName(u"checkpointPage")
         self.verticalLayout_2 = QVBoxLayout(self.checkpointPage)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.checkpointHeaderLabel = QLabel(self.checkpointPage)
-        self.checkpointHeaderLabel.setObjectName(u"checkpointHeaderLabel")
+        self.sprintGoalLabel = QLabel(self.checkpointPage)
+        self.sprintGoalLabel.setObjectName(u"sprintGoalLabel")
+        self.sprintGoalLabel.setWordWrap(True)
 
-        self.verticalLayout_2.addWidget(self.checkpointHeaderLabel)
+        self.verticalLayout_2.addWidget(self.sprintGoalLabel)
+
+        self.formLayout = QFormLayout()
+        self.formLayout.setObjectName(u"formLayout")
+        self.label = QLabel(self.checkpointPage)
+        self.label.setObjectName(u"label")
+
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.label)
 
         self.progressBar = QProgressBar(self.checkpointPage)
         self.progressBar.setObjectName(u"progressBar")
-        self.progressBar.setValue(24)
+        self.progressBar.setValue(0)
         self.progressBar.setTextVisible(True)
 
-        self.verticalLayout_2.addWidget(self.progressBar)
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.progressBar)
+
+        self.aiConfidenceLabel = QLabel(self.checkpointPage)
+        self.aiConfidenceLabel.setObjectName(u"aiConfidenceLabel")
+
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.LabelRole, self.aiConfidenceLabel)
+
+        self.aiConfidenceGauge = QProgressBar(self.checkpointPage)
+        self.aiConfidenceGauge.setObjectName(u"aiConfidenceGauge")
+        self.aiConfidenceGauge.setValue(0)
+
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.FieldRole, self.aiConfidenceGauge)
+
+
+        self.verticalLayout_2.addLayout(self.formLayout)
 
         self.nextTaskLabel = QLabel(self.checkpointPage)
         self.nextTaskLabel.setObjectName(u"nextTaskLabel")
@@ -81,16 +104,33 @@ class Ui_GenesisPage(object):
 
         self.verticalLayout_2.addItem(self.verticalSpacer)
 
+        self.verticalLayout_2.setStretch(4, 1)
         self.stackedWidget.addWidget(self.checkpointPage)
         self.processingPage = QWidget()
         self.processingPage.setObjectName(u"processingPage")
         self.verticalLayout_3 = QVBoxLayout(self.processingPage)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.processingLabel = QLabel(self.processingPage)
-        self.processingLabel.setObjectName(u"processingLabel")
-        self.processingLabel.setAlignment(Qt.AlignCenter)
+        self.sprintStatusIndicatorLabel = QLabel(self.processingPage)
+        self.sprintStatusIndicatorLabel.setObjectName(u"sprintStatusIndicatorLabel")
+        self.sprintStatusIndicatorLabel.setAlignment(Qt.AlignCenter)
 
-        self.verticalLayout_3.addWidget(self.processingLabel)
+        self.verticalLayout_3.addWidget(self.sprintStatusIndicatorLabel)
+
+        self.formLayout_2 = QFormLayout()
+        self.formLayout_2.setObjectName(u"formLayout_2")
+        self.sprintGoalLabel_2 = QLabel(self.processingPage)
+        self.sprintGoalLabel_2.setObjectName(u"sprintGoalLabel_2")
+
+        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.LabelRole, self.sprintGoalLabel_2)
+
+        self.sprintGoalValueLabel = QLabel(self.processingPage)
+        self.sprintGoalValueLabel.setObjectName(u"sprintGoalValueLabel")
+        self.sprintGoalValueLabel.setWordWrap(True)
+
+        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.FieldRole, self.sprintGoalValueLabel)
+
+
+        self.verticalLayout_3.addLayout(self.formLayout_2)
 
         self.logOutputTextEdit = QTextEdit(self.processingPage)
         self.logOutputTextEdit.setObjectName(u"logOutputTextEdit")
@@ -98,6 +138,7 @@ class Ui_GenesisPage(object):
 
         self.verticalLayout_3.addWidget(self.logOutputTextEdit)
 
+        self.verticalLayout_3.setStretch(2, 1)
         self.stackedWidget.addWidget(self.processingPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
@@ -110,10 +151,14 @@ class Ui_GenesisPage(object):
 
     def retranslateUi(self, GenesisPage):
         GenesisPage.setWindowTitle(QCoreApplication.translate("GenesisPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("GenesisPage", u"Component Development", None))
-        self.checkpointHeaderLabel.setText(QCoreApplication.translate("GenesisPage", u"Development Checkpoint", None))
+        self.headerLabel.setText(QCoreApplication.translate("GenesisPage", u"Sprint Progress Dashboard", None))
+        self.sprintGoalLabel.setText(QCoreApplication.translate("GenesisPage", u"Sprint Goal: ...", None))
+        self.label.setText(QCoreApplication.translate("GenesisPage", u"Sprint Task Completion:", None))
+        self.aiConfidenceLabel.setText(QCoreApplication.translate("GenesisPage", u"AI Context Quality:", None))
         self.nextTaskLabel.setText(QCoreApplication.translate("GenesisPage", u"Next component in the plan is: '...'", None))
         self.proceedButton.setText(QCoreApplication.translate("GenesisPage", u"\u25b6\ufe0f Proceed with Next Step", None))
-        self.processingLabel.setText(QCoreApplication.translate("GenesisPage", u"Executing Development Step...", None))
+        self.sprintStatusIndicatorLabel.setText(QCoreApplication.translate("GenesisPage", u"MODE: DEVELOPING", None))
+        self.sprintGoalLabel_2.setText(QCoreApplication.translate("GenesisPage", u"Sprint Goal:", None))
+        self.sprintGoalValueLabel.setText(QCoreApplication.translate("GenesisPage", u"...", None))
     # retranslateUi
 

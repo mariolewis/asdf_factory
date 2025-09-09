@@ -35,7 +35,7 @@ class SprintPlanningPage(QWidget):
     """
     The logic handler for the Sprint Planning Workspace page.
     """
-    sprint_started = Signal(list)
+    sprint_started = Signal(object, str)
     sprint_cancelled = Signal()
 
     # In gui/sprint_planning_page.py
@@ -52,6 +52,8 @@ class SprintPlanningPage(QWidget):
 
         self.ui.mainSplitter.setChildrenCollapsible(False)
         self.ui.mainSplitter.setSizes([350, 450])
+        self.ui.runAuditButton.setEnabled(False) # Feedback button is disabled initially
+        self.ui.refinePlanButton.setEnabled(False)
 
         self.complexity_colors = {
             "Large": QColor("#CC7832"),
@@ -64,7 +66,7 @@ class SprintPlanningPage(QWidget):
         self._create_audit_menu() # Create the menu
         self.connect_signals()   # Connect all signals
 
-        self.ui.incorporateFeedbackButton.setEnabled(False)
+        self.ui.refinePlanButton.clicked.connect(self.on_refine_plan_clicked)
         self.ui.runAuditButton.setEnabled(False) # New button is disabled initially
 
     def _create_audit_menu(self):
@@ -90,19 +92,38 @@ class SprintPlanningPage(QWidget):
         self.ui.sprintScopeListWidget.itemDoubleClicked.connect(self.on_item_double_clicked)
         self.ui.savePlanButton.clicked.connect(self.on_save_plan_clicked)
         self.ui.sprintScopeListWidget.itemSelectionChanged.connect(self._on_selection_changed)
+        self.ui.startSprintButton.clicked.connect(self.on_start_sprint_clicked)
 
-        # Connect the new QActions instead of the old buttons
+        # Audit Actions
         self.security_audit_action.triggered.connect(self.on_security_audit_clicked)
         self.scalability_audit_action.triggered.connect(self.on_scalability_audit_clicked)
-        self.readability_audit_action.triggered.connect(self.on_readability_audit_clicked)
         self.best_practices_audit_action.triggered.connect(self.on_best_practices_audit_clicked)
 
-        self.ui.incorporateFeedbackButton.clicked.connect(self.on_incorporate_feedback_clicked)
+        # Refine Action
+        self.ui.refinePlanButton.clicked.connect(self.on_refine_plan_clicked)
 
     def _on_selection_changed(self):
         """Enables or disables the 'Remove from Sprint' button based on selection."""
         has_selection = len(self.ui.sprintScopeListWidget.selectedItems()) > 0
         self.ui.removeFromSprintButton.setEnabled(has_selection)
+
+    def on_start_sprint_clicked(self):
+        """Gathers the sprint data and emits the sprint_started signal."""
+        if not self.sprint_scope_items:
+            QMessageBox.warning(self, "Empty Sprint", "Cannot start a sprint with no items in the scope.")
+            return
+
+        if not self.implementation_plan_json or '"error":' in self.implementation_plan_json:
+            QMessageBox.warning(self, "Invalid Plan", "Cannot start a sprint with an invalid or missing implementation plan.")
+            return
+
+        reply = QMessageBox.question(self, "Confirm Sprint Start",
+                                    f"You are about to start a sprint with {len(self.sprint_scope_items)} backlog item(s).\n\n"
+                                    "The implementation plan will be locked, and the system will begin development. Proceed?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.sprint_started.emit(self.sprint_scope_items, self.implementation_plan_json)
 
     def on_item_double_clicked(self, item: QListWidgetItem):
         """Displays the full details of a double-clicked item in a custom dialog."""
@@ -194,6 +215,7 @@ class SprintPlanningPage(QWidget):
 
     def run_plan_generation_task(self):
         """Initiates the background task to generate the implementation plan."""
+        self._update_metrics()
         self.ui.implementationPlanTextEdit.setText("<b>Generating implementation plan...</b>")
         self.ui.startSprintButton.setEnabled(False)
         self.ui.savePlanButton.setEnabled(False)
@@ -228,6 +250,7 @@ class SprintPlanningPage(QWidget):
                 self.ui.startSprintButton.setEnabled(True)
                 self.ui.savePlanButton.setEnabled(True)
                 self.ui.runAuditButton.setEnabled(True)
+                self.ui.refinePlanButton.setEnabled(True)
             self._update_metrics(plan_data)
         except json.JSONDecodeError:
             self.ui.implementationPlanTextEdit.setText(f"Error: Could not parse the generated plan.\n\n{plan_json_str}")
@@ -337,7 +360,6 @@ class SprintPlanningPage(QWidget):
         self.window().statusBar().clearMessage()
         self.ui.auditResultTextEdit.setHtml(markdown.markdown(report_markdown))
 
-        self.ui.incorporateFeedbackButton.setEnabled(True)
         self.ui.runAuditButton.setEnabled(True)
 
     def on_security_audit_clicked(self):
@@ -352,7 +374,7 @@ class SprintPlanningPage(QWidget):
     def on_best_practices_audit_clicked(self):
         self._run_audit_task("Best Practices")
 
-    def on_incorporate_feedback_clicked(self):
+    def on_refine_plan_clicked(self):
         """Opens a dialog for the PM to enter refinement instructions."""
         dialog = IncorporateFeedbackDialog(self)
         if dialog.exec():
@@ -362,6 +384,7 @@ class SprintPlanningPage(QWidget):
 
     def run_refinement_task(self, feedback: str):
         """Initiates the background task to refine the implementation plan."""
+        self._update_metrics()
         self.ui.planTabWidget.setCurrentWidget(self.ui.planTab)
         self.ui.implementationPlanTextEdit.setText("<b>Refining implementation plan based on feedback...</b>")
         self.window().setEnabled(False)

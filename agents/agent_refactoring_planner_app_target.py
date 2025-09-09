@@ -47,11 +47,12 @@ class RefactoringPlannerAgent_AppTarget:
             1.  **Internal Pre-Analysis:** Before creating the plan, you MUST analyze the 'Change Request to Implement' (which may contain multiple items). Identify any dependencies between items, potential technical conflicts (e.g., two items modifying the same function), and determine the most logical implementation sequence. The final plan you generate MUST already be in this optimal sequence.
             2.  **Adhere to Existing Tech Stack:** You MUST analyze the provided Technical Specification. The plan you create must ONLY use the programming language, frameworks, and libraries already defined in that specification. Do not introduce new languages.
             3.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element must be a JSON object `{{}}` representing one micro-specification.
-            4.  **JSON Object Schema:** Each JSON object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
+            4.  **JSON Object Schema:** Each JSON object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
             5.  **Modify, Don't Recreate:** The plan should focus on modifying existing components identified in the RoWD and Source Code Context. Only plan for new components if the change request explicitly requires them.
-            6.  **Non-Destructive Changes:** For `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE` types, the `task_description` MUST contain only the specific change snippet (e.g., a single SQL `ALTER TABLE` statement).
-            7.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
-            8.  **Avoid Ambiguous Formatting:** The `task_description` content will be rendered as rich text. To prevent formatting errors, you MUST NOT use the pipe character ('|') or sequences of hyphens ('---') within the description text.
+            6.  **Use Canonical Paths:** For any task that modifies an EXISTING component, the `component_file_path` and `artifact_id` in your generated plan MUST exactly match the `file_path` and `artifact_id` for that component in the provided RoWD context.
+            7.  **Non-Destructive Changes:** For `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE` types, the `task_description` MUST contain only the specific change snippet (e.g., a single SQL `ALTER TABLE` statement).
+            8.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
+            9.  **Avoid Ambiguous Formatting:** The `task_description` content will be rendered as rich text. To prevent formatting errors, you MUST NOT use the pipe character ('|') or sequences of hyphens ('---') within the description text.
 
             **--- INPUTS ---**
             **1. Technical Specification (Defines the programming language and stack):**

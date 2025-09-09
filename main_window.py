@@ -38,6 +38,7 @@ from gui.documents_page import DocumentsPage
 from gui.reports_page import ReportsPage
 from gui.manual_ui_testing_page import ManualUITestingPage
 from gui.project_complete_page import ProjectCompletePage
+from gui.sprint_review_page import SprintReviewPage
 from gui.project_settings_dialog import ProjectSettingsDialog
 from gui.cr_management_page import CRManagementPage
 from gui.ux_spec_page import UXSpecPage
@@ -123,6 +124,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.backlog_ratification_page)
         self.sprint_planning_page = SprintPlanningPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.sprint_planning_page)
+        self.sprint_review_page = SprintReviewPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.sprint_review_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -310,6 +313,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
         self.backlog_ratification_page.backlog_ratified.connect(self.on_backlog_ratified)
         self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
+        self.sprint_planning_page.sprint_started.connect(self.on_start_sprint)
+        self.sprint_review_page.return_to_backlog.connect(self.orchestrator.handle_sprint_review_complete)
 
     def _reset_all_pages_for_new_project(self):
         """Iterates through all page widgets and calls their reset method if it exists."""
@@ -719,6 +724,7 @@ class ASDFMainWindow(QMainWindow):
             "IMPLEMENTING_CHANGE_REQUEST": self.cr_management_page,
             "PROJECT_COMPLETED": self.project_complete_page,
             "UX_UI_DESIGN": self.ux_spec_page,
+            "SPRINT_REVIEW": self.sprint_review_page,
             }
 
         # Disconnect all signals from the generic decision page to prevent multiple triggers
@@ -1040,6 +1046,15 @@ class ASDFMainWindow(QMainWindow):
         logging.info("Sprint planning cancelled by user. Returning to Backlog.")
         self.orchestrator.task_awaiting_approval = None # Clear any pending data
         self.orchestrator.set_phase("BACKLOG_VIEW")
+        self.update_ui_after_state_change()
+
+    def on_start_sprint(self, sprint_items: list, plan_json_str: str):
+        """
+        Handles the signal to start a sprint, calls the orchestrator,
+        and triggers a UI update.
+        """
+        self.orchestrator.handle_start_sprint(sprint_items, plan_json_str)
+        # This is the missing step that forces the UI to refresh to the new phase
         self.update_ui_after_state_change()
 
     def on_save_pre_execution_report_clicked(self):

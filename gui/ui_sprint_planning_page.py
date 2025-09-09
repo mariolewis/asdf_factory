@@ -65,11 +65,6 @@ class Ui_SprintPlanningPage(object):
         self.verticalLayout_3 = QVBoxLayout(self.implementationPlanWidget)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
         self.verticalLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.implementationPlanLabel = QLabel(self.implementationPlanWidget)
-        self.implementationPlanLabel.setObjectName(u"implementationPlanLabel")
-
-        self.verticalLayout_3.addWidget(self.implementationPlanLabel)
-
         self.planTabWidget = QTabWidget(self.implementationPlanWidget)
         self.planTabWidget.setObjectName(u"planTabWidget")
         self.planTab = QWidget()
@@ -120,20 +115,6 @@ class Ui_SprintPlanningPage(object):
 
         self.verticalLayout_6.addWidget(self.auditResultTextEdit)
 
-        self.horizontalLayout_3 = QHBoxLayout()
-        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
-        self.horizontalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.horizontalLayout_3.addItem(self.horizontalSpacer_3)
-
-        self.incorporateFeedbackButton = QPushButton(self.advisoryGroupBox)
-        self.incorporateFeedbackButton.setObjectName(u"incorporateFeedbackButton")
-
-        self.horizontalLayout_3.addWidget(self.incorporateFeedbackButton)
-
-
-        self.verticalLayout_6.addLayout(self.horizontalLayout_3)
-
         self.verticalLayout_6.setStretch(2, 1)
 
         self.verticalLayout_5.addWidget(self.advisoryGroupBox)
@@ -172,6 +153,11 @@ class Ui_SprintPlanningPage(object):
 
         self.horizontalLayout.addWidget(self.cancelSprintButton)
 
+        self.refinePlanButton = QPushButton(SprintPlanningPage)
+        self.refinePlanButton.setObjectName(u"refinePlanButton")
+
+        self.horizontalLayout.addWidget(self.refinePlanButton)
+
         self.savePlanButton = QPushButton(SprintPlanningPage)
         self.savePlanButton.setObjectName(u"savePlanButton")
 
@@ -199,17 +185,16 @@ class Ui_SprintPlanningPage(object):
         SprintPlanningPage.setWindowTitle(QCoreApplication.translate("SprintPlanningPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Sprint Planning", None))
         self.sprintScopeLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Sprint Scope", None))
-        self.implementationPlanLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Implementation Plan", None))
         self.planTabWidget.setTabText(self.planTabWidget.indexOf(self.planTab), QCoreApplication.translate("SprintPlanningPage", u"Implementation Plan", None))
         self.advisoryGroupBox.setTitle("")
         self.advisoryInstructionLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Audit the plan to ensure the generated code will meet project specifications:", None))
         self.runAuditButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Run Audit...", None))
-        self.incorporateFeedbackButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Incorporate Feedback...", None))
         self.planTabWidget.setTabText(self.planTabWidget.indexOf(self.advisoryTab), QCoreApplication.translate("SprintPlanningPage", u"AI Advisory Panel", None))
         self.metricsLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"Items: 0 | Total Complexity: 0 story points | Development Tasks: 0", None))
         self.complexityLegendLabel.setText(QCoreApplication.translate("SprintPlanningPage", u"<b>Complexity Estimation:</b> Small = 1 story point, Medium = 3 story points, Large = 5 story points", None))
         self.removeFromSprintButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Remove from Sprint", None))
         self.cancelSprintButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Cancel Sprint", None))
+        self.refinePlanButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Refine Plan...", None))
         self.savePlanButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Save Plan...", None))
         self.startSprintButton.setText(QCoreApplication.translate("SprintPlanningPage", u"Start Sprint", None))
     # retranslateUi

@@ -43,11 +43,21 @@ class BuildAndCommitAgentAppTarget:
     def _sanitize_path(self, raw_path: str | None) -> str | None:
         """
         Cleans and validates a file path string received from an LLM.
+
+        - Returns None if the path is empty, 'N/A', 'None', or 'TBD'.
+        - Removes invalid characters for file names.
+        - Prevents structurally unsound paths (e.g., containing empty parts).
+        - Handles cases where multiple files might be in one string.
         """
-        if not raw_path or raw_path.lower().strip() in ["n/a", "none"]:
+        if not raw_path or not raw_path.strip():
             return None
 
-        # Take the first part if there are commas
+        # Check for common invalid placeholder values
+        if raw_path.lower().strip() in ["n/a", "none", "tbd"]:
+            logging.warning(f"Sanitizer rejected an invalid placeholder path: '{raw_path}'")
+            return None
+
+        # Take the first part if there are commas or spaces in a list
         path = raw_path.split(',')[0].strip()
 
         # Remove characters invalid in most filesystems
@@ -57,6 +67,11 @@ class BuildAndCommitAgentAppTarget:
 
         # Replace backslashes with forward slashes for consistency
         path = path.replace('\\', '/')
+
+        # Structural validation: ensure no part of the path is empty
+        if any(not part.strip() for part in path.split('/')):
+            logging.warning(f"Sanitizer rejected a structurally invalid path: '{path}'")
+            return None
 
         # Ensure it's a relative path to prevent absolute path injections
         if Path(path).is_absolute():

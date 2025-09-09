@@ -39,6 +39,7 @@ from agents.agent_rollback_app_target import RollbackAgent
 from agents.agent_project_scoping import ProjectScopingAgent
 from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
 from agents.agent_plan_auditor import PlanAuditorAgent
+from agents.agent_code_summarization import CodeSummarizationAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -126,6 +127,7 @@ class MasterOrchestrator:
         self.fix_plan = None
         self.fix_plan_cursor = 0
         self._llm_service = None
+        self.current_task_confidence = 0
         logging.info("MasterOrchestrator instance created.")
 
     def reset(self):
@@ -149,15 +151,30 @@ class MasterOrchestrator:
         self.is_in_fix_mode = False
         self.fix_plan = None
         self.fix_plan_cursor = 0
+        self.current_task_confidence = 0
 
     def close_active_project(self):
         """
-        Closes the currently active project by clearing all its data and
-        returning to an idle state.
+        Closes the currently active project, cleans up in-progress statuses,
+        clears all its data, and returns to an idle state.
         """
         logging.info(f"Closing active project: {self.project_name}")
         if self.project_id:
+            try:
+                # Find any items that were left in progress and revert them
+                in_progress_items = self.db_manager.get_change_requests_by_statuses(
+                    self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
+                )
+                if in_progress_items:
+                    item_ids = [item['cr_id'] for item in in_progress_items]
+                    # Revert them to TO_DO so they can be planned in a future sprint
+                    self.db_manager.batch_update_cr_status(item_ids, "TO_DO")
+                    logging.info(f"Reverted {len(item_ids)} in-progress items back to 'TO_DO' status.")
+            except Exception as e:
+                logging.error(f"Failed to clean up in-progress statuses during project close: {e}")
+
             self._clear_active_project_data(self.db_manager, self.project_id)
+
         self.reset()
 
     @property
@@ -262,39 +279,85 @@ class MasterOrchestrator:
 
     def get_current_task_details(self) -> dict | None:
         """
-        Safely retrieves the current task, cursor, and total count, respecting
-        whether the system is in 'fix mode'.
+        Safely retrieves the current task, calculates its confidence score,
+        and provides all details for the UI.
         """
-        plan = None
-        cursor = 0
-        is_fix = self.is_in_fix_mode
+        plan = self.fix_plan if self.is_in_fix_mode else self.active_plan
+        cursor = self.fix_plan_cursor if self.is_in_fix_mode else self.active_plan_cursor
 
-        # Determine which plan to use based on the current mode
-        if is_fix and self.fix_plan:
-            plan = self.fix_plan
-            cursor = self.fix_plan_cursor
+        if not plan or cursor >= len(plan):
+            if not self.is_in_fix_mode and self.active_plan:
+                return {
+                    "task": {"component_name": "All development tasks complete."},
+                    "cursor": cursor, "total": len(self.active_plan),
+                    "is_fix_mode": False, "confidence_score": 0
+                }
+            return None
+
+        # --- AI Confidence Calculation Logic ---
+        # This now runs just-in-time for the UI to display the score for the current task.
+        confidence_score = 0
+        current_task = plan[cursor]
+        artifact_id = current_task.get("artifact_id")
+        if artifact_id:
+            # For existing components, confidence is based on context quality
+            db = self.db_manager
+            cr_details = db.get_cr_by_id(self.active_plan[0].get('cr_id')) # Assumes cr_id is in the plan
+            if cr_details:
+                impacted_ids = json.loads(cr_details.get('impacted_artifact_ids') or '[]')
+                if impacted_ids:
+                    # Find which of the overall impacted files are relevant to THIS specific task
+                    task_file_path = db.get_artifact_by_id(artifact_id)['file_path']
+                    if task_file_path in self.context_package_summary.get('files_in_context', []):
+                        if task_file_path in self.context_package_summary.get('summarized_files', []):
+                            confidence_score = 50 # Medium: Relevant file was summarized
+                        else:
+                            confidence_score = 90 # High: Relevant file was included in full
+                    else:
+                        confidence_score = 10 # Low: Relevant file was not in context at all
         else:
-            plan = self.active_plan
-            cursor = self.active_plan_cursor
+            # For new components, confidence is always high as there's no existing code to misinterpret.
+            confidence_score = 100
 
-        if plan and cursor < len(plan):
-            return {
-                "task": plan[cursor],
-                "cursor": cursor,
-                "total": len(plan),
-                "is_fix_mode": is_fix
-            }
+        self.current_task_confidence = confidence_score
+        # --- End of Calculation ---
 
-        # This handles the case where the main plan is complete
-        if not is_fix and self.active_plan and self.active_plan_cursor >= len(self.active_plan):
-             return {
-                "task": {"component_name": "All development tasks complete."},
-                "cursor": self.active_plan_cursor,
-                "total": len(self.active_plan),
-                "is_fix_mode": is_fix
-            }
+        return {
+            "task": current_task,
+            "cursor": cursor,
+            "total": len(plan),
+            "is_fix_mode": self.is_in_fix_mode,
+            "confidence_score": self.current_task_confidence
+        }
 
-        return None
+    def get_sprint_goal(self) -> str:
+        """
+        Retrieves a formatted string of the current sprint's goal, based on
+        the titles of the items being implemented.
+        """
+        if not self.is_executing_cr_plan or not self.project_id:
+            return "N/A"
+
+        try:
+            # The sprint items are those currently marked as in progress
+            sprint_items = self.db_manager.get_change_requests_by_statuses(
+                self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
+            )
+            if not sprint_items:
+                return "Finalizing sprint..."
+
+            titles = [f"'{item['title']}'" for item in sprint_items]
+            return ", ".join(titles)
+
+        except Exception as e:
+            logging.error(f"Failed to retrieve sprint goal: {e}")
+            return "Error retrieving goal..."
+
+    def get_current_mode(self) -> str:
+        """
+        Returns the current operational mode of the Genesis pipeline.
+        """
+        return "FIXING" if self.is_in_fix_mode else "DEVELOPING"
 
     def get_uncompleted_tasks_for_manual_fix(self) -> list | None:
         """
@@ -1352,9 +1415,11 @@ class MasterOrchestrator:
             planning_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
 
             # Pass both the app spec and the new tech spec to the agent.
+            # First, strip the irrelevant setup guide from the tech spec.
+            cleaned_tech_spec = self._strip_environment_setup_from_spec(project_details['tech_spec_text'])
             backlog_items_json = planning_agent.generate_backlog_items(
                 final_spec_text=project_details['final_spec_text'],
-                tech_spec_text=project_details['tech_spec_text']
+                tech_spec_text=cleaned_tech_spec
             )
 
             # Store the generated items for the ratification screen to use
@@ -1476,7 +1541,7 @@ class MasterOrchestrator:
                 component_name = task.get('component_name', 'Unnamed Fix Task')
                 logging.info(f"Executing FIX task {self.fix_plan_cursor + 1}/{len(self.fix_plan)} for component: {component_name}")
                 if progress_callback:
-                    progress_callback(f"Executing FIX task {self.fix_plan_cursor + 1}/{len(self.fix_plan)} for: {component_name}")
+                    progress_callback(("INFO", f"Executing FIX task {self.fix_plan_cursor + 1}/{len(self.fix_plan)} for: {component_name}"))
 
                 try:
                     db = self.db_manager
@@ -1490,6 +1555,9 @@ class MasterOrchestrator:
                     logging.warning("Halting fix plan due to an unrecoverable environment failure.")
                     return "Environment failure during fix. Escalated to PM."
                 except Exception as e:
+                    # This block is updated
+                    if progress_callback:
+                        progress_callback(("ERROR", f"Fix task failed for {component_name}. Initiating debug protocol..."))
                     logging.error(f"A task within the fix plan failed for {component_name}. Error: {e}")
                     self.escalate_for_manual_debug(str(e))
                     return f"Error during fix execution: {e}"
@@ -1501,21 +1569,14 @@ class MasterOrchestrator:
             return "No action taken."
 
         if not self.active_plan or self.active_plan_cursor >= len(self.active_plan):
-            logging.info("Development plan is complete.")
-            if self.is_executing_cr_plan:
-                logging.info("Completed a Change Request plan. Running post-implementation documentation update.")
-                self._run_post_implementation_doc_update()
-                self.is_executing_cr_plan = False
-
-            if progress_callback: progress_callback("Development plan complete.")
-            self.set_phase("INTEGRATION_AND_VERIFICATION")
-            return "Development complete. Ready for Integration."
+            self._run_final_sprint_verification(progress_callback)
+            return "Sprint development tasks complete. Running final verification..."
 
         task = self.active_plan[self.active_plan_cursor]
         component_name = task.get('component_name')
         logging.info(f"Executing task {self.active_plan_cursor + 1} for component: {component_name}")
         if progress_callback:
-            progress_callback(f"Executing task {self.active_plan_cursor + 1}/{len(self.active_plan)} for component: {component_name}")
+            progress_callback(("INFO", f"Executing task {self.active_plan_cursor + 1}/{len(self.active_plan)} for component: {component_name}"))
 
         try:
             db = self.db_manager
@@ -1527,20 +1588,25 @@ class MasterOrchestrator:
                 self._execute_declarative_modification_task(task, project_root_path, db, progress_callback)
                 return "Paused for high-risk change approval."
 
+            if task.get("artifact_id"):
+                artifact_record = db.get_artifact_by_id(task["artifact_id"])
+                if artifact_record and artifact_record['file_path']:
+                    canonical_path = artifact_record['file_path']
+                    plan_path = task.get("component_file_path")
+                    if plan_path != canonical_path:
+                        logging.warning(f"Path mismatch for artifact {task['artifact_id']}. Overriding plan path '{plan_path}' with canonical RoWD path '{canonical_path}'.")
+                        task["component_file_path"] = canonical_path
+
             self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
             self.active_plan_cursor += 1
-
-            # --- THIS IS THE FIX ---
-            # If a main plan task succeeds, we reset the debug counter for the next task.
             self.debug_attempt_counter = 0
-            # --- END OF FIX ---
 
             return "Step complete."
 
-        except EnvironmentFailureException:
-            logging.warning("Halting Genesis pipeline due to an unrecoverable environment failure.")
-            return "Environment failure. Escalated to PM."
         except Exception as e:
+            # This block is updated
+            if progress_callback:
+                progress_callback(("ERROR", f"Task failed for {component_name}. Initiating debug protocol..."))
             logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}", exc_info=True)
             self.escalate_for_manual_debug(str(e))
             return f"Error during development: {e}"
@@ -1554,21 +1620,21 @@ class MasterOrchestrator:
         try:
             db = self.db_manager
 
-            # --- THIS IS THE FIX ---
-            # Only check for known issues if we are not forcing a proceed.
             if not force_proceed:
                 non_passing_statuses = ["KNOWN_ISSUE", "UNIT_TESTS_FAILING", "DEBUG_PM_ESCALATION"]
                 known_issues = db.get_artifacts_by_statuses(self.project_id, non_passing_statuses)
 
                 if known_issues:
-                    if progress_callback: progress_callback("Integration paused: Found components with known issues.")
+                    if progress_callback:
+                        # This line is corrected to send a tuple
+                        progress_callback(("WARNING", "Integration paused: Found components with known issues."))
                     self.task_awaiting_approval = {"known_issues": [dict(row) for row in known_issues]}
                     self.set_phase("AWAITING_INTEGRATION_CONFIRMATION")
                     return
-            # --- END OF FIX ---
 
-            # If no issues, or if force_proceed is true, run the actual integration.
-            if progress_callback: progress_callback("Running integration and UI testing phase logic...")
+            if progress_callback:
+                # This line is corrected to send a tuple
+                progress_callback(("INFO", "Running integration and UI testing phase logic..."))
             self._run_integration_and_ui_testing_phase(progress_callback=progress_callback)
 
         except Exception as e:
@@ -1595,7 +1661,7 @@ class MasterOrchestrator:
         Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
         """
         component_name = task.get("component_name")
-        if progress_callback: progress_callback(f"Executing source code generation for: {component_name}")
+        if progress_callback: progress_callback(("INFO", f"Executing source code generation for: {component_name}"))
 
         if not self.llm_service:
             raise Exception("Cannot generate code: LLM Service is not configured.")
@@ -1604,27 +1670,28 @@ class MasterOrchestrator:
         coding_standard = project_details['coding_standard_text']
         target_language = project_details['technology_stack']
         test_command = project_details['test_execution_command']
-        # Check if version control is enabled for this project, defaulting to True if not set
         version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
 
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
         micro_spec_content = task.get("task_description")
 
-        if progress_callback: progress_callback(f"Generating logic plan for {component_name}...")
+        if progress_callback: progress_callback(("INFO", f"Generating logic plan for {component_name}..."))
         logic_agent = LogicAgent_AppTarget(llm_service=self.llm_service)
         code_agent = CodeAgent_AppTarget(llm_service=self.llm_service)
         review_agent = CodeReviewAgent(llm_service=self.llm_service)
         test_agent = TestAgent_AppTarget(llm_service=self.llm_service)
         logic_plan = logic_agent.generate_logic_for_component(micro_spec_content)
+        if progress_callback: progress_callback(("SUCCESS", "... Logic plan generated."))
 
-        if progress_callback: progress_callback(f"Generating source code for {component_name}...")
+        if progress_callback: progress_callback(("INFO", f"Generating source code for {component_name}..."))
         style_guide_to_use = project_details['ux_spec_text'] or project_details['final_spec_text']
         source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, style_guide=style_guide_to_use)
+        if progress_callback: progress_callback(("SUCCESS", "... Source code generated."))
 
         MAX_REVIEW_ATTEMPTS = 2
         for attempt in range(MAX_REVIEW_ATTEMPTS):
-            if progress_callback: progress_callback(f"Reviewing code for {component_name} (Attempt {attempt + 1})...")
+            if progress_callback: progress_callback(("INFO", f"Reviewing code for {component_name} (Attempt {attempt + 1})..."))
             review_status, review_output = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, coding_standard)
             if review_status == "pass":
                 break
@@ -1633,34 +1700,41 @@ class MasterOrchestrator:
                 break
             elif review_status == "fail":
                 if attempt < MAX_REVIEW_ATTEMPTS - 1:
-                    if progress_callback: progress_callback(f"Re-writing code for {component_name} based on feedback...")
+                    if progress_callback: progress_callback(("INFO", f"Re-writing code for {component_name} based on feedback..."))
                     source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, feedback=review_output)
                 else:
                     raise Exception(f"Component '{component_name}' failed code review after all attempts.")
+        if progress_callback: progress_callback(("SUCCESS", "... Code review process complete."))
 
-        if progress_callback: progress_callback(f"Generating unit tests for {component_name}...")
+        if progress_callback: progress_callback(("INFO", f"Generating unit tests for {component_name}..."))
         unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
+        if progress_callback: progress_callback(("SUCCESS", "... Unit tests generated."))
 
-        if progress_callback: progress_callback(f"Writing files, testing, and committing {component_name}...")
+        if progress_callback: progress_callback(("INFO", f"Writing files, testing, and committing {component_name}..."))
         build_agent = BuildAndCommitAgentAppTarget(str(project_root_path), version_control_enabled=version_control_enabled)
         status, result_message = build_agent.build_and_commit_component(
             task.get("component_file_path"), source_code,
             task.get("test_file_path"), unit_tests, test_command, self.llm_service,
-            version_control_enabled # Pass the flag to the agent
+            version_control_enabled
         )
 
         if status == 'ENVIRONMENT_FAILURE':
             logging.error(f"Environment failure for {component_name}: {result_message}")
             self.task_awaiting_approval = {"failure_log": result_message, "is_env_failure": True}
             self.set_phase("DEBUG_PM_ESCALATION")
-            raise EnvironmentFailureException(result_message) # Stop execution
+            raise EnvironmentFailureException(result_message)
         elif status != 'SUCCESS':
-            # This is a code failure, which IS recoverable by the debug loop.
             raise Exception(f"BuildAndCommitAgent failed for {component_name}: {result_message}")
 
         commit_hash = result_message.split(":")[-1].strip() if "New commit hash:" in result_message else "N/A"
+        if progress_callback: progress_callback(("SUCCESS", "... Component successfully tested and committed."))
 
-        if progress_callback: progress_callback(f"Updating project records for {component_name}...")
+        if progress_callback: progress_callback(("INFO", f"Summarizing new code for {component_name}..."))
+        summarization_agent = CodeSummarizationAgent(llm_service=self.llm_service)
+        summary = summarization_agent.summarize_code(source_code)
+        if progress_callback: progress_callback(("SUCCESS", "... Code summarized."))
+
+        if progress_callback: progress_callback(("INFO", f"Updating project records for {component_name}..."))
         doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
         doc_agent.update_artifact_record({
             "artifact_id": f"art_{uuid.uuid4().hex[:8]}", "project_id": self.project_id,
@@ -1669,8 +1743,10 @@ class MasterOrchestrator:
             "status": "UNIT_TESTS_PASSING", "unit_test_status": "TESTS_PASSING",
             "commit_hash": commit_hash, "version": 1,
             "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
-            "micro_spec_id": task.get("micro_spec_id")
+            "micro_spec_id": task.get("micro_spec_id"),
+            "code_summary": summary
         })
+        if progress_callback: progress_callback(("SUCCESS", "... Project records updated."))
 
     def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
         """
@@ -1879,6 +1955,12 @@ class MasterOrchestrator:
             if len(parts) > 1:
                 return parts[1]
         return doc_text # Return original text if delimiter not found
+
+    def _strip_environment_setup_from_spec(self, tech_spec_text: str) -> str:
+        """Removes the Development Environment Setup Guide from the spec text."""
+        heading = "Development Environment Setup Guide"
+        parts = tech_spec_text.split(heading, 1)
+        return parts[0].strip()
 
     def _determine_resume_phase_from_rowd(self, db: ASDFDBManager) -> FactoryPhase:
         """
@@ -2737,6 +2819,31 @@ class MasterOrchestrator:
 
         return success, output
 
+    def _run_final_sprint_verification(self, progress_callback=None):
+        """
+        Runs the full project test suite as a final quality gate for the sprint.
+        Transitions to SPRINT_REVIEW on success or escalates on failure.
+        """
+        logging.info("Sprint plan complete. Running mandatory final regression test suite...")
+        if progress_callback:
+            progress_callback("Running mandatory final regression test suite...")
+
+        try:
+            success, output = self.run_full_test_suite(progress_callback)
+            if success:
+                logging.info("Final regression test suite PASSED. Proceeding to Sprint Review.")
+                if progress_callback:
+                    progress_callback("All tests passed.")
+                self.set_phase("SPRINT_REVIEW")
+            else:
+                logging.error(f"Final regression test suite FAILED. Escalating to PM.")
+                if progress_callback:
+                    progress_callback(f"Regression test failed:\n{output}")
+                self.escalate_for_manual_debug(f"A regression failure was detected during final sprint verification.\n\n--- TEST OUTPUT ---\n{output}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during final sprint verification: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred during the final regression test run:\n{e}")
+
     def handle_generate_technical_preview(self, cr_id: int) -> str:
         """
         Orchestrates the generation of a technical preview for a specific CR.
@@ -2808,6 +2915,65 @@ class MasterOrchestrator:
             logging.error(f"Failed during sprint initiation: {e}", exc_info=True)
             self.set_phase("BACKLOG_VIEW") # Go back on error
             self.task_awaiting_approval = {"error": str(e)}
+
+    def handle_start_sprint(self, sprint_items: list, plan_json_str: str, **kwargs):
+        """
+        Finalizes sprint planning, saves the plan, updates item statuses,
+        and transitions the factory to the GENESIS (sprint execution) phase.
+        """
+        logging.info(f"Starting sprint with {len(sprint_items)} items.")
+        try:
+            # 1. Load the plan into the active state for execution
+            full_plan_data = json.loads(plan_json_str)
+            if isinstance(full_plan_data, list) and full_plan_data and full_plan_data[0].get("error"):
+                raise ValueError(f"Cannot start sprint with a failed plan: {full_plan_data[0]['error']}")
+
+            self.active_plan = full_plan_data
+            self.active_plan_cursor = 0
+            self.is_executing_cr_plan = True # Use this flag to signify a sprint is active
+
+            # 2. Update the status of all items in the sprint scope
+            cr_ids_to_update = [item['cr_id'] for item in sprint_items]
+            self.db_manager.batch_update_cr_status(cr_ids_to_update, "IMPLEMENTATION_IN_PROGRESS")
+
+            # 3. Transition to the development phase
+            self.set_phase("GENESIS")
+            logging.info("Sprint plan loaded and statuses updated. Transitioning to GENESIS.")
+
+        except Exception as e:
+            logging.error(f"Failed to start sprint: {e}", exc_info=True)
+            # Revert to planning page on failure
+            self.set_phase("SPRINT_PLANNING")
+            self.task_awaiting_approval = {
+                "selected_sprint_items": sprint_items,
+                "error": str(e)
+            }
+
+    def handle_sprint_review_complete(self, **kwargs):
+        """
+        Handles the user's action to complete the sprint review, updates the
+        status of completed items, and returns to the backlog.
+        """
+        logging.info("Sprint review complete. Updating item statuses and returning to BACKLOG_VIEW.")
+        try:
+            # Find all items that were part of the sprint and mark them as COMPLETED.
+            items_to_complete = self.db_manager.get_change_requests_by_statuses(
+                self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
+            )
+            if items_to_complete:
+                item_ids = [item['cr_id'] for item in items_to_complete]
+                self.db_manager.batch_update_cr_status(item_ids, "COMPLETED")
+
+        except Exception as e:
+            logging.error(f"Failed to update sprint item statuses to COMPLETED: {e}")
+            # We still proceed to the backlog view even if the status update fails.
+
+        finally:
+            # Clear out the completed plan details
+            self.active_plan = None
+            self.active_plan_cursor = 0
+            self.is_executing_cr_plan = False
+            self.set_phase("BACKLOG_VIEW")
 
     def handle_acknowledge_technical_preview(self, cr_id: int, preview_text: str):
         """
@@ -3459,44 +3625,96 @@ class MasterOrchestrator:
 
     def _build_and_validate_context_package(self, core_documents: dict, source_code_files: dict) -> dict:
         """
-        Gathers context, checks size, trims if necessary by prioritizing core
-        documents and smaller source files, and reports on any excluded files.
+        Gathers context using a "Hybrid Context Assembly" strategy. It checks
+        the size of each file, adding the full code for small files and a
+        pre-generated summary for large files. If a summary is missing for a
+        large file, it generates one on-the-fly.
+
+        Returns:
+            A dictionary containing the assembled source code context, a flag
+            indicating if trimming occurred, any errors, and a list of files
+            represented by summaries instead of full code.
         """
         final_context = {}
         excluded_files = []
+        summarized_files = []
         context_was_trimmed = False
 
-        limit_str = self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "200000"
+        limit_str = self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2500000"
         char_limit = int(limit_str)
 
+        # 1. Add core documents first, as they are essential context.
         core_doc_chars = 0
         for name, content in core_documents.items():
-            final_context[name] = content
-            core_doc_chars += len(content) if content else 0
+            if content:
+                final_context[name] = content
+                core_doc_chars += len(content)
 
         if core_doc_chars > char_limit:
-            logging.error(f"Context Builder: Core documents ({core_doc_chars} chars) alone exceed the context limit of {char_limit}. Cannot proceed.")
-            return {"source_code": {}, "was_trimmed": True, "error": "Core documents are too large for the context window.", "excluded_files": list(source_code_files.keys())}
+            msg = "Core documents alone exceed the context limit. Cannot proceed."
+            logging.error(f"Context Builder Error: {msg}")
+            return {"source_code": {}, "error": msg}
 
         remaining_chars = char_limit - core_doc_chars
-        sorted_source_files = sorted(source_code_files.items(), key=lambda item: len(item[1]))
 
-        for file_path, content in sorted_source_files:
-            if len(content) <= remaining_chars:
+        # 2. Iterate through source files to build the hybrid context.
+        for file_path, content in source_code_files.items():
+            content_len = len(content)
+
+            if content_len <= remaining_chars:
+                # File is small enough, add full source code.
                 final_context[file_path] = content
-                remaining_chars -= len(content)
+                remaining_chars -= content_len
             else:
+                # File is too large, use a summary instead.
                 context_was_trimmed = True
-                excluded_files.append(file_path)
+                artifact = self.db_manager.get_artifact_by_path(self.project_id, file_path)
 
-        if context_was_trimmed:
-            logging.warning(f"Context Builder: Context trimmed. Excluded {len(excluded_files)} file(s): {', '.join(excluded_files)}")
+                if artifact and artifact['code_summary']:
+                    # Summary exists, use it if it fits.
+                    summary = artifact['code_summary']
+                    if len(summary) <= remaining_chars:
+                        final_context[file_path] = f"--- CODE SUMMARY FOR {file_path} ---\n{summary}"
+                        remaining_chars -= len(summary)
+                        summarized_files.append(file_path)
+                    else:
+                        excluded_files.append(file_path) # Summary is also too big
+                else:
+                    # On-demand summarization for legacy or missing summaries.
+                    logging.info(f"Context Builder: On-demand summary needed for large file: {file_path}")
+                    try:
+                        from agents.agent_code_summarization import CodeSummarizationAgent
+                        summarization_agent = CodeSummarizationAgent(llm_service=self.llm_service)
+                        summary = summarization_agent.summarize_code(content)
 
+                        if len(summary) <= remaining_chars:
+                            final_context[file_path] = f"--- CODE SUMMARY FOR {file_path} ---\n{summary}"
+                            remaining_chars -= len(summary)
+                            summarized_files.append(file_path)
+
+                            # Save the newly generated summary back to the DB.
+                            if artifact:
+                                from agents.doc_update_agent_rowd import DocUpdateAgentRoWD
+                                doc_agent = DocUpdateAgentRoWD(self.db_manager, self.llm_service)
+                                updated_data = dict(artifact)
+                                updated_data['code_summary'] = summary
+                                doc_agent.update_artifact_record(updated_data)
+                        else:
+                            excluded_files.append(file_path) # Generated summary is too big
+                    except Exception as e:
+                        logging.error(f"On-demand summarization failed for {file_path}: {e}")
+                        excluded_files.append(file_path)
+
+        if excluded_files:
+            logging.warning(f"Context Builder: Excluded {len(excluded_files)} file(s) as they and their summaries were too large: {', '.join(excluded_files)}")
+
+        # At the end of _build_and_validate_context_package...
         return {
             "source_code": final_context,
             "was_trimmed": context_was_trimmed,
             "error": None,
-            "excluded_files": excluded_files
+            "summarized_files": summarized_files,
+            "files_in_context": list(source_code_files.keys())
         }
 
     def _plan_fix_from_description(self, description: str):
