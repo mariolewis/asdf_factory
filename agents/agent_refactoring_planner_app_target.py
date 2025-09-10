@@ -41,33 +41,27 @@ class RefactoringPlannerAgent_AppTarget:
                     source_code_context_str += f"### File: {file_path}\n```\n{code}\n```\n\n"
 
             prompt = f"""
-            You are an expert Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format to implement a given change request by modifying an existing codebase.
+            You are an expert Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format to implement a given change request.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Internal Pre-Analysis:** Before creating the plan, you MUST analyze the 'Change Request to Implement' (which may contain multiple items). Identify any dependencies between items, potential technical conflicts (e.g., two items modifying the same function), and determine the most logical implementation sequence. The final plan you generate MUST already be in this optimal sequence.
-            2.  **Adhere to Existing Tech Stack:** You MUST analyze the provided Technical Specification. The plan you create must ONLY use the programming language, frameworks, and libraries already defined in that specification. Do not introduce new languages.
-            3.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element must be a JSON object `{{}}` representing one micro-specification.
-            4.  **JSON Object Schema:** Each JSON object MUST have keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
-            5.  **Modify, Don't Recreate:** The plan should focus on modifying existing components identified in the RoWD and Source Code Context. Only plan for new components if the change request explicitly requires them.
-            6.  **Use Canonical Paths:** For any task that modifies an EXISTING component, the `component_file_path` and `artifact_id` in your generated plan MUST exactly match the `file_path` and `artifact_id` for that component in the provided RoWD context.
-            7.  **Non-Destructive Changes:** For `DB_MIGRATION_SCRIPT`, `BUILD_SCRIPT_MODIFICATION`, or `CONFIG_FILE_UPDATE` types, the `task_description` MUST contain only the specific change snippet (e.g., a single SQL `ALTER TABLE` statement).
-            8.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
-            9.  **Avoid Ambiguous Formatting:** The `task_description` content will be rendered as rich text. To prevent formatting errors, you MUST NOT use the pipe character ('|') or sequences of hyphens ('---') within the description text.
+            1.  **Analyze Dependencies:** Before creating the plan, you MUST analyze the 'Change Request to Implement'. Determine the most logical implementation sequence. The final plan you generate MUST be in this optimal sequence.
+            2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`.
+            3.  **JSON Object Schema:** Each JSON object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
+            4.  **STRICTLY CONDITIONAL Test Generation:** The `test_file_path` key is OPTIONAL and should be omitted by default. You MUST ONLY include the `test_file_path` key if a task involves creating or significantly modifying application logic that requires new unit tests. If the user's request includes phrases like "no test cases" or "do not generate tests", you are FORBIDDEN from including the `test_file_path` key in any task.
+            5.  **Use Canonical Paths:** For any task modifying an EXISTING component, the `component_file_path` and `artifact_id` MUST exactly match the `file_path` and `artifact_id` from the provided RoWD context.
+            6.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
             **--- INPUTS ---**
-            **1. Technical Specification (Defines the programming language and stack):**
+            **1. Technical Specification:**
             {tech_spec_text}
 
             **2. Change Request to Implement:**
             {change_request_desc}
 
-            **3. Finalized Application Specification:**
-            {final_spec_text}
-
-            **4. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):**
+            **3. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):**
             {rowd_json}
 
-            **5. Source Code Context:**
+            **4. Source Code Context:**
             {source_code_context_str}
 
             **--- Detailed Refactoring Plan (JSON Array Output) ---**
@@ -79,7 +73,6 @@ class RefactoringPlannerAgent_AppTarget:
 
             if cleaned_response.startswith("[") and cleaned_response.endswith("]"):
                 response_data = json.loads(cleaned_response)
-                # Check for an error structure within a valid JSON response
                 if isinstance(response_data, list) and len(response_data) > 0 and response_data[0].get("error"):
                     raise ValueError(response_data[0]["error"])
                 return cleaned_response
@@ -108,11 +101,11 @@ class RefactoringPlannerAgent_AppTarget:
         logging.info("RefactoringPlannerAgent: Refining development plan based on PM feedback...")
         try:
             prompt = textwrap.dedent(f"""
-                You are an expert Solutions Architect revising a development plan. Your task is to refine an existing JSON refactoring plan based on specific feedback from a Product Manager.
+                You are an expert Solutions Architect revising a development plan. Your task is to generate a new, refined JSON development plan by incorporating a Product Manager's feedback into a previous version.
 
                 **MANDATORY INSTRUCTIONS:**
-                1.  **Modify, Don't Regenerate:** You MUST modify the "Current Plan Draft" to incorporate the "PM Feedback". Preserve all tasks that are not affected by the feedback.
-                2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, identical in schema to the original plan.
+                1.  **Prioritize PM Feedback:** The PM's feedback is the primary directive. You MUST restructure, add, remove, or consolidate tasks as requested, even if it means completely changing the original plan's structure.
+                2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, adhering to the original schema.
                 3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
 
                 **--- CONTEXT: Project Specifications ---**
@@ -125,7 +118,7 @@ class RefactoringPlannerAgent_AppTarget:
                 {current_plan_json}
                 ```
 
-                **--- INPUT 2: PM Feedback to Address ---**
+                **--- INPUT 2: PM Feedback to Address (Primary Directive) ---**
                 ```
                 {pm_feedback}
                 ```

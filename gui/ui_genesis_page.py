@@ -138,6 +138,20 @@ class Ui_GenesisPage(object):
 
         self.verticalLayout_3.addWidget(self.logOutputTextEdit)
 
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
+
+        self.continueButton = QPushButton(self.processingPage)
+        self.continueButton.setObjectName(u"continueButton")
+
+        self.horizontalLayout_2.addWidget(self.continueButton)
+
+
+        self.verticalLayout_3.addLayout(self.horizontalLayout_2)
+
         self.verticalLayout_3.setStretch(2, 1)
         self.stackedWidget.addWidget(self.processingPage)
 
@@ -160,5 +174,6 @@ class Ui_GenesisPage(object):
         self.sprintStatusIndicatorLabel.setText(QCoreApplication.translate("GenesisPage", u"MODE: DEVELOPING", None))
         self.sprintGoalLabel_2.setText(QCoreApplication.translate("GenesisPage", u"Sprint Goal:", None))
         self.sprintGoalValueLabel.setText(QCoreApplication.translate("GenesisPage", u"...", None))
+        self.continueButton.setText(QCoreApplication.translate("GenesisPage", u"Continue", None))
     # retranslateUi
 

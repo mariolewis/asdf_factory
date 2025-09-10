@@ -314,7 +314,7 @@ class ASDFMainWindow(QMainWindow):
         self.backlog_ratification_page.backlog_ratified.connect(self.on_backlog_ratified)
         self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
         self.sprint_planning_page.sprint_started.connect(self.on_start_sprint)
-        self.sprint_review_page.return_to_backlog.connect(self.orchestrator.handle_sprint_review_complete)
+        self.sprint_review_page.return_to_backlog.connect(self.on_return_to_backlog)
 
     def _reset_all_pages_for_new_project(self):
         """Iterates through all page widgets and calls their reset method if it exists."""
@@ -947,10 +947,13 @@ class ASDFMainWindow(QMainWindow):
     def show_settings_dialog(self):
         dialog = SettingsDialog(self.orchestrator, self)
         dialog.populate_fields()
-        dialog.exec()
-        # Re-run the check and update the UI after the dialog is closed
-        self._check_mandatory_settings()
-        self.update_ui_after_state_change()
+
+        # This conditional check is the fix. The code below will now only
+        # run if the user clicks "Save" (dialog is accepted).
+        if dialog.exec():
+            # Re-run the check and update the UI after the dialog is closed
+            self._check_mandatory_settings()
+            self.update_ui_after_state_change()
 
     def on_show_project_settings(self):
         """Opens the project-specific settings dialog."""
@@ -1055,6 +1058,14 @@ class ASDFMainWindow(QMainWindow):
         """
         self.orchestrator.handle_start_sprint(sprint_items, plan_json_str)
         # This is the missing step that forces the UI to refresh to the new phase
+        self.update_ui_after_state_change()
+
+    def on_return_to_backlog(self):
+        """
+        Handles the signal to complete a sprint review and triggers a UI update
+        to return to the backlog view.
+        """
+        self.orchestrator.handle_sprint_review_complete()
         self.update_ui_after_state_change()
 
     def on_save_pre_execution_report_clicked(self):

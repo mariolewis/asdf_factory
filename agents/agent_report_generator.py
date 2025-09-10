@@ -235,6 +235,32 @@ class ReportGeneratorAgent:
         doc_buffer.seek(0)
         return doc_buffer
 
+    def generate_sprint_summary_text(self, summary_data: dict) -> str:
+        """
+        Formats sprint summary data into a readable Markdown string for the UI.
+
+        Args:
+            summary_data (dict): The structured data from the orchestrator.
+
+        Returns:
+            A string containing the summary in Markdown format.
+        """
+        if "error" in summary_data:
+            return f"### Error\nCould not generate sprint summary: {summary_data['error']}"
+
+        sprint_goal = summary_data.get("sprint_goal", "Not defined.")
+        completed_items = summary_data.get("completed_items", [])
+
+        md_parts = [f"### Sprint Goal\n{sprint_goal}\n\n### Delivered Items"]
+
+        if not completed_items:
+            md_parts.append("\nNo items were marked as completed in this sprint.")
+        else:
+            for item in completed_items:
+                md_parts.append(f"\n* **{item.get('hierarchical_id', 'ID?')} {item.get('title', 'No Title')}** - Status: {item.get('status', 'N/A')}")
+
+        return "".join(md_parts)
+
     def generate_backlog_xlsx(self, backlog_data: list) -> BytesIO:
         """
         Generates an .xlsx file for the full project backlog.
@@ -328,6 +354,45 @@ class ReportGeneratorAgent:
                 p_desc.paragraph_format.left_indent = Inches(0.25)
 
         # Save document to an in-memory buffer
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer
+
+    def generate_sprint_summary_docx(self, summary_data: dict, project_name: str) -> BytesIO:
+        """
+        Generates a formatted .docx file for the Sprint Review summary.
+
+        Args:
+            summary_data (dict): The structured data from the orchestrator.
+            project_name (str): The name of the project for the report title.
+
+        Returns:
+            BytesIO: An in-memory byte stream of the generated .docx file.
+        """
+        document = Document()
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        document.add_heading(f"Sprint Summary Report: {project_name}", level=1)
+        document.add_paragraph(f"Generated on: {timestamp}")
+
+        if "error" in summary_data:
+            document.add_paragraph(f"Could not generate sprint summary: {summary_data['error']}")
+        else:
+            sprint_goal = summary_data.get("sprint_goal", "Not defined.")
+            completed_items = summary_data.get("completed_items", [])
+
+            document.add_heading('Sprint Goal', level=2)
+            document.add_paragraph(sprint_goal)
+
+            document.add_heading('Delivered Items', level=2)
+            if not completed_items:
+                document.add_paragraph("No items were marked as completed in this sprint.")
+            else:
+                for item in completed_items:
+                    p = document.add_paragraph(style='List Bullet')
+                    p.add_run(f"{item.get('hierarchical_id', 'ID?')} {item.get('title', 'No Title')}").bold = True
+                    p.add_run(f" - Status: {item.get('status', 'N/A')}")
+
         doc_buffer = BytesIO()
         document.save(doc_buffer)
         doc_buffer.seek(0)

@@ -66,7 +66,7 @@ class SprintPlanningPage(QWidget):
         self._create_audit_menu() # Create the menu
         self.connect_signals()   # Connect all signals
 
-        self.ui.refinePlanButton.clicked.connect(self.on_refine_plan_clicked)
+        # self.ui.refinePlanButton.clicked.connect(self.on_refine_plan_clicked)
         self.ui.runAuditButton.setEnabled(False) # New button is disabled initially
 
     def _create_audit_menu(self):
@@ -97,6 +97,7 @@ class SprintPlanningPage(QWidget):
         # Audit Actions
         self.security_audit_action.triggered.connect(self.on_security_audit_clicked)
         self.scalability_audit_action.triggered.connect(self.on_scalability_audit_clicked)
+        self.readability_audit_action.triggered.connect(self.on_readability_audit_clicked)
         self.best_practices_audit_action.triggered.connect(self.on_best_practices_audit_clicked)
 
         # Refine Action
@@ -412,7 +413,7 @@ class IncorporateFeedbackDialog(QDialog):
         self.setMinimumSize(500, 300)
 
         self.layout = QVBoxLayout(self)
-        self.label = QLabel("Enter your instructions for the AI to refine the plan based on the audit findings:")
+        self.label = QLabel("Enter any feedback for plan refinement, including any based on the audit findings:")
         self.label.setWordWrap(True)
         self.text_edit = QTextEdit()
         self.button_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)

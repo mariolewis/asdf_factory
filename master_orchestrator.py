@@ -295,28 +295,31 @@ class MasterOrchestrator:
             return None
 
         # --- AI Confidence Calculation Logic ---
-        # This now runs just-in-time for the UI to display the score for the current task.
+        # This version is more robust and calculates the score for the current task.
         confidence_score = 0
         current_task = plan[cursor]
         artifact_id = current_task.get("artifact_id")
+
         if artifact_id:
-            # For existing components, confidence is based on context quality
+            # This is an existing component. Confidence depends on context quality.
             db = self.db_manager
-            cr_details = db.get_cr_by_id(self.active_plan[0].get('cr_id')) # Assumes cr_id is in the plan
-            if cr_details:
-                impacted_ids = json.loads(cr_details.get('impacted_artifact_ids') or '[]')
-                if impacted_ids:
-                    # Find which of the overall impacted files are relevant to THIS specific task
-                    task_file_path = db.get_artifact_by_id(artifact_id)['file_path']
-                    if task_file_path in self.context_package_summary.get('files_in_context', []):
-                        if task_file_path in self.context_package_summary.get('summarized_files', []):
-                            confidence_score = 50 # Medium: Relevant file was summarized
-                        else:
-                            confidence_score = 90 # High: Relevant file was included in full
+            artifact_record = db.get_artifact_by_id(artifact_id)
+
+            # Check if we have a context package and a valid record for this artifact
+            if artifact_record and hasattr(self, 'context_package_summary'):
+                task_file_path = artifact_record['file_path']
+
+                if task_file_path in self.context_package_summary.get('files_in_context', []):
+                    if task_file_path in self.context_package_summary.get('summarized_files', []):
+                        confidence_score = 50 # Medium: Relevant file was summarized
                     else:
-                        confidence_score = 10 # Low: Relevant file was not in context at all
+                        confidence_score = 90 # High: Relevant file was included in full
+                else:
+                    confidence_score = 10 # Low: Relevant file was not in context at all
+            else:
+                confidence_score = 20 # Low: We know it's an existing file but have no context for it
         else:
-            # For new components, confidence is always high as there's no existing code to misinterpret.
+            # This is a new component. Confidence is always high.
             confidence_score = 100
 
         self.current_task_confidence = confidence_score
@@ -358,6 +361,48 @@ class MasterOrchestrator:
         Returns the current operational mode of the Genesis pipeline.
         """
         return "FIXING" if self.is_in_fix_mode else "DEVELOPING"
+
+    def get_sprint_summary_data(self) -> dict:
+        """
+        Gathers and structures the data for the sprint review summary.
+        """
+        summary_data = {
+            "completed_items": [],
+            "sprint_goal": "N/A"
+        }
+        if not self.project_id:
+            return summary_data
+
+        try:
+            # This is the fix: At this point in the workflow, the items from the
+            # just-finished sprint are marked as "IMPLEMENTATION_IN_PROGRESS".
+            completed_items = self.db_manager.get_change_requests_by_statuses(
+                self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
+            )
+
+            full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
+            flat_backlog_map = {}
+            def flatten_hierarchy(items):
+                for item in items:
+                    flat_backlog_map[item['cr_id']] = item
+                    if "features" in item: flatten_hierarchy(item["features"])
+                    if "user_stories" in item: flatten_hierarchy(item["user_stories"])
+            flatten_hierarchy(full_backlog_with_ids)
+
+            for item in completed_items:
+                enriched_item = flat_backlog_map.get(item['cr_id'], dict(item))
+                summary_data["completed_items"].append({
+                    "hierarchical_id": enriched_item.get('hierarchical_id', f"CR-{item['cr_id']}"),
+                    "title": item['title'],
+                    "status": "Completed" # Display a user-friendly status
+                })
+
+            summary_data["sprint_goal"] = ", ".join([f"'{item['title']}'" for item in completed_items])
+            return summary_data
+
+        except Exception as e:
+            logging.error(f"Failed to get sprint summary data: {e}")
+            return {"error": str(e)}
 
     def get_uncompleted_tasks_for_manual_fix(self) -> list | None:
         """
@@ -1689,6 +1734,10 @@ class MasterOrchestrator:
         source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, style_guide=style_guide_to_use)
         if progress_callback: progress_callback(("SUCCESS", "... Source code generated."))
 
+        # This block validates the AI's output
+        if not source_code or not source_code.strip():
+            raise Exception("Code generation failed: The AI returned empty source code for the component.")
+
         MAX_REVIEW_ATTEMPTS = 2
         for attempt in range(MAX_REVIEW_ATTEMPTS):
             if progress_callback: progress_callback(("INFO", f"Reviewing code for {component_name} (Attempt {attempt + 1})..."))
@@ -1706,15 +1755,21 @@ class MasterOrchestrator:
                     raise Exception(f"Component '{component_name}' failed code review after all attempts.")
         if progress_callback: progress_callback(("SUCCESS", "... Code review process complete."))
 
-        if progress_callback: progress_callback(("INFO", f"Generating unit tests for {component_name}..."))
-        unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
-        if progress_callback: progress_callback(("SUCCESS", "... Unit tests generated."))
+        unit_tests = None
+        test_path = task.get("test_file_path")
+
+        # Only generate tests if the plan includes a path for the test file
+        if test_path:
+            if progress_callback: progress_callback(("INFO", f"Generating unit tests for {component_name}..."))
+            unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
+            if progress_callback: progress_callback(("SUCCESS", "... Unit tests generated."))
 
         if progress_callback: progress_callback(("INFO", f"Writing files, testing, and committing {component_name}..."))
         build_agent = BuildAndCommitAgentAppTarget(str(project_root_path), version_control_enabled=version_control_enabled)
         status, result_message = build_agent.build_and_commit_component(
             task.get("component_file_path"), source_code,
-            task.get("test_file_path"), unit_tests, test_command, self.llm_service,
+            test_path, unit_tests,
+            test_command, self.llm_service,
             version_control_enabled
         )
 
@@ -2643,7 +2698,7 @@ class MasterOrchestrator:
                 if full_path.exists():
                     context_package[file_path] = full_path.read_text(encoding='utf-8')
         if not context_package:
-            apex_file_name = project_details.get('apex_executable_name')
+            apex_file_name = project_details['apex_executable_name']
             failing_task_details = self.get_current_task_details()
             failing_component_name = failing_task_details['task'].get('component_name') if failing_task_details else None
             all_artifacts = db.get_all_artifacts_for_project(self.project_id)
@@ -2801,21 +2856,24 @@ class MasterOrchestrator:
         if not project_details:
             raise Exception("Cannot run tests: Project details not found.")
 
-        project_root = project_details.get('project_root_folder')
-        test_command = project_details.get('test_execution_command')
+        project_root = project_details['project_root_folder']
+        test_command = project_details['test_execution_command']
+
+        # This new line retrieves the required setting
+        version_control_enabled = project_details['version_control_enabled'] == 1
 
         if not project_root or not test_command:
             raise Exception("Cannot run tests: Project root or test command is not configured.")
 
         if progress_callback:
-            progress_callback(f"Executing test command: '{test_command}'...")
+            progress_callback(("INFO", f"Executing test command: '{test_command}'..."))
 
-        agent = BuildAndCommitAgentAppTarget(project_root)
-        # We will create this 'run_test_suite_only' method in the next step.
+        # The agent constructor is now called with the required second argument
+        agent = BuildAndCommitAgentAppTarget(project_root, version_control_enabled)
         success, output = agent.run_test_suite_only(test_command)
 
         if progress_callback:
-            progress_callback("Test run complete.")
+            progress_callback(("SUCCESS", "Test run complete."))
 
         return success, output
 
@@ -3042,39 +3100,68 @@ class MasterOrchestrator:
 
     def generate_sprint_implementation_plan(self, sprint_items: list) -> str:
         """
-        Generates a detailed, step-by-step implementation plan for a given
-        set of sprint items by calling the appropriate planning agent.
-
-        Args:
-            sprint_items (list): A list of backlog item dictionaries for the sprint.
-
-        Returns:
-            A JSON string representing the detailed implementation plan.
+        Builds a context package for a set of sprint items and then generates a
+        detailed, step-by-step implementation plan by calling the planning agent.
+        This version performs a just-in-time analysis for TO_DO items.
         """
         logging.info(f"Generating implementation plan for {len(sprint_items)} sprint items.")
         try:
             db = self.db_manager
             project_details = db.get_project_by_id(self.project_id)
+            project_root_path = Path(project_details['project_root_folder'])
+
+            # --- NEW: Build context package with just-in-time analysis ---
+            all_impacted_ids = set()
+            analysis_agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
+            all_artifacts_for_analysis = db.get_all_artifacts_for_project(self.project_id)
+            rowd_json_for_analysis = json.dumps([dict(row) for row in all_artifacts_for_analysis])
+
+            for item in sprint_items:
+                if item.get('status') == 'IMPACT_ANALYZED':
+                    # If analysis exists, use it
+                    impacted_ids = json.loads(item.get('impacted_artifact_ids') or '[]')
+                else: # For TO_DO items, run analysis now
+                    logging.info(f"Running just-in-time analysis for TO_DO item: '{item['title']}'")
+                    analysis_result = analysis_agent.run_full_analysis(
+                        change_request_desc=item['description'],
+                        final_spec_text=project_details['final_spec_text'],
+                        rowd_json=rowd_json_for_analysis
+                    )
+                    impacted_ids = analysis_result.get("impacted_artifact_ids", []) if analysis_result else []
+
+                for artifact_id in impacted_ids:
+                    all_impacted_ids.add(artifact_id)
+
+            source_code_files = {}
+            for artifact_id in all_impacted_ids:
+                artifact_record = db.get_artifact_by_id(artifact_id)
+                if artifact_record and artifact_record['file_path']:
+                    source_path = project_root_path / artifact_record['file_path']
+                    if source_path.exists():
+                        source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
+
+            core_docs = {"final_spec_text": project_details['final_spec_text']}
+            self.context_package_summary = self._build_and_validate_context_package(core_docs, source_code_files)
+            if self.context_package_summary.get("error"):
+                raise Exception(f"Context Builder Error: {self.context_package_summary['error']}")
+            # --- END NEW ---
+
             all_artifacts = db.get_all_artifacts_for_project(self.project_id)
             rowd_json = json.dumps([dict(row) for row in all_artifacts])
 
-            # Consolidate the descriptions of all items into a single request
             combined_description = "\n\n---\n\n".join(
                 [f"Title: {item['title']}\nDescription: {item['description']}" for item in sprint_items]
             )
 
-            # The RefactoringPlannerAgent is suitable here as it's designed to create
-            # a technical plan based on a description of changes to an existing codebase.
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
             new_plan_str = planner_agent.create_refactoring_plan(
                 change_request_desc=combined_description,
                 final_spec_text=project_details['final_spec_text'],
                 tech_spec_text=project_details['tech_spec_text'],
                 rowd_json=rowd_json,
-                source_code_context=None # We don't need specific source files for the high-level plan
+                source_code_context=self.context_package_summary["source_code"]
             )
 
-            # Validate the plan and return it
             response_data = json.loads(new_plan_str)
             if isinstance(response_data, list) and len(response_data) > 0 and response_data[0].get("error"):
                 raise Exception(f"Planning agent failed: {response_data[0]['error']}")
@@ -3084,7 +3171,6 @@ class MasterOrchestrator:
 
         except Exception as e:
             logging.error(f"Failed to generate sprint implementation plan: {e}", exc_info=True)
-            # Return a valid JSON with an error message
             return json.dumps([{"error": f"Failed to generate plan: {e}"}])
 
     def run_sprint_plan_audit(self, audit_type: str, plan_json: str, **kwargs):
