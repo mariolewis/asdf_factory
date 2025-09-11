@@ -35,7 +35,7 @@ class SprintPlanningPage(QWidget):
     """
     The logic handler for the Sprint Planning Workspace page.
     """
-    sprint_started = Signal(object, str)
+    sprint_started = Signal(object)
     sprint_cancelled = Signal()
 
     # In gui/sprint_planning_page.py
@@ -124,7 +124,7 @@ class SprintPlanningPage(QWidget):
                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            self.sprint_started.emit(self.sprint_scope_items, self.implementation_plan_json)
+            self.sprint_started.emit(self.sprint_scope_items)
 
     def on_item_double_clicked(self, item: QListWidgetItem):
         """Displays the full details of a double-clicked item in a custom dialog."""
@@ -228,7 +228,14 @@ class SprintPlanningPage(QWidget):
 
     def _task_generate_plan(self, sprint_items, **kwargs):
         """Background worker task that calls the orchestrator."""
-        return self.orchestrator.generate_sprint_implementation_plan(sprint_items)
+        plan_json = self.orchestrator.generate_sprint_implementation_plan(sprint_items)
+        # Immediately cache the generated plan in the orchestrator's pending task
+        if plan_json and '"error":' not in plan_json:
+            self.orchestrator.task_awaiting_approval = {
+                "selected_sprint_items": self.sprint_scope_items,
+                "sprint_plan_json": plan_json
+            }
+        return plan_json
 
     def _handle_plan_generation_result(self, plan_json_str: str):
         """Handles the result from the plan generation worker."""

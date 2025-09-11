@@ -19,7 +19,7 @@ class GenesisPage(QWidget):
         self.orchestrator = orchestrator
         self.ui = Ui_GenesisPage()
         self.ui.setupUi(self)
-        self.threadpool = QThreadPool()
+        # self.threadpool = QThreadPool()
 
         self.ui.continueButton.setVisible(False)
         self.connect_signals()
@@ -49,25 +49,18 @@ class GenesisPage(QWidget):
         self.update_checkpoint_display()
 
     def _set_ui_busy(self, is_busy):
-        """Disables or enables the page while a background task runs."""
+        """Disables or enables the page's buttons while a background task runs."""
         self.ui.proceedButton.setEnabled(not is_busy)
-        if is_busy:
-            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
-            self.ui.continueButton.setVisible(False)
-        else:
-            self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
+        # The decision to show the continue button or switch pages is now handled
+        # by the methods that call this one.
 
     def on_continue_clicked(self):
-        """Hides the continue button and triggers the final UI update to the next state."""
+        """Hides the continue button, resets the view, and triggers the main UI update."""
         self.ui.continueButton.setVisible(False)
-        self._set_ui_busy(False) # Switch back to checkpoint page view
-        self.update_checkpoint_display()
-
-        # The orchestrator's phase is already set (e.g., to GENESIS for the next task,
-        # or DEBUG_PM_ESCALATION on failure). This emit will trigger the main window
-        # to show the correct next page based on that state.
-        if self.orchestrator.current_phase.name != "GENESIS":
-            self.genesis_complete.emit()
+        # Switch back to the checkpoint page view before the main window updates.
+        self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
+        # Emit the signal to have the main window show the correct next page.
+        self.genesis_complete.emit()
 
     def on_progress_update(self, progress_data):
         """
@@ -94,24 +87,42 @@ class GenesisPage(QWidget):
 
     def run_development_step(self):
         """Initiates the background task to run the next development step."""
+        # Explicitly set the UI to the processing state before starting the worker.
+        self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+        self.ui.logOutputTextEdit.clear()
+        self.ui.continueButton.setVisible(False)
+        self._set_ui_busy(True)
+
         worker = Worker(self.orchestrator.handle_proceed_action)
         worker.signals.progress.connect(self.on_progress_update)
         worker.signals.result.connect(self._handle_development_result)
         worker.signals.error.connect(self._on_task_error)
-        self._set_ui_busy(True)
-        self.ui.logOutputTextEdit.clear()
-        self.threadpool.start(worker)
+        worker.signals.finished.connect(self._on_task_finished)
+        self.window().threadpool.start(worker)
 
-    def _handle_development_result(self, result):
-        """Handles the completion of the development step and shows the continue button."""
-        self.ui.logOutputTextEdit.append(f"\n--- TASK COMPLETE ---")
-        self.ui.continueButton.setVisible(True)
+    def _handle_development_result(self, result: str):
+        """
+        Handles the completion of the development step, checking if the
+        result indicates a success or a handled failure.
+        """
+        # On either a success or a handled failure, just show the appropriate
+        # message and the continue button. Do not emit a signal here.
+        if result and result.strip().startswith("Error"):
+            self.ui.logOutputTextEdit.append(f"\n--- TASK FAILED ---")
+            self.ui.continueButton.setVisible(True)
+        else:
+            self.ui.logOutputTextEdit.append(f"\n--- TASK COMPLETE ---")
+            self.ui.continueButton.setVisible(True)
 
     def _on_task_error(self, error_tuple):
         """Handles an error from the worker and shows the continue button."""
         error_msg = f"A critical error occurred in a background task:\n{error_tuple[1]}"
         self.ui.logOutputTextEdit.append(f"\n--- ERROR ---\n{error_msg}")
         self.ui.continueButton.setVisible(True)
+
+    def _on_task_finished(self):
+        """Re-enables the UI after any background task is complete."""
+        self._set_ui_busy(False)
 
     def update_checkpoint_display(self):
         """

@@ -614,7 +614,7 @@ class ASDFMainWindow(QMainWindow):
         self.setEnabled(True)
         self.statusBar().clearMessage()
         error_msg = f"An unexpected error occurred in a background task:\n{error_tuple[1]}"
-        logging.error(error_msg, exc_info=error_tuple)
+        logging.error(error_msg, exc_info=False)
         QMessageBox.critical(self, "Background Task Error", error_msg)
 
     def _task_ratify_backlog(self, final_items, **kwargs):
@@ -861,7 +861,7 @@ class ASDFMainWindow(QMainWindow):
                     details=f"The automated debug procedure could not resolve the following issue:<br><br>{formatted_log}",
                     option1_text="Retry Automated Fix",
                     option2_text="Pause for Manual Fix",
-                    option3_text="Ignore Bug && Proceed"
+                    option3_text="Skip Task && Log as Backlog Item"
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_decision_option2)
@@ -988,15 +988,37 @@ class ASDFMainWindow(QMainWindow):
         self.update_ui_after_state_change()
 
     def on_decision_option1(self):
-        self.orchestrator.handle_pm_debug_choice("RETRY")
-        self.update_ui_after_state_change()
+        # This handler is for the "Retry Automated Fix" button
+        if not self.orchestrator.task_awaiting_approval:
+            logging.warning("Retry clicked, but no failure context found.")
+            return
+
+        failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No failure log available.")
+
+        # Set UI to busy state and transition to the Genesis processing view
+        self.setEnabled(False)
+        self.statusBar().showMessage("Attempting to generate a new automated fix plan...")
+        self.orchestrator.set_phase("GENESIS")
+        self.update_ui_after_state_change() # This shows the Genesis Page's processing view
+
+        # Switch the Genesis page to its processing view to show the live log
+        self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+        self.genesis_page.ui.logOutputTextEdit.clear()
+
+        # Start the background worker to generate the fix plan
+        worker = Worker(self.orchestrator.handle_retry_fix_action, failure_log)
+        worker.signals.progress.connect(self.genesis_page.on_progress_update)
+        worker.signals.result.connect(self._handle_retry_fix_result)
+        worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
 
     def on_decision_option2(self):
         self.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
         self.update_ui_after_state_change()
 
     def on_decision_option3(self):
-        self.orchestrator.handle_pm_debug_choice("IGNORE")
+        self.orchestrator.handle_pm_debug_choice("SKIP_TASK_AND_LOG")
         self.update_ui_after_state_change()
 
     def on_stale_analysis_rerun(self):
@@ -1051,12 +1073,12 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator.set_phase("BACKLOG_VIEW")
         self.update_ui_after_state_change()
 
-    def on_start_sprint(self, sprint_items: list, plan_json_str: str):
+    def on_start_sprint(self, sprint_items: list):
         """
         Handles the signal to start a sprint, calls the orchestrator,
         and triggers a UI update.
         """
-        self.orchestrator.handle_start_sprint(sprint_items, plan_json_str)
+        self.orchestrator.handle_start_sprint(sprint_items)
         # This is the missing step that forces the UI to refresh to the new phase
         self.update_ui_after_state_change()
 
@@ -1162,6 +1184,12 @@ class ASDFMainWindow(QMainWindow):
             msg_box.setText("One or more tests failed. See details below.")
             msg_box.setDetailedText(output)
             msg_box.exec()
+
+    def _handle_retry_fix_result(self, result):
+        """Handles the successful completion of the background retry/fix-plan task."""
+        # The main UI update is handled by the generic _on_background_task_finished
+        # slot. This handler is primarily for logging success.
+        logging.info("Successfully completed the retry/fix-plan generation task.")
 
     def _handle_test_run_error(self, error_tuple):
         """Handles a system error from the test run worker."""

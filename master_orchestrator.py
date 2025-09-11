@@ -1581,6 +1581,8 @@ class MasterOrchestrator:
                 self.is_in_fix_mode = False
                 self.fix_plan = None
                 self.fix_plan_cursor = 0
+                # Re-enter the loop to re-attempt the original task that prompted the fix.
+                return self.handle_proceed_action(progress_callback=progress_callback)
             else:
                 task = self.fix_plan[self.fix_plan_cursor]
                 component_name = task.get('component_name', 'Unnamed Fix Task')
@@ -1654,7 +1656,7 @@ class MasterOrchestrator:
                 progress_callback(("ERROR", f"Task failed for {component_name}. Initiating debug protocol..."))
             logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}", exc_info=True)
             self.escalate_for_manual_debug(str(e))
-            return f"Error during development: {e}"
+            return f"Error during fix execution: {e}"
 
     def run_integration_and_verification_phase(self, force_proceed=False, progress_callback=None):
         """
@@ -2646,13 +2648,16 @@ class MasterOrchestrator:
 
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
-        Initiates a multi-attempt, iterative triage and debug process that
-        correctly uses the instance's debug counter and stores failure context.
+        Handles the escalation process for a task failure. It increments a
+        counter, and if the maximum attempts are exceeded, it sets the phase
+        to escalate to the PM.
         """
-        logging.info("A failure has triggered the iterative debugging pipeline.")
+        logging.info("A failure has triggered the escalation pipeline.")
 
+        # If this is a functional bug from UI testing, it's a direct escalation.
         if is_functional_bug:
-            self._plan_fix_from_description(failure_log)
+            self.task_awaiting_approval = {"failure_log": failure_log}
+            self.set_phase("DEBUG_PM_ESCALATION")
             return
 
         db = self.db_manager
@@ -2664,59 +2669,23 @@ class MasterOrchestrator:
         if self.debug_attempt_counter > max_attempts:
             logging.warning(f"All {max_attempts} automated debug attempts have failed. Escalating to PM.")
 
-            # --- THIS IS THE FIX ---
-            # When escalating, store the details of the ORIGINAL failing task.
             original_failing_task = self.get_current_task_details()
             self.task_awaiting_approval = {
                 "failure_log": failure_log,
                 "original_failing_task": original_failing_task
             }
-            # --- END OF FIX ---
-
-            self.debug_attempt_counter = 0
+            self.debug_attempt_counter = 0 # Reset for the next issue
             self.set_phase("DEBUG_PM_ESCALATION")
-            return
-
-        # (The rest of the triage and fix-planning logic remains the same)
-        triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
-        hypothesis = triage_agent.analyze_and_hypothesize(failure_log, "")
-
-        if hypothesis and not hypothesis.startswith("Error:"):
-            logging.info(f"TriageAgent formed an initial hypothesis: {hypothesis[:150]}...")
-            if self._plan_and_execute_fix(hypothesis, {}):
-                logging.info("Successfully generated a fix plan based on hypothesis. Returning to Genesis.")
-                return
-
-        project_details = db.get_project_by_id(self.project_id)
-        project_root_path = Path(project_details['project_root_folder'])
-        context_package = {}
-
-        file_paths_from_trace = triage_agent.parse_stack_trace(failure_log)
-        if file_paths_from_trace:
-            for file_path in file_paths_from_trace:
-                full_path = project_root_path / file_path
-                if full_path.exists():
-                    context_package[file_path] = full_path.read_text(encoding='utf-8')
-        if not context_package:
-            apex_file_name = project_details['apex_executable_name']
-            failing_task_details = self.get_current_task_details()
-            failing_component_name = failing_task_details['task'].get('component_name') if failing_task_details else None
-            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-            all_artifacts_json = json.dumps([dict(row) for row in all_artifacts])
-            if apex_file_name and failing_component_name:
-                file_paths_from_trace_json = triage_agent.perform_apex_trace_analysis(all_artifacts_json, apex_file_name, failing_component_name)
-                file_paths_from_apex = json.loads(file_paths_from_trace_json)
-                for file_path in file_paths_from_apex:
-                    full_path = project_root_path / file_path
-                    if full_path.exists():
-                        context_package[file_path] = full_path.read_text(encoding='utf-8')
-
-        if context_package:
-            if self._plan_and_execute_fix(failure_log, context_package):
-                logging.info("Successfully generated a fix plan based on tiered triage context. Returning to Genesis.")
-                return
-
-        logging.warning(f"Debug attempt {self.debug_attempt_counter} failed to produce a fix plan.")
+        else:
+            # If attempts are not exhausted, log it and remain in the GENESIS phase
+            # to allow the user to trigger a retry, which will now house the fix-planning logic.
+            logging.warning(f"Debug attempt {self.debug_attempt_counter} failed. Awaiting PM decision on escalation screen.")
+            original_failing_task = self.get_current_task_details()
+            self.task_awaiting_approval = {
+                "failure_log": failure_log,
+                "original_failing_task": original_failing_task
+            }
+            self.set_phase("DEBUG_PM_ESCALATION")
 
     def handle_pm_triage_input(self, pm_error_description: str):
         """
@@ -2783,63 +2752,70 @@ class MasterOrchestrator:
         logging.info(f"PM selected debug escalation option: {choice}")
 
         if choice == "RETRY":
-            if self.task_awaiting_approval:
-                self.debug_attempt_counter = 0
-                failure_log_from_state = self.task_awaiting_approval.get('failure_log', "PM-initiated retry after escalation.")
-                self.task_awaiting_approval = None
-                # When retrying, we must exit fix mode
-                self.is_in_fix_mode = False
-                self.fix_plan = None
-                self.fix_plan_cursor = 0
-                self.escalate_for_manual_debug(failure_log_from_state)
-            else:
-                logging.warning("Retry clicked, but no failure context found. Returning to GENESIS.")
-                self.set_phase("GENESIS")
+            # This choice is handled asynchronously by the main window,
+            # which calls the dedicated handle_retry_fix_action method in a worker thread.
+            logging.info("PM chose to retry. The main window will now initiate the fix process.")
+            pass
 
         elif choice == "MANUAL_PAUSE":
             self.set_phase("IDLE")
             logging.info("Project paused for manual PM investigation. State has been saved.")
 
-        elif choice == "IGNORE":
-            logging.warning("Acknowledging and ignoring bug. Updating artifact status to 'KNOWN_ISSUE'.")
-            try:
-                # --- THIS IS THE FIX ---
-                # Use the saved original task from the escalation context
-                original_failing_task_info = self.task_awaiting_approval.get('original_failing_task', {})
-                task_details = original_failing_task_info.get('task', {})
-                # --- END OF FIX ---
+        elif choice == "SKIP_TASK_AND_LOG":
+            # This is the entry point for our Scene 5 logic.
+            # We will implement the helper method for it.
+            self._log_failure_as_bug_report_and_proceed()
 
-                if task_details:
-                    doc_agent = DocUpdateAgentRoWD(self.db_manager, llm_service=self.llm_service)
-                    doc_agent.update_artifact_record({
-                        "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
-                        "project_id": self.project_id,
-                        "file_path": task_details.get("component_file_path"),
-                        "artifact_name": task_details.get("component_name"),
-                        "artifact_type": task_details.get("component_type"),
-                        "short_description": "PM chose to ignore a persistent failure during development.",
-                        "status": "KNOWN_ISSUE",
-                        "unit_test_status": "TESTS_FAILING",
-                        "version": 1,
-                        "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
-                        "micro_spec_id": task_details.get("micro_spec_id")
-                    })
-                    logging.info(f"Status of component '{task_details.get('component_name')}' set to KNOWN_ISSUE.")
-                else:
-                    logging.error("Could not identify the specific failing artifact to mark as 'KNOWN_ISSUE'.")
+    def handle_retry_fix_action(self, failure_log: str, progress_callback=None):
+        """
+        Handles the PM's choice to retry an automated fix. This is designed
+        to be run in a background thread. It generates a plan and then immediately
+        executes it as a single, continuous operation.
+        """
+        try:
+            if progress_callback:
+                progress_callback(("INFO", "PM chose to retry. Attempting to generate a new automated fix plan..."))
 
-                # Cleanly exit fix mode and advance the main plan
-                self.is_in_fix_mode = False
-                self.fix_plan = None
-                self.fix_plan_cursor = 0
-                self.active_plan_cursor += 1
-                self.task_awaiting_approval = None
-                self.set_phase("GENESIS")
+            from agents.agent_triage_app_target import TriageAgent_AppTarget
+            triage_agent = TriageAgent_AppTarget(llm_service=self.llm_service, db_manager=self.db_manager)
+            hypothesis = triage_agent.analyze_and_hypothesize(failure_log, "")
 
-            except Exception as e:
-                logging.error(f"Failed to update artifact status to 'KNOWN_ISSUE': {e}")
-                self.set_phase("GENESIS")
-                self.task_awaiting_approval = None
+            if not (hypothesis and not hypothesis.startswith("Error:")):
+                raise Exception("The Triage Agent could not form a hypothesis to create a fix plan.")
+
+            if progress_callback: progress_callback(("INFO", f"Triage hypothesis: {hypothesis}"))
+
+            if not self._plan_and_execute_fix(hypothesis, {}):
+                raise Exception("The AI was unable to generate a valid new fix plan after a manual retry.")
+
+            if progress_callback: progress_callback(("SUCCESS", "Successfully generated a new fix plan. Now executing..."))
+
+            # Now, execute the newly created fix plan in a loop
+            while self.is_in_fix_mode and self.fix_plan and self.fix_plan_cursor < len(self.fix_plan):
+                # This block is derived from the main handle_proceed_action logic
+                task = self.fix_plan[self.fix_plan_cursor]
+                component_name = task.get('component_name', 'Unnamed Fix Task')
+                if progress_callback:
+                    progress_callback(("INFO", f"Executing FIX task {self.fix_plan_cursor + 1}/{len(self.fix_plan)} for: {component_name}"))
+
+                db = self.db_manager
+                project_details = db.get_project_by_id(self.project_id)
+                project_root_path = Path(project_details['project_root_folder'])
+
+                self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
+                self.fix_plan_cursor += 1
+
+            logging.info("Automated fix plan executed successfully.")
+            # Reset flags and re-attempt the original task to confirm the fix
+            self.is_in_fix_mode = False
+            self.fix_plan = None
+            self.fix_plan_cursor = 0
+            return self.handle_proceed_action(progress_callback=progress_callback)
+
+        except Exception as e:
+            logging.error(f"Failed during retry action: {e}", exc_info=True)
+            self.escalate_for_manual_debug(str(e))
+            raise # Re-raise to be caught by the worker's error handler
 
     def run_full_test_suite(self, progress_callback=None):
         """
@@ -2974,21 +2950,26 @@ class MasterOrchestrator:
             self.set_phase("BACKLOG_VIEW") # Go back on error
             self.task_awaiting_approval = {"error": str(e)}
 
-    def handle_start_sprint(self, sprint_items: list, plan_json_str: str, **kwargs):
+    def handle_start_sprint(self, sprint_items: list, **kwargs):
         """
-        Finalizes sprint planning, saves the plan, updates item statuses,
-        and transitions the factory to the GENESIS (sprint execution) phase.
+        Finalizes sprint planning by retrieving the cached plan, updating item statuses,
+        and transitioning the factory to the GENESIS (sprint execution) phase.
         """
         logging.info(f"Starting sprint with {len(sprint_items)} items.")
         try:
-            # 1. Load the plan into the active state for execution
+            # 1. Retrieve the cached plan from the pending task
+            if not self.task_awaiting_approval or "sprint_plan_json" not in self.task_awaiting_approval:
+                raise ValueError("Cannot start sprint: No implementation plan was generated or cached.")
+
+            plan_json_str = self.task_awaiting_approval.pop("sprint_plan_json")
             full_plan_data = json.loads(plan_json_str)
+
             if isinstance(full_plan_data, list) and full_plan_data and full_plan_data[0].get("error"):
                 raise ValueError(f"Cannot start sprint with a failed plan: {full_plan_data[0]['error']}")
 
             self.active_plan = full_plan_data
             self.active_plan_cursor = 0
-            self.is_executing_cr_plan = True # Use this flag to signify a sprint is active
+            self.is_executing_cr_plan = True
 
             # 2. Update the status of all items in the sprint scope
             cr_ids_to_update = [item['cr_id'] for item in sprint_items]
@@ -3296,6 +3277,118 @@ class MasterOrchestrator:
             logging.info(f"Successfully committed document: {relative_path}")
         except Exception as e:
             logging.error(f"Failed to commit document {file_path.name}. Error: {e}")
+
+    def _save_debug_log_and_get_path(self, failure_log: str, original_failing_task: dict) -> str | None:
+        """
+        Saves detailed failure information to a version-controlled Markdown file.
+
+        Args:
+            failure_log (str): The raw error log from the failure.
+            original_failing_task (dict): The task object that failed.
+
+        Returns:
+            The relative path to the new log file, or None on failure.
+        """
+        if not self.project_id:
+            return None
+        try:
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            project_root = Path(project_details['project_root_folder'])
+            debug_logs_dir = project_root / "docs" / "debug_logs"
+            debug_logs_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            task_name = original_failing_task.get('task', {}).get('component_name', 'UnknownTask')
+            safe_task_name = re.sub(r'[^a-zA-Z0-9_-]', '', task_name)
+            log_filename = f"debug_history_{safe_task_name}_{timestamp}.md"
+            log_filepath = debug_logs_dir / log_filename
+
+            # Format the content for the log file
+            log_content = textwrap.dedent(f"""
+                # Debug Log: {self.project_name}
+                **Timestamp:** {datetime.now(timezone.utc).isoformat()}
+                **Project ID:** {self.project_id}
+                **Failed Task:** {task_name}
+
+                ## Original Task Micro-Specification
+                ```json
+                {json.dumps(original_failing_task.get('task', {}), indent=2)}
+                ```
+
+                ## Failure Log
+                ```
+                {failure_log}
+                ```
+            """)
+
+            log_filepath.write_text(log_content, encoding='utf-8')
+
+            # Commit the new log file to version control
+            relative_path = log_filepath.relative_to(project_root)
+            self._commit_document(log_filepath, f"docs: Add debug log for failed task {task_name}")
+
+            return str(relative_path)
+        except Exception as e:
+            logging.error(f"Failed to save debug log: {e}", exc_info=True)
+            return None
+
+    def _log_failure_as_bug_report_and_proceed(self):
+        """
+        Logs a failed task as a new BUG_REPORT in the backlog, saves a
+        detailed debug log, and proceeds with the sprint.
+        """
+        try:
+            task_details = self.task_awaiting_approval or {}
+            failure_log = task_details.get("failure_log", "No details provided.")
+            original_failing_task = task_details.get('original_failing_task', {})
+
+            if not original_failing_task:
+                raise ValueError("Could not find the original failing task in the approval context.")
+
+            # Step 1: Save the detailed debug log and get its path
+            log_file_path = self._save_debug_log_and_get_path(failure_log, original_failing_task)
+            log_path_for_desc = log_file_path if log_file_path else "Not available."
+
+            # Step 2: Construct the detailed description for the new bug report
+            task_name = original_failing_task.get('task', {}).get('component_name', 'Unknown Task')
+            description_parts = [
+                "**Objective for Impact Analysis:** This is an auto-generated bug report for a failed development task. Your goal is to analyze the attached failure log and the original micro-specification to determine the root cause and plan a fix.",
+                "\n---\n",
+                "**Original Task:**",
+                f"```json\n{json.dumps(original_failing_task.get('task', {}), indent=2)}\n```",
+                "\n---\n",
+                "**Failure Summary:**",
+                f"```\n{failure_log.splitlines()[0]}\n```",
+                "\n---\n",
+                f"**Full Debug Log Path:** `{log_path_for_desc}`"
+            ]
+            full_description = "\n".join(description_parts)
+
+            # Step 3: Create the new BUG_REPORT in the backlog
+            self.db_manager.add_change_request(
+                project_id=self.project_id,
+                title=f"Fix failed sprint task: {task_name}",
+                description=full_description,
+                request_type='BUG_REPORT',
+                status='BUG_RAISED',
+                priority='High'
+            )
+
+            # Step 4: Clean up, end the sprint, and proceed to the backlog.
+            self.is_in_fix_mode = False
+            self.fix_plan = None
+            self.fix_plan_cursor = 0
+            self.active_plan = None
+            self.active_plan_cursor = 0
+            self.is_executing_cr_plan = False
+            self.task_awaiting_approval = None
+            self.set_phase("BACKLOG_VIEW")
+            logging.info(f"Successfully logged failure for '{task_name}' as a new bug report. Aborting sprint and returning to backlog.")
+
+        except Exception as e:
+            logging.error(f"Failed to log failure as bug report: {e}", exc_info=True)
+            # As a fallback, go back to the GENESIS phase to avoid getting stuck
+            self.set_phase("GENESIS")
 
     def _save_current_state(self):
         """

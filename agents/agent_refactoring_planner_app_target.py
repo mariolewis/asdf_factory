@@ -47,7 +47,12 @@ class RefactoringPlannerAgent_AppTarget:
             1.  **Analyze Dependencies:** Before creating the plan, you MUST analyze the 'Change Request to Implement'. Determine the most logical implementation sequence. The final plan you generate MUST be in this optimal sequence.
             2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`.
             3.  **JSON Object Schema:** Each JSON object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
-            4.  **STRICTLY CONDITIONAL Test Generation:** The `test_file_path` key is OPTIONAL and should be omitted by default. You MUST ONLY include the `test_file_path` key if a task involves creating or significantly modifying application logic that requires new unit tests. If the user's request includes phrases like "no test cases" or "do not generate tests", you are FORBIDDEN from including the `test_file_path` key in any task.
+            4.  **Test Generation (Default to Include):** You MUST include the `test_file_path` key for any task that involves creating or modifying application logic. You should ONLY OMIT the `test_file_path` key for tasks that are not logically testable, such as:
+                - Updating documentation.
+                - Modifying a configuration file.
+                - Creating simple data-only classes or constant files.
+                - Making changes to a UI layout file (.ui).
+                - Dummy tasks explicitly for testing purposes.
             5.  **Use Canonical Paths:** For any task modifying an EXISTING component, the `component_file_path` and `artifact_id` MUST exactly match the `file_path` and `artifact_id` from the provided RoWD context.
             6.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
@@ -106,7 +111,8 @@ class RefactoringPlannerAgent_AppTarget:
                 **MANDATORY INSTRUCTIONS:**
                 1.  **Prioritize PM Feedback:** The PM's feedback is the primary directive. You MUST restructure, add, remove, or consolidate tasks as requested, even if it means completely changing the original plan's structure.
                 2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, adhering to the original schema.
-                3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
+                3.  **CONDITIONAL Test Generation:** The `test_file_path` key should be included in the task by default. You MUST EXCLUDE THE `test_file_path` KEY ONLY IF the user's request includes phrases like "no test cases" or "do not generate tests" or "exclude test cases".
+                4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
 
                 **--- CONTEXT: Project Specifications ---**
                 Full Application Specification: {final_spec_text}
