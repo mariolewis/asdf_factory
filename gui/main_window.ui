@@ -115,12 +115,13 @@
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title">
-     <string>&amp;File</string>
+      <string>&amp;File</string>
     </property>
     <addaction name="actionNew_Project"/>
-    <addaction name="actionLoad_Exported_Project"/>
+    <addaction name="actionOpen_Project"/>
     <addaction name="actionClose_Project"/>
-    <addaction name="actionStop_Export_Project"/>
+    <addaction name="actionArchive_Project"/>
+    <addaction name="actionImport_Archived_Project"/>
     <addaction name="separator"/>
     <addaction name="actionSettings"/>
     <addaction name="separator"/>
@@ -181,43 +182,49 @@
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
-   <property name="windowTitle">
+  <property name="windowTitle">
     <string>toolBar</string>
-   </property>
-   <attribute name="toolBarArea">
+  </property>
+  <attribute name="toolBarArea">
     <enum>TopToolBarArea</enum>
-   </attribute>
-   <attribute name="toolBarBreak">
+  </attribute>
+  <attribute name="toolBarBreak">
     <bool>false</bool>
-   </attribute>
-   <addaction name="actionNew_Project"/>
-   <addaction name="actionLoad_Exported_Project"/>
-   <addaction name="actionStop_Export_Project"/>
-   <addaction name="actionSettings"/>
-   <addaction name="separator"/>
-   <addaction name="actionProceed"/>
-   <addaction name="actionRun_Tests"/>
-   <addaction name="separator"/>
+  </attribute>
+  <addaction name="actionNew_Project"/>
+  <addaction name="actionOpen_Project"/>
+  <addaction name="actionArchive_Project"/>
+  <addaction name="actionImport_Archived_Project"/>
+  <addaction name="actionSettings"/>
+  <addaction name="separator"/>
+  <addaction name="actionProceed"/>
+  <addaction name="actionRun_Tests"/>
+  <addaction name="separator"/>
   </widget>
   <action name="actionNew_Project">
    <property name="text">
     <string>New Project...</string>
    </property>
   </action>
+  <action name="actionOpen_Project">
+  <property name="text">
+    <string>Open Project</string>
+  </property>
+  </action>
   <action name="actionClose_Project">
    <property name="text">
     <string>Close Project</string>
    </property>
   </action>
-  <action name="actionLoad_Exported_Project">
-   <property name="text">
-    <string>Load Exported Project...</string>
-   </property>
+  <action name="actionImport_Archived_Project">
+ <property name="text">
+  <string>Import Archived Project</string>
+ </property>
   </action>
-  <action name="actionStop_Export_Project">
-   <property name="text">
-    <string>Stop &amp;&amp; Export Project...</string>
-   </property>
+  <action name="actionArchive_Project">
+ <property name="text">
+  <string>Archive Project</string>
+ </property>
   </action>
   <action name="actionSettings">
    <property name="text">

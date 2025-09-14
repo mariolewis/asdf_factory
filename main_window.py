@@ -214,12 +214,6 @@ class ASDFMainWindow(QMainWindow):
         self.actionProject_Settings = QAction("Project Settings...", self)
         self.ui.menuProject.addAction(self.actionProject_Settings)
 
-        # --- Pause Project Menu Action ---
-        self.actionPause_Project = QAction("Pause Project", self)
-        self.actionPause_Project.setToolTip("Save the current project state and return to the main screen")
-        self.ui.menuFile.insertAction(self.ui.actionStop_Export_Project, self.actionPause_Project)
-        self.ui.toolBar.insertAction(self.ui.actionStop_Export_Project, self.actionPause_Project)
-
         # Debug menu setup
         for phase in FactoryPhase:
             if phase.name == "IDLE": continue
@@ -239,9 +233,10 @@ class ASDFMainWindow(QMainWindow):
         """Connects all UI signals to their corresponding slots."""
         # File Menu & Top Toolbar Actions
         self.ui.actionNew_Project.triggered.connect(self.on_new_project)
-        self.ui.actionLoad_Exported_Project.triggered.connect(self.on_load_project)
+        self.ui.actionOpen_Project.triggered.connect(self.on_open_project)
+        self.ui.actionImport_Archived_Project.triggered.connect(self.on_load_project)
         self.ui.actionClose_Project.triggered.connect(self.on_close_project)
-        self.ui.actionStop_Export_Project.triggered.connect(self.on_stop_export_project)
+        self.ui.actionArchive_Project.triggered.connect(self.on_stop_export_project)
         self.ui.actionSettings.triggered.connect(self.show_settings_dialog)
         self.ui.actionExit.triggered.connect(self.close)
 
@@ -261,8 +256,6 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionView_Documents.triggered.connect(self.on_view_documents)
         self.ui.actionView_Reports.triggered.connect(self.on_view_reports)
         self.actionProject_Settings.triggered.connect(self.on_show_project_settings)
-        self.actionPause_Project.triggered.connect(self.on_pause_project)
-        self.actionPause_Project.triggered.connect(self.on_pause_project)
 
         # Run Menu & Top Toolbar Actions
         self.ui.actionProceed.triggered.connect(self.on_proceed)
@@ -373,9 +366,7 @@ class ASDFMainWindow(QMainWindow):
 
             # Enable/disable actions
             self.ui.actionNew_Project.setEnabled(settings_are_valid)
-            # The Load_Exported_Project action is only available when no project is active anyway
-            # but we can disable it here for consistency.
-            self.ui.actionLoad_Exported_Project.setEnabled(settings_are_valid)
+            self.ui.actionImport_Archived_Project.setEnabled(settings_are_valid)
 
             # Update status bar AND the main info label
             if not settings_are_valid:
@@ -394,7 +385,7 @@ class ASDFMainWindow(QMainWindow):
         except Exception as e:
             logging.error(f"Failed to check mandatory settings: {e}")
             self.ui.actionNew_Project.setEnabled(False)
-            self.ui.actionLoad_Exported_Project.setEnabled(False)
+            self.ui.actionImport_Archived_Project.setEnabled(False)
             self.statusBar().showMessage("Error checking settings. Please see logs.", 5000)
             return False
 
@@ -445,23 +436,23 @@ class ASDFMainWindow(QMainWindow):
         Updates only the static parts of the UI like the status bar and file tree.
         """
         is_project_active = self.orchestrator.project_id is not None
+
+        # Disable Open/Import when a project is active, enable when idle.
+        self.ui.actionOpen_Project.setEnabled(not is_project_active)
+        self.ui.actionImport_Archived_Project.setEnabled(not is_project_active)
+
         is_project_dirty = self.orchestrator.is_project_dirty
-        self.ui.actionLoad_Exported_Project.setEnabled(not is_project_active)
         project_name = self.orchestrator.project_name or "N/A"
         current_phase_enum = self.orchestrator.current_phase
         display_phase_name = self.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
         git_branch = self.orchestrator.get_current_git_branch()
         self.actionProject_Settings.setEnabled(is_project_active)
-        self.actionPause_Project.setEnabled(is_project_active)
-
-        # Access is_genesis_complete as a property (no parentheses)
-        genesis_complete = self.orchestrator.is_genesis_complete
 
         self.status_project_label.setText(f"Project: {project_name}")
         self.status_phase_label.setText(f"Phase: {display_phase_name}")
         self.status_git_label.setText(f"Branch: {git_branch}")
-        self.ui.actionClose_Project.setEnabled(is_project_active and not is_project_dirty)
-        self.ui.actionStop_Export_Project.setEnabled(is_project_active)
+        self.ui.actionClose_Project.setEnabled(is_project_active)
+        self.ui.actionArchive_Project.setEnabled(is_project_active)
 
         self.ui.actionManage_CRs_Bugs.setEnabled(is_project_active) # Now always enabled if project is active
         self.ui.actionManage_CRs_Bugs.setToolTip("View and manage the Project Backlog")
@@ -473,15 +464,12 @@ class ASDFMainWindow(QMainWindow):
                 project_root = project_details['project_root_folder']
 
         if project_root and Path(project_root).exists():
-            # Check if we are setting the root for the first time or changing projects
             if self.current_tree_root_path != project_root:
                 self.current_tree_root_path = project_root
                 root_path_obj = Path(project_root)
-                self.file_system_model.setRootPath("") # Reset the model's root
+                self.file_system_model.setRootPath("")
                 self.file_system_model.setRootPath(str(root_path_obj.parent))
                 self.ui.projectFilesTreeView.setRootIndex(self.file_system_model.index(project_root))
-
-                # Use a delayed, one-time call to expandAll to ensure the model has loaded
                 QTimer.singleShot(250, self.ui.projectFilesTreeView.expandAll)
 
             self.ui.projectFilesTreeView.setVisible(True)
@@ -489,7 +477,7 @@ class ASDFMainWindow(QMainWindow):
         else:
             self.ui.projectFilesTreeView.setVisible(False)
             self.treeViewInfoLabel.setVisible(True)
-            self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or load an archive.")
+            self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or import an archive.")
 
     def on_cr_edit_action(self, cr_id: int):
         """Handles the signal to edit an item by opening a pre-populated dialog."""
@@ -702,10 +690,6 @@ class ASDFMainWindow(QMainWindow):
         Performs a full UI refresh. This is the single source of truth for mapping
         the orchestrator's state to the correct UI view.
         """
-        #is_project_active = self.orchestrator.project_id is not None
-        #if not is_project_active:
-        #    self.ui.mainContentArea.setCurrentWidget(self.ui.welcomePage)
-        #    return
         self.update_static_ui_elements()
 
         current_phase = self.orchestrator.current_phase
@@ -726,6 +710,7 @@ class ASDFMainWindow(QMainWindow):
             "GENESIS": self.genesis_page,
             "BACKLOG_VIEW": self.cr_management_page,
             "VIEWING_PROJECT_HISTORY": self.load_project_page,
+            "VIEWING_ACTIVE_PROJECTS": self.load_project_page,
             "AWAITING_PREFLIGHT_RESOLUTION": self.preflight_check_page,
             "VIEWING_DOCUMENTS": self.documents_page,
             "VIEWING_REPORTS": self.reports_page,
@@ -946,13 +931,24 @@ class ASDFMainWindow(QMainWindow):
             # This call will now show the page with the pre-populated path
             self.update_ui_after_state_change()
 
+    def on_open_project(self):
+        """Handles the new 'Open Project' action to show recent/active projects."""
+        self.orchestrator.set_phase("VIEWING_ACTIVE_PROJECTS")
+        self.update_ui_after_state_change()
+
     def on_load_project(self):
+        """Handles the 'Import Archived Project' action."""
         self.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
         self.update_ui_after_state_change()
 
     def on_close_project(self):
+        """Handles the new 'Close Project' action which now auto-pauses."""
         logging.debug("!!! on_close_project in main_window was triggered !!!")
-        self.orchestrator.close_active_project()
+        self.orchestrator.close_and_save_project()
+        self.update_ui_after_state_change()
+
+    def on_load_project(self):
+        self.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
         self.update_ui_after_state_change()
 
     def on_stop_export_project(self):
@@ -998,44 +994,6 @@ class ASDFMainWindow(QMainWindow):
             # Refresh the backlog page UI in case button states need to change
             self.cr_management_page.prepare_for_display()
             QMessageBox.information(self, "Success", "Project settings have been saved.")
-
-    def on_pause_project(self):
-        """
-        Handles the global Pause Project action. Confirms with the user,
-        saves the state via the orchestrator, and returns to the welcome screen.
-        """
-        if not self.orchestrator.project_id:
-            return
-
-        reply = QMessageBox.question(self, "Pause Project",
-                                    "This will save the project's exact current state and close it, returning you to the welcome screen.\n\n"
-                                    "To resume, simply reload the project from the 'Load Exported Project' screen.\n\n"
-                                    "Do you want to proceed?",
-                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-
-        if reply == QMessageBox.Yes:
-            # The UI pages have been updating the orchestrator's active draft in real-time.
-            # We just need to tell the orchestrator to save its current state and reset.
-            self.orchestrator.pause_project()
-            self.update_ui_after_state_change() # This will show the welcome page
-
-    def on_pause_project(self):
-        """
-        Handles the global Pause Project action. Confirms with the user,
-        saves the state via the orchestrator, and returns to the welcome screen.
-        """
-        if not self.orchestrator.project_id:
-            return
-
-        reply = QMessageBox.question(self, "Pause Project",
-                                    "This will save the project's exact current state and close it, returning you to the welcome screen.\n\n"
-                                    "To resume, simply reload the project from the 'Load Exported Project' screen.\n\n"
-                                    "Do you want to proceed?",
-                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-
-        if reply == QMessageBox.Yes:
-            self.orchestrator.pause_project()
-            self.update_ui_after_state_change() # This will show the welcome page
 
     def on_about(self):
         QMessageBox.about(self, "About ASDF", "<h3>Autonomous Software Development Factory (ASDF)</h3><p>Version 0.8 (PySide6 Migration)</p><p>This application uses AI to assist in the end-to-end creation of software.</p>")

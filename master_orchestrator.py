@@ -53,6 +53,7 @@ class FactoryPhase(Enum):
     SPRINT_IN_PROGRESS = auto()
     SPRINT_REVIEW = auto()
     BACKLOG_RATIFICATION = auto()
+    VIEWING_ACTIVE_PROJECTS = auto()
     UX_UI_DESIGN = auto()
     AWAITING_UX_UI_PHASE_DECISION = auto()
     AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION = auto()
@@ -180,6 +181,14 @@ class MasterOrchestrator:
 
         self.reset()
 
+    def close_and_save_project(self):
+        """
+        Public method to handle the UI's 'Close Project' action, which
+        is now a non-destructive pause/save operation.
+        """
+        logging.info("PM initiated Close Project. This will be a non-destructive save.")
+        self.pause_project()
+
     @property
     def llm_service(self) -> LLMService:
         """
@@ -199,6 +208,7 @@ class MasterOrchestrator:
         FactoryPhase.SPRINT_IN_PROGRESS: "Sprint in Progress",
         FactoryPhase.SPRINT_REVIEW: "Sprint Review",
         FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
+        FactoryPhase.VIEWING_ACTIVE_PROJECTS: "Open Project",
         FactoryPhase.UX_UI_DESIGN: "User Experience & Interface Design",
         FactoryPhase.AWAITING_UX_UI_PHASE_DECISION: "Awaiting UX/UI Phase Decision",
         FactoryPhase.AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION: "UX/UI Phase Recommendation",
@@ -2586,6 +2596,29 @@ class MasterOrchestrator:
             logging.error(f"An error occurred while resuming project {self.project_id}: {e}")
             self.set_phase(FactoryPhase.BACKLOG_VIEW.name) # Fallback to backlog on error
 
+    def resume_from_idle(self, project_id: str):
+        """Resumes an active project that is not currently loaded."""
+        if self.project_id:
+            logging.warning("Resuming from idle, but a project is already active. This should not happen.")
+            self.reset() # Reset to be safe
+
+        project_details = self.db_manager.get_project_by_id(project_id)
+        if not project_details:
+            logging.error(f"Cannot resume project {project_id}: Not found in database.")
+            return
+
+        self.project_id = project_id
+        self.project_name = project_details['project_name']
+        self.project_root_path = project_details['project_root_folder']
+
+        # Check for a paused session state for this project specifically
+        self.resumable_state = self.db_manager.get_any_paused_state()
+        if not (self.resumable_state and self.resumable_state['project_id'] == project_id):
+            self.resumable_state = None # Clear state if it belongs to another project
+
+        # Now call the main resume logic
+        self.resume_project()
+
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
         Handles the escalation process for a task failure. It increments a
@@ -3449,8 +3482,8 @@ class MasterOrchestrator:
 
     def pause_project(self):
         """
-        Saves the project's current session state, creates a project archive
-        and history record, and resets the orchestrator to idle.
+        Saves the project's current session state and resets the orchestrator to idle.
+        This is the core of the non-destructive 'Close' operation.
         """
         logging.info("PM initiated Pause Project. Saving state and closing...")
         if not self.project_id:
@@ -3459,16 +3492,6 @@ class MasterOrchestrator:
 
         try:
             self._save_current_state()
-
-            # Check for and pass unratified backlog ---
-            temp_cr_data = None
-            if self.current_phase == FactoryPhase.BACKLOG_RATIFICATION:
-                if self.task_awaiting_approval and "generated_backlog_items" in self.task_awaiting_approval:
-                    # The data is a JSON string, so we need to load it into a Python list
-                    temp_cr_data = json.loads(self.task_awaiting_approval["generated_backlog_items"])
-
-            self._create_project_archive_and_history_record(override_cr_data=temp_cr_data)
-
             self.reset()
         except Exception as e:
             logging.error(f"Failed to cleanly pause project {self.project_id}: {e}", exc_info=True)
@@ -3501,7 +3524,7 @@ class MasterOrchestrator:
             return
 
         archive_dir = Path(archive_path_str)
-        archive_name = f"{self.project_name.replace(' ', '_')}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+        archive_name = f"{self.project_name.replace(' ', '_')}_{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
 
         archive_dir.mkdir(parents=True, exist_ok=True)
         rowd_file = archive_dir / f"{archive_name}_rowd.json"
@@ -3775,6 +3798,22 @@ class MasterOrchestrator:
 
         except Exception as e:
             error_msg = f"An unexpected error occurred while deleting project history {history_id}: {e}"
+            logging.error(error_msg, exc_info=True)
+            return False, error_msg
+
+    def delete_active_project(self, project_id: str) -> tuple[bool, str]:
+        """
+        Permanently deletes an active project and all its associated live data
+        from the database.
+        """
+        logging.info(f"Attempting to delete active project with project_id: {project_id}.")
+        try:
+            self._clear_active_project_data(self.db_manager, project_id)
+            success_msg = f"Successfully deleted active project (ID: {project_id})."
+            logging.info(success_msg)
+            return True, success_msg
+        except Exception as e:
+            error_msg = f"An unexpected error occurred while deleting project {project_id}: {e}"
             logging.error(error_msg, exc_info=True)
             return False, error_msg
 

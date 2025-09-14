@@ -188,6 +188,10 @@ class ASDFDBManager:
     def get_project_by_id(self, project_id: str) -> Optional[sqlite3.Row]:
         return self._execute_query("SELECT * FROM Projects WHERE project_id = ?", (project_id,), fetch="one")
 
+    def get_all_active_projects(self) -> list:
+        """Retrieves all project records from the Projects table."""
+        return self._execute_query("SELECT * FROM Projects ORDER BY project_name ASC", fetch="all")
+
     def delete_project_by_id(self, project_id: str):
         self._execute_query("DELETE FROM Projects WHERE project_id = ?", (project_id,))
 

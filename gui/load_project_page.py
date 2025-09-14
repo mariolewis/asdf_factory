@@ -22,6 +22,8 @@ class LoadProjectPage(QWidget):
         self.ui = Ui_LoadProjectPage()
         self.ui.setupUi(self)
 
+        self.current_mode = "history"
+
         self.model = QStandardItemModel(self)
         self.ui.projectsTableView.setModel(self.model)
         # CORRECTED: Use QAbstractItemView for the enums
@@ -31,29 +33,42 @@ class LoadProjectPage(QWidget):
         self.connect_signals()
 
     def prepare_for_display(self):
-        """Fetches the project history and populates the table view."""
-        logging.info("Refreshing archived projects list.")
+        """Fetches and populates the view based on the current orchestrator phase."""
         self.model.clear()
-        self.model.setHorizontalHeaderLabels(['ID', 'Project Name', 'Project ID', 'Archived On', 'Archive Path'])
 
-        try:
+        phase = self.orchestrator.current_phase.name
+        if phase == "VIEWING_ACTIVE_PROJECTS":
+            self.current_mode = "active"
+            self.ui.headerLabel.setText("Open Project")
+            self.ui.instructionLabel.setText("Select a project from your active workspace to resume working on it.")
+            self.ui.loadButton.setText("Open Selected Project")
+            self.model.setHorizontalHeaderLabels(['Project Name', 'Created On', 'Project ID'])
+
+            projects = self.orchestrator.db_manager.get_all_active_projects()
+            for row in projects:
+                self.model.appendRow([
+                    QStandardItem(row['project_name']),
+                    QStandardItem(row['creation_timestamp']),
+                    QStandardItem(row['project_id'])
+                ])
+            self.ui.projectsTableView.setColumnHidden(2, True) # Hide Project ID
+        else: # Default to VIEWING_PROJECT_HISTORY
+            self.current_mode = "history"
+            self.ui.headerLabel.setText("Import Archived Project")
+            self.ui.instructionLabel.setText("Select a project from the history below to import it into the factory.")
+            self.ui.loadButton.setText("Import Selected Project")
+            self.model.setHorizontalHeaderLabels(['Project Name', 'Archived On', 'History ID'])
+
             history = self.orchestrator.get_project_history()
-            if not history:
-                return
-
             for row in history:
                 self.model.appendRow([
-                    QStandardItem(str(row['history_id'])),
                     QStandardItem(row['project_name']),
-                    QStandardItem(row['project_id']),
                     QStandardItem(row['last_stop_timestamp']),
-                    QStandardItem(row['archive_file_path'])
+                    QStandardItem(str(row['history_id']))
                 ])
-            self.ui.projectsTableView.resizeColumnsToContents()
-            self.ui.projectsTableView.setColumnHidden(2, True) # Hide Project ID
-            self.ui.projectsTableView.setColumnHidden(4, True) # Hide Archive Path
-        except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to load project history:\n{e}")
+            self.ui.projectsTableView.setColumnHidden(2, True) # Hide History ID
+
+        self.ui.projectsTableView.resizeColumnsToContents()
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
@@ -61,34 +76,38 @@ class LoadProjectPage(QWidget):
         self.ui.loadButton.clicked.connect(self.on_load_clicked)
         self.ui.deleteButton.clicked.connect(self.on_delete_clicked)
 
-    def _get_selected_history_id(self):
-        """Gets the history_id from the selected row in the table."""
+    def _get_selected_id(self):
+        """Gets the relevant ID from the hidden last column of the selected row."""
         selection_model = self.ui.projectsTableView.selectionModel()
         if not selection_model.hasSelection():
             QMessageBox.warning(self, "Selection Required", "Please select a project from the list.")
             return None
 
         selected_row = selection_model.selectedRows()[0].row()
-        history_id_item = self.model.item(selected_row, 0) # ID is in the first column
-        return int(history_id_item.text())
+        id_item = self.model.item(selected_row, 2) # ID is always in the hidden 3rd column
+        return id_item.text()
 
     def on_load_clicked(self):
-        """Handles the 'Load Selected Project' button click."""
-        history_id = self._get_selected_history_id()
-        if history_id is None:
+        """Handles the load/open action based on the current mode."""
+        selected_id = self._get_selected_id()
+        if selected_id is None:
             return
 
-        self.orchestrator.load_archived_project(history_id)
+        if self.current_mode == "active":
+            self.orchestrator.resume_from_idle(selected_id)
+        else: # history mode
+            self.orchestrator.load_archived_project(int(selected_id))
+
         self.project_loaded.emit()
 
     def on_delete_clicked(self):
-        """Handles the 'Delete Selected Project' button click."""
-        history_id = self._get_selected_history_id()
-        if history_id is None:
+        """Handles the 'Delete Selected Project' button click for either mode."""
+        selected_id = self._get_selected_id()
+        if selected_id is None:
             return
 
         selected_row = self.ui.projectsTableView.selectionModel().selectedRows()[0].row()
-        project_name_item = self.model.item(selected_row, 1)
+        project_name_item = self.model.item(selected_row, 0) # Name is now always in the first column
         project_name = project_name_item.text()
 
         reply = QMessageBox.question(self, "Confirm Deletion",
@@ -96,9 +115,16 @@ class LoadProjectPage(QWidget):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            success, message = self.orchestrator.delete_archived_project(history_id)
+            success = False
+            message = "An unknown error occurred."
+
+            if self.current_mode == "active":
+                success, message = self.orchestrator.delete_active_project(selected_id)
+            else: # history mode
+                success, message = self.orchestrator.delete_archived_project(int(selected_id))
+
             if success:
                 QMessageBox.information(self, "Success", message)
-                self.prepare_for_display()
+                self.prepare_for_display() # Refresh the list
             else:
                 QMessageBox.critical(self, "Error", message)
