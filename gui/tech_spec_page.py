@@ -32,13 +32,36 @@ class TechSpecPage(QWidget):
         self.threadpool = QThreadPool()
         self.connect_signals()
 
+    def prepare_for_display(self):
+        """Prepares the page, loading a resumed draft if one exists."""
+        if self.orchestrator.active_spec_draft is not None:
+            logging.info("Resuming tech spec with a saved draft.")
+            self.tech_spec_draft = self.orchestrator.active_spec_draft
+            self.orchestrator.set_active_spec_draft(None) # Clear the draft
+
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code']))
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+        else:
+            # Default behavior if not resuming
+            self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+
     def prepare_for_new_project(self):
         """Resets the page to its initial state for a new project."""
         logging.info("Resetting TechSpecPage for a new project.")
         self.tech_spec_draft = ""
+
+        self.ui.techSpecTextEdit.blockSignals(True)
+        self.ui.feedbackTextEdit.blockSignals(True)
+        self.ui.pmGuidelinesTextEdit.blockSignals(True)
+
         self.ui.techSpecTextEdit.clear()
         self.ui.feedbackTextEdit.clear()
         self.ui.pmGuidelinesTextEdit.clear()
+
+        self.ui.techSpecTextEdit.blockSignals(False)
+        self.ui.feedbackTextEdit.blockSignals(False)
+        self.ui.pmGuidelinesTextEdit.blockSignals(False)
+
         self.ui.osComboBox.setCurrentIndex(0)
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
         self.setEnabled(True)
@@ -53,6 +76,13 @@ class TechSpecPage(QWidget):
             self.ui.refineButton.clicked.disconnect()
         self.ui.refineButton.clicked.connect(self.run_refine_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
+        self.ui.techSpecTextEdit.textChanged.connect(self.on_draft_changed)
+
+    def on_draft_changed(self):
+        """Saves the current text content to the orchestrator's active draft variable."""
+        draft_text = self.ui.techSpecTextEdit.toPlainText()
+        if self.orchestrator:
+            self.orchestrator.set_active_spec_draft(draft_text)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
         """Disables or enables the page and updates the main status bar."""
@@ -113,7 +143,7 @@ class TechSpecPage(QWidget):
     def _handle_generation_result(self, tech_spec_draft):
         try:
             self.tech_spec_draft = tech_spec_draft
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft)) # Corrected line
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code']))
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()

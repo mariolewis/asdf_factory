@@ -46,13 +46,9 @@ class RefactoringPlannerAgent_AppTarget:
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze Dependencies:** Before creating the plan, you MUST analyze the 'Change Request to Implement'. Determine the most logical implementation sequence. The final plan you generate MUST be in this optimal sequence.
             2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`.
-            3.  **JSON Object Schema:** Each JSON object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
-            4.  **Test Generation (Default to Include):** You MUST include the `test_file_path` key for any task that involves creating or modifying application logic. You should ONLY OMIT the `test_file_path` key for tasks that are not logically testable, such as:
-                - Updating documentation.
-                - Modifying a configuration file.
-                - Creating simple data-only classes or constant files.
-                - Making changes to a UI layout file (.ui).
-                - Dummy tasks explicitly for testing purposes.
+            3.  **JSON Object Schema:** Each JSON object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, and `parent_cr_ids`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
+                - `parent_cr_ids`: This MUST be an array of integers, containing the ID(s) from the `ITEM_ID` field of the original backlog item(s) this task helps to implement.
+            4.  **Test Generation (Default to Include):** You MUST include the `test_file_path` key for any task that involves creating or modifying application logic. You should ONLY OMIT the `test_file_path` key for tasks that are not logically testable.
             5.  **Use Canonical Paths:** For any task modifying an EXISTING component, the `component_file_path` and `artifact_id` MUST exactly match the `file_path` and `artifact_id` from the provided RoWD context.
             6.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
@@ -60,7 +56,7 @@ class RefactoringPlannerAgent_AppTarget:
             **1. Technical Specification:**
             {tech_spec_text}
 
-            **2. Change Request to Implement:**
+            **2. Change Request to Implement (This contains one or more items, each with an ITEM_ID):**
             {change_request_desc}
 
             **3. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):**
@@ -89,58 +85,53 @@ class RefactoringPlannerAgent_AppTarget:
             logging.error(error_msg)
             return json.dumps([{"error": error_msg}])
 
-    def refine_refactoring_plan(self, current_plan_json: str, pm_feedback: str, final_spec_text: str, tech_spec_text: str, rowd_json: str) -> str:
+    def refine_refactoring_plan(self, current_plan_json: str, pm_feedback: str, change_request_desc: str, tech_spec_text: str, rowd_json: str) -> str:
         """
-        Refines an existing refactoring plan based on PM feedback.
-
-        Args:
-            current_plan_json (str): The JSON string of the current plan.
-            pm_feedback (str): The specific feedback from the PM to address.
-            final_spec_text (str): The full application specification for context.
-            tech_spec_text (str): The full technical specification for context.
-            rowd_json (str): The full RoWD for context.
-
-        Returns:
-            A JSON string of the new, refined development plan.
+        Refines an existing refactoring plan based on PM feedback, ensuring traceability is maintained.
         """
         logging.info("RefactoringPlannerAgent: Refining development plan based on PM feedback...")
         try:
             prompt = textwrap.dedent(f"""
-                You are an expert Solutions Architect revising a development plan. Your task is to generate a new, refined JSON development plan by incorporating a Product Manager's feedback into a previous version.
+                You are an expert Solutions Architect revising a development plan.
+                Your task is to generate a new, refined JSON development plan by incorporating a Product Manager's feedback into a previous version.
 
                 **MANDATORY INSTRUCTIONS:**
-                1.  **Prioritize PM Feedback:** The PM's feedback is the primary directive. You MUST restructure, add, remove, or consolidate tasks as requested, even if it means completely changing the original plan's structure.
-                2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, adhering to the original schema.
-                3.  **CONDITIONAL Test Generation:** The `test_file_path` key should be included in the task by default. You MUST EXCLUDE THE `test_file_path` KEY ONLY IF the user's request includes phrases like "no test cases" or "do not generate tests" or "exclude test cases".
+                1.  **Prioritize PM Feedback:** The PM's feedback is the primary directive.
+                You MUST restructure, add, remove, or consolidate tasks as requested.
+                2.  **Maintain Traceability:** Every task object in your final JSON array response MUST contain the `parent_cr_ids` key.
+                The value should be an array of integers derived from the `ITEM_ID` fields in the 'Change Request' input, reflecting which original item(s) the task implements.
+                This is a critical requirement.
+                3.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, adhering to the original schema.
                 4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
 
                 **--- CONTEXT: Project Specifications ---**
-                Full Application Specification: {final_spec_text}
                 Full Technical Specification: {tech_spec_text}
                 Record-of-Work-Done (RoWD): {rowd_json}
 
-                **--- INPUT 1: Current Plan Draft (JSON) ---**
+                **--- INPUT 1: Original Change Request (for parent_cr_ids context) ---**
+                ```
+                {change_request_desc}
+                ```
+
+                **--- INPUT 2: Current Plan Draft (JSON) ---**
                 ```json
                 {current_plan_json}
                 ```
 
-                **--- INPUT 2: PM Feedback to Address (Primary Directive) ---**
+                **--- INPUT 3: PM Feedback to Address (Primary Directive) ---**
                 ```
                 {pm_feedback}
                 ```
 
                 **--- Refined Refactoring Plan (JSON Array Output) ---**
             """)
-
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
-
             if cleaned_response.startswith("[") and cleaned_response.endswith("]"):
                 json.loads(cleaned_response) # Final validation
                 return cleaned_response
             else:
                 raise ValueError("AI response was not in the expected JSON array format.")
-
         except Exception as e:
             error_msg = f"An unexpected error occurred during refactoring plan refinement: {e}"
             logging.error(error_msg)

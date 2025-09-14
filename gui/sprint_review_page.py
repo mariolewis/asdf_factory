@@ -35,7 +35,16 @@ class SprintReviewPage(QWidget):
         self.ui.exportSummaryButton.clicked.connect(self.on_export_summary_clicked)
 
     def prepare_for_display(self):
-        """Populates the summary view when the page is shown by running a background task."""
+        """Populates the summary view and sets the correct instruction text."""
+        if self.orchestrator.sprint_completed_with_failures:
+            self.ui.instructionLabel.setText(
+                "The sprint is complete, but the final regression test suite failed. The failures have been logged as a new high-priority bug report. Review the summary of delivered items below before returning to the backlog."
+            )
+        else:
+            self.ui.instructionLabel.setText(
+                "The sprint is complete and all regression tests have passed. Review the summary below. You can export a detailed report or return to the backlog to plan the next sprint."
+            )
+
         self.ui.summaryTextEdit.setText("Generating sprint summary...")
         worker = Worker(self._task_generate_summary)
         worker.signals.result.connect(self._handle_summary_result)

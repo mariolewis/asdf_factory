@@ -28,11 +28,32 @@ class PlanningPage(QWidget):
         self.threadpool = QThreadPool()
         self.connect_signals()
 
+    def prepare_for_display(self):
+        """Prepares the page, loading a resumed draft if one exists."""
+        if self.orchestrator.active_spec_draft is not None:
+            logging.info("Resuming planning with a saved draft.")
+            self.development_plan_json = self.orchestrator.active_spec_draft
+            self.orchestrator.set_active_spec_draft(None) # Clear the draft
+
+            # Add the formatting logic ---
+            plan_for_display = self._format_plan_for_display(self.development_plan_json)
+            self.ui.planTextEdit.setHtml(plan_for_display)
+
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+        else:
+            # Default behavior if not resuming
+            self.ui.stackedWidget.setCurrentWidget(self.ui.generatePage)
+
     def prepare_for_new_project(self):
         """Resets the page to its initial state."""
         logging.info("Resetting PlanningPage for a new project.")
         self.development_plan_json = ""
+
+        # Block signals during widget clearing ---
+        self.ui.planTextEdit.blockSignals(True)
         self.ui.planTextEdit.clear()
+        self.ui.planTextEdit.blockSignals(False)
+
         self.ui.stackedWidget.setCurrentWidget(self.ui.generatePage)
         self.setEnabled(True)
 
@@ -41,6 +62,12 @@ class PlanningPage(QWidget):
         self.ui.generateButton.clicked.connect(self.run_generation_task)
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
+
+    def on_draft_changed(self):
+        """Saves the current text content to the orchestrator's active draft variable."""
+        # The plan is stored in a variable, not a text editor, so we save that.
+        if self.orchestrator:
+            self.orchestrator.set_active_spec_draft(self.development_plan_json)
 
     def _format_plan_for_display(self, plan_json_str: str) -> str:
         """Converts the JSON development plan data into a formatted HTML string."""
@@ -117,6 +144,7 @@ class PlanningPage(QWidget):
             self.ui.planTextEdit.setHtml(plan_for_display)
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
+            self.on_draft_changed()
         finally:
             self._set_ui_busy(False)
 
@@ -182,6 +210,7 @@ class PlanningPage(QWidget):
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The development plan has been refined based on your feedback.")
             self.state_changed.emit()
+            self.on_draft_changed()
         finally:
             self._set_ui_busy(False)
 

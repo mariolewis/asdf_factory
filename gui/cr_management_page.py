@@ -117,7 +117,7 @@ class CRManagementPage(QWidget):
         self._on_selection_changed()
 
     def _populate_from_dict(self, parent_item, items, prefix=""):
-        status_colors = { "IMPACT_ANALYZED": QColor("#007ACC"), "IMPLEMENTATION_IN_PROGRESS": QColor("#FFC66D"), "COMPLETED": QColor("#6A8759"), "DEBUG_PM_ESCALATION": QColor("#CC7832"), "KNOWN_ISSUE": QColor("#CC7832") }
+        status_colors = { "IMPACT_ANALYZED": QColor("#007ACC"), "IMPLEMENTATION_IN_PROGRESS": QColor("#FFC66D"), "COMPLETED": QColor("#6A8759"), "DEBUG_PM_ESCALATION": QColor("#CC7832"), "KNOWN_ISSUE": QColor("#CC7832"), "BLOCKED": QColor("#CC7832") }
         priority_colors = { "High": QColor("#CC7832"), "Major": QColor("#CC7832"), "Medium": QColor("#FFC66D"), "Low": QColor("#6A8759"), "Minor": QColor("#6A8759") }
         complexity_colors = {"Large": QColor("#CC7832"), "Medium": QColor("#FFC66D"), "Small": QColor("#6A8759")}
 
@@ -174,6 +174,20 @@ class CRManagementPage(QWidget):
         if not num_item: return None, None
         return num_item, num_item.data(Qt.UserRole)
 
+    def on_change_status_clicked(self, new_status: str):
+        """Handles the context menu action to manually change a bug's status."""
+        item, data = self._get_selected_item_and_data()
+        if not data or data.get('request_type') != 'BUG_REPORT':
+            return
+        cr_id = data['cr_id']
+        hierarchical_id = data.get('hierarchical_id', f'CR-{cr_id}')
+        reply = QMessageBox.question(self, "Confirm Status Change",
+                                    f"Are you sure you want to manually change the status of item {hierarchical_id} to '{new_status}'?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            self.orchestrator.manually_update_bug_status(cr_id, new_status)
+            self.update_backlog_view() # Refresh the UI to show the change
+
     def show_context_menu(self, position):
         """Creates and shows a context menu on right-click."""
         index = self.ui.crTreeView.indexAt(position)
@@ -195,6 +209,18 @@ class CRManagementPage(QWidget):
                     menu.addAction(add_story_action)
 
                 menu.addSeparator()
+
+                # NEW: Manual status change for Bugs
+                if item_type == "BUG_REPORT":
+                    status_menu = QMenu("Change Status", self)
+                    set_completed_action = QAction("Set as Completed", self)
+                    set_completed_action.triggered.connect(lambda: self.on_change_status_clicked("COMPLETED"))
+                    status_menu.addAction(set_completed_action)
+                    set_cancelled_action = QAction("Set as Cancelled", self)
+                    set_cancelled_action.triggered.connect(lambda: self.on_change_status_clicked("CANCELLED"))
+                    status_menu.addAction(set_cancelled_action)
+                    menu.addMenu(status_menu)
+                    menu.addSeparator()
 
                 # Standard actions for any selected item
                 edit_action = QAction("Edit Item...", self)
@@ -488,7 +514,7 @@ class CRManagementPage(QWidget):
                 self.edit_action.setEnabled(True)
 
                 # Enable "Run Full Analysis" only for new manual items
-                can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED"]
+                can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED", "BLOCKED"]
                 self.analyze_action.setEnabled(can_analyze)
 
 

@@ -214,6 +214,12 @@ class ASDFMainWindow(QMainWindow):
         self.actionProject_Settings = QAction("Project Settings...", self)
         self.ui.menuProject.addAction(self.actionProject_Settings)
 
+        # --- Pause Project Menu Action ---
+        self.actionPause_Project = QAction("Pause Project", self)
+        self.actionPause_Project.setToolTip("Save the current project state and return to the main screen")
+        self.ui.menuFile.insertAction(self.ui.actionStop_Export_Project, self.actionPause_Project)
+        self.ui.toolBar.insertAction(self.ui.actionStop_Export_Project, self.actionPause_Project)
+
         # Debug menu setup
         for phase in FactoryPhase:
             if phase.name == "IDLE": continue
@@ -255,6 +261,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionView_Documents.triggered.connect(self.on_view_documents)
         self.ui.actionView_Reports.triggered.connect(self.on_view_reports)
         self.actionProject_Settings.triggered.connect(self.on_show_project_settings)
+        self.actionPause_Project.triggered.connect(self.on_pause_project)
+        self.actionPause_Project.triggered.connect(self.on_pause_project)
 
         # Run Menu & Top Toolbar Actions
         self.ui.actionProceed.triggered.connect(self.on_proceed)
@@ -444,6 +452,7 @@ class ASDFMainWindow(QMainWindow):
         display_phase_name = self.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
         git_branch = self.orchestrator.get_current_git_branch()
         self.actionProject_Settings.setEnabled(is_project_active)
+        self.actionPause_Project.setEnabled(is_project_active)
 
         # Access is_genesis_complete as a property (no parentheses)
         genesis_complete = self.orchestrator.is_genesis_complete
@@ -844,6 +853,13 @@ class ASDFMainWindow(QMainWindow):
             # Format the log as pre-formatted HTML text for monospaced display
             formatted_log = f"<pre style='color: #CC7832;'>{failure_log}</pre>"
 
+            task_details = self.orchestrator.task_awaiting_approval or {}
+            failure_log = task_details.get("failure_log", "No details provided.")
+            is_env_failure = task_details.get("is_env_failure", False)
+            is_final_verification_failure = task_details.get("is_final_verification_failure", False) # New variable
+
+            formatted_log = f"<pre style='color: #CC7832;'>{failure_log}</pre>"
+
             if is_env_failure:
                 self.decision_page.configure(
                     header="Environment Failure",
@@ -854,6 +870,18 @@ class ASDFMainWindow(QMainWindow):
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_stop_export_project)
+            elif is_final_verification_failure:
+                self.decision_page.configure(
+                    header="Final Verification Failed",
+                    instruction="The final regression test suite failed. You can debug this issue now, or complete the sprint and log the failure as a new high-priority bug.",
+                    details=f"The automated regression test failed with the following output:<br><br>{formatted_log}",
+                    option1_text="Debug Manually & Re-run",
+                    option2_text="Acknowledge Failures & Complete Sprint"
+                )
+                # "Debug Manually" connects to the existing manual pause handler
+                self.decision_page.option1_selected.connect(self.on_decision_option2)
+                # "Acknowledge Failures" connects to the new handler
+                self.decision_page.option2_selected.connect(self.on_decision_acknowledge_failures)
             else:
                 self.decision_page.configure(
                     header="Debug Escalation",
@@ -929,15 +957,15 @@ class ASDFMainWindow(QMainWindow):
 
     def on_stop_export_project(self):
         if not self.orchestrator.project_id: return
-        default_name = f"{self.orchestrator.project_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d')}"
-        archive_name, ok = QInputDialog.getText(self, "Stop && Export Project", "Enter a name for the archive file:", text=default_name)
-        if ok and archive_name:
-            archive_path_from_db = self.orchestrator.db_manager.get_config_value("DEFAULT_ARCHIVE_PATH")
-            if not archive_path_from_db or not archive_path_from_db.strip():
-                QMessageBox.warning(self, "Configuration Error", "The Default Project Archive Path is not set. Please set it in the Settings dialog.")
-                return
 
-            self.orchestrator.stop_and_export_project(archive_path_from_db, archive_name)
+        reply = QMessageBox.question(self, "Stop & Export Project",
+                                     "This will create a final archive of the project and then remove it from your active workspace. This action is intended for completed projects.\n\n"
+                                     "To temporarily save your work, use 'Pause Project' instead.\n\n"
+                                     "Do you want to proceed?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.orchestrator.stop_and_export_project()
             self.update_ui_after_state_change()
 
     def reset_to_idle(self):
@@ -970,6 +998,44 @@ class ASDFMainWindow(QMainWindow):
             # Refresh the backlog page UI in case button states need to change
             self.cr_management_page.prepare_for_display()
             QMessageBox.information(self, "Success", "Project settings have been saved.")
+
+    def on_pause_project(self):
+        """
+        Handles the global Pause Project action. Confirms with the user,
+        saves the state via the orchestrator, and returns to the welcome screen.
+        """
+        if not self.orchestrator.project_id:
+            return
+
+        reply = QMessageBox.question(self, "Pause Project",
+                                    "This will save the project's exact current state and close it, returning you to the welcome screen.\n\n"
+                                    "To resume, simply reload the project from the 'Load Exported Project' screen.\n\n"
+                                    "Do you want to proceed?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            # The UI pages have been updating the orchestrator's active draft in real-time.
+            # We just need to tell the orchestrator to save its current state and reset.
+            self.orchestrator.pause_project()
+            self.update_ui_after_state_change() # This will show the welcome page
+
+    def on_pause_project(self):
+        """
+        Handles the global Pause Project action. Confirms with the user,
+        saves the state via the orchestrator, and returns to the welcome screen.
+        """
+        if not self.orchestrator.project_id:
+            return
+
+        reply = QMessageBox.question(self, "Pause Project",
+                                    "This will save the project's exact current state and close it, returning you to the welcome screen.\n\n"
+                                    "To resume, simply reload the project from the 'Load Exported Project' screen.\n\n"
+                                    "Do you want to proceed?",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            self.orchestrator.pause_project()
+            self.update_ui_after_state_change() # This will show the welcome page
 
     def on_about(self):
         QMessageBox.about(self, "About ASDF", "<h3>Autonomous Software Development Factory (ASDF)</h3><p>Version 0.8 (PySide6 Migration)</p><p>This application uses AI to assist in the end-to-end creation of software.</p>")
@@ -1019,6 +1085,11 @@ class ASDFMainWindow(QMainWindow):
 
     def on_decision_option3(self):
         self.orchestrator.handle_pm_debug_choice("SKIP_TASK_AND_LOG")
+        self.update_ui_after_state_change()
+
+    def on_decision_acknowledge_failures(self):
+        """Handles the PM's choice to complete the sprint with acknowledged failures."""
+        self.orchestrator.handle_complete_with_failures()
         self.update_ui_after_state_change()
 
     def on_stale_analysis_rerun(self):

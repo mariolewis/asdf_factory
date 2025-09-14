@@ -119,15 +119,17 @@ class MasterOrchestrator:
         self.task_awaiting_approval = None
         self.preflight_check_result = None
         self.debug_attempt_counter = 0
-        self.resume_phase_after_load = None
         self.active_ux_spec = {}
         self.is_project_dirty = False
         self.is_executing_cr_plan = False
         self.is_in_fix_mode = False
         self.fix_plan = None
         self.fix_plan_cursor = 0
+        self.sprint_completed_with_failures = False
         self._llm_service = None
         self.current_task_confidence = 0
+        self.active_spec_draft = None
+        self.active_sprint_id = None
         logging.info("MasterOrchestrator instance created.")
 
     def reset(self):
@@ -144,7 +146,6 @@ class MasterOrchestrator:
         self.task_awaiting_approval = None
         self.preflight_check_result = None
         self.debug_attempt_counter = 0
-        self.resume_phase_after_load = None
         self.active_ux_spec = {}
         self.is_project_dirty = False
         self.is_executing_cr_plan = False
@@ -152,6 +153,8 @@ class MasterOrchestrator:
         self.fix_plan = None
         self.fix_plan_cursor = 0
         self.current_task_confidence = 0
+        self.active_spec_draft = None
+        self.active_sprint_id = None
 
     def close_active_project(self):
         """
@@ -334,24 +337,17 @@ class MasterOrchestrator:
         }
 
     def get_sprint_goal(self) -> str:
-        """
-        Retrieves a formatted string of the current sprint's goal, based on
-        the titles of the items being implemented.
-        """
         if not self.is_executing_cr_plan or not self.project_id:
             return "N/A"
-
         try:
-            # The sprint items are those currently marked as in progress
-            sprint_items = self.db_manager.get_change_requests_by_statuses(
-                self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
-            )
-            if not sprint_items:
-                return "Finalizing sprint..."
+            sprint_id = self.get_active_sprint_id()
+            if not sprint_id: return "Initializing sprint..."
 
-            titles = [f"'{item['title']}'" for item in sprint_items]
-            return ", ".join(titles)
+            sprint_items = self.db_manager.get_items_for_sprint(sprint_id)
 
+            if not sprint_items: return "Finalizing sprint..."
+
+            return ", ".join([f"'{item['title']}'" for item in sprint_items])
         except Exception as e:
             logging.error(f"Failed to retrieve sprint goal: {e}")
             return "Error retrieving goal..."
@@ -362,24 +358,51 @@ class MasterOrchestrator:
         """
         return "FIXING" if self.is_in_fix_mode else "DEVELOPING"
 
+    def get_active_sprint_id(self) -> str | None:
+        """
+        Gets the active sprint ID, ensuring it's still valid in the database.
+        """
+        if not self.active_sprint_id:
+            return None
+        # This check could be enhanced to validate the sprint is still 'IN_PROGRESS'
+        # but for now, we trust the orchestrator's state.
+        return self.active_sprint_id
+
+    def set_active_spec_draft(self, draft_text: str):
+        """Allows UI pages to update the orchestrator with their current in-progress draft."""
+        self.active_spec_draft = draft_text
+
+    def manually_update_bug_status(self, cr_id: int, new_status: str):
+        """
+        Handles the UI request to manually change the status of a bug report.
+        """
+        if not self.project_id:
+            logging.error("Cannot update status; no active project.")
+            return
+
+        cr_details = self.db_manager.get_cr_by_id(cr_id)
+        if cr_details and cr_details['request_type'] == 'BUG_REPORT':
+            self.db_manager.update_cr_status(cr_id, new_status)
+            self.is_project_dirty = True
+        else:
+            logging.warning(f"Attempted to manually change status for a non-bug item (CR-{cr_id}). Action denied.")
+
     def get_sprint_summary_data(self) -> dict:
         """
-        Gathers and structures the data for the sprint review summary.
+        Gathers and structures the data for the sprint review summary using the active sprint ID.
         """
-        summary_data = {
-            "completed_items": [],
-            "sprint_goal": "N/A"
-        }
+        summary_data = {"completed_items": [], "sprint_goal": "N/A"}
         if not self.project_id:
             return summary_data
-
         try:
-            # This is the fix: At this point in the workflow, the items from the
-            # just-finished sprint are marked as "IMPLEMENTATION_IN_PROGRESS".
-            completed_items = self.db_manager.get_change_requests_by_statuses(
-                self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
-            )
+            sprint_id = self.active_sprint_id # Use the instance variable
+            if not sprint_id:
+                return {"error": "Could not identify active sprint."}
 
+            # This is the ONLY data source we should use.
+            sprint_items = self.db_manager.get_items_for_sprint(sprint_id)
+
+            # The complex logic for hierarchical IDs is correct, but it must operate on sprint_items.
             full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
             flat_backlog_map = {}
             def flatten_hierarchy(items):
@@ -389,17 +412,16 @@ class MasterOrchestrator:
                     if "user_stories" in item: flatten_hierarchy(item["user_stories"])
             flatten_hierarchy(full_backlog_with_ids)
 
-            for item in completed_items:
+            for item in sprint_items: # CORRECTED: Iterate over the correct list
                 enriched_item = flat_backlog_map.get(item['cr_id'], dict(item))
                 summary_data["completed_items"].append({
                     "hierarchical_id": enriched_item.get('hierarchical_id', f"CR-{item['cr_id']}"),
                     "title": item['title'],
-                    "status": "Completed" # Display a user-friendly status
+                    "status": "Completed"
                 })
 
-            summary_data["sprint_goal"] = ", ".join([f"'{item['title']}'" for item in completed_items])
+            summary_data["sprint_goal"] = ", ".join([f"'{item['title']}'" for item in sprint_items]) # CORRECTED
             return summary_data
-
         except Exception as e:
             logging.error(f"Failed to get sprint summary data: {e}")
             return {"error": str(e)}
@@ -888,7 +910,7 @@ class MasterOrchestrator:
     def handle_ux_spec_completion(self, final_spec_markdown: str) -> bool:
         """
         Finalizes the UX/UI Specification, saves it, generates the JSON blueprint,
-        stores the final spec for the next phase, and transitions to SPEC_ELABORATION.
+        and then triggers the Application Specification draft generation and assessment.
         """
         if not self.project_id:
             logging.error("Cannot complete UX Spec: No active project.")
@@ -904,35 +926,18 @@ class MasterOrchestrator:
             project_root = Path(project_details['project_root_folder'])
             docs_dir = project_root / "docs"
 
-            # Save the Markdown file for system use
             ux_spec_file_path_md = docs_dir / "ux_ui_specification.md"
             ux_spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
             self._commit_document(ux_spec_file_path_md, "docs: Finalize UX/UI Specification (Markdown)")
-
-            # Generate and save the formatted .docx file for human use
-            ux_spec_file_path_docx = docs_dir / "ux_ui_specification.docx"
-            report_generator = ReportGeneratorAgent()
-            # We pass the raw markdown to the generator, without the header
-            ux_spec_content = self._get_content_from_document(final_spec_markdown)
-            docx_bytes = report_generator.generate_text_document_docx(
-                title=f"UX/UI Specification - {self.project_name}",
-                content=ux_spec_content
-            )
-            with open(ux_spec_file_path_docx, 'wb') as f:
-                f.write(docx_bytes.getbuffer())
-            self._commit_document(ux_spec_file_path_docx, "docs: Add formatted UX/UI Specification (docx)")
-
 
             agent = UX_Spec_Agent(llm_service=self.llm_service)
             json_blueprint = agent.parse_final_spec_and_generate_blueprint(final_spec_markdown)
             if '"error":' in json_blueprint:
                 raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
 
-            # --- NEW: Save the JSON Blueprint to a file ---
             blueprint_file_path_json = docs_dir / "ux_ui_blueprint.json"
             blueprint_file_path_json.write_text(json_blueprint, encoding="utf-8")
             self._commit_document(blueprint_file_path_json, "docs: Add UX/UI JSON Blueprint")
-            # --- END NEW ---
 
             composite_spec_for_db = (
                 f"{final_spec_markdown}\n\n"
@@ -942,14 +947,15 @@ class MasterOrchestrator:
                 f"```json\n{json_blueprint}\n```"
             )
             db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
-
-            # --- Prepare for the next phase ---
-            # Store the final spec in the approval task variable to pass it to the SpecElaborationPage
-            self.task_awaiting_approval = {"completed_ux_spec": final_spec_markdown}
             self.active_ux_spec = {} # Clear the temporary UX spec data
 
-            # Transition to the next phase
+            # --- FIX: Trigger the next phase correctly ---
+            # Instead of setting the phase directly, we now correctly prepare the
+            # orchestrator to generate the next draft, which will automatically
+            # trigger the complexity review page in the next step.
+            self.task_awaiting_approval = {"pending_brief": final_spec_markdown}
             self.set_phase("SPEC_ELABORATION")
+            # --- END FIX ---
             return True
 
         except Exception as e:
@@ -2019,75 +2025,6 @@ class MasterOrchestrator:
         parts = tech_spec_text.split(heading, 1)
         return parts[0].strip()
 
-    def _determine_resume_phase_from_rowd(self, db: ASDFDBManager) -> FactoryPhase:
-        """
-        Analyzes the loaded project documents and artifact statuses to determine
-        the correct logical phase to resume from, checking from the latest phase backwards.
-        """
-        logging.info("Analyzing loaded project state to determine the correct resume phase...")
-        project_details = self.db_manager.get_project_by_id(self.project_id)
-        project_keys = project_details.keys() if project_details else []
-
-        if not project_details:
-            return FactoryPhase.ENV_SETUP_TARGET_APP
-
-        # --- Check from latest phase backwards ---
-
-        if 'ui_test_plan_text' in project_keys and project_details['ui_test_plan_text']:
-            logging.info("Resume point: MANUAL_UI_TESTING (UI test plan exists).")
-            return FactoryPhase.MANUAL_UI_TESTING
-
-        if 'integration_plan_text' in project_keys and project_details['integration_plan_text']:
-            logging.info("Resume point: INTEGRATION_AND_VERIFICATION (Integration plan exists).")
-            return FactoryPhase.INTEGRATION_AND_VERIFICATION
-
-        if 'development_plan_text' in project_keys and project_details['development_plan_text']:
-            try:
-                plan_json = self._get_json_from_document(project_details['development_plan_text'])
-                plan_tasks = plan_json.get("development_plan", [])
-                total_plan_tasks = len(plan_tasks)
-
-                if total_plan_tasks > 0:
-                    all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-                    completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
-
-                    completed_tasks = 0
-                    for task in plan_tasks:
-                        if task.get('micro_spec_id') in completed_spec_ids:
-                            completed_tasks += 1
-
-                    if completed_tasks >= total_plan_tasks:
-                        logging.info("Resume point: INTEGRATION_AND_VERIFICATION (Development plan is complete).")
-                        return FactoryPhase.INTEGRATION_AND_VERIFICATION
-            except Exception as e:
-                logging.error(f"Could not parse development plan during resume check: {e}")
-
-            logging.info("Resume point: GENESIS (Development plan is incomplete).")
-            return FactoryPhase.GENESIS
-
-        if 'coding_standard_text' in project_keys and project_details['coding_standard_text']:
-            logging.info("Resume point: PLANNING (Coding standard exists).")
-            return FactoryPhase.PLANNING
-
-        if 'test_execution_command' in project_keys and project_details['test_execution_command']:
-            logging.info("Resume point: CODING_STANDARD_GENERATION (Test command exists).")
-            return FactoryPhase.CODING_STANDARD_GENERATION
-
-        if 'tech_spec_text' in project_keys and project_details['tech_spec_text']:
-            logging.info("Resume point: BUILD_SCRIPT_SETUP (Tech spec exists).")
-            return FactoryPhase.BUILD_SCRIPT_SETUP
-
-        if 'final_spec_text' in project_keys and project_details['final_spec_text']:
-            logging.info("Resume point: TECHNICAL_SPECIFICATION (App spec exists).")
-            return FactoryPhase.TECHNICAL_SPECIFICATION
-
-        if 'project_root_folder' in project_keys and project_details['project_root_folder']:
-            logging.info("Resume point: SPEC_ELABORATION (Project folder exists).")
-            return FactoryPhase.SPEC_ELABORATION
-
-        logging.info("Resume point: Defaulting to ENV_SETUP_TARGET_APP.")
-        return FactoryPhase.ENV_SETUP_TARGET_APP
-
     def _run_integration_and_ui_testing_phase(self, progress_callback=None):
         """
         Executes the full Integration and UI Testing workflow, including planning,
@@ -2622,10 +2559,14 @@ class MasterOrchestrator:
         then clearing the saved state from the database.
         """
         if not self.resumable_state:
-            logging.warning("Resume called but no resumable state was found on initialization.")
-            return False
+            logging.warning("Resume called but no resumable state was found. Defaulting to Backlog View.")
+            self.set_phase(FactoryPhase.BACKLOG_VIEW.name)
+            return
 
         try:
+            # Set the current phase from the saved state FIRST.
+            self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
+
             state_details_json = self.resumable_state['state_details']
             if state_details_json:
                 details = json.loads(state_details_json)
@@ -2633,18 +2574,17 @@ class MasterOrchestrator:
                 self.active_plan_cursor = details.get("active_plan_cursor", 0)
                 self.debug_attempt_counter = details.get("debug_attempt_counter", 0)
                 self.task_awaiting_approval = details.get("task_awaiting_approval")
+                self.active_spec_draft = details.get("active_spec_draft")
 
-            logging.info(f"Project '{self.project_name}' resumed successfully.")
+            logging.info(f"Project '{self.project_name}' resumed successfully to phase {self.current_phase.name}.")
 
-            # Corrected: Direct call to the db_manager
+            # Now that the state is loaded into the orchestrator, clear the DB record.
             self.db_manager.delete_orchestration_state_for_project(self.project_id)
-
             self.resumable_state = None # Clear the in-memory flag
-            return True
 
         except Exception as e:
             logging.error(f"An error occurred while resuming project {self.project_id}: {e}")
-            return False
+            self.set_phase(FactoryPhase.BACKLOG_VIEW.name) # Fallback to backlog on error
 
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
@@ -2752,19 +2692,44 @@ class MasterOrchestrator:
         logging.info(f"PM selected debug escalation option: {choice}")
 
         if choice == "RETRY":
-            # This choice is handled asynchronously by the main window,
-            # which calls the dedicated handle_retry_fix_action method in a worker thread.
             logging.info("PM chose to retry. The main window will now initiate the fix process.")
             pass
 
         elif choice == "MANUAL_PAUSE":
-            self.set_phase("IDLE")
-            logging.info("Project paused for manual PM investigation. State has been saved.")
+            self._pause_sprint_for_manual_fix()
+            # The UI update will be handled by the main window after this method returns
+            # and the orchestrator is reset.
 
         elif choice == "SKIP_TASK_AND_LOG":
-            # This is the entry point for our Scene 5 logic.
-            # We will implement the helper method for it.
             self._log_failure_as_bug_report_and_proceed()
+
+    def _pause_sprint_for_manual_fix(self):
+        """
+        Saves the current sprint state and returns the UI to the idle screen,
+        allowing the user to perform manual fixes before reloading the project.
+        """
+        logging.info("Pausing sprint for manual PM investigation.")
+        from PySide6.QtWidgets import QMessageBox
+        try:
+            sprint_id = self.get_active_sprint_id()
+            if sprint_id:
+                # Mark the sprint as paused in the database
+                self.db_manager.update_sprint_status_only(sprint_id, "PAUSED")
+
+            # Save the entire orchestrator state (plan, cursor, etc.)
+            self._save_current_state()
+            QMessageBox.information(
+                None,
+                "Sprint Paused",
+                "The sprint has been paused and its state has been saved. The project will now be closed.\n\n"
+                "After making your manual fixes, please reload the project from the 'Load Exported Project' screen to continue."
+            )
+        except Exception as e:
+            logging.error(f"Failed to properly pause sprint: {e}", exc_info=True)
+            QMessageBox.critical(None, "Error", f"Failed to save sprint state for pausing: {e}")
+        finally:
+            # Return the application to the idle state
+            self.reset()
 
     def handle_retry_fix_action(self, failure_log: str, progress_callback=None):
         """
@@ -2856,27 +2821,66 @@ class MasterOrchestrator:
     def _run_final_sprint_verification(self, progress_callback=None):
         """
         Runs the full project test suite as a final quality gate for the sprint.
-        Transitions to SPRINT_REVIEW on success or escalates on failure.
+        Transitions to SPRINT_REVIEW on success or escalates on failure with new options.
         """
         logging.info("Sprint plan complete. Running mandatory final regression test suite...")
         if progress_callback:
-            progress_callback("Running mandatory final regression test suite...")
+            progress_callback(("INFO", "Running mandatory final regression test suite..."))
 
         try:
             success, output = self.run_full_test_suite(progress_callback)
             if success:
                 logging.info("Final regression test suite PASSED. Proceeding to Sprint Review.")
                 if progress_callback:
-                    progress_callback("All tests passed.")
+                    progress_callback(("SUCCESS", "All tests passed."))
+                self.sprint_completed_with_failures = False
                 self.set_phase("SPRINT_REVIEW")
             else:
-                logging.error(f"Final regression test suite FAILED. Escalating to PM.")
+                logging.error("Final regression test suite FAILED. Escalating to PM with options.")
                 if progress_callback:
-                    progress_callback(f"Regression test failed:\n{output}")
-                self.escalate_for_manual_debug(f"A regression failure was detected during final sprint verification.\n\n--- TEST OUTPUT ---\n{output}")
+                    progress_callback(("ERROR", f"Regression test failed:\n{output}"))
+
+                # This is the new logic to enable the flexible completion workflow
+                self.task_awaiting_approval = {
+                    "failure_log": f"A regression failure was detected during final sprint verification.\n\n--- TEST OUTPUT ---\n{output}",
+                    "is_final_verification_failure": True # Flag to show the new option in the UI
+                }
+                self.set_phase("DEBUG_PM_ESCALATION")
         except Exception as e:
             logging.error(f"An unexpected error occurred during final sprint verification: {e}", exc_info=True)
             self.escalate_for_manual_debug(f"A system error occurred during the final regression test run:\n{e}")
+
+    def handle_complete_with_failures(self):
+        """
+        Handles the PM's choice to complete a sprint while acknowledging
+        final verification test failures. It auto-creates bug reports
+        for the failures and then proceeds with normal sprint completion.
+        """
+        logging.warning("PM acknowledged final test failures. Logging failures as bugs and completing sprint.")
+        try:
+            task_details = self.task_awaiting_approval or {}
+            failure_log = task_details.get("failure_log", "No failure details provided.")
+            sprint_id = self.get_active_sprint_id()
+            if not sprint_id:
+                raise ValueError("Cannot log failures; no active sprint ID found.")
+
+            # For simplicity, create one bug report for the entire regression failure.
+            new_bug_id = self.db_manager.add_change_request(
+                project_id=self.project_id,
+                title="Fix regression failure from sprint " + sprint_id,
+                description=f"**Objective for Impact Analysis:** This is an auto-generated bug report for a regression failure detected during the final verification of sprint `{sprint_id}`.\n\n--- FAILURE LOG ---\n```\n{failure_log}\n```",
+                request_type='BUG_REPORT',
+                status='BUG_RAISED',
+                priority='High'
+            )
+            logging.info(f"Successfully logged regression failure as BUG-{new_bug_id}.")
+
+            self.sprint_completed_with_failures = True
+            # Now, proceed with the standard sprint review
+            self.set_phase("SPRINT_REVIEW")
+        except Exception as e:
+            logging.error(f"Critical error in handle_complete_with_failures: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred while logging failures: {e}")
 
     def handle_generate_technical_preview(self, cr_id: int) -> str:
         """
@@ -2952,66 +2956,70 @@ class MasterOrchestrator:
 
     def handle_start_sprint(self, sprint_items: list, **kwargs):
         """
-        Finalizes sprint planning by retrieving the cached plan, updating item statuses,
-        and transitioning the factory to the GENESIS (sprint execution) phase.
+        Finalizes sprint planning by creating a persistent sprint record,
+        linking items to it, updating statuses, and transitioning to GENESIS.
         """
         logging.info(f"Starting sprint with {len(sprint_items)} items.")
+        sprint_id = None  # Initialize sprint_id to None for the except block
         try:
-            # 1. Retrieve the cached plan from the pending task
             if not self.task_awaiting_approval or "sprint_plan_json" not in self.task_awaiting_approval:
                 raise ValueError("Cannot start sprint: No implementation plan was generated or cached.")
 
             plan_json_str = self.task_awaiting_approval.pop("sprint_plan_json")
-            full_plan_data = json.loads(plan_json_str)
-
-            if isinstance(full_plan_data, list) and full_plan_data and full_plan_data[0].get("error"):
-                raise ValueError(f"Cannot start sprint with a failed plan: {full_plan_data[0]['error']}")
-
-            self.active_plan = full_plan_data
+            self.active_plan = json.loads(plan_json_str)
             self.active_plan_cursor = 0
             self.is_executing_cr_plan = True
 
-            # 2. Update the status of all items in the sprint scope
+            sprint_id = f"sprint_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+            self.active_sprint_id = sprint_id
+
             cr_ids_to_update = [item['cr_id'] for item in sprint_items]
+
+            self.db_manager.create_sprint(self.project_id, sprint_id, plan_json_str)
+            self.db_manager.link_items_to_sprint(sprint_id, cr_ids_to_update)
             self.db_manager.batch_update_cr_status(cr_ids_to_update, "IMPLEMENTATION_IN_PROGRESS")
 
-            # 3. Transition to the development phase
             self.set_phase("GENESIS")
-            logging.info("Sprint plan loaded and statuses updated. Transitioning to GENESIS.")
-
+            logging.info(f"Sprint '{sprint_id}' started. Transitioning to GENESIS.")
         except Exception as e:
-            logging.error(f"Failed to start sprint: {e}", exc_info=True)
-            # Revert to planning page on failure
+            logging.error(f"Failed to start sprint '{sprint_id}': {e}", exc_info=True)
+            # Rollback partial sprint creation on failure
+            if sprint_id:
+                logging.warning(f"Rolling back failed sprint creation for sprint {sprint_id}.")
+                self.db_manager.delete_sprint_links(sprint_id)
+                self.db_manager.delete_sprint(sprint_id)
+            self.active_sprint_id = None
             self.set_phase("SPRINT_PLANNING")
-            self.task_awaiting_approval = {
-                "selected_sprint_items": sprint_items,
-                "error": str(e)
-            }
+            self.task_awaiting_approval = {"selected_sprint_items": sprint_items, "error": str(e)}
 
     def handle_sprint_review_complete(self, **kwargs):
         """
         Handles the user's action to complete the sprint review, updates the
         status of completed items, and returns to the backlog.
         """
-        logging.info("Sprint review complete. Updating item statuses and returning to BACKLOG_VIEW.")
+        logging.info("Sprint review complete. Finalizing sprint.")
         try:
-            # Find all items that were part of the sprint and mark them as COMPLETED.
-            items_to_complete = self.db_manager.get_change_requests_by_statuses(
-                self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
-            )
-            if items_to_complete:
-                item_ids = [item['cr_id'] for item in items_to_complete]
-                self.db_manager.batch_update_cr_status(item_ids, "COMPLETED")
+            sprint_id = self.get_active_sprint_id()
+            if not sprint_id: return
 
+            items_in_sprint = self.db_manager.get_items_for_sprint(sprint_id)
+            if items_in_sprint:
+                # Only mark items as COMPLETED if they were still in progress.
+                # This prevents overwriting a BLOCKED status.
+                completed_ids = [item['cr_id'] for item in items_in_sprint if item['status'] == 'IMPLEMENTATION_IN_PROGRESS']
+                if completed_ids:
+                    self.db_manager.batch_update_cr_status(completed_ids, "COMPLETED")
+
+            self.db_manager.update_sprint_status(sprint_id, "COMPLETED")
         except Exception as e:
-            logging.error(f"Failed to update sprint item statuses to COMPLETED: {e}")
-            # We still proceed to the backlog view even if the status update fails.
-
+            logging.error(f"Failed to update sprint statuses: {e}")
         finally:
             # Clear out the completed plan details
             self.active_plan = None
             self.active_plan_cursor = 0
             self.is_executing_cr_plan = False
+            self.active_sprint_id = None
+            self.task_awaiting_approval = {} # Clear any leftover task data
             self.set_phase("BACKLOG_VIEW")
 
     def handle_acknowledge_technical_preview(self, cr_id: int, preview_text: str):
@@ -3083,7 +3091,7 @@ class MasterOrchestrator:
         """
         Builds a context package for a set of sprint items and then generates a
         detailed, step-by-step implementation plan by calling the planning agent.
-        This version performs a just-in-time analysis for TO_DO items.
+        This version includes parent cr_ids for traceability.
         """
         logging.info(f"Generating implementation plan for {len(sprint_items)} sprint items.")
         try:
@@ -3091,18 +3099,17 @@ class MasterOrchestrator:
             project_details = db.get_project_by_id(self.project_id)
             project_root_path = Path(project_details['project_root_folder'])
 
-            # --- NEW: Build context package with just-in-time analysis ---
             all_impacted_ids = set()
             analysis_agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
             all_artifacts_for_analysis = db.get_all_artifacts_for_project(self.project_id)
             rowd_json_for_analysis = json.dumps([dict(row) for row in all_artifacts_for_analysis])
+            description_parts = []
 
             for item in sprint_items:
+                description_parts.append(f"ITEM_ID: {item['cr_id']}\nTITLE: {item['title']}\nDESCRIPTION: {item['description']}\n")
                 if item.get('status') == 'IMPACT_ANALYZED':
-                    # If analysis exists, use it
                     impacted_ids = json.loads(item.get('impacted_artifact_ids') or '[]')
-                else: # For TO_DO items, run analysis now
-                    logging.info(f"Running just-in-time analysis for TO_DO item: '{item['title']}'")
+                else:
                     analysis_result = analysis_agent.run_full_analysis(
                         change_request_desc=item['description'],
                         final_spec_text=project_details['final_spec_text'],
@@ -3112,6 +3119,8 @@ class MasterOrchestrator:
 
                 for artifact_id in impacted_ids:
                     all_impacted_ids.add(artifact_id)
+
+            combined_description = "\n---\n".join(description_parts)
 
             source_code_files = {}
             for artifact_id in all_impacted_ids:
@@ -3125,14 +3134,9 @@ class MasterOrchestrator:
             self.context_package_summary = self._build_and_validate_context_package(core_docs, source_code_files)
             if self.context_package_summary.get("error"):
                 raise Exception(f"Context Builder Error: {self.context_package_summary['error']}")
-            # --- END NEW ---
 
             all_artifacts = db.get_all_artifacts_for_project(self.project_id)
             rowd_json = json.dumps([dict(row) for row in all_artifacts])
-
-            combined_description = "\n\n---\n\n".join(
-                [f"Title: {item['title']}\nDescription: {item['description']}" for item in sprint_items]
-            )
 
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
             new_plan_str = planner_agent.create_refactoring_plan(
@@ -3192,16 +3196,10 @@ class MasterOrchestrator:
             logging.error(error_msg, exc_info=True)
             return f"### Error\n{error_msg}"
 
-    def refine_sprint_implementation_plan(self, current_plan_json: str, pm_feedback: str) -> str:
+    def refine_sprint_implementation_plan(self, current_plan_json: str, pm_feedback: str, sprint_items: list) -> str:
         """
-        Orchestrates the refinement of an existing sprint implementation plan.
-
-        Args:
-            current_plan_json (str): The JSON string of the current plan.
-            pm_feedback (str): The PM's instructions for refinement.
-
-        Returns:
-            A JSON string of the new, refined implementation plan.
+        Orchestrates the refinement of an existing sprint implementation plan,
+        ensuring parent item context is passed to the agent for traceability.
         """
         logging.info("Orchestrator: Refining sprint implementation plan based on PM feedback.")
         try:
@@ -3209,17 +3207,21 @@ class MasterOrchestrator:
             project_details = db.get_project_by_id(self.project_id)
             all_artifacts = db.get_all_artifacts_for_project(self.project_id)
             rowd_json = json.dumps([dict(row) for row in all_artifacts])
+            # Re-create the structured description for context ---
+            description_parts = []
+            for item in sprint_items:
+                description_parts.append(f"ITEM_ID: {item['cr_id']}\nTITLE: {item['title']}\nDESCRIPTION: {item['description']}\n")
+            combined_description = "\n---\n".join(description_parts)
 
             agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
             refined_plan_json = agent.refine_refactoring_plan(
                 current_plan_json=current_plan_json,
                 pm_feedback=pm_feedback,
-                final_spec_text=project_details['final_spec_text'],
+                change_request_desc=combined_description, # Pass the rich context
                 tech_spec_text=project_details['tech_spec_text'],
                 rowd_json=rowd_json
             )
             return refined_plan_json
-
         except Exception as e:
             error_msg = f"Failed to refine sprint plan: {e}"
             logging.error(error_msg, exc_info=True)
@@ -3334,61 +3336,79 @@ class MasterOrchestrator:
 
     def _log_failure_as_bug_report_and_proceed(self):
         """
-        Logs a failed task as a new BUG_REPORT in the backlog, saves a
-        detailed debug log, and proceeds with the sprint.
+        Logs a failed task as a new BUG_REPORT, blocks the parent backlog
+        item(s), and allows the sprint to continue with the next task.
         """
+        logging.warning("Task failed. Logging as bug and continuing sprint.")
         try:
             task_details = self.task_awaiting_approval or {}
             failure_log = task_details.get("failure_log", "No details provided.")
             original_failing_task = task_details.get('original_failing_task', {})
-
             if not original_failing_task:
-                raise ValueError("Could not find the original failing task in the approval context.")
+                raise ValueError("Could not find the original failing task context.")
 
-            # Step 1: Save the detailed debug log and get its path
+            # 1. Save the detailed debug log and get its path
             log_file_path = self._save_debug_log_and_get_path(failure_log, original_failing_task)
             log_path_for_desc = log_file_path if log_file_path else "Not available."
 
-            # Step 2: Construct the detailed description for the new bug report
-            task_name = original_failing_task.get('task', {}).get('component_name', 'Unknown Task')
-            description_parts = [
-                "**Objective for Impact Analysis:** This is an auto-generated bug report for a failed development task. Your goal is to analyze the attached failure log and the original micro-specification to determine the root cause and plan a fix.",
-                "\n---\n",
-                "**Original Task:**",
-                f"```json\n{json.dumps(original_failing_task.get('task', {}), indent=2)}\n```",
-                "\n---\n",
-                "**Failure Summary:**",
-                f"```\n{failure_log.splitlines()[0]}\n```",
-                "\n---\n",
-                f"**Full Debug Log Path:** `{log_path_for_desc}`"
-            ]
-            full_description = "\n".join(description_parts)
+            # 2. Identify parent backlog items from the task's traceability info
+            parent_cr_ids = original_failing_task.get('task', {}).get('parent_cr_ids', [])
+            if not parent_cr_ids:
+                logging.error("Traceability Error: Cannot log bug as parent CR IDs were not found in the failed task. Aborting sprint.")
+                self.escalate_for_manual_debug("Traceability link missing in failed task.")
+                return
 
-            # Step 3: Create the new BUG_REPORT in the backlog
-            self.db_manager.add_change_request(
-                project_id=self.project_id,
-                title=f"Fix failed sprint task: {task_name}",
-                description=full_description,
-                request_type='BUG_REPORT',
-                status='BUG_RAISED',
-                priority='High'
+            # 3. Block parent items
+            self.db_manager.batch_update_cr_status(parent_cr_ids, "BLOCKED")
+
+            # --- START FIX: Look up user-facing hierarchical IDs ---
+            full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
+            flat_backlog_map = {}
+            def flatten_hierarchy(items):
+                for item in items:
+                    flat_backlog_map[item['cr_id']] = item
+                    if "features" in item: flatten_hierarchy(item["features"])
+                    if "user_stories" in item: flatten_hierarchy(item["user_stories"])
+            flatten_hierarchy(full_backlog_with_ids)
+
+            parent_hierarchical_ids = [
+                flat_backlog_map.get(pid, {}).get('hierarchical_id', f'CR-{pid}')
+                for pid in parent_cr_ids
+            ]
+            parent_ids_str = ', '.join(parent_hierarchical_ids)
+            # --- END FIX ---
+
+            # 4. Create and link the new bug report with the correct parent ID format
+            task_name = original_failing_task.get('task', {}).get('component_name', 'Unknown Task')
+            description = (
+                f"**Objective for Impact Analysis:** This is an auto-generated bug report for a failed sprint task. "
+                f"This bug is blocking the completion of parent item(s): {parent_ids_str}.\n\n"
+                f"--- ORIGINAL TASK ---\n"
+                f"```json\n{json.dumps(original_failing_task.get('task', {}), indent=2)}\n```\n\n"
+                f"--- FAILURE LOG ---\n"
+                f"```\n{failure_log}\n```\n\n"
+                f"**Full Debug Log Path:** `{log_path_for_desc}`"
             )
 
-            # Step 4: Clean up, end the sprint, and proceed to the backlog.
-            self.is_in_fix_mode = False
-            self.fix_plan = None
-            self.fix_plan_cursor = 0
-            self.active_plan = None
-            self.active_plan_cursor = 0
-            self.is_executing_cr_plan = False
-            self.task_awaiting_approval = None
-            self.set_phase("BACKLOG_VIEW")
-            logging.info(f"Successfully logged failure for '{task_name}' as a new bug report. Aborting sprint and returning to backlog.")
+            bug_data = {
+                "request_type": "BUG_REPORT",
+                "title": f"Fix failed sprint task: {task_name}",
+                "description": description,
+                "severity": "High",
+                "parent_id": parent_cr_ids[0]
+            }
+            success, new_bug_id = self.add_new_backlog_item(bug_data)
+            if not success:
+                raise Exception(f"Failed to create new BUG_REPORT item in the database for task: {task_name}")
 
-        except Exception as e:
-            logging.error(f"Failed to log failure as bug report: {e}", exc_info=True)
-            # As a fallback, go back to the GENESIS phase to avoid getting stuck
+            # 5. Advance the plan and resume the sprint
+            self.active_plan_cursor += 1
+            self.task_awaiting_approval = None
             self.set_phase("GENESIS")
+            logging.info(f"Successfully logged failure for '{task_name}' as BUG-{new_bug_id}. Sprint will continue.")
+        except Exception as e:
+            logging.error(f"Critical error in _log_failure_as_bug_report_and_proceed: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred while trying to log a bug and continue the sprint: {e}")
 
     def _save_current_state(self):
         """
@@ -3406,9 +3426,14 @@ class MasterOrchestrator:
                 "active_plan": self.active_plan,
                 "active_plan_cursor": self.active_plan_cursor,
                 "debug_attempt_counter": self.debug_attempt_counter,
-                "task_awaiting_approval": self.task_awaiting_approval
+                "task_awaiting_approval": self.task_awaiting_approval,
+                "active_spec_draft": self.active_spec_draft
             }
             state_details_json = json.dumps(state_details_dict)
+
+            # --- ADD THIS LINE ---
+            logging.info(f"DEBUG: Attempting to save state for phase: {self.current_phase.name}")
+            # --- END OF ADDITION ---
 
             db.save_orchestration_state(
                 project_id=self.project_id,
@@ -3422,6 +3447,32 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to auto-save state for project {self.project_id}: {e}")
 
+    def pause_project(self):
+        """
+        Saves the project's current session state, creates a project archive
+        and history record, and resets the orchestrator to idle.
+        """
+        logging.info("PM initiated Pause Project. Saving state and closing...")
+        if not self.project_id:
+            logging.warning("Pause project called, but no active project was found.")
+            return
+
+        try:
+            self._save_current_state()
+
+            # Check for and pass unratified backlog ---
+            temp_cr_data = None
+            if self.current_phase == FactoryPhase.BACKLOG_RATIFICATION:
+                if self.task_awaiting_approval and "generated_backlog_items" in self.task_awaiting_approval:
+                    # The data is a JSON string, so we need to load it into a Python list
+                    temp_cr_data = json.loads(self.task_awaiting_approval["generated_backlog_items"])
+
+            self._create_project_archive_and_history_record(override_cr_data=temp_cr_data)
+
+            self.reset()
+        except Exception as e:
+            logging.error(f"Failed to cleanly pause project {self.project_id}: {e}", exc_info=True)
+            self.reset()
 
     def _clear_active_project_data(self, db, project_id: str):
         """Helper method to clear all data for a specific project."""
@@ -3433,34 +3484,47 @@ class MasterOrchestrator:
         db.delete_project_by_id(project_id)
         logging.info(f"Cleared all active data for project ID: {project_id}")
 
-
-    def stop_and_export_project(self, archive_dir: str | Path, archive_name: str) -> str | None:
+    def _create_project_archive_and_history_record(self, override_cr_data=None):
         """
-        Exports all project data to files, adds a record to history,
-        and clears the active project from the database.
+        A reusable helper method that exports the current project DB state to
+        archive files and creates a corresponding history record.
+        It can now accept an override for the CR data for in-memory states.
         """
         if not self.project_id:
-            logging.warning("No active project to stop and export.")
-            return None
+            return
 
-        archive_dir = Path(archive_dir)
+        db = self.db_manager
+
+        archive_path_str = db.get_config_value("DEFAULT_ARCHIVE_PATH")
+        if not archive_path_str:
+            logging.error("Cannot create project archive: DEFAULT_ARCHIVE_PATH is not set in settings.")
+            return
+
+        archive_dir = Path(archive_path_str)
+        archive_name = f"{self.project_name.replace(' ', '_')}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+
         archive_dir.mkdir(parents=True, exist_ok=True)
-
         rowd_file = archive_dir / f"{archive_name}_rowd.json"
         cr_file = archive_dir / f"{archive_name}_cr.json"
         project_file = archive_dir / f"{archive_name}_project.json"
 
         try:
-            db = self.db_manager
             artifacts = db.get_all_artifacts_for_project(self.project_id)
-            change_requests = db.get_all_change_requests_for_project(self.project_id)
             project_details_row = db.get_project_by_id(self.project_id)
+
+            # --- START FIX: Use override data if provided ---
+            if override_cr_data is not None:
+                cr_list = override_cr_data
+                logging.info("Archiving with override CR data from in-memory state.")
+            else:
+                change_requests = db.get_all_change_requests_for_project(self.project_id)
+                cr_list = [dict(row) for row in change_requests]
+            # --- END FIX ---
 
             artifacts_list = [dict(row) for row in artifacts]
             with open(rowd_file, 'w', encoding='utf-8') as f:
                 json.dump(artifacts_list, f, indent=4)
 
-            cr_list = [dict(row) for row in change_requests]
             with open(cr_file, 'w', encoding='utf-8') as f:
                 json.dump(cr_list, f, indent=4)
 
@@ -3469,9 +3533,7 @@ class MasterOrchestrator:
                 with open(project_file, 'w', encoding='utf-8') as f:
                     json.dump(project_details_dict, f, indent=4)
 
-            root_folder_path = "N/A"
-            if project_details_row and project_details_row['project_root_folder']:
-                root_folder_path = project_details_row['project_root_folder']
+            root_folder_path = project_details_row['project_root_folder'] if project_details_row else "N/A"
 
             db.add_project_to_history(
                 project_id=self.project_id,
@@ -3480,80 +3542,86 @@ class MasterOrchestrator:
                 archive_path=str(rowd_file),
                 timestamp=datetime.now(timezone.utc).isoformat()
             )
+            logging.info(f"Successfully created archive and history record for '{self.project_name}'.")
+        except Exception as e:
+            logging.error(f"Failed during project archive and history creation: {e}", exc_info=True)
 
+    def _clear_active_project_data(self, db, project_id: str):
+        """Helper method to clear all data for a specific project."""
+        if not project_id:
+            return
+        db.delete_all_artifacts_for_project(project_id)
+        db.delete_all_change_requests_for_project(project_id)
+        db.delete_orchestration_state_for_project(project_id)
+        db.delete_project_by_id(project_id)
+        logging.info(f"Cleared all active data for project ID: {project_id}")
+
+    def stop_and_export_project(self, **kwargs):
+        """
+        Aborts the current sprint by reverting in-progress items, creates a
+        final project archive, and resets the application.
+        """
+        if not self.project_id:
+            logging.warning("No active project to stop and export.")
+            return
+
+        db = self.db_manager
+        try:
+            # This is the unique action for this method: revert in-progress items.
+            in_progress_items = db.get_change_requests_by_statuses(
+                self.project_id, ["IMPLEMENTATION_IN_PROGRESS"]
+            )
+            if in_progress_items:
+                item_ids = [item['cr_id'] for item in in_progress_items]
+                db.batch_update_cr_status(item_ids, "TO_DO")
+                logging.info(f"Reverted {len(item_ids)} in-progress items back to 'TO_DO' for clean archive.")
+
+            # Now, call the shared helper to do the archiving and history creation.
+            self._create_project_archive_and_history_record()
+
+            # Final cleanup
             self._clear_active_project_data(db, self.project_id)
-
             self.reset()
-            logging.info(f"Successfully exported project '{self.project_name}' to {archive_dir}")
-            return str(rowd_file)
-
         except Exception as e:
             logging.error(f"Failed to stop and export project: {e}", exc_info=True)
-            return None
 
     def _perform_preflight_checks(self, project_root_str: str, project_id: str) -> dict:
         """
         Performs a sequence of pre-flight checks on an existing project environment.
-        This version is now aware of the version control setting.
+        This version now also reports if a development plan is active.
         """
         import os
         import subprocess
         import git
         project_root = Path(project_root_str)
+        has_active_plan = self.active_plan is not None
 
         # 1. Path Validation
         if not project_root.exists() or not project_root.is_dir():
-            return {"status": "PATH_NOT_FOUND", "message": f"The project folder could not be found or is not a directory. Please confirm the new location: {project_root_str}"}
+            return {"status": "PATH_NOT_FOUND", "message": f"The project folder could not be found or is not a directory. Please confirm the new location: {project_root_str}", "has_active_plan": has_active_plan}
 
-        # Check the project's setting for version control
         project_details = self.db_manager.get_project_by_id(project_id)
         version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
 
         # 2. VCS Validation (Only if enabled for this project)
         if version_control_enabled:
-            # Check 2a: Directory existence
             if not (project_root / '.git').is_dir():
-                return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing. Version control is enabled for this project."}
-
-            # Check 2b: GitPython validation
+                return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing. Version control is enabled for this project.", "has_active_plan": has_active_plan}
             try:
                 repo = git.Repo(project_root)
             except git.InvalidGitRepositoryError:
-                return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (GitPython check failed)."}
+                return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (GitPython check failed).", "has_active_plan": has_active_plan}
 
-            # Check 2c: Subprocess command validation
-            try:
-                # This part for Windows startupinfo is platform-specific and can cause issues if not handled carefully
-                startupinfo = None
-                if os.name == 'nt':
-                    startupinfo = subprocess.STARTUPINFO()
-                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-
-                result = subprocess.run(
-                    ['git', 'status'],
-                    cwd=project_root,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    startupinfo=startupinfo
-                )
-                if result.returncode != 0:
-                    return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (command-line check failed)."}
-            except FileNotFoundError:
-                return {"status": "GIT_MISSING", "message": "Git command not found. Please ensure Git is installed and in your system's PATH."}
-
-            # 3. State Drift Validation
             if repo.is_dirty(untracked_files=True):
-                return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository."}
+                return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository.", "has_active_plan": has_active_plan}
 
         # All checks passed
-        return {"status": "ALL_PASS", "message": "Project environment successfully verified."}
+        return {"status": "ALL_PASS", "message": "Project environment successfully verified.", "vcs_enabled": version_control_enabled, "has_active_plan": has_active_plan}
 
     def handle_discard_changes(self, history_id: int):
         """
-        Handles the 'Discard all local changes' expert option for a project
-        with state drift. Resets the git repository and then re-runs the
-        entire project loading sequence to ensure a clean state.
+        Handles the 'Discard all local changes' option by resetting the git
+        repository and then re-running the pre-flight check.
         """
         logging.warning(f"Executing 'git reset --hard' for project history ID: {history_id}")
         try:
@@ -3563,6 +3631,8 @@ class MasterOrchestrator:
                 raise Exception(f"Could not find history record for ID {history_id} to get path.")
 
             project_root = Path(history_record['project_root_folder'])
+            project_id = history_record['project_id'] # Get the project_id for the check
+
             agent = RollbackAgent()
             success, message = agent.discard_local_changes(project_root)
 
@@ -3571,12 +3641,13 @@ class MasterOrchestrator:
 
             logging.info(f"Successfully discarded changes at {project_root}")
 
-            # After successfully discarding changes, re-trigger the load process
-            self.load_archived_project(history_id)
+            # After discarding, re-run the check and update the state. DO NOT reload the project.
+            check_result = self._perform_preflight_checks(str(project_root), project_id)
+            self.preflight_check_result = {**check_result, "history_id": history_id}
 
         except Exception as e:
             logging.error(f"Failed to discard changes for project history ID {history_id}: {e}")
-            self.preflight_check_result = {"status": "ERROR", "message": str(e)}
+            self.preflight_check_result = {"status": "ERROR", "message": str(e), "history_id": history_id}
 
     def handle_continue_with_uncommitted_changes(self, completed_task_ids: list):
         """
@@ -3635,6 +3706,37 @@ class MasterOrchestrator:
             # If this process fails, we put the user back on the pre-flight page to try again
             self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
+    def commit_manual_changes_and_proceed(self, **kwargs):
+        """
+        Commits all uncommitted changes with a generic message. This is used
+        when changes are detected between sprints (no active plan).
+        """
+        from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
+        logging.info("Committing manual changes made between sprints.")
+        try:
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise FileNotFoundError("Project root folder not found for committing manual changes.")
+
+            project_root = project_details['project_root_folder']
+            version_control_enabled = project_details['version_control_enabled'] == 1
+            if not version_control_enabled:
+                logging.warning("Cannot commit changes; version control is disabled for this project.")
+                # If VCS is disabled, there's nothing to commit. Just proceed with resumption.
+                return True, "Changes saved locally (VCS disabled)."
+
+            build_agent = BuildAndCommitAgentAppTarget(project_root, version_control_enabled)
+            commit_message = "feat: Apply and commit manual changes from PM"
+            success, message = build_agent.commit_all_changes(commit_message)
+
+            if not success and "No changes detected" not in message:
+                raise Exception(f"Failed to commit changes: {message}")
+
+            return True, message
+        except Exception as e:
+            logging.error(f"Failed to commit manual changes: {e}", exc_info=True)
+            return False, str(e)
+
     def delete_archived_project(self, history_id: int) -> tuple[bool, str]:
         """
         Permanently deletes an archived project's history record and its
@@ -3685,21 +3787,13 @@ class MasterOrchestrator:
             db = self.db_manager
             if self.project_id and self.is_project_dirty:
                 logging.warning(f"An active, modified project '{self.project_name}' was found. Performing a safety export.")
-                archive_path_from_db = db.get_config_value("DEFAULT_ARCHIVE_PATH")
-                if not archive_path_from_db or not archive_path_from_db.strip():
-                    logging.error("Safety export failed: Default Project Archive Path is not set in Settings.")
-                else:
-                    archive_path = Path(archive_path_from_db)
-                    archive_name = f"{self.project_name.replace(' ', '_')}_auto_export_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                    self.stop_and_export_project(archive_path, archive_name)
+                self._create_project_archive_and_history_record()
 
             history_record = db.get_project_history_by_id(history_id)
             if not history_record:
                 raise FileNotFoundError(f"No project history found for ID {history_id}")
 
             project_id_to_load = history_record['project_id']
-            logging.info(f"Preparing to load project {project_id_to_load}. Clearing any lingering active data for this ID first.")
-            self._clear_active_project_data(db, project_id_to_load)
 
             rowd_file_path = Path(history_record['archive_file_path'])
             project_file_path = rowd_file_path.with_name(rowd_file_path.name.replace("_rowd.json", "_project.json"))
@@ -3707,37 +3801,22 @@ class MasterOrchestrator:
 
             if project_file_path.exists():
                 with open(project_file_path, 'r', encoding='utf-8') as f:
-                    project_data_to_load = json.load(f)
-                db.create_or_update_project_record(project_data_to_load)
-
+                    db.create_or_update_project_record(json.load(f))
             if rowd_file_path.exists():
                 with open(rowd_file_path, 'r', encoding='utf-8') as f:
                     artifacts_to_load = json.load(f)
-                if artifacts_to_load: db.bulk_insert_artifacts(artifacts_to_load)
-
+                    if artifacts_to_load: db.bulk_insert_artifacts(artifacts_to_load)
             if cr_file_path.exists():
                 with open(cr_file_path, 'r', encoding='utf-8') as f:
                     crs_to_load = json.load(f)
-                if crs_to_load: db.bulk_insert_change_requests(crs_to_load)
+                    if crs_to_load: db.bulk_insert_change_requests(crs_to_load)
 
             self.project_id = project_id_to_load
             self.project_name = history_record['project_name']
             self.project_root_path = history_record['project_root_folder']
 
-            project_details_for_plan = db.get_project_by_id(project_id_to_load)
-            if project_details_for_plan and project_details_for_plan['development_plan_text']:
-                try:
-                    plan_json = self._get_json_from_document(project_details_for_plan['development_plan_text'])
-                    self.active_plan = plan_json.get("development_plan", [])
-                    logging.info("Successfully pre-loaded development plan into orchestrator state.")
-                    self._recalculate_plan_cursor_from_db()
-                except (json.JSONDecodeError, KeyError) as e:
-                    logging.warning(f"Could not pre-load development plan during project load: {e}")
-                    self.active_plan = None
-            else:
-                self.active_plan = None
-
-            self.resume_phase_after_load = self._determine_resume_phase_from_rowd(db)
+            # Re-fetch the resumable state now that the project data is loaded
+            self.resumable_state = db.get_any_paused_state()
 
             check_result = self._perform_preflight_checks(history_record['project_root_folder'], project_id_to_load)
             self.preflight_check_result = {**check_result, "history_id": history_id}
@@ -4462,11 +4541,25 @@ class MasterOrchestrator:
     def get_full_backlog_hierarchy(self) -> list:
         """
         Queries the database and builds a complete, nested list of dictionaries
-        representing the entire project backlog hierarchy, including top-level items
-        and items parented directly to epics.
+        representing the entire project backlog hierarchy. This version is fully
+        recursive to find children at any level.
         """
         if not self.project_id:
             return []
+
+        def get_children_recursive(parent_id):
+            """Helper function to recursively fetch children for any given parent."""
+            children_rows = self.db_manager.get_children_of_cr(parent_id)
+            if not children_rows:
+                return []
+
+            children_list = []
+            for child_row in children_rows:
+                child_dict = dict(child_row)
+                # The UI expects sub-items under a 'user_stories' key for rendering
+                child_dict['user_stories'] = get_children_recursive(child_dict['cr_id'])
+                children_list.append(child_dict)
+            return children_list
 
         try:
             top_level_items = self.db_manager.get_top_level_items_for_project(self.project_id)
@@ -4476,27 +4569,8 @@ class MasterOrchestrator:
                 item_dict = dict(item_row)
                 item_id = item_dict['cr_id']
 
-                # If the top-level item is an Epic, fetch its children
-                if item_dict.get('request_type') == 'EPIC':
-                    # Fetch all Features that are children of this Epic
-                    features = self.db_manager.get_features_for_epic(self.project_id, item_id)
-                    feature_list = []
-                    for feature_row in features:
-                        feature_dict = dict(feature_row)
-                        items = self.db_manager.get_items_for_feature(self.project_id, feature_dict['cr_id'])
-                        feature_dict['user_stories'] = [dict(item) for item in items]
-                        feature_list.append(feature_dict)
-
-                    # --- NEW: Also find any items parented DIRECTLY to the Epic ---
-                    # The get_items_for_feature DAO method works here as it just queries by parent_id
-                    direct_items = self.db_manager.get_items_for_feature(self.project_id, item_id)
-                    if direct_items:
-                        # The UI's rendering code expects children under a 'features' key to be displayed.
-                        # We will combine the actual features with these direct items into one list for display.
-                        feature_list.extend([dict(item) for item in direct_items])
-
-                    item_dict['features'] = feature_list
-
+                # The UI expects sub-items under a 'features' key for rendering top-level children
+                item_dict['features'] = get_children_recursive(item_id)
                 full_hierarchy.append(item_dict)
 
             return full_hierarchy

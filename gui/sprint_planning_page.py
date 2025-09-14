@@ -398,18 +398,23 @@ class SprintPlanningPage(QWidget):
         self.window().setEnabled(False)
         self.window().statusBar().showMessage("Refining implementation plan based on feedback...")
 
-        worker = Worker(self._task_refine_plan, feedback)
+        worker = Worker(self._task_refine_plan, feedback, self.sprint_scope_items)
         # We can reuse the same result handler as the initial plan generation
         worker.signals.result.connect(self._handle_plan_generation_result)
         worker.signals.error.connect(self._on_background_task_error)
         self.threadpool.start(worker)
 
-    def _task_refine_plan(self, pm_feedback, **kwargs):
+    def _task_refine_plan(self, pm_feedback, sprint_items, **kwargs):
         """Background worker task that calls the orchestrator to refine the plan."""
-        return self.orchestrator.refine_sprint_implementation_plan(
+        refined_plan_json = self.orchestrator.refine_sprint_implementation_plan(
             current_plan_json=self.implementation_plan_json,
-            pm_feedback=pm_feedback
+            pm_feedback=pm_feedback,
+            sprint_items=sprint_items
         )
+        # Update the orchestrator's cache with the new plan ---
+        if refined_plan_json and '"error":' not in refined_plan_json:
+            self.orchestrator.task_awaiting_approval['sprint_plan_json'] = refined_plan_json
+        return refined_plan_json
 
 
 class IncorporateFeedbackDialog(QDialog):

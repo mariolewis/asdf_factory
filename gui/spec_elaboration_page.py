@@ -40,6 +40,12 @@ class SpecElaborationPage(QWidget):
         self.selected_files = []
         self.ai_issues = ""
         self.refinement_iteration_count = 1
+
+        # Block signals during widget clearing ---
+        self.ui.briefDescriptionTextEdit.blockSignals(True)
+        self.ui.pmReviewTextEdit.blockSignals(True)
+        self.ui.specDraftTextEdit.blockSignals(True)
+
         self.ui.briefDescriptionTextEdit.clear()
         self.ui.uploadPathLineEdit.clear()
         self.ui.analysisResultTextEdit.clear()
@@ -48,6 +54,11 @@ class SpecElaborationPage(QWidget):
         self.ui.specDraftTextEdit.clear()
         self.ui.aiIssuesTextEdit.clear()
         self.ui.feedbackTextEdit.clear()
+
+        self.ui.briefDescriptionTextEdit.blockSignals(False)
+        self.ui.pmReviewTextEdit.blockSignals(False)
+        self.ui.specDraftTextEdit.blockSignals(False)
+
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
 
     def connect_signals(self):
@@ -63,12 +74,45 @@ class SpecElaborationPage(QWidget):
         self.ui.submitFeedbackButton.clicked.connect(self.run_refinement_task)
         self.ui.approveSpecButton.clicked.connect(self.on_approve_spec_clicked)
         self.ui.submitForAnalysisButton.clicked.connect(self.run_refinement_and_analysis_task)
+        self.ui.pmReviewTextEdit.textChanged.connect(self.on_draft_changed)
+        self.ui.specDraftTextEdit.textChanged.connect(self.on_draft_changed)
+
+    def on_draft_changed(self):
+        """Saves the current text content to the orchestrator's active draft variable."""
+        # Determine which text edit is currently visible and get its content
+        active_widget = self.ui.stackedWidget.currentWidget()
+        draft_text = ""
+        if active_widget == self.ui.pmFirstReviewPage:
+            draft_text = self.ui.pmReviewTextEdit.toPlainText()
+        elif active_widget == self.ui.finalReviewPage:
+            draft_text = self.ui.specDraftTextEdit.toPlainText()
+
+        if self.orchestrator:
+            self.orchestrator.set_active_spec_draft(draft_text)
 
     def prepare_for_display(self):
         """
-        Smart entry point that decides whether to ask for a brief or auto-generate
-        the app spec from a previously completed phase.
+        Smart entry point that first checks for a resumed draft, then decides
+        whether to ask for a brief or auto-generate the app spec.
         """
+        # Prioritize Resumed Draft ---
+        if self.orchestrator.active_spec_draft is not None:
+            logging.info("Resuming spec elaboration with a saved draft.")
+            self.spec_draft = self.orchestrator.active_spec_draft
+            # It's crucial to clear the orchestrator's draft after loading it
+            self.orchestrator.set_active_spec_draft(None)
+
+            # Determine which review page is appropriate based on content
+            if "AI Analysis & Issues" in self.spec_draft: # A simple check
+                self.ui.headerLabel.setText("Application Specification Review")
+                self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
+                self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+            else:
+                self.ui.headerLabel.setText("Draft Application Specification")
+                self.ui.pmReviewTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
+                self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
+            return
+
         task = self.orchestrator.task_awaiting_approval or {}
         completed_ux_spec = task.get("completed_ux_spec")
         pending_brief = task.get("pending_brief")
@@ -78,13 +122,13 @@ class SpecElaborationPage(QWidget):
             self.orchestrator.task_awaiting_approval = None
             self.ui.headerLabel.setText("Elaborating & Assessing Application Specifications")
             self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, completed_ux_spec,
-                               status_message="Generating application spec from UX design...")
+                            status_message="Generating application spec from UX design...")
         elif pending_brief:
             logging.info("Detected pending brief from UX skip. Auto-generating Application Spec draft.")
             self.orchestrator.task_awaiting_approval = None
             self.ui.headerLabel.setText("Elaborating & Assessing Application Specifications")
             self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, pending_brief,
-                               status_message="Generating application spec from brief...")
+                            status_message="Generating application spec from brief...")
         else:
             logging.info("No pending brief found. Displaying initial brief input page.")
             self.ui.headerLabel.setText("Your Requirements")
@@ -245,7 +289,7 @@ class SpecElaborationPage(QWidget):
             QApplication.processEvents()
 
             self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
-            self.ui.aiIssuesTextEdit.setHtml(markdown.markdown(self.ai_issues))
+            self.ui.aiIssuesTextEdit.setHtml(markdown.markdown(self.ai_issues, extensions=['fenced_code']))
             self.ui.feedbackTextEdit.clear()
 
             self.ui.submitFeedbackButton.setEnabled(True)

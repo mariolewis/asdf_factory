@@ -32,8 +32,17 @@ class UXSpecPage(QWidget):
         """Resets the page to its initial state for a new project."""
         logging.info("Resetting UXSpecPage for a new project.")
         self.ux_spec_draft = ""
+
+        # Block signals during widget clearing ---
+        self.ui.specTextEdit.blockSignals(True)
+        self.ui.feedbackTextEdit.blockSignals(True)
+
         self.ui.specTextEdit.clear()
         self.ui.feedbackTextEdit.clear()
+
+        self.ui.specTextEdit.blockSignals(False)
+        self.ui.feedbackTextEdit.blockSignals(False)
+
         self.setEnabled(True)
 
     def connect_signals(self):
@@ -43,6 +52,13 @@ class UXSpecPage(QWidget):
             self.ui.refineButton.clicked.disconnect()
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
+        self.ui.specTextEdit.textChanged.connect(self.on_draft_changed)
+
+    def on_draft_changed(self):
+        """Saves the current text content to the orchestrator's active draft variable."""
+        draft_text = self.ui.specTextEdit.toPlainText()
+        if self.orchestrator:
+            self.orchestrator.set_active_spec_draft(draft_text)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
         """Disables or enables the main window and updates the status bar."""
@@ -79,11 +95,23 @@ class UXSpecPage(QWidget):
 
     def prepare_for_display(self):
         """
-        Triggers the UX_Spec_Agent to generate the initial draft when the page is shown.
+        Triggers the UX_Spec_Agent to generate the initial draft, unless a
+        resumable draft exists.
         """
+        # Prioritize Resumed Draft ---
+        if self.orchestrator.active_spec_draft is not None:
+            logging.info("Resuming UX spec with a saved draft.")
+            self.ux_spec_draft = self.orchestrator.active_spec_draft
+            self.orchestrator.set_active_spec_draft(None) # Clear the draft
+
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code']))
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            return
+        # --- END ---
+
         logging.info("UXSpecPage: Preparing for display, starting draft generation.")
         self._execute_task(self._task_generate_draft, self._handle_generation_result,
-                           status_message="Generating UX/UI specification draft...")
+                        status_message="Generating UX/UI specification draft...")
 
     def _task_generate_draft(self, **kwargs):
         """The actual function that runs in the background."""
@@ -93,7 +121,7 @@ class UXSpecPage(QWidget):
         """Handles the result from the worker thread."""
         try:
             self.ux_spec_draft = draft_text
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft)) # Corrected line
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code']))
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -117,7 +145,7 @@ class UXSpecPage(QWidget):
         """Handles the result from the refinement worker thread."""
         try:
             self.ux_spec_draft = new_draft
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft)) # Corrected line
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code']))
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The UX/UI Specification has been refined based on your feedback.")
             self.state_changed.emit()

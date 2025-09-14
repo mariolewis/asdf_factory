@@ -78,9 +78,32 @@ class ASDFDBManager:
             coding_standard_text TEXT, development_plan_text TEXT, integration_plan_text TEXT,
             ui_test_plan_text TEXT, test_execution_command TEXT,
             integration_settings TEXT,
-            version_control_enabled BOOLEAN NOT NULL DEFAULT 1
+            version_control_enabled BOOLEAN NOT NULL DEFAULT 0
         );"""
         self._execute_query(create_projects_table)
+
+        create_sprints_table = """
+        CREATE TABLE IF NOT EXISTS Sprints (
+            sprint_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            start_timestamp TEXT NOT NULL,
+            end_timestamp TEXT,
+            status TEXT NOT NULL,
+            sprint_plan_json TEXT,
+            FOREIGN KEY (project_id) REFERENCES Projects (project_id)
+        );"""
+        self._execute_query(create_sprints_table)
+
+        create_sprint_items_table = """
+        CREATE TABLE IF NOT EXISTS SprintItems (
+            sprint_id TEXT NOT NULL,
+            cr_id INTEGER NOT NULL,
+            PRIMARY KEY (sprint_id, cr_id),
+            FOREIGN KEY (sprint_id) REFERENCES Sprints (sprint_id),
+            FOREIGN KEY (cr_id) REFERENCES ChangeRequestRegister (cr_id)
+        );"""
+        self._execute_query(create_sprint_items_table)
+
         create_cr_register_table = """
         CREATE TABLE IF NOT EXISTS ChangeRequestRegister (
             cr_id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
@@ -100,6 +123,7 @@ class ASDFDBManager:
             FOREIGN KEY (linked_cr_id) REFERENCES ChangeRequestRegister (cr_id)
         );"""
         self._execute_query(create_cr_register_table)
+
         create_artifacts_table = """
         CREATE TABLE IF NOT EXISTS Artifacts (
             artifact_id TEXT PRIMARY KEY,
@@ -120,6 +144,7 @@ class ASDFDBManager:
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );"""
         self._execute_query(create_artifacts_table)
+
         create_orchestration_state_table = """
         CREATE TABLE IF NOT EXISTS OrchestrationState (
             state_id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL UNIQUE,
@@ -127,14 +152,17 @@ class ASDFDBManager:
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );"""
         self._execute_query(create_orchestration_state_table)
+
         create_factory_config_table = "CREATE TABLE IF NOT EXISTS FactoryConfig ( key TEXT PRIMARY KEY, value TEXT, description TEXT );"
         self._execute_query(create_factory_config_table)
+
         create_factory_knowledge_base_table = """
         CREATE TABLE IF NOT EXISTS FactoryKnowledgeBase (
             entry_id INTEGER PRIMARY KEY AUTOINCREMENT, context TEXT NOT NULL, problem TEXT NOT NULL,
             solution TEXT NOT NULL, tags TEXT, creation_timestamp TEXT NOT NULL
         );"""
         self._execute_query(create_factory_knowledge_base_table)
+
         create_project_history_table = """
         CREATE TABLE IF NOT EXISTS ProjectHistory (
             history_id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
@@ -150,6 +178,7 @@ class ASDFDBManager:
             creation_timestamp TEXT NOT NULL
         );"""
         self._execute_query(create_factory_templates_table)
+
         logging.info("Finished creating/verifying database tables.")
 
     def create_project(self, project_id: str, project_name: str, creation_timestamp: str) -> str:
@@ -348,6 +377,62 @@ class ASDFDBManager:
             (project_id, external_id),
             fetch="one"
         )
+
+    def create_sprint(self, project_id: str, sprint_id: str, plan_json: str):
+        """Creates a new record for a sprint."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        query = "INSERT INTO Sprints (sprint_id, project_id, start_timestamp, status, sprint_plan_json) VALUES (?, ?, ?, ?, ?)"
+        self._execute_query(query, (sprint_id, project_id, timestamp, 'IN_PROGRESS', plan_json))
+
+    def link_items_to_sprint(self, sprint_id: str, cr_ids: list[int]):
+        """Creates records in the SprintItems link table."""
+        if not cr_ids:
+            return
+        try:
+            with self._get_connection() as conn:
+                params = [(sprint_id, cr_id) for cr_id in cr_ids]
+                conn.executemany("INSERT INTO SprintItems (sprint_id, cr_id) VALUES (?, ?)", params)
+        except sqlite3.Error as e:
+            logging.error(f"Failed to link items to sprint {sprint_id}: {e}")
+            raise
+
+    def update_sprint_status(self, sprint_id: str, status: str):
+        """Updates the status and end timestamp of a sprint record."""
+        end_timestamp = datetime.now(timezone.utc).isoformat()
+        query = "UPDATE Sprints SET status = ?, end_timestamp = ? WHERE sprint_id = ?"
+        self._execute_query(query, (status, end_timestamp, sprint_id))
+
+    def update_sprint_status_only(self, sprint_id: str, status: str):
+        """Updates just the status of a sprint record."""
+        # Note: We are not updating the end_timestamp here, as this is for non-terminal states.
+        query = "UPDATE Sprints SET status = ? WHERE sprint_id = ?"
+        self._execute_query(query, (status, sprint_id))
+
+    def get_items_for_sprint(self, sprint_id: str) -> list:
+        """Retrieves all CR items associated with a given sprint."""
+        query = """
+        SELECT cr.* FROM ChangeRequestRegister cr
+        JOIN SprintItems si ON cr.cr_id = si.cr_id
+        WHERE si.sprint_id = ?
+        """
+        return self._execute_query(query, (sprint_id,), fetch="all")
+
+    def get_latest_sprint_for_project(self, project_id: str):
+        """Retrieves the most recent sprint record for a project."""
+        query = "SELECT * FROM Sprints WHERE project_id = ? ORDER BY start_timestamp DESC LIMIT 1"
+        return self._execute_query(query, (project_id,), fetch="one")
+
+    def delete_sprint_links(self, sprint_id: str):
+        """Deletes all item links for a given sprint from SprintItems."""
+        query = "DELETE FROM SprintItems WHERE sprint_id = ?"
+        self._execute_query(query, (sprint_id,))
+        logging.info(f"Removed all item links for sprint {sprint_id}.")
+
+    def delete_sprint(self, sprint_id: str):
+        """Deletes a sprint record from the Sprints table."""
+        query = "DELETE FROM Sprints WHERE sprint_id = ?"
+        self._execute_query(query, (sprint_id,))
+        logging.info(f"Deleted sprint record for sprint {sprint_id}.")
 
     def batch_update_cr_order(self, order_mapping: list[tuple[int, int]]):
         """

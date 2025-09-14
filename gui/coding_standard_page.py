@@ -36,7 +36,12 @@ class CodingStandardPage(QWidget):
         """Resets the page to its initial state."""
         logging.info("Resetting CodingStandardPage for a new project.")
         self.coding_standard_draft = ""
+
+        # Block signals during widget clearing ---
+        self.ui.standardTextEdit.blockSignals(True)
         self.ui.standardTextEdit.clear()
+        self.ui.standardTextEdit.blockSignals(False)
+
         self.ui.stackedWidget.setCurrentWidget(self.ui.generatePage)
         self.setEnabled(True)
 
@@ -48,6 +53,26 @@ class CodingStandardPage(QWidget):
             warnings.simplefilter("ignore", RuntimeWarning)
             self.ui.refineButton.clicked.disconnect()
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
+        self.ui.standardTextEdit.textChanged.connect(self.on_draft_changed)
+
+    def prepare_for_display(self):
+        """Prepares the page, loading a resumed draft if one exists."""
+        if self.orchestrator.active_spec_draft is not None:
+            logging.info("Resuming coding standard with a saved draft.")
+            self.coding_standard_draft = self.orchestrator.active_spec_draft
+            self.orchestrator.set_active_spec_draft(None) # Clear the draft
+
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code']))
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+        else:
+            # Default behavior if not resuming
+            self.ui.stackedWidget.setCurrentWidget(self.ui.generatePage)
+
+    def on_draft_changed(self):
+        """Saves the current text content to the orchestrator's active draft variable."""
+        draft_text = self.ui.standardTextEdit.toPlainText()
+        if self.orchestrator:
+            self.orchestrator.set_active_spec_draft(draft_text)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
         """Disables or enables the main window and updates the status bar."""
@@ -90,7 +115,7 @@ class CodingStandardPage(QWidget):
         """Handles the result from the worker thread."""
         try:
             self.coding_standard_draft = standard_draft
-            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft)) # Corrected line
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code']))
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
         finally:
@@ -111,7 +136,7 @@ class CodingStandardPage(QWidget):
         """Handles the result from the refinement worker thread."""
         try:
             self.coding_standard_draft = new_draft
-            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft)) # Corrected line
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code']))
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The coding standard has been refined based on your feedback.")
             self.state_changed.emit()
