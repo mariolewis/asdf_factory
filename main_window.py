@@ -801,14 +801,31 @@ class ASDFMainWindow(QMainWindow):
                 self.orchestrator.set_phase("SPEC_ELABORATION") # Go back to allow retry
                 return
 
-            analysis_result = task_data.get("complexity_analysis", {})
+            # Correctly parse the nested analysis and risk data from the task
+            complexity_data = task_data.get("complexity_analysis", {}) or {}
+            risk_data = task_data.get("risk_assessment", {}) or {}
 
-            # Format the analysis result into a user-friendly string for the details view.
-            details_text = (
-                f"<b>Complexity Rating:</b> {analysis_result.get('complexity_rating', 'N/A')}<br>"
-                f"<b>Risk Rating:</b> {analysis_result.get('risk_rating', 'N/A')}<br><br>"
-                f"<b>Summary:</b><br>{analysis_result.get('summary', 'No summary provided.')}"
-            )
+            # Build the detailed HTML string for display
+            html_parts = []
+            html_parts.append("<h3>Complexity Analysis</h3>")
+            for key, value in complexity_data.items():
+                title = key.replace('_', ' ').title()
+                rating = value.get('rating', 'N/A')
+                justification = value.get('justification', 'No details provided.')
+                html_parts.append(f"<p><b>{title}:</b> {rating}<br/><i>{justification}</i></p>")
+
+            html_parts.append("<hr><h3>Risk Assessment</h3>")
+            html_parts.append(f"<p><b>Overall Risk Level:</b> {risk_data.get('overall_risk_level', 'N/A')}</p>")
+            html_parts.append(f"<p><b>Summary:</b> {risk_data.get('summary', 'No summary provided.')}</p>")
+
+            recommendations = risk_data.get('recommendations', [])
+            if recommendations:
+                html_parts.append("<p><b>Recommendations:</b></p><ul>")
+                for rec in recommendations:
+                    html_parts.append(f"<li>{rec}</li>")
+                html_parts.append("</ul>")
+
+            details_text = "".join(html_parts)
 
             page_to_show.configure(
                 header="Project Complexity & Risk Assessment",
@@ -818,7 +835,7 @@ class ASDFMainWindow(QMainWindow):
                 option2_text="Cancel Project"
             )
             # Connect the buttons to the correct new orchestrator methods
-            page_to_show.option1_selected.connect(self.orchestrator.handle_risk_assessment_approval)
+            page_to_show.option1_selected.connect(self.on_risk_assessment_approved)
             page_to_show.option2_selected.connect(self.on_close_project)
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
@@ -990,6 +1007,11 @@ class ASDFMainWindow(QMainWindow):
         """Handles the new 'Close Project' action which now auto-pauses."""
         logging.debug("!!! on_close_project in main_window was triggered !!!")
         self.orchestrator.close_and_save_project()
+        self.update_ui_after_state_change()
+
+    def on_risk_assessment_approved(self):
+        """Handles the PM's approval of the risk assessment and proceeds."""
+        self.orchestrator.handle_risk_assessment_approval()
         self.update_ui_after_state_change()
 
     def on_load_project(self):

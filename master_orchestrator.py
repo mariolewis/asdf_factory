@@ -660,7 +660,7 @@ class MasterOrchestrator:
             # Retrieve the brief we stored earlier and hand it off to the next phase.
             brief_content = self.active_ux_spec.get('project_brief', '')
             self.task_awaiting_approval = {"pending_brief": brief_content}
-            self.set_phase("SPEC_ELABORATION")
+            self.set_phase("GENERATING_APP_SPEC_AND_RISK_ANALYSIS")
         else:
             logging.warning(f"Received an unknown decision for UX/UI phase: {decision}")
 
@@ -747,29 +747,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to refine UX spec draft: {e}", exc_info=True)
             return f"### Error\nAn unexpected error occurred while refining the draft: {e}"
-
-    def handle_ux_ui_phase_decision(self, decision: str):
-        """
-        Handles the PM's decision to either start the UX/UI phase or skip it,
-        ensuring the project brief is correctly handed off.
-        """
-        # Persist the is_gui flag regardless of the decision, as it's now known.
-        analysis_result = self.task_awaiting_approval.get("analysis", {})
-        is_gui = analysis_result.get("requires_gui", False)
-        self.db_manager.update_project_field(self.project_id, "is_gui_project", 1 if is_gui else 0)
-
-        if decision == "START_UX_UI_PHASE":
-            logging.info("PM chose to start the dedicated UX/UI Design phase.")
-            self.task_awaiting_approval = None # Clear the approval task
-            self.set_phase("UX_UI_DESIGN")
-        elif decision == "SKIP_TO_SPEC":
-            logging.info("PM chose to skip the UX/UI Design phase. Proceeding to Application Specification.")
-            # Retrieve the brief we stored earlier and hand it off to the next phase.
-            brief_content = self.active_ux_spec.get('project_brief', '')
-            self.task_awaiting_approval = {"pending_brief": brief_content}
-            self.set_phase("SPEC_ELABORATION")
-        else:
-            logging.warning(f"Received an unknown decision for UX/UI phase: {decision}")
 
     def handle_ux_persona_confirmation(self, persona_list: list[str]):
         """
@@ -1030,7 +1007,8 @@ class MasterOrchestrator:
             # 4. Store BOTH results for the next steps and set the new phase
             self.task_awaiting_approval = {
                 "generated_spec_draft": full_app_spec_draft,
-                "complexity_analysis": analysis_result
+                "complexity_analysis": analysis_result.get("complexity_analysis"),
+                "risk_assessment": analysis_result.get("risk_assessment")
             }
             self.set_phase("AWAITING_RISK_ASSESSMENT_APPROVAL")
 
@@ -1049,7 +1027,12 @@ class MasterOrchestrator:
             logging.error("Cannot handle risk approval, state is invalid.")
             return
 
-        analysis_json_str = json.dumps(self.task_awaiting_approval['complexity_analysis'])
+        # Reconstruct the full analysis dictionary for the saving/exporting function
+        full_analysis_for_export = {
+            "complexity_analysis": self.task_awaiting_approval.get('complexity_analysis'),
+            "risk_assessment": self.task_awaiting_approval.get('risk_assessment')
+        }
+        analysis_json_str = json.dumps(full_analysis_for_export)
         self.finalize_and_save_complexity_assessment(analysis_json_str)
 
         # The 'generated_spec_draft' is already stored in task_awaiting_approval.

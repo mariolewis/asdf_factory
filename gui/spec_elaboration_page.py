@@ -136,7 +136,8 @@ class SpecElaborationPage(QWidget):
 
             # When the worker is finished, the orchestrator's state will have changed.
             # A single call to the main window's update function is all that's needed.
-            worker.signals.finished.connect(self.window().update_ui_after_state_change)
+            worker.signals.finished.connect(self._on_generation_finished)
+            worker.signals.error.connect(self._on_task_error)
             self.threadpool.start(worker)
 
         elif current_phase == FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION:
@@ -217,6 +218,18 @@ class SpecElaborationPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
         finally:
             self._set_ui_busy(False)
+
+    def _on_generation_finished(self):
+        """A dedicated handler to run after the generation/analysis worker is complete."""
+        main_window = self.window()
+        if main_window:
+            main_window.setEnabled(True)
+            if hasattr(main_window, 'statusBar'):
+                main_window.statusBar().clearMessage()
+
+        # Now that the UI is responsive again, trigger the state update
+        # which will display the new page (the risk assessment).
+        self.window().update_ui_after_state_change()
 
     def _format_assessment_for_display(self, analysis_data: dict) -> str:
         if not analysis_data or "complexity_analysis" not in analysis_data:
