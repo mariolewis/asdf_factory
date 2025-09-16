@@ -220,6 +220,8 @@ class MasterOrchestrator:
         FactoryPhase.SPEC_ELABORATION: "Application Specification",
         FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS: "Generating App Spec & Risk Analysis",
         FactoryPhase.AWAITING_RISK_ASSESSMENT_APPROVAL: "Project Complexity & Risk Assessment",
+        FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION: "Review Application Specification Draft",
+        FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL: "Refine Application Specification",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
         FactoryPhase.BUILD_SCRIPT_SETUP: "Build Script Generation",
         FactoryPhase.TEST_ENVIRONMENT_SETUP: "Test Environment Setup",
@@ -1052,11 +1054,11 @@ class MasterOrchestrator:
         spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
 
         # Refine the spec based on feedback
-        refined_content = spec_agent.refine_specification(current_draft, pm_feedback)
+        refined_content = spec_agent.refine_specification(current_draft, "", pm_feedback)
         refined_draft_with_header = self.prepend_standard_header(refined_content, "Application Specification")
 
         # Analyze the *newly refined* spec for issues
-        ai_analysis = spec_agent.analyze_specification_for_issues(refined_draft_with_header)
+        ai_analysis = spec_agent.identify_potential_issues(refined_draft_with_header, iteration_count=2)
 
         # Store the results for the 3-tab UI to display
         self.task_awaiting_approval = {
@@ -1153,6 +1155,7 @@ class MasterOrchestrator:
 
             # Save the PURE content to the database for AI agents.
             self.db_manager.update_project_field(self.project_id, "final_spec_text", pure_spec_content)
+            logging.info(f"Successfully saved final Application Specification to database for project {self.project_id}")
 
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:

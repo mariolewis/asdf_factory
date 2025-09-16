@@ -196,8 +196,9 @@ class SpecElaborationPage(QWidget):
         main_window.setEnabled(not is_busy)
         if hasattr(main_window, 'statusBar'):
             if is_busy:
-                main_window.statusBar().showMessage(message)
+                self.ui.processingLabel.setText(message) # This line is added
                 self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+                main_window.statusBar().showMessage(message)
             else:
                 main_window.statusBar().clearMessage()
 
@@ -352,18 +353,20 @@ class SpecElaborationPage(QWidget):
 
     def run_refinement_and_analysis_task(self):
         """
-        Takes the current draft from the first review, runs the complexity
-        analysis, and displays the result on the complexity review page.
+        Handles the submission for AI analysis and refinement from the first review page.
         """
         current_draft = self.ui.pmReviewTextEdit.toPlainText()
+        pm_feedback = self.ui.pmFeedbackTextEdit.toPlainText().strip()
         if not current_draft.strip():
             QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")
             return
 
-        self._execute_task(self._task_run_complexity_assessment,
-                           self._handle_assessment_result,
-                           current_draft,
-                           status_message="Running complexity and risk analysis...")
+        # Note: Even if feedback is empty, the process runs to analyze for issues.
+        self._execute_task(self._task_refine_and_analyze,
+                        self._handle_refinement_and_analysis_result,
+                        current_draft,
+                        pm_feedback,
+                        status_message="Refining draft and analyzing for issues...")
 
     def _task_run_complexity_assessment(self, spec_draft_with_header, **kwargs):
         """Background task to run the orchestrator's complexity assessment."""
@@ -373,6 +376,22 @@ class SpecElaborationPage(QWidget):
         # We also pass the analysis result to the orchestrator's task variable so the UI can find it.
         self.orchestrator.task_awaiting_approval = {"analysis_result": analysis_result}
         return True
+
+    def _task_refine_and_analyze(self, current_draft, pm_feedback, **kwargs):
+        """Background worker task that calls the orchestrator for refinement and issue analysis."""
+        self.orchestrator.handle_spec_refinement_submission(current_draft, pm_feedback)
+        return True # Indicate success
+
+    def _handle_refinement_and_analysis_result(self, success):
+        """Handles the completion of the refinement task by triggering a full UI update."""
+        try:
+            if success:
+                # The orchestrator's phase has been updated. A full UI refresh will show the new 3-tab page.
+                self.window().update_ui_after_state_change()
+            else:
+                QMessageBox.critical(self, "Error", "The refinement and analysis process failed.")
+        finally:
+            self._set_ui_busy(False)
 
     def _handle_assessment_result(self, success: bool):
         """
@@ -389,19 +408,17 @@ class SpecElaborationPage(QWidget):
 
     def run_refinement_task(self):
         """
-        Handles the submission for AI analysis and refinement.
+        Handles the submission for AI analysis and refinement from the final
+        review page, now using a background worker to prevent UI freeze.
         """
-        current_draft = self.ui.pmReviewTextEdit.toPlainText()
-        pm_feedback = self.ui.pmFeedbackTextEdit.toPlainText()
-        if not current_draft.strip():
-            QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")
+        current_draft = self.ui.specDraftTextEdit.toPlainText()
+        feedback = self.ui.feedbackTextEdit.toPlainText().strip()
+        if not feedback:
+            QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement in the third tab.")
             return
 
-        # Call the single orchestrator method that handles refinement and state transition
-        self.orchestrator.handle_spec_refinement_submission(current_draft, pm_feedback)
-
-        # Refresh the main window UI to show the new state (the 3-tab view)
-        self.window().update_ui_after_state_change()
+        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback,
+                           status_message="Refining specification based on your feedback...")
 
     def _task_refine_spec(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
@@ -412,16 +429,17 @@ class SpecElaborationPage(QWidget):
         return date_updated_draft
 
     def _handle_refinement_result(self, new_draft):
+        """Handles the result from the refinement worker thread."""
         try:
             self.spec_draft = new_draft
             self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version.")
             self.ui.feedbackTextEdit.clear()
 
-            # This is the new line that fixes the bug by switching back to the correct page
+            # Switch back to the review page and set the active tab to the first one
             self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+            self.ui.reviewTabWidget.setCurrentIndex(0)
 
-            QMessageBox.information(self, "Success", "Success: Draft has been updated.")
             self.state_changed.emit()
             self.refinement_iteration_count += 1
         finally:
