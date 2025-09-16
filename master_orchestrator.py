@@ -59,6 +59,10 @@ class FactoryPhase(Enum):
     AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION = auto()
     ENV_SETUP_TARGET_APP = auto()
     SPEC_ELABORATION = auto()
+    GENERATING_APP_SPEC_AND_RISK_ANALYSIS = auto()
+    AWAITING_RISK_ASSESSMENT_APPROVAL = auto()
+    AWAITING_SPEC_REFINEMENT_SUBMISSION = auto()
+    AWAITING_SPEC_FINAL_APPROVAL = auto()
     TECHNICAL_SPECIFICATION = auto()
     BUILD_SCRIPT_SETUP = auto()
     TEST_ENVIRONMENT_SETUP = auto()
@@ -214,6 +218,8 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION: "UX/UI Phase Recommendation",
         FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
         FactoryPhase.SPEC_ELABORATION: "Application Specification",
+        FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS: "Generating App Spec & Risk Analysis",
+        FactoryPhase.AWAITING_RISK_ASSESSMENT_APPROVAL: "Project Complexity & Risk Assessment",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
         FactoryPhase.BUILD_SCRIPT_SETUP: "Build Script Generation",
         FactoryPhase.TEST_ENVIRONMENT_SETUP: "Test Environment Setup",
@@ -226,7 +232,7 @@ class MasterOrchestrator:
         FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
         FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
         FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
-        FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis Choice",
+        FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis",
         FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
         FactoryPhase.AWAITING_LINKED_DELETE_CONFIRMATION: "Confirm Linked Deletion",
         FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
@@ -617,10 +623,16 @@ class MasterOrchestrator:
             analysis_result = triage_agent.analyze_brief(brief_content)
 
             if "error" in analysis_result:
-                self.task_awaiting_approval = {"analysis_error": analysis_result.get('details')}
+                self.task_awaiting_approval = {
+                    "analysis_error": analysis_result.get('details'),
+                    "pending_brief": brief_content
+                }
             else:
                 self.active_ux_spec['inferred_personas'] = analysis_result.get("inferred_personas", [])
-                self.task_awaiting_approval = {"analysis": analysis_result}
+                self.task_awaiting_approval = {
+                    "analysis": analysis_result,
+                    "pending_brief": brief_content
+                }
 
             self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
 
@@ -917,10 +929,11 @@ class MasterOrchestrator:
             logging.error(f"Failed to handle style guide submission: {e}")
             self.active_ux_spec['error'] = str(e)
 
-    def handle_ux_spec_completion(self, final_spec_markdown: str) -> bool:
+    def handle_ux_spec_completion(self, final_spec_with_header: str) -> bool:
         """
         Finalizes the UX/UI Specification, saves it, generates the JSON blueprint,
-        and then triggers the Application Specification draft generation and assessment.
+        and then triggers the Application Specification draft generation. This version
+        saves only the pure, raw content to the database.
         """
         if not self.project_id:
             logging.error("Cannot complete UX Spec: No active project.")
@@ -932,16 +945,33 @@ class MasterOrchestrator:
             if not (project_details and project_details['project_root_folder']):
                  raise FileNotFoundError("Project root folder not found for saving UX spec.")
 
-            # --- Finalize and Save the UX Spec Artifact ---
+            # --- THIS IS THE FIX ---
+            # Strip the header to get the pure content for DB and agent use.
+            pure_ux_spec_content = self._strip_header_from_document(final_spec_with_header)
+
             project_root = Path(project_details['project_root_folder'])
             docs_dir = project_root / "docs"
 
+            # Save the HEADED version to the Markdown file.
             ux_spec_file_path_md = docs_dir / "ux_ui_specification.md"
-            ux_spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
+            ux_spec_file_path_md.write_text(final_spec_with_header, encoding="utf-8")
             self._commit_document(ux_spec_file_path_md, "docs: Finalize UX/UI Specification (Markdown)")
 
+            # Generate and save the formatted .docx file for human use.
+            from agents.agent_report_generator import ReportGeneratorAgent
+            ux_spec_file_path_docx = docs_dir / "ux_ui_specification.docx"
+            report_generator = ReportGeneratorAgent()
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"UX/UI Specification - {self.project_name}",
+                content=pure_ux_spec_content
+            )
+            with open(ux_spec_file_path_docx, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+            self._commit_document(ux_spec_file_path_docx, "docs: Add formatted UX/UI Specification (docx)")
+
+            # Generate the blueprint using the PURE content.
             agent = UX_Spec_Agent(llm_service=self.llm_service)
-            json_blueprint = agent.parse_final_spec_and_generate_blueprint(final_spec_markdown)
+            json_blueprint = agent.parse_final_spec_and_generate_blueprint(pure_ux_spec_content)
             if '"error":' in json_blueprint:
                 raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
 
@@ -949,23 +979,21 @@ class MasterOrchestrator:
             blueprint_file_path_json.write_text(json_blueprint, encoding="utf-8")
             self._commit_document(blueprint_file_path_json, "docs: Add UX/UI JSON Blueprint")
 
+            # Create a composite spec using the PURE content for the database.
             composite_spec_for_db = (
-                f"{final_spec_markdown}\n\n"
+                f"{pure_ux_spec_content}\n\n"
                 f"{'='*80}\n"
                 f"MACHINE-READABLE JSON BLUEPRINT\n"
                 f"{'='*80}\n\n"
                 f"```json\n{json_blueprint}\n```"
             )
             db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
-            self.active_ux_spec = {} # Clear the temporary UX spec data
+            self.active_ux_spec = {}
 
-            # --- FIX: Trigger the next phase correctly ---
-            # Instead of setting the phase directly, we now correctly prepare the
-            # orchestrator to generate the next draft, which will automatically
-            # trigger the complexity review page in the next step.
-            self.task_awaiting_approval = {"pending_brief": final_spec_markdown}
-            self.set_phase("SPEC_ELABORATION")
-            # --- END FIX ---
+            # Hand off the PURE content to the next phase.
+            self.task_awaiting_approval = {"pending_brief": pure_ux_spec_content}
+            self.set_phase("GENERATING_APP_SPEC_AND_RISK_ANALYSIS")
+            # --- END OF FIX ---
             return True
 
         except Exception as e:
@@ -973,78 +1001,201 @@ class MasterOrchestrator:
             self.task_awaiting_approval = {"error": str(e)}
             return False
 
-    def generate_application_spec_draft(self, initial_spec_text: str) -> tuple[dict, str]:
+    def generate_application_spec_draft_and_risk_analysis(self, initial_spec_text: str, **kwargs):
         """
-        Takes an initial specification (like a completed UX spec), generates the
-        full Application Spec draft, and performs a complexity analysis on it.
+        Runs in a background thread. It generates the initial app spec draft,
+        immediately runs the complexity analysis on it, stores both results,
+        and sets the state to await the PM's approval of the risk report.
+        """
+        try:
+            if not self.project_id:
+                raise Exception("Cannot generate application spec; no active project.")
+
+            # 1. Generate the raw spec content from the brief/UX spec
+            spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
+            app_spec_draft_content = spec_agent.expand_brief_description(initial_spec_text)
+
+            # 2. Add the standard document header to the draft
+            full_app_spec_draft = self.prepend_standard_header(
+                document_content=app_spec_draft_content,
+                document_type="Application Specification"
+            )
+
+            # 3. Analyze the generated draft for complexity and risk
+            scoping_agent = ProjectScopingAgent(self.llm_service)
+            analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content)
+            if "error" in analysis_result:
+                raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
+
+            # 4. Store BOTH results for the next steps and set the new phase
+            self.task_awaiting_approval = {
+                "generated_spec_draft": full_app_spec_draft,
+                "complexity_analysis": analysis_result
+            }
+            self.set_phase("AWAITING_RISK_ASSESSMENT_APPROVAL")
+
+        except Exception as e:
+            logging.error(f"Background task for spec/risk generation failed: {e}", exc_info=True)
+            # Store the error so the UI can display it
+            self.task_awaiting_approval = {"error": str(e)}
+            self.set_phase("SPEC_ELABORATION") # Go back to the starting phase on error
+
+    def handle_risk_assessment_approval(self):
+        """
+        Called when the user approves the risk report. This finalizes the
+        risk assessment and transitions to the first spec review screen.
+        """
+        if not self.project_id or not self.task_awaiting_approval:
+            logging.error("Cannot handle risk approval, state is invalid.")
+            return
+
+        analysis_json_str = json.dumps(self.task_awaiting_approval['complexity_analysis'])
+        self.finalize_and_save_complexity_assessment(analysis_json_str)
+
+        # The 'generated_spec_draft' is already stored in task_awaiting_approval.
+        # We just need to change the phase so the UI knows to display it.
+        self.set_phase("AWAITING_SPEC_REFINEMENT_SUBMISSION")
+
+    def handle_spec_refinement_submission(self, current_draft: str, pm_feedback: str):
+        """
+        Called when the user submits feedback. This triggers the refinement and
+        analysis, then transitions to the 3-tab view.
+        """
+        if not self.project_id:
+            logging.error("Cannot handle spec refinement, no active project.")
+            return
+
+        from agents.agent_spec_clarification import SpecClarificationAgent
+        spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
+
+        # Refine the spec based on feedback
+        refined_content = spec_agent.refine_specification(current_draft, pm_feedback)
+        refined_draft_with_header = self.prepend_standard_header(refined_content, "Application Specification")
+
+        # Analyze the *newly refined* spec for issues
+        ai_analysis = spec_agent.analyze_specification_for_issues(refined_draft_with_header)
+
+        # Store the results for the 3-tab UI to display
+        self.task_awaiting_approval = {
+            "refined_spec_draft": refined_draft_with_header,
+            "ai_analysis": ai_analysis
+        }
+        self.set_phase("AWAITING_SPEC_FINAL_APPROVAL")
+
+    def generate_application_spec_draft(self, initial_spec_text: str, **kwargs) -> str:
+        """
+        Takes an initial specification (like a completed UX spec) and generates the
+        full Application Spec draft. This version's sole responsibility is the
+        generation of the draft content.
         """
         if not self.project_id:
             raise Exception("Cannot generate application spec; no active project.")
 
-        # The agent generates the raw content of the specification
+        # The agent generates the raw content of the specification.
         spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
         app_spec_draft_content = spec_agent.expand_brief_description(initial_spec_text)
 
-        # The scoping agent analyzes the raw content
-        scoping_agent = ProjectScopingAgent(self.llm_service)
-        analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content)
-        if "error" in analysis_result:
-            raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
-
-        # Save the assessment to the database
-        analysis_json_str = json.dumps(analysis_result)
-        self.finalize_and_save_complexity_assessment(analysis_json_str)
-
-        # Add the standard header to the raw draft before returning it to the UI
+        # Add the standard header to the raw draft before returning it to the UI.
         full_app_spec_draft = self.prepend_standard_header(
             document_content=app_spec_draft_content,
             document_type="Application Specification"
         )
 
-        return analysis_result, full_app_spec_draft
+        return full_app_spec_draft
 
-    def finalize_and_save_app_spec(self, spec_draft: str):
+    def run_complexity_assessment(self, spec_draft_with_header: str) -> dict:
+        """
+        Takes a spec draft, runs the complexity analysis, saves the result,
+        and transitions the factory to await the PM's confirmation.
+        """
+        if not self.project_id:
+            raise Exception("Cannot run complexity assessment; no active project.")
+
+        # First, strip the header to ensure the agent gets pure content.
+        pure_spec_content = self._strip_header_from_document(spec_draft_with_header)
+
+        # The scoping agent analyzes the pure content.
+        scoping_agent = ProjectScopingAgent(self.llm_service)
+        analysis_result = scoping_agent.analyze_complexity(pure_spec_content)
+        if "error" in analysis_result:
+            raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
+
+        # Save the assessment JSON and formatted .docx to the file system.
+        analysis_json_str = json.dumps(analysis_result)
+        self.finalize_and_save_complexity_assessment(analysis_json_str)
+
+        # Save the full draft to a temporary instance variable for the next phase.
+        self.active_spec_draft = spec_draft_with_header
+
+        # Set the phase to await the user's confirmation of this analysis.
+        self.set_phase("AWAITING_COMPLEXITY_ASSESSMENT")
+
+        return analysis_result
+
+    def generate_coding_standard(self, tech_spec_text: str):
+        """
+        Generates the coding standard by calling the appropriate agent with the
+        pure technical specification text.
+        """
+        if not self.project_id:
+            raise Exception("Cannot generate coding standard; no active project.")
+        if not tech_spec_text:
+            raise ValueError("Cannot generate coding standard; the technical specification is empty.")
+        try:
+            # --- THIS IS THE FIX ---
+            # The code now correctly calls the agent.
+            from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
+            agent = CodingStandardAgent_AppTarget(self.llm_service)
+            standard_draft = agent.generate_standard(tech_spec_text)
+            return standard_draft
+            # --- END OF FIX ---
+        except Exception as e:
+            logging.error(f"Failed to generate coding standard: {e}", exc_info=True)
+            return f"### Error\nAn unexpected error occurred during coding standard generation: {e}"
+
+    def finalize_and_save_app_spec(self, final_spec_with_header: str):
         """
         Saves the final application spec, a .md file, and a formatted .docx file,
-        then transitions to the TECHNICAL_SPECIFICATION phase.
+        then transitions to the TECHNICAL_SPECIFICATION phase. This version saves
+        only the pure, raw content to the database.
         """
         if not self.project_id:
             logging.error("Cannot save application spec; no active project.")
             return
 
         try:
-            final_doc_with_header = self.prepend_standard_header(
-                document_content=spec_draft,
-                document_type="Application Specification"
-            )
-            self.db_manager.update_project_field(self.project_id, "final_spec_text", final_doc_with_header)
+            # --- THIS IS THE FIX ---
+            # First, strip the header to get the pure content for the database and docx body.
+            pure_spec_content = self._strip_header_from_document(final_spec_with_header)
+
+            # Save the PURE content to the database for AI agents.
+            self.db_manager.update_project_field(self.project_id, "final_spec_text", pure_spec_content)
 
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "docs"
 
-                # Save the Markdown file for system use
+                # Save the HEADED version to the Markdown file for human review.
                 spec_file_path_md = docs_dir / "application_spec.md"
-                spec_file_path_md.write_text(final_doc_with_header, encoding="utf-8")
+                spec_file_path_md.write_text(final_spec_with_header, encoding="utf-8")
                 self._commit_document(spec_file_path_md, "docs: Finalize Application Specification (Markdown)")
 
-                # Generate and save the formatted .docx file for human use
+                # Generate and save the formatted .docx file for human use,
+                # using the PURE content for the body of the document.
                 spec_file_path_docx = docs_dir / "application_spec.docx"
                 from agents.agent_report_generator import ReportGeneratorAgent
                 report_generator = ReportGeneratorAgent()
                 docx_bytes = report_generator.generate_text_document_docx(
                     title=f"Application Specification - {self.project_name}",
-                    content=spec_draft
+                    content=pure_spec_content
                 )
                 with open(spec_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(spec_file_path_docx, "docs: Add formatted Application Specification (docx)")
 
-            # --- THIS IS THE CHANGE ---
-            # The workflow now proceeds to the technical specification phase.
             self.set_phase("TECHNICAL_SPECIFICATION")
-            # --- END OF CHANGE ---
+            # --- END OF FIX ---
 
         except Exception as e:
             logging.error(f"Failed to finalize and save application spec: {e}")
@@ -1383,130 +1534,139 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to finalize and save complexity assessment: {e}")
 
-    def finalize_and_save_tech_spec(self, tech_spec_draft: str, target_os: str):
+    def finalize_and_save_tech_spec(self, final_tech_spec_with_header: str, target_os: str):
         """
         Saves the final technical spec to the database, a .md file, and a formatted
-        .docx file, extracts key info, and transitions to the next phase.
+        .docx file, extracts key info, and transitions to the next phase. This version
+        saves only the pure, raw content to the database.
         """
         if not self.project_id:
             logging.error("Cannot save technical spec; no active project.")
             return
 
         try:
-            final_doc_with_header = self.prepend_standard_header(
-                document_content=tech_spec_draft,
-                document_type="Technical Specification"
-            )
+            # --- THIS IS THE FIX ---
+            # Strip the header to get pure content for the DB and docx body.
+            pure_tech_spec_content = self._strip_header_from_document(final_tech_spec_with_header)
 
             db = self.db_manager
             db.update_project_field(self.project_id, "target_os", target_os)
-            db.update_project_field(self.project_id, "tech_spec_text", final_doc_with_header)
+            # Save the PURE content to the database.
+            db.update_project_field(self.project_id, "tech_spec_text", pure_tech_spec_content)
 
             project_details = db.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "docs"
 
-                # Save the Markdown file for system use
+                # Save the HEADED version to the Markdown file.
                 spec_file_path_md = docs_dir / "technical_spec.md"
-                spec_file_path_md.write_text(final_doc_with_header, encoding="utf-8")
+                spec_file_path_md.write_text(final_tech_spec_with_header, encoding="utf-8")
                 self._commit_document(spec_file_path_md, "docs: Finalize Technical Specification (Markdown)")
 
-                # Generate and save the formatted .docx file for human use
+                # Generate and save the formatted .docx file using the PURE content.
+                from agents.agent_report_generator import ReportGeneratorAgent
                 spec_file_path_docx = docs_dir / "technical_spec.docx"
                 report_generator = ReportGeneratorAgent()
                 docx_bytes = report_generator.generate_text_document_docx(
                     title=f"Technical Specification - {self.project_name}",
-                    content=tech_spec_draft
+                    content=pure_tech_spec_content
                 )
                 with open(spec_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(spec_file_path_docx, "docs: Add formatted Technical Specification (docx)")
 
-
-            self._extract_and_save_primary_technology(final_doc_with_header)
+            # This can still use the headed version as it's a separate analysis.
+            self._extract_and_save_primary_technology(final_tech_spec_with_header)
             self.set_phase("BUILD_SCRIPT_SETUP")
+            # --- END OF FIX ---
 
         except Exception as e:
             logging.error(f"Failed to finalize and save technical spec: {e}")
+            self.task_awaiting_approval = {"error": str(e)}
 
-    def finalize_and_save_coding_standard(self, standard_draft: str):
+    def finalize_and_save_coding_standard(self, final_standard_with_header: str):
         """
         Saves the final coding standard, then calls the PlanningAgent to generate
-        the initial backlog, and transitions to the BACKLOG_RATIFICATION phase.
+        the initial backlog, and transitions to the BACKLOG_RATIFICATION phase. This
+        version saves only the pure, raw content to the database.
         """
         if not self.project_id:
             logging.error("Cannot save coding standard; no active project.")
             return
 
         try:
-            final_doc_with_header = self.prepend_standard_header(
-                document_content=standard_draft,
-                document_type="Coding Standard"
-            )
+            # --- THIS IS THE FIX ---
+            # Strip the header to get pure content for the DB and docx body.
+            pure_standard_content = self._strip_header_from_document(final_standard_with_header)
 
             db = self.db_manager
-            db.update_project_field(self.project_id, "coding_standard_text", final_doc_with_header)
+            # Save the PURE content to the database.
+            db.update_project_field(self.project_id, "coding_standard_text", pure_standard_content)
 
             project_details = db.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "docs"
 
-                # Save the Markdown file for system use
+                # Save the HEADED version to the Markdown file.
                 standard_file_path_md = docs_dir / "coding_standard.md"
-                standard_file_path_md.write_text(final_doc_with_header, encoding="utf-8")
+                standard_file_path_md.write_text(final_standard_with_header, encoding="utf-8")
                 self._commit_document(standard_file_path_md, "docs: Finalize Coding Standard (Markdown)")
 
-                # Generate and save the formatted .docx file for human use
+                # Generate and save the formatted .docx file using the PURE content.
+                from agents.agent_report_generator import ReportGeneratorAgent
                 standard_file_path_docx = docs_dir / "coding_standard.docx"
                 report_generator = ReportGeneratorAgent()
                 docx_bytes = report_generator.generate_text_document_docx(
                     title=f"Coding Standard - {self.project_name}",
-                    content=standard_draft
+                    content=pure_standard_content
                 )
                 with open(standard_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(standard_file_path_docx, "docs: Add formatted Coding Standard (docx)")
+            # --- END OF FIX ---
 
-            # --- NEW LOGIC ---
-            # Generate the initial backlog now that all technical specs are complete.
+            # The rest of the logic for backlog generation remains the same.
             logging.info("Coding standard saved. Now generating initial backlog for ratification.")
             from agents.agent_planning_app_target import PlanningAgent_AppTarget
             planning_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
 
-            # Pass both the app spec and the new tech spec to the agent.
-            # First, strip the irrelevant setup guide from the tech spec.
+            # NOTE: Because we fixed tech_spec_text in the previous step, project_details now contains the PURE version.
             cleaned_tech_spec = self._strip_environment_setup_from_spec(project_details['tech_spec_text'])
             backlog_items_json = planning_agent.generate_backlog_items(
                 final_spec_text=project_details['final_spec_text'],
                 tech_spec_text=cleaned_tech_spec
             )
 
-            # Store the generated items for the ratification screen to use
             self.task_awaiting_approval = {"generated_backlog_items": backlog_items_json}
 
             self.set_phase("BACKLOG_RATIFICATION")
-            # --- END NEW LOGIC ---
 
         except Exception as e:
             logging.error(f"Failed to finalize and save coding standard: {e}")
+            self.task_awaiting_approval = {"error": str(e)}
 
     def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
         """
         Saves the final dev plan to the database, a .json file, and a formatted
-        .docx file, loads it into the active state, and transitions to Genesis.
+        .docx file, loads it into the active state, and transitions to Genesis. This
+        version saves only the pure, raw content to the database.
         """
         if not self.project_id:
             return False, "No active project."
 
         try:
-            # Save the raw JSON plan (with header) to the database for runtime use
+            # --- THIS IS THE FIX ---
+            # Save the PURE JSON content directly to the database.
+            self.db_manager.update_project_field(self.project_id, "development_plan_text", plan_json_string)
+
+            # Generate the headed version only for the file system artifacts.
             final_doc_with_header = self.prepend_standard_header(
                 document_content=plan_json_string,
                 document_type="Sequential Development Plan"
             )
-            self.db_manager.update_project_field(self.project_id, "development_plan_text", final_doc_with_header)
+            # --- END OF FIX ---
 
             # Generate and save both raw and formatted files to the filesystem
             project_details = self.db_manager.get_project_by_id(self.project_id)
@@ -1521,6 +1681,7 @@ class MasterOrchestrator:
                 self._commit_document(plan_file_path_json, "docs: Finalize Development Plan (JSON)")
 
                 # Generate and save the formatted .docx report
+                from agents.agent_report_generator import ReportGeneratorAgent
                 plan_file_path_docx = docs_dir / "development_plan.docx"
                 report_generator = ReportGeneratorAgent()
                 plan_data = json.loads(plan_json_string)
@@ -2100,18 +2261,23 @@ class MasterOrchestrator:
             ui_test_planner = UITestPlannerAgent_AppTarget(llm_service=self.llm_service)
             ui_test_plan_content = ui_test_planner.generate_ui_test_plan(functional_spec_text, technical_spec_text)
 
-            final_ui_test_plan = self.prepend_standard_header(
+            # --- THIS IS THE FIX ---
+            # Save the PURE content to the database.
+            db.update_project_field(self.project_id, "ui_test_plan_text", ui_test_plan_content)
+
+            # Generate the headed version for file system artifacts.
+            final_ui_test_plan_with_header = self.prepend_standard_header(
                 document_content=ui_test_plan_content,
                 document_type="UI Test Plan"
             )
-            db.update_project_field(self.project_id, "ui_test_plan_text", final_ui_test_plan)
 
-            # Save the Markdown file for system use
+            # Save the HEADED version to the Markdown file.
             test_plan_file_path_md = docs_dir / "ui_test_plan.md"
-            test_plan_file_path_md.write_text(final_ui_test_plan, encoding="utf-8")
+            test_plan_file_path_md.write_text(final_ui_test_plan_with_header, encoding="utf-8")
             self._commit_document(test_plan_file_path_md, "docs: Add UI Test Plan (Markdown)")
 
-            # Generate and save the formatted .docx file for human use
+            # Generate and save the formatted .docx file using the PURE content.
+            from agents.agent_report_generator import ReportGeneratorAgent
             test_plan_file_path_docx = docs_dir / "ui_test_plan.docx"
             report_generator = ReportGeneratorAgent()
             docx_bytes = report_generator.generate_text_document_docx(
@@ -2121,6 +2287,7 @@ class MasterOrchestrator:
             with open(test_plan_file_path_docx, 'wb') as f:
                 f.write(docx_bytes.getbuffer())
             self._commit_document(test_plan_file_path_docx, "docs: Add formatted UI Test Plan (docx)")
+            # --- END OF FIX ---
 
             if progress_callback: progress_callback("Integration phase complete. Proceeding to manual testing.")
 
@@ -3284,6 +3451,20 @@ class MasterOrchestrator:
             f"{'-' * 50}\n\n"
         )
         return header + document_content
+
+    def _strip_header_from_document(self, document_content: str) -> str:
+        """
+        A helper method to reliably remove the ASDF-standard plain text header
+        from a document, returning only the raw content.
+        """
+        if not document_content:
+            return ""
+        # The header is assumed to end with a line of '---'. We split on the
+        # first occurrence and take everything after it.
+        parts = document_content.split('--------------------------------------------------\\n', 1)
+        if len(parts) > 1:
+            return parts[1].lstrip() # lstrip() removes leading whitespace/newlines
+        return document_content # Return original if separator is not found
 
     def _commit_document(self, file_path: Path, commit_message: str):
         """A helper method to stage and commit a single document, but only if version control is enabled."""

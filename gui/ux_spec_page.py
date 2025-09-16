@@ -104,7 +104,7 @@ class UXSpecPage(QWidget):
             self.ux_spec_draft = self.orchestrator.active_spec_draft
             self.orchestrator.set_active_spec_draft(None) # Clear the draft
 
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code']))
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             return
         # --- END ---
@@ -121,7 +121,7 @@ class UXSpecPage(QWidget):
         """Handles the result from the worker thread."""
         try:
             self.ux_spec_draft = draft_text
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code']))
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -145,7 +145,7 @@ class UXSpecPage(QWidget):
         """Handles the result from the refinement worker thread."""
         try:
             self.ux_spec_draft = new_draft
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code']))
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The UX/UI Specification has been refined based on your feedback.")
             self.state_changed.emit()

@@ -697,10 +697,13 @@ class ASDFMainWindow(QMainWindow):
         logging.debug(f"update_ui_after_state_change: Detected phase: {current_phase_name}")
         is_project_active = self.orchestrator.project_id is not None
 
-        # This map now includes all standard pages
+        # This is the new, corrected dictionary
         page_display_map = {
             "ENV_SETUP_TARGET_APP": self.env_setup_page,
             "SPEC_ELABORATION": self.spec_elaboration_page,
+            "GENERATING_APP_SPEC_AND_RISK_ANALYSIS": self.spec_elaboration_page, # <-- This line is new/changed
+            "AWAITING_SPEC_REFINEMENT_SUBMISSION": self.spec_elaboration_page,
+            "AWAITING_SPEC_FINAL_APPROVAL": self.spec_elaboration_page,
             "TECHNICAL_SPECIFICATION": self.tech_spec_page,
             "BUILD_SCRIPT_SETUP": self.build_script_page,
             "TEST_ENVIRONMENT_SETUP": self.test_env_page,
@@ -767,6 +770,14 @@ class ASDFMainWindow(QMainWindow):
 
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
+        elif current_phase_name in ["AWAITING_SPEC_REFINEMENT_SUBMISSION", "AWAITING_SPEC_FINAL_APPROVAL"]:
+            # These two states now correctly point to the spec elaboration page.
+            # The page itself will handle which view (initial draft or 3-tab) to show.
+            page_to_show = self.spec_elaboration_page
+            if hasattr(page_to_show, 'prepare_for_display'):
+                page_to_show.prepare_for_display()
+            self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
         elif current_phase_name in page_display_map:
             page_to_show = page_display_map[current_phase_name]
             logging.debug(f"update_ui_after_state_change: Found page in map. About to switch to: {page_to_show.__class__.__name__}")
@@ -775,6 +786,40 @@ class ASDFMainWindow(QMainWindow):
                 page_to_show.prepare_for_display()
             if current_phase_name == "PROJECT_COMPLETED":
                  self.project_complete_page.set_project_name(self.orchestrator.project_name)
+            self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
+        # Add this entire block back into the method
+        elif current_phase_name == "AWAITING_RISK_ASSESSMENT_APPROVAL":
+            # This block handles showing the risk assessment report.
+            page_to_show = self.decision_page
+            task_data = self.orchestrator.task_awaiting_approval or {}
+
+            # Check for an error first
+            error = task_data.get("error")
+            if error:
+                QMessageBox.critical(self, "Error", f"Failed to generate specification draft or risk analysis:\n{error}")
+                self.orchestrator.set_phase("SPEC_ELABORATION") # Go back to allow retry
+                return
+
+            analysis_result = task_data.get("complexity_analysis", {})
+
+            # Format the analysis result into a user-friendly string for the details view.
+            details_text = (
+                f"<b>Complexity Rating:</b> {analysis_result.get('complexity_rating', 'N/A')}<br>"
+                f"<b>Risk Rating:</b> {analysis_result.get('risk_rating', 'N/A')}<br><br>"
+                f"<b>Summary:</b><br>{analysis_result.get('summary', 'No summary provided.')}"
+            )
+
+            page_to_show.configure(
+                header="Project Complexity & Risk Assessment",
+                instruction="The AI has analyzed the project scope. Please review and approve to proceed.",
+                details=details_text,
+                option1_text="Accept Project & Continue to Spec Review",
+                option2_text="Cancel Project"
+            )
+            # Connect the buttons to the correct new orchestrator methods
+            page_to_show.option1_selected.connect(self.orchestrator.handle_risk_assessment_approval)
+            page_to_show.option2_selected.connect(self.on_close_project)
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":

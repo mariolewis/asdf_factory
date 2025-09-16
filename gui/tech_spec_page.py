@@ -39,7 +39,7 @@ class TechSpecPage(QWidget):
             self.tech_spec_draft = self.orchestrator.active_spec_draft
             self.orchestrator.set_active_spec_draft(None) # Clear the draft
 
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code']))
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
         else:
             # Default behavior if not resuming
@@ -143,7 +143,7 @@ class TechSpecPage(QWidget):
     def _handle_generation_result(self, tech_spec_draft):
         try:
             self.tech_spec_draft = tech_spec_draft
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code']))
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
@@ -153,7 +153,7 @@ class TechSpecPage(QWidget):
     def _handle_refinement_result(self, new_draft):
         try:
             self.tech_spec_draft = new_draft
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code']))
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The technical specification has been refined.")
             self.state_changed.emit()

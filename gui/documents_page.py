@@ -93,7 +93,7 @@ class DocumentsPage(QWidget):
 
         # For all other documents, convert Markdown to HTML
         # Add the 'fenced_code' extension to support code blocks properly
-        return markdown.markdown(content, extensions=['fenced_code', 'codehilite'])
+        return markdown.markdown(content, extensions=['fenced_code', 'extra', 'codehilite'])
 
     def _get_selected_doc_info(self) -> dict | None:
         """Helper to get all info for the selected document."""

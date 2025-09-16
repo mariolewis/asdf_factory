@@ -25,7 +25,7 @@ class HelpDialog(QDialog):
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
         # Render the Markdown content as formatted HTML
-        text_edit.setHtml(markdown.markdown(content, extensions=['fenced_code']))
+        text_edit.setHtml(markdown.markdown(content, extensions=['fenced_code', 'extra']))
         layout.addWidget(text_edit)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Close)

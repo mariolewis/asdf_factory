@@ -62,7 +62,7 @@ class CodingStandardPage(QWidget):
             self.coding_standard_draft = self.orchestrator.active_spec_draft
             self.orchestrator.set_active_spec_draft(None) # Clear the draft
 
-            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code']))
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
         else:
             # Default behavior if not resuming
@@ -115,7 +115,7 @@ class CodingStandardPage(QWidget):
         """Handles the result from the worker thread."""
         try:
             self.coding_standard_draft = standard_draft
-            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code']))
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
         finally:
@@ -136,7 +136,7 @@ class CodingStandardPage(QWidget):
         """Handles the result from the refinement worker thread."""
         try:
             self.coding_standard_draft = new_draft
-            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code']))
+            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
             QMessageBox.information(self, "Success", "Success: The coding standard has been refined based on your feedback.")
             self.state_changed.emit()
@@ -209,36 +209,27 @@ class CodingStandardPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
 
     def _task_generate_standard(self, **kwargs):
-        """The actual function that runs in the background."""
-        # --- Template Loading Logic ---
-        template_content = None
-        try:
-            template_record = self.orchestrator.db_manager.get_template_by_name("Default Coding Standard")
-            if template_record:
-                template_path = Path(template_record['file_path'])
-                if template_path.exists():
-                    template_content = template_path.read_text(encoding='utf-8')
-                    logging.info("Found and loaded 'Default Coding Standard' template.")
-        except Exception as e:
-            logging.warning(f"Could not load default coding standard template: {e}")
-        # --- End Template Loading ---
-
+        """
+        The actual function that runs in the background. This version calls the
+        orchestrator to handle the business logic.
+        """
+        # --- THIS IS THE FIX ---
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
 
-        # --- ADDED SAFETY CHECK ---
         if not project_details:
             raise Exception("Could not retrieve project details. A project must be active to generate a standard.")
-        # --- END OF CHECK ---
 
+        # The tech_spec_text is now pure/uncontaminated thanks to our previous fixes.
         tech_spec_text = project_details['tech_spec_text']
 
         if not tech_spec_text:
             raise Exception("Could not retrieve the Technical Specification. Cannot generate a coding standard.")
 
-        agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
+        # Call the new, centralized orchestrator method instead of the agent directly.
+        draft_content = self.orchestrator.generate_coding_standard(tech_spec_text)
 
-        draft_content = agent.generate_standard(tech_spec_text, template_content=template_content)
-
+        # Prepend the header for UI display.
         full_draft = self.orchestrator.prepend_standard_header(draft_content, "Coding Standard")
         return full_draft
+        # --- END OF FIX ---

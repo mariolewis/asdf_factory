@@ -12,6 +12,7 @@ from PySide6.QtCore import Signal, QThreadPool
 from gui.ui_spec_elaboration_page import Ui_SpecElaborationPage
 from gui.worker import Worker
 from master_orchestrator import MasterOrchestrator
+from master_orchestrator import FactoryPhase
 from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 
@@ -62,6 +63,13 @@ class SpecElaborationPage(QWidget):
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
 
     def connect_signals(self):
+        # print(f"Object type: {type(self)}")
+        # print(f"Has 'run_generation_task' attribute? {hasattr(self, 'run_generation_task')}")
+        # if hasattr(self, 'run_generation_task'):
+        #     print(f"Attribute type: {type(self.run_generation_task)}")
+        #    print(f"Is it a method? {inspect.ismethod(self.run_generation_task)}")
+        # print("--- END DEBUGGING BLOCK ---")
+
         self.ui.processTextButton.clicked.connect(self.run_generation_task)
         self.ui.browseFilesButton.clicked.connect(self.on_browse_files_clicked)
         self.ui.processFilesButton.clicked.connect(self.run_generation_task)
@@ -90,49 +98,92 @@ class SpecElaborationPage(QWidget):
         if self.orchestrator:
             self.orchestrator.set_active_spec_draft(draft_text)
 
+    # This is the new, fully corrected method
     def prepare_for_display(self):
         """
-        Smart entry point that first checks for a resumed draft, then decides
-        whether to ask for a brief or auto-generate the app spec.
+        Configures the page based on the orchestrator's current phase.
         """
-        # Prioritize Resumed Draft ---
-        if self.orchestrator.active_spec_draft is not None:
-            logging.info("Resuming spec elaboration with a saved draft.")
-            self.spec_draft = self.orchestrator.active_spec_draft
-            # It's crucial to clear the orchestrator's draft after loading it
-            self.orchestrator.set_active_spec_draft(None)
+        current_phase = self.orchestrator.current_phase
+        logging.debug(f"SpecElaborationPage preparing for display in phase: {current_phase.name}")
 
-            # Determine which review page is appropriate based on content
-            if "AI Analysis & Issues" in self.spec_draft: # A simple check
-                self.ui.headerLabel.setText("Application Specification Review")
-                self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
-                self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
-            else:
-                self.ui.headerLabel.setText("Draft Application Specification")
-                self.ui.pmReviewTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
-                self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
-            return
-
-        task = self.orchestrator.task_awaiting_approval or {}
-        completed_ux_spec = task.get("completed_ux_spec")
-        pending_brief = task.get("pending_brief")
-
-        if completed_ux_spec:
-            logging.info("Detected completed UX Spec. Auto-generating Application Spec draft.")
-            self.orchestrator.task_awaiting_approval = None
-            self.ui.headerLabel.setText("Elaborating & Assessing Application Specifications")
-            self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, completed_ux_spec,
-                            status_message="Generating application spec from UX design...")
-        elif pending_brief:
-            logging.info("Detected pending brief from UX skip. Auto-generating Application Spec draft.")
-            self.orchestrator.task_awaiting_approval = None
-            self.ui.headerLabel.setText("Elaborating & Assessing Application Specifications")
-            self._execute_task(self._task_generate_from_existing_spec, self._handle_analysis_result, pending_brief,
-                            status_message="Generating application spec from brief...")
-        else:
-            logging.info("No pending brief found. Displaying initial brief input page.")
+        if current_phase == FactoryPhase.SPEC_ELABORATION:
+            # STATE 1: Initial entry. Show the brief intake form.
             self.ui.headerLabel.setText("Your Requirements")
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialInputPage)
+            self.ui.briefDescriptionTextEdit.clear()
+
+        elif current_phase == FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS:
+            # STATE 2: Trigger background task to generate draft and risk analysis.
+            self.ui.headerLabel.setText("Application Specification Generation")
+            self.window().statusBar().showMessage("Generating initial draft and analyzing project risk...")
+            self.window().setEnabled(False) # Disable main window during processing
+            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+            self.ui.processingLabel.setText("Generating initial draft and analyzing project risk...")
+
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            initial_brief = task_data.get("pending_brief")
+
+            if not initial_brief:
+                QMessageBox.critical(self, "Error", "Could not find the initial brief text to start the analysis.")
+                # Safely transition back to a stable state instead of looping
+                self.orchestrator.set_phase("SPEC_ELABORATION")
+                self.window().setEnabled(True)
+                self.window().statusBar().clearMessage()
+                self.window().update_ui_after_state_change()
+                return
+
+            worker = Worker(self.orchestrator.generate_application_spec_draft_and_risk_analysis, initial_brief)
+
+            # When the worker is finished, the orchestrator's state will have changed.
+            # A single call to the main window's update function is all that's needed.
+            worker.signals.finished.connect(self.window().update_ui_after_state_change)
+            self.threadpool.start(worker)
+
+        elif current_phase == FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION:
+            # STATE 3: Risk approved. Show the first draft for PM review.
+            self.ui.headerLabel.setText("Draft Application Specification")
+            self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            draft = task_data.get("generated_spec_draft", "Error: Could not load spec draft.")
+            self.ui.pmReviewTextEdit.setHtml(markdown.markdown(draft, extensions=['fenced_code', 'extra']))
+            self.ui.pmFeedbackTextEdit.clear()
+
+        elif current_phase == FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL:
+            # STATE 4: In refinement loop. Show the 3-tab review view.
+            self.ui.headerLabel.setText("Refine Application Specification")
+            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+            self.ui.reviewTabWidget.setCurrentIndex(0)
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            refined_draft = task_data.get("refined_spec_draft", "Error: Could not load refined draft.")
+            ai_analysis = task_data.get("ai_analysis", "Error: Could not load AI analysis.")
+            self.ui.specDraftTextEdit.setHtml(markdown.markdown(refined_draft, extensions=['fenced_code', 'extra']))
+            self.ui.aiIssuesTextEdit.setHtml(markdown.markdown(ai_analysis, extensions=['fenced_code', 'extra']))
+            self.ui.feedbackTextEdit.clear()
+
+    def on_task_finished():
+        """A nested function to re-enable the UI and trigger the next state update."""
+        self.window().setEnabled(True)
+        self.window().statusBar().clearMessage()
+        self.window().update_ui_after_state_change()
+
+        worker.signals.finished.connect(on_task_finished)
+        self.threadpool.start(worker)
+
+    def _task_generate_app_spec_draft(self, spec_text, **kwargs):
+        """Background task for generating ONLY the application spec draft."""
+        return self.orchestrator.generate_application_spec_draft(spec_text)
+
+    def _handle_draft_generation_result(self, draft_text: str):
+        """Handles the result of the draft generation and shows the first review page."""
+        try:
+            self.ui.headerLabel.setText("Draft Application Specification")
+            self.spec_draft = draft_text
+            self.ui.pmReviewTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code', 'extra']))
+            self.ui.pmFeedbackTextEdit.clear()
+            self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
+            self.state_changed.emit()
+        finally:
+            self._set_ui_busy(False)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
         """Disables or enables the main window and updates the status bar."""
@@ -194,10 +245,13 @@ class SpecElaborationPage(QWidget):
             self.ui.uploadPathLineEdit.setText("; ".join(files))
 
     def run_generation_task(self):
-        """Processes a new brief submitted by the user and sends it to the UX Triage workflow."""
+        """
+        Processes the initial user brief (from text or files) and passes it to the
+        orchestrator's UX Triage workflow.
+        """
         sender = self.sender()
         input_data = None
-        status_message = "Processing brief..."
+        status_message = "Processing brief for initial analysis..."
 
         if sender == self.ui.processTextButton:
             input_data = self.ui.briefDescriptionTextEdit.toPlainText().strip()
@@ -208,12 +262,46 @@ class SpecElaborationPage(QWidget):
             input_data = self.selected_files
             status_message = "Processing uploaded documents..."
             if not input_data:
-                QMessageBox.warning(self, "Input Required", "Please browse for at least one specification document.")
+                QMessageBox.warning(self, "Input Required", "Please select at least one document file.")
                 return
 
         if input_data:
-            self._execute_task(self._task_submit_brief_for_triage, self._handle_triage_submission_result, input_data,
-                               status_message=status_message)
+            self._execute_task(self._task_process_brief,
+                            self._handle_brief_processing_result,
+                            input_data,
+                            status_message=status_message)
+
+    def _task_process_brief(self, input_data, **kwargs):
+        """Background task to process the initial brief from either text or files."""
+        initial_text = ""
+        if isinstance(input_data, list):
+            bootstrap_agent = ProjectBootstrapAgent(self.orchestrator.db_manager)
+            text_from_files, messages, error = bootstrap_agent.extract_text_from_file_paths(input_data)
+            if error:
+                raise Exception(f"Failed to process uploaded files: {error}")
+            initial_text = text_from_files
+        else:
+            initial_text = input_data
+
+        if not initial_text or not initial_text.strip():
+            raise Exception("No text could be extracted from the provided input.")
+
+        # This single orchestrator call handles the entire triage workflow.
+        self.orchestrator.handle_ux_ui_brief_submission(initial_text)
+        return "Triage initiated."
+
+    def _handle_brief_processing_result(self, result):
+        """
+        Handles the completion of the initial brief processing and triggers a
+        main UI state update to show the next page (the UX Triage decision).
+        """
+        try:
+            logging.info(f"Brief processing background task completed with result: {result}")
+            # This signal tells the main window to refresh its view based on the
+            # orchestrator's new state, which is now awaiting the UX/UI decision.
+            self.spec_elaboration_complete.emit()
+        finally:
+            self._set_ui_busy(False)
 
     def _task_submit_brief_for_triage(self, input_data, **kwargs):
         """Background task to process the initial brief from either text or files."""
@@ -242,71 +330,65 @@ class SpecElaborationPage(QWidget):
         finally:
             self._set_ui_busy(False)
 
-    def _task_generate_from_existing_spec(self, spec_text, **kwargs):
-        """Background task for processing text from a prior phase."""
-        return self.orchestrator.generate_application_spec_draft(spec_text)
-
-    def _handle_analysis_result(self, result_tuple):
-        try:
-            self.ui.headerLabel.setText("Project Complexity & Risk Assessment")
-            analysis_result, self.spec_draft = result_tuple
-            analysis_for_display = self._format_assessment_for_display(analysis_result)
-            self.ui.analysisResultTextEdit.setHtml(analysis_for_display)
-            self.ui.stackedWidget.setCurrentWidget(self.ui.complexityReviewPage)
-            self.state_changed.emit()
-        finally:
-            self._set_ui_busy(False)
-
     def on_confirm_analysis_clicked(self):
         self.ui.headerLabel.setText("Draft Application Specification")
-        self.ui.pmReviewTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
+        self.ui.pmReviewTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code', 'extra']))
         self.ui.pmFeedbackTextEdit.clear()
         self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
         self.state_changed.emit()
 
     def run_refinement_and_analysis_task(self):
+        """
+        Takes the current draft from the first review, runs the complexity
+        analysis, and displays the result on the complexity review page.
+        """
         current_draft = self.ui.pmReviewTextEdit.toPlainText()
-        feedback = self.ui.pmFeedbackTextEdit.toPlainText().strip()
         if not current_draft.strip():
             QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")
             return
-        self._execute_task(self._task_refine_and_analyze, self._handle_refinement_and_analysis_result, current_draft, feedback,
-                           status_message="Refining draft and running AI analysis...")
 
-    def _task_refine_and_analyze(self, current_draft, feedback, **kwargs):
-        spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        refined_draft = spec_agent.refine_specification(current_draft, "", feedback)
-        ai_issues = spec_agent.identify_potential_issues(refined_draft, iteration_count=self.refinement_iteration_count)
-        return refined_draft, ai_issues
+        self._execute_task(self._task_run_complexity_assessment,
+                           self._handle_assessment_result,
+                           current_draft,
+                           status_message="Running complexity and risk analysis...")
 
-    def _handle_refinement_and_analysis_result(self, result_tuple):
+    def _task_run_complexity_assessment(self, spec_draft_with_header, **kwargs):
+        """Background task to run the orchestrator's complexity assessment."""
+        # This call returns the analysis result and sets the orchestrator's
+        # phase to AWAITING_COMPLEXITY_ASSESSMENT.
+        analysis_result = self.orchestrator.run_complexity_assessment(spec_draft_with_header)
+        # We also pass the analysis result to the orchestrator's task variable so the UI can find it.
+        self.orchestrator.task_awaiting_approval = {"analysis_result": analysis_result}
+        return True
+
+    def _handle_assessment_result(self, success: bool):
+        """
+        Handles the result of the assessment. It emits a signal that tells the
+        main window to refresh, which will now show the complexity review page.
+        """
         try:
-            self.ui.headerLabel.setText("Application Specification Review")
-            self.spec_draft, self.ai_issues = result_tuple
-            self.refinement_iteration_count = 2
-
-            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
-            QApplication.processEvents()
-
-            self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
-            self.ui.aiIssuesTextEdit.setHtml(markdown.markdown(self.ai_issues, extensions=['fenced_code']))
-            self.ui.feedbackTextEdit.clear()
-
-            self.ui.submitFeedbackButton.setEnabled(True)
-            self.ui.approveSpecButton.setEnabled(True)
-
-            self.state_changed.emit()
+            if success:
+                self.spec_elaboration_complete.emit()
+            else:
+                QMessageBox.critical(self, "Error", "The complexity assessment process failed.")
         finally:
             self._set_ui_busy(False)
 
     def run_refinement_task(self):
-        feedback = self.ui.feedbackTextEdit.toPlainText().strip()
-        if not feedback:
-            QMessageBox.warning(self, "Input Required", "Please provide feedback or clarifications.")
+        """
+        Handles the submission for AI analysis and refinement.
+        """
+        current_draft = self.ui.pmReviewTextEdit.toPlainText()
+        pm_feedback = self.ui.pmFeedbackTextEdit.toPlainText()
+        if not current_draft.strip():
+            QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")
             return
-        current_draft = self.ui.specDraftTextEdit.toPlainText()
-        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback,
-                           status_message="Refining specification based on feedback...")
+
+        # Call the single orchestrator method that handles refinement and state transition
+        self.orchestrator.handle_spec_refinement_submission(current_draft, pm_feedback)
+
+        # Refresh the main window UI to show the new state (the 3-tab view)
+        self.window().update_ui_after_state_change()
 
     def _task_refine_spec(self, current_draft, feedback, **kwargs):
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
@@ -319,7 +401,7 @@ class SpecElaborationPage(QWidget):
     def _handle_refinement_result(self, new_draft):
         try:
             self.spec_draft = new_draft
-            self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code']))
+            self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version.")
             self.ui.feedbackTextEdit.clear()
 
@@ -349,14 +431,18 @@ class SpecElaborationPage(QWidget):
 
 
     def on_approve_spec_clicked(self):
-        """Saves the final spec and triggers the backlog generation in a background thread."""
-        final_spec = self.ui.specDraftTextEdit.toPlainText()
-        if not final_spec.strip():
-            QMessageBox.warning(self, "Approval Failed", "The specification cannot be empty.")
-            return
+        """
+        Handles the final approval of the application specification from the final
+        review page.
+        """
+        final_draft = self.ui.specDraftTextEdit.toPlainText()
+        reply = QMessageBox.question(self, "Confirm Approval",
+                                    "Are you sure you want to approve this specification? It will be finalized and the process will move to the Technical Specification phase.",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
-        self._execute_task(self._task_approve_and_generate_backlog, self._handle_approval_result, final_spec,
-                        status_message="Generating backlog from specification...")
+        if reply == QMessageBox.Yes:
+            self.orchestrator.finalize_and_save_app_spec(final_draft)
+            self.spec_elaboration_complete.emit()
 
     def _task_approve_and_generate_backlog(self, final_spec_text, **kwargs):
         """Background worker task to save the spec and generate the backlog."""
