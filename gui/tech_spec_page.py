@@ -155,7 +155,6 @@ class TechSpecPage(QWidget):
             self.tech_spec_draft = new_draft
             self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "Success: The technical specification has been refined.")
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)

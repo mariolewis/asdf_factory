@@ -138,7 +138,6 @@ class CodingStandardPage(QWidget):
             self.coding_standard_draft = new_draft
             self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "Success: The coding standard has been refined based on your feedback.")
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)

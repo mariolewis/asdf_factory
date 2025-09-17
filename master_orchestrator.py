@@ -1180,6 +1180,7 @@ class MasterOrchestrator:
                     f.write(docx_bytes.getbuffer())
                 self._commit_document(spec_file_path_docx, "docs: Add formatted Application Specification (docx)")
 
+            self.active_spec_draft = None
             self.set_phase("TECHNICAL_SPECIFICATION")
             # --- END OF FIX ---
 
@@ -1539,6 +1540,7 @@ class MasterOrchestrator:
             db.update_project_field(self.project_id, "target_os", target_os)
             # Save the PURE content to the database.
             db.update_project_field(self.project_id, "tech_spec_text", pure_tech_spec_content)
+            logging.info(f"Successfully saved final Technical Specification to database for project {self.project_id}")
 
             project_details = db.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
@@ -1564,6 +1566,7 @@ class MasterOrchestrator:
 
             # This can still use the headed version as it's a separate analysis.
             self._extract_and_save_primary_technology(final_tech_spec_with_header)
+            self.active_spec_draft = None
             self.set_phase("BUILD_SCRIPT_SETUP")
             # --- END OF FIX ---
 
@@ -1589,6 +1592,7 @@ class MasterOrchestrator:
             db = self.db_manager
             # Save the PURE content to the database.
             db.update_project_field(self.project_id, "coding_standard_text", pure_standard_content)
+            logging.info(f"Successfully saved final Coding Standard to database for project {self.project_id}")
 
             project_details = db.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
