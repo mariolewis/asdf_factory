@@ -104,10 +104,9 @@ class CodingStandardAgent_AppTarget:
             You are a lead software architect revising a document. Your task is to refine an existing draft of a Coding Standard based on specific feedback from a Product Manager.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
-            2.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's feedback. Do not regenerate the entire document from scratch.
-            3.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined coding standard document, including the preserved header.
-            4.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+            1.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's feedback. Do not regenerate the entire document from scratch.
+            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document.
+            3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
 
             **--- INPUT 1: Current Draft ---**
             ```markdown

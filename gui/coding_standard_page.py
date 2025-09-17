@@ -143,22 +143,22 @@ class CodingStandardPage(QWidget):
             self._set_ui_busy(False)
 
     def _task_refine_standard(self, current_draft, feedback, **kwargs):
-        """The actual function that runs in the background to refine the standard."""
+        """
+        The actual function that runs in the background to refine the standard.
+        This version now handles stripping and prepending the document header.
+        """
         agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
 
-        # Get the refined content from the agent
-        refined_draft = agent.refine_standard(current_draft, feedback)
+        # 1. Strip the header to get pure content
+        pure_content = self.orchestrator._strip_header_from_document(current_draft)
 
-        # Reliably update the date in the header using Python
-        current_date = datetime.now().strftime('%x')
-        # This corrected regex finds the "Date: " line and replaces the rest of the line
-        date_updated_draft = re.sub(
-            r"(Date: ).*",
-            r"\g<1>" + current_date,
-            refined_draft
-        )
+        # 2. Get the refined content from the agent
+        refined_content = agent.refine_standard(pure_content, feedback)
 
-        return date_updated_draft
+        # 3. Prepend a fresh, updated header
+        final_draft = self.orchestrator.prepend_standard_header(refined_content, "Coding Standard")
+
+        return final_draft
 
     def on_approve_clicked(self):
         """

@@ -163,6 +163,10 @@ class Ui_TechSpecPage(object):
 
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer)
+
         self.refineButton = QPushButton(self.reviewPage)
         self.refineButton.setObjectName(u"refineButton")
 

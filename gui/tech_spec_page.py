@@ -173,6 +173,20 @@ class TechSpecPage(QWidget):
         self._execute_task(self._task_approve_spec, self._handle_approval_result, final_tech_spec, target_os,
                            status_message="Finalizing technical specification...")
 
+    def _get_template_content(self, template_name: str) -> str | None:
+        """A helper to load a specific template from the database."""
+        template_content = None
+        try:
+            template_record = self.orchestrator.db_manager.get_template_by_name(template_name)
+            if template_record:
+                template_path = Path(template_record['file_path'])
+                if template_path.exists():
+                    template_content = template_path.read_text(encoding='utf-8')
+                    logging.info(f"Found and loaded '{template_name}' template.")
+        except Exception as e:
+            logging.warning(f"Could not load '{template_name}' template: {e}")
+        return template_content
+
     def _task_approve_spec(self, final_spec, target_os, **kwargs):
         """Background worker task to save the tech spec."""
         self.orchestrator.finalize_and_save_tech_spec(final_spec, target_os)
@@ -191,18 +205,8 @@ class TechSpecPage(QWidget):
             self._set_ui_busy(False)
 
     def _task_propose_stack(self, target_os, **kwargs):
-        # --- Template Loading Logic ---
-        template_content = None
-        try:
-            template_record = self.orchestrator.db_manager.get_template_by_name("Default Technical Specification")
-            if template_record:
-                template_path = Path(template_record['file_path'])
-                if template_path.exists():
-                    template_content = template_path.read_text(encoding='utf-8')
-                    logging.info("Found and loaded 'Default Technical Specification' template.")
-        except Exception as e:
-            logging.warning(f"Could not load default technical spec template: {e}")
-        # --- End Template Loading ---
+
+        template_content = self._get_template_content("Default Technical Specification")
 
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
@@ -217,18 +221,8 @@ class TechSpecPage(QWidget):
         return full_draft
 
     def _task_generate_from_guidelines(self, guidelines, target_os, **kwargs):
-        # --- Template Loading Logic ---
-        template_content = None
-        try:
-            template_record = self.orchestrator.db_manager.get_template_by_name("Default Technical Specification")
-            if template_record:
-                template_path = Path(template_record['file_path'])
-                if template_path.exists():
-                    template_content = template_path.read_text(encoding='utf-8')
-                    logging.info("Found and loaded 'Default Technical Specification' template.")
-        except Exception as e:
-            logging.warning(f"Could not load default technical spec template: {e}")
-        # --- End Template Loading ---
+
+        template_content = self._get_template_content("Default Technical Specification")
 
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
@@ -242,19 +236,19 @@ class TechSpecPage(QWidget):
         return full_draft
 
     def _task_refine_spec(self, current_draft, feedback, target_os, **kwargs):
-        """The actual function that runs in the background to refine the tech spec."""
+        """
+        The actual function that runs in the background to refine the tech spec.
+        This version now handles stripping and prepending the document header.
+        """
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
 
-        # Get the refined content from the agent
-        refined_draft = agent.refine_stack(current_draft, feedback, target_os)
+        # 1. Strip the header to get pure content
+        pure_content = self.orchestrator._strip_header_from_document(current_draft)
 
-        # Reliably update the date in the header using Python
-        current_date = datetime.now().strftime('%x')
-        # This corrected regex finds the "Date: " line and replaces the rest of the line
-        date_updated_draft = re.sub(
-            r"(Date: ).*",
-            r"\g<1>" + current_date,
-            refined_draft
-        )
+        # 2. Get the refined content from the agent
+        refined_content = agent.refine_stack(pure_content, feedback, target_os)
 
-        return date_updated_draft
+        # 3. Prepend a fresh, updated header
+        final_draft = self.orchestrator.prepend_standard_header(refined_content, "Technical Specification")
+
+        return final_draft
