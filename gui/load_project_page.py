@@ -2,7 +2,7 @@
 
 import logging
 from PySide6.QtWidgets import QWidget, QMessageBox, QAbstractItemView
-from PySide6.QtCore import Signal, QItemSelectionModel
+from PySide6.QtCore import Signal, QItemSelectionModel, QDateTime, QLocale, Qt
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 
 from gui.ui_load_project_page import Ui_LoadProjectPage
@@ -48,7 +48,7 @@ class LoadProjectPage(QWidget):
             for row in projects:
                 self.model.appendRow([
                     QStandardItem(row['project_name']),
-                    QStandardItem(row['creation_timestamp']),
+                    QStandardItem(self._format_timestamp(row['creation_timestamp'])),
                     QStandardItem(row['project_id'])
                 ])
             self.ui.projectsTableView.setColumnHidden(2, True) # Hide Project ID
@@ -63,7 +63,7 @@ class LoadProjectPage(QWidget):
             for row in history:
                 self.model.appendRow([
                     QStandardItem(row['project_name']),
-                    QStandardItem(row['last_stop_timestamp']),
+                    QStandardItem(self._format_timestamp(row['last_stop_timestamp'])),
                     QStandardItem(str(row['history_id']))
                 ])
             self.ui.projectsTableView.setColumnHidden(2, True) # Hide History ID
@@ -75,6 +75,36 @@ class LoadProjectPage(QWidget):
         self.ui.backButton.clicked.connect(self.back_to_main.emit)
         self.ui.loadButton.clicked.connect(self.on_load_clicked)
         self.ui.deleteButton.clicked.connect(self.on_delete_clicked)
+
+    def _format_timestamp(self, timestamp_str: str) -> str:
+        """
+        Parses an ISO 8601 timestamp string and formats it using the user's
+        local system settings via Qt.
+        """
+        if not timestamp_str:
+            return "N/A"
+        try:
+            # Manually replace 'Z' with UTC offset for robust parsing
+            if timestamp_str.endswith('Z'):
+                timestamp_str = timestamp_str[:-1] + "+00:00"
+
+            utc_dt = QDateTime.fromString(timestamp_str, Qt.DateFormat.ISODateWithMs)
+            if not utc_dt.isValid():
+                # Try parsing without milliseconds if the first attempt fails
+                utc_dt = QDateTime.fromString(timestamp_str, Qt.DateFormat.ISODate)
+                if not utc_dt.isValid():
+                    return timestamp_str # Return original if parsing fails
+
+            # Convert to the user's local time zone
+            local_dt = utc_dt.toLocalTime()
+
+            # CORRECT FIX: Use the QLocale class to format the QDateTime object.
+            # The ShortFormat includes date and time and respects system settings.
+            return QLocale.system().toString(local_dt, QLocale.FormatType.ShortFormat)
+        except Exception as e:
+            logging.warning(f"Could not format timestamp '{timestamp_str}': {e}")
+            # Fallback for any unexpected error
+            return timestamp_str
 
     def _get_selected_id(self):
         """Gets the relevant ID from the hidden last column of the selected row."""
