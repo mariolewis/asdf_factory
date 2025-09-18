@@ -41,6 +41,7 @@ from agents.agent_project_scoping import ProjectScopingAgent
 from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
 from agents.agent_plan_auditor import PlanAuditorAgent
 from agents.agent_code_summarization import CodeSummarizationAgent
+from gui.utils import format_timestamp_for_display
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -3458,13 +3459,14 @@ class MasterOrchestrator:
         if match:
             version_number = match.group(1)
 
-        # Get the current date in YYYY-MM-DD format
-        current_date = datetime.now().strftime('%x')
+        # Generate a standard UTC timestamp string and format it using the new utility
+        timestamp_str = datetime.now(timezone.utc).isoformat()
+        formatted_date = format_timestamp_for_display(timestamp_str)
 
         header = (
             f"PROJECT NUMBER: {self.project_id}\n"
             f"{document_type.upper()}\n"
-            f"Date: {current_date}\n"
+            f"Date: {formatted_date}\n"
             f"Version number: {version_number}\n"
             f"{'-' * 50}\n\n"
         )

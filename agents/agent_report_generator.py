@@ -13,7 +13,8 @@ import json
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
+from gui.utils import format_timestamp_for_display
 
 class ReportGeneratorAgent:
     """
@@ -278,13 +279,7 @@ class ReportGeneratorAgent:
                 current_prefix = f"{prefix}{i}"
 
                 timestamp_str = item.get('last_modified_timestamp') or item.get('creation_timestamp')
-                formatted_date = ""
-                if timestamp_str:
-                    try:
-                        dt_object = datetime.fromisoformat(timestamp_str)
-                        formatted_date = dt_object.strftime('%Y-%m-%d %H:%M')
-                    except ValueError:
-                        formatted_date = timestamp_str.split('T')[0]
+                formatted_date = format_timestamp_for_display(timestamp_str)
 
                 record = {
                     '#': current_prefix,
@@ -328,7 +323,8 @@ class ReportGeneratorAgent:
         """
         document = Document()
 
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_str = datetime.now(timezone.utc).isoformat()
+        timestamp = format_timestamp_for_display(timestamp_str)
         document.add_heading(f"Sprint Plan: {project_name}", level=1)
         document.add_paragraph(f"Generated on: {timestamp}")
 
@@ -371,7 +367,8 @@ class ReportGeneratorAgent:
             BytesIO: An in-memory byte stream of the generated .docx file.
         """
         document = Document()
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_str = datetime.now(timezone.utc).isoformat()
+        timestamp = format_timestamp_for_display(timestamp_str)
         document.add_heading(f"Sprint Summary Report: {project_name}", level=1)
         document.add_paragraph(f"Generated on: {timestamp}")
 
@@ -411,7 +408,8 @@ class ReportGeneratorAgent:
             BytesIO: An in-memory byte stream of the generated .docx file.
         """
         document = Document()
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp_str = datetime.now(timezone.utc).isoformat()
+        timestamp = format_timestamp_for_display(timestamp_str)
 
         document.add_heading(f"Sprint Pre-Execution Check Report: {project_name}", level=1)
         document.add_paragraph(f"Generated on: {timestamp}")

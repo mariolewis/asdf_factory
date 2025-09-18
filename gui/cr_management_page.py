@@ -11,6 +11,7 @@ from master_orchestrator import MasterOrchestrator
 from gui.raise_request_dialog import RaiseRequestDialog
 from gui.cr_details_dialog import CRDetailsDialog
 from gui.worker import Worker
+from gui.utils import format_timestamp_for_display
 
 # Note: The EditItemDialog is now handled by the more capable RaiseRequestDialog in edit mode.
 
@@ -134,15 +135,9 @@ class CRManagementPage(QWidget):
             title_item = QStandardItem(item_data['title'])
 
             timestamp_str = item_data.get('last_modified_timestamp') or item_data.get('creation_timestamp')
-            formatted_date = ""
-            if timestamp_str:
-                try:
-                    dt_object = datetime.fromisoformat(timestamp_str)
-                    formatted_date = dt_object.strftime('%x')
-                except ValueError:
-                    formatted_date = timestamp_str.split('T')[0]
-
+            formatted_date = format_timestamp_for_display(timestamp_str)
             last_modified_item = QStandardItem(formatted_date)
+
             type_item = QStandardItem(item_data['request_type'].replace('_', ' ').title())
             status_item = QStandardItem(item_data['status'])
             priority = item_data.get('priority') or item_data.get('impact_rating') or ''
