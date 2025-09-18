@@ -167,7 +167,7 @@ class Ui_GenesisPage(object):
         GenesisPage.setWindowTitle(QCoreApplication.translate("GenesisPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("GenesisPage", u"Sprint Progress Dashboard", None))
         self.sprintGoalLabel.setText(QCoreApplication.translate("GenesisPage", u"Sprint Goal: ...", None))
-        self.label.setText(QCoreApplication.translate("GenesisPage", u"Sprint Task Completion:", None))
+        self.label.setText(QCoreApplication.translate("GenesisPage", u"Sprint Completion:", None))
         self.aiConfidenceLabel.setText(QCoreApplication.translate("GenesisPage", u"AI Context Quality:", None))
         self.nextTaskLabel.setText(QCoreApplication.translate("GenesisPage", u"Next component in the plan is: '...'", None))
         self.proceedButton.setText(QCoreApplication.translate("GenesisPage", u"\u25b6\ufe0f Proceed with Next Step", None))

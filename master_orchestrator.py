@@ -9,6 +9,7 @@ from llm_service import LLMService
 from pathlib import Path
 import textwrap
 import git
+import hashlib
 
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_integration_pmt import IntegrationAgentPMT
@@ -96,29 +97,12 @@ class MasterOrchestrator:
 
     def __init__(self, db_manager: ASDFDBManager):
         self.db_manager = db_manager
-        self.resumable_state = self.db_manager.get_any_paused_state()
+        self.resumable_state = None # Initialize as None
 
         # Default initial state
         self.project_id: str | None = None
         self.project_name: str | None = None
         self.current_phase: FactoryPhase = FactoryPhase.IDLE
-
-        if self.resumable_state:
-            project_id_from_state = self.resumable_state['project_id']
-            project_details = self.db_manager.get_project_by_id(project_id_from_state)
-
-            # Only resume if the corresponding project record also exists
-            if project_details:
-                self.project_id = project_id_from_state
-                self.project_name = project_details['project_name']
-                self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
-                logging.info(f"Orchestrator initialized into a resumable state for project: {self.project_name}")
-            else:
-                # If project record is gone, the state is orphaned and should be deleted.
-                logging.warning(f"Found orphaned resumable state for non-existent project ID {project_id_from_state}. Deleting it.")
-                self.db_manager.delete_orchestration_state_for_project(project_id_from_state)
-                self.resumable_state = None # Clear the invalid state
-
         self.active_plan = None
         self.active_plan_cursor = 0
         self.task_awaiting_approval = None
@@ -468,6 +452,26 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to retrieve uncompleted tasks: {e}", exc_info=True)
             return None
+
+    def _recalculate_plan_cursor_from_db(self):
+        """
+        Scans the database for completed artifacts and sets the active plan
+        cursor to the correct resume point.
+        """
+        if not self.project_id or not self.active_plan:
+            self.active_plan_cursor = 0
+            return
+
+        all_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+        completed_spec_ids = {art['micro_spec_id'] for art in all_artifacts if art['micro_spec_id']}
+
+        last_completed_index = -1
+        for i, task in enumerate(self.active_plan):
+            if task.get('micro_spec_id') in completed_spec_ids:
+                last_completed_index = i
+
+        self.active_plan_cursor = last_completed_index + 1
+        logging.info(f"Recalculated and set plan cursor to resume at step {self.active_plan_cursor + 1}.")
 
     def _recalculate_plan_cursor_from_db(self):
         """
@@ -1053,8 +1057,13 @@ class MasterOrchestrator:
         from agents.agent_spec_clarification import SpecClarificationAgent
         spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
 
-        # Refine the spec based on feedback
-        refined_content = spec_agent.refine_specification(current_draft, "", pm_feedback)
+        # FIX: Strip the existing header before sending to the agent
+        pure_content = self._strip_header_from_document(current_draft)
+
+        # Refine the spec based on feedback using the pure content
+        refined_content = spec_agent.refine_specification(pure_content, "", pm_feedback)
+
+        # Prepend a fresh, updated header to the refined content
         refined_draft_with_header = self.prepend_standard_header(refined_content, "Application Specification")
 
         # Analyze the *newly refined* spec for issues
@@ -1877,6 +1886,17 @@ class MasterOrchestrator:
         component_name = task.get("component_name")
         if progress_callback: progress_callback(("INFO", f"Executing source code generation for: {component_name}"))
 
+        # --- RoWD-Enforced Path Integrity Check  ---
+        if task.get("artifact_id"):
+            artifact_record = db.get_artifact_by_id(task["artifact_id"])
+            if artifact_record and artifact_record['file_path']:
+                canonical_path = artifact_record['file_path']
+                plan_path = task.get("component_file_path")
+                if plan_path != canonical_path:
+                    logging.warning(f"Path mismatch for artifact {task['artifact_id']}. Overriding plan path '{plan_path}' with canonical RoWD path '{canonical_path}'.")
+                    task["component_file_path"] = canonical_path
+        # --- End of Integrity Check ---
+
         if not self.llm_service:
             raise Exception("Cannot generate code: LLM Service is not configured.")
 
@@ -1958,6 +1978,11 @@ class MasterOrchestrator:
         summary = summarization_agent.summarize_code(source_code)
         if progress_callback: progress_callback(("SUCCESS", "... Code summarized."))
 
+        # --- Hash Calculation ---
+        file_hash = hashlib.sha256(source_code.encode('utf-8')).hexdigest()
+        logging.info(f"Calculated SHA-256 hash for {component_name}: {file_hash}")
+        # --- End of Hash Calculation ---
+
         if progress_callback: progress_callback(("INFO", f"Updating project records for {component_name}..."))
         doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
         doc_agent.update_artifact_record({
@@ -1965,7 +1990,9 @@ class MasterOrchestrator:
             "file_path": task.get("component_file_path"), "artifact_name": component_name,
             "artifact_type": task.get("component_type"), "short_description": micro_spec_content,
             "status": "UNIT_TESTS_PASSING", "unit_test_status": "TESTS_PASSING",
-            "commit_hash": commit_hash, "version": 1,
+            "commit_hash": commit_hash,
+            "file_hash": file_hash,
+            "version": 1,
             "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
             "micro_spec_id": task.get("micro_spec_id"),
             "code_summary": summary
@@ -2742,6 +2769,7 @@ class MasterOrchestrator:
                 self.debug_attempt_counter = details.get("debug_attempt_counter", 0)
                 self.task_awaiting_approval = details.get("task_awaiting_approval")
                 self.active_spec_draft = details.get("active_spec_draft")
+                self.active_sprint_id = details.get("active_sprint_id")
 
             logging.info(f"Project '{self.project_name}' resumed successfully to phase {self.current_phase.name}.")
 
@@ -3449,12 +3477,17 @@ class MasterOrchestrator:
         """
         if not document_content:
             return ""
-        # The header is assumed to end with a line of '---'. We split on the
-        # first occurrence and take everything after it.
-        parts = document_content.split('--------------------------------------------------\\n', 1)
+
+        # The correct separator is 50 hyphens followed by two newlines.
+        separator = f"{'-' * 50}\n\n"
+
+        parts = document_content.split(separator, 1)
         if len(parts) > 1:
-            return parts[1].lstrip() # lstrip() removes leading whitespace/newlines
-        return document_content # Return original if separator is not found
+            # The content is the second part after the split
+            return parts[1]
+
+        # Return original text if separator is not found
+        return document_content
 
     def _commit_document(self, file_path: Path, commit_message: str):
         """A helper method to stage and commit a single document, but only if version control is enabled."""
@@ -3631,7 +3664,8 @@ class MasterOrchestrator:
                 "active_plan_cursor": self.active_plan_cursor,
                 "debug_attempt_counter": self.debug_attempt_counter,
                 "task_awaiting_approval": self.task_awaiting_approval,
-                "active_spec_draft": self.active_spec_draft
+                "active_spec_draft": self.active_spec_draft,
+                "active_sprint_id": self.active_sprint_id
             }
             state_details_json = json.dumps(state_details_dict)
 
@@ -3668,10 +3702,28 @@ class MasterOrchestrator:
             logging.error(f"Failed to cleanly pause project {self.project_id}: {e}", exc_info=True)
             self.reset()
 
-    def _clear_active_project_data(self, db, project_id: str):
+    def _clear_active_project_data(self, db: ASDFDBManager, project_id: str):
         """Helper method to clear all data for a specific project."""
         if not project_id:
             return
+
+        # Explicitly find and delete sprint data first
+        try:
+            sprints_to_delete = db._execute_query("SELECT sprint_id FROM Sprints WHERE project_id = ?", (project_id,), fetch="all")
+            if sprints_to_delete:
+                sprint_ids = [row['sprint_id'] for row in sprints_to_delete]
+                placeholders = ', '.join('?' for _ in sprint_ids)
+
+                # Delete links from SprintItems first
+                db._execute_query(f"DELETE FROM SprintItems WHERE sprint_id IN ({placeholders})", tuple(sprint_ids))
+
+                # Then delete from Sprints
+                db._execute_query(f"DELETE FROM Sprints WHERE sprint_id IN ({placeholders})", tuple(sprint_ids))
+                logging.info(f"Deleted {len(sprint_ids)} sprint(s) and their linked items for project {project_id}.")
+        except Exception as e:
+            logging.error(f"An error occurred while trying to delete sprint data for project {project_id}: {e}")
+
+        # Delete other project data
         db.delete_all_artifacts_for_project(project_id)
         db.delete_all_change_requests_for_project(project_id)
         db.delete_orchestration_state_for_project(project_id)
@@ -3739,16 +3791,6 @@ class MasterOrchestrator:
             logging.info(f"Successfully created archive and history record for '{self.project_name}'.")
         except Exception as e:
             logging.error(f"Failed during project archive and history creation: {e}", exc_info=True)
-
-    def _clear_active_project_data(self, db, project_id: str):
-        """Helper method to clear all data for a specific project."""
-        if not project_id:
-            return
-        db.delete_all_artifacts_for_project(project_id)
-        db.delete_all_change_requests_for_project(project_id)
-        db.delete_orchestration_state_for_project(project_id)
-        db.delete_project_by_id(project_id)
-        logging.info(f"Cleared all active data for project ID: {project_id}")
 
     def stop_and_export_project(self, **kwargs):
         """
@@ -4093,25 +4135,16 @@ class MasterOrchestrator:
 
     def _build_and_validate_context_package(self, core_documents: dict, source_code_files: dict) -> dict:
         """
-        Gathers context using a "Hybrid Context Assembly" strategy. It checks
-        the size of each file, adding the full code for small files and a
-        pre-generated summary for large files. If a summary is missing for a
-        large file, it generates one on-the-fly.
-
-        Returns:
-            A dictionary containing the assembled source code context, a flag
-            indicating if trimming occurred, any errors, and a list of files
-            represented by summaries instead of full code.
+        Gathers context using a "Hybrid Context Assembly" strategy with
+        "Just-in-Time (JIT) Hash Validation" to ensure context is never stale.
         """
         final_context = {}
-        excluded_files = []
         summarized_files = []
         context_was_trimmed = False
 
         limit_str = self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2500000"
         char_limit = int(limit_str)
 
-        # 1. Add core documents first, as they are essential context.
         core_doc_chars = 0
         for name, content in core_documents.items():
             if content:
@@ -4125,58 +4158,52 @@ class MasterOrchestrator:
 
         remaining_chars = char_limit - core_doc_chars
 
-        # 2. Iterate through source files to build the hybrid context.
         for file_path, content in source_code_files.items():
             content_len = len(content)
 
             if content_len <= remaining_chars:
-                # File is small enough, add full source code.
                 final_context[file_path] = content
                 remaining_chars -= content_len
             else:
-                # File is too large, use a summary instead.
                 context_was_trimmed = True
+                summary_to_use = None
+
+                # JIT Hash Validation Logic
+                current_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
                 artifact = self.db_manager.get_artifact_by_path(self.project_id, file_path)
 
-                if artifact and artifact['code_summary']:
-                    # Summary exists, use it if it fits.
-                    summary = artifact['code_summary']
-                    if len(summary) <= remaining_chars:
-                        final_context[file_path] = f"--- CODE SUMMARY FOR {file_path} ---\n{summary}"
-                        remaining_chars -= len(summary)
-                        summarized_files.append(file_path)
-                    else:
-                        excluded_files.append(file_path) # Summary is also too big
-                else:
-                    # On-demand summarization for legacy or missing summaries.
-                    logging.info(f"Context Builder: On-demand summary needed for large file: {file_path}")
+                is_stale = True # Assume stale by default
+                if artifact and artifact['file_hash'] == current_hash and artifact['code_summary']:
+                    is_stale = False
+                    summary_to_use = artifact['code_summary']
+                    logging.info(f"Context Builder: Using valid summary for {file_path}.")
+
+                if is_stale:
+                    logging.warning(f"Context Builder: Stale or missing summary for {file_path}. Generating on-demand.")
                     try:
-                        from agents.agent_code_summarization import CodeSummarizationAgent
                         summarization_agent = CodeSummarizationAgent(llm_service=self.llm_service)
-                        summary = summarization_agent.summarize_code(content)
+                        new_summary = summarization_agent.summarize_code(content)
+                        summary_to_use = new_summary
 
-                        if len(summary) <= remaining_chars:
-                            final_context[file_path] = f"--- CODE SUMMARY FOR {file_path} ---\n{summary}"
-                            remaining_chars -= len(summary)
-                            summarized_files.append(file_path)
-
-                            # Save the newly generated summary back to the DB.
-                            if artifact:
-                                from agents.doc_update_agent_rowd import DocUpdateAgentRoWD
-                                doc_agent = DocUpdateAgentRoWD(self.db_manager, self.llm_service)
-                                updated_data = dict(artifact)
-                                updated_data['code_summary'] = summary
-                                doc_agent.update_artifact_record(updated_data)
+                        # Save the new summary and hash back to the RoWD for future use
+                        if artifact:
+                            doc_agent = DocUpdateAgentRoWD(self.db_manager, self.llm_service)
+                            updated_data = dict(artifact)
+                            updated_data['code_summary'] = new_summary
+                            updated_data['file_hash'] = current_hash
+                            doc_agent.update_artifact_record(updated_data)
                         else:
-                            excluded_files.append(file_path) # Generated summary is too big
+                             logging.warning(f"Could not find artifact for {file_path} to save new summary.")
                     except Exception as e:
                         logging.error(f"On-demand summarization failed for {file_path}: {e}")
-                        excluded_files.append(file_path)
 
-        if excluded_files:
-            logging.warning(f"Context Builder: Excluded {len(excluded_files)} file(s) as they and their summaries were too large: {', '.join(excluded_files)}")
+                if summary_to_use and len(summary_to_use) <= remaining_chars:
+                    final_context[file_path] = f"--- CODE SUMMARY FOR {file_path} ---\n{summary_to_use}"
+                    remaining_chars -= len(summary_to_use)
+                    summarized_files.append(file_path)
+                else:
+                    logging.warning(f"Context Builder: Excluded large file '{file_path}' as its summary was also too large.")
 
-        # At the end of _build_and_validate_context_package...
         return {
             "source_code": final_context,
             "was_trimmed": context_was_trimmed,

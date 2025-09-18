@@ -59,7 +59,7 @@
          <item row="0" column="0">
           <widget class="QLabel" name="label">
            <property name="text">
-            <string>Sprint Task Completion:</string>
+            <string>Sprint Completion:</string>
            </property>
           </widget>
          </item>

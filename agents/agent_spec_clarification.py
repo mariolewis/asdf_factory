@@ -159,34 +159,29 @@ class SpecClarificationAgent:
             """)
 
         prompt = textwrap.dedent(f"""
-            As an expert software architect, your task is to revise a software specification draft.
-            You have the current draft, a list of issues previously identified with it, and a set of clarifications from the Product Manager (PM).
-
-            Your goal is to integrate the PM's clarifications to resolve the identified issues and produce a new, more complete, and unambiguous version of the specification.
+            You are an expert software architect revising a document. Your task is to take the body of a software specification and refine it based on a list of identified issues and specific feedback from a Product Manager.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
-            2.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's clarifications.
-            3.  **Complete Document**: Ensure the new version is a complete, standalone document including the preserved header.
-            4.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document.
-            5.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-            {fallback_instruction}
-            **Current Specification Draft:**
-            ---
+            1.  **Refine Body Only**: The text you receive is only the body of a document. Your task is to incorporate the PM's clarifications to resolve the identified issues.
+            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw, refined text of the document's body. Do not add a header, preamble, introduction, or any conversational text.
+            3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting (e.g., '##' for headings).
+
+            **--- INPUT 1: Current Draft Body ---**
+            ```markdown
             {current_draft_text}
-            ---
+            ```
 
-            **Issues You Identified:**
-            ---
+            **--- INPUT 2: Issues Previously Identified ---**
+            ```
             {issues_found}
-            ---
+            ```
 
-            **Product Manager's Clarifications:**
-            ---
+            **--- INPUT 3: Product Manager's Clarifications to Implement ---**
+            ```
             {pm_clarification}
-            ---
+            ```
 
-            Please provide the complete, revised specification draft below.
+            **--- Refined Document Body (Raw Markdown Output) ---**
         """)
 
         try:

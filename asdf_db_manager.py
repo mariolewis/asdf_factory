@@ -137,6 +137,7 @@ class ASDFDBManager:
             version INTEGER NOT NULL DEFAULT 1,
             last_modified_timestamp TEXT NOT NULL,
             commit_hash TEXT,
+            file_hash TEXT,
             micro_spec_id TEXT,
             dependencies TEXT,
             unit_test_status TEXT,

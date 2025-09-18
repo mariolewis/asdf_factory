@@ -43,11 +43,7 @@ class BuildAndCommitAgentAppTarget:
     def _sanitize_path(self, raw_path: str | None) -> str | None:
         """
         Cleans and validates a file path string received from an LLM.
-
-        - Returns None if the path is empty, 'N/A', 'None', or 'TBD'.
-        - Removes invalid characters for file names.
-        - Prevents structurally unsound paths (e.g., containing empty parts).
-        - Handles cases where multiple files might be in one string.
+        ...
         """
         if not raw_path or not raw_path.strip():
             return None
