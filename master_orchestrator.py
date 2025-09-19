@@ -496,8 +496,7 @@ class MasterOrchestrator:
 
     def start_new_project(self, project_name: str) -> str:
         """
-        Prepares a new project in the database and calculates a suggested root path,
-        but does NOT create directories on the filesystem.
+        Prepares a new project in memory but does NOT save it to the database.
         Returns the suggested project root path.
         """
         if self.project_id and self.is_project_dirty:
@@ -516,29 +515,31 @@ class MasterOrchestrator:
             base_path = Path().resolve() / "projects"
         else:
             base_path = Path(base_path_str)
-
         sanitized_name = project_name.lower().replace(' ', '_')
         suggested_root = base_path / sanitized_name
 
-        # Create the project in the database
+        # Prepare details in memory only
         self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
         self.project_name = project_name
+        self.project_root_path = str(suggested_root)
+        self.is_project_dirty = True # Mark as dirty to prevent loss if user starts another new project
+
+        logging.info(f"Initialized new project '{self.project_name}' in memory. Awaiting path confirmation from UI.")
+        self.set_phase("ENV_SETUP_TARGET_APP")
+        return str(suggested_root)
+
+    def finalize_project_creation(self, project_id: str, project_name: str, project_root: str):
+        """
+        Creates the permanent project record in the database. This is the first
+        official save point for a new project.
+        """
         timestamp = datetime.now(timezone.utc).isoformat()
-
         try:
-            # Create the project record in the DB, but DO NOT save the root folder yet.
-            self.db_manager.create_project(self.project_id, self.project_name, timestamp)
-
-            # Store the SUGGESTED path in memory for the UI to use.
-            self.project_root_path = str(suggested_root)
-
-            logging.info(f"Initialized new project '{self.project_name}' in database. Awaiting path confirmation from UI.")
-            self.is_project_dirty = True
-            self.set_phase("ENV_SETUP_TARGET_APP")
-            return str(suggested_root)
-
+            self.db_manager.create_project(project_id, project_name, timestamp)
+            self.db_manager.update_project_field(project_id, "project_root_folder", project_root)
+            logging.info(f"Successfully created and saved project '{project_name}' to database.")
         except Exception as e:
-            logging.error(f"Failed to start new project '{self.project_name}': {e}")
+            logging.error(f"Failed to finalize project creation for '{project_name}': {e}")
             self.reset()
             raise
 
@@ -2750,21 +2751,15 @@ class MasterOrchestrator:
 
     def resume_project(self):
         """
-        Resumes a paused project by loading its last saved detailed state and
-        then clearing the saved state from the database.
+        Resumes a project using a hierarchical approach to ensure the most accurate
+        state is restored.
         """
-        if not self.resumable_state:
-            logging.warning("Resume called but no resumable state was found. Defaulting to Backlog View.")
-            self.set_phase(FactoryPhase.BACKLOG_VIEW.name)
-            return
-
-        try:
-            # Set the current phase from the saved state FIRST.
-            self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
-
-            state_details_json = self.resumable_state['state_details']
-            if state_details_json:
-                details = json.loads(state_details_json)
+        # 1. Highest Priority: Attempt to load a detailed, formally saved session state.
+        if self.resumable_state:
+            try:
+                logging.info(f"Found a saved session state for project {self.project_id}. Resuming...")
+                self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
+                details = json.loads(self.resumable_state['state_details'])
                 self.active_plan = details.get("active_plan")
                 self.active_plan_cursor = details.get("active_plan_cursor", 0)
                 self.debug_attempt_counter = details.get("debug_attempt_counter", 0)
@@ -2772,15 +2767,43 @@ class MasterOrchestrator:
                 self.active_spec_draft = details.get("active_spec_draft")
                 self.active_sprint_id = details.get("active_sprint_id")
 
-            logging.info(f"Project '{self.project_name}' resumed successfully to phase {self.current_phase.name}.")
+                self.db_manager.delete_orchestration_state_for_project(self.project_id)
+                self.resumable_state = None
+                logging.info(f"Project '{self.project_name}' resumed successfully to phase {self.current_phase.name}.")
+                return
+            except Exception as e:
+                logging.error(f"Failed to load saved session state, proceeding to next fallback. Error: {e}")
 
-            # Now that the state is loaded into the orchestrator, clear the DB record.
-            self.db_manager.delete_orchestration_state_for_project(self.project_id)
-            self.resumable_state = None # Clear the in-memory flag
+        # 2. Second Priority: Check for an active (in-progress or paused) sprint.
+        latest_sprint = self.db_manager.get_latest_sprint_for_project(self.project_id)
+        if latest_sprint and latest_sprint['status'] in ['IN_PROGRESS', 'PAUSED']:
+            logging.warning(f"No detailed state found, but an active sprint ({latest_sprint['sprint_id']}) was discovered. Resuming sprint.")
+            self.active_sprint_id = latest_sprint['sprint_id']
+            self.load_development_plan(latest_sprint['sprint_plan_json'])
+            self._recalculate_plan_cursor_from_db() # Recalculate progress from artifacts
+            self.set_phase(FactoryPhase.GENESIS.name)
+            return
 
-        except Exception as e:
-            logging.error(f"An error occurred while resuming project {self.project_id}: {e}")
-            self.set_phase(FactoryPhase.BACKLOG_VIEW.name) # Fallback to backlog on error
+        # 3. Lowest Priority: Fallback based on most recently completed document.
+        logging.info("No active session or sprint found. Performing intelligent fallback based on project documents.")
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        if not project_details:
+            logging.error(f"Cannot resume project {self.project_id}: project details not found.")
+            self.reset()
+            return
+
+        if project_details['development_plan_text']:
+            self.set_phase(FactoryPhase.BACKLOG_VIEW.name)
+        elif project_details['coding_standard_text']:
+            self.set_phase(FactoryPhase.PLANNING.name)
+        elif project_details['tech_spec_text']:
+            self.set_phase(FactoryPhase.CODING_STANDARD_GENERATION.name)
+        elif project_details['final_spec_text']:
+            self.set_phase(FactoryPhase.TECHNICAL_SPECIFICATION.name)
+        else:
+            self.set_phase(FactoryPhase.SPEC_ELABORATION.name)
+
+        logging.info(f"Project '{self.project_name}' will resume at the most logical phase: {self.current_phase.name}")
 
     def resume_from_idle(self, project_id: str):
         """Resumes an active project that is not currently loaded."""
@@ -3178,6 +3201,15 @@ class MasterOrchestrator:
         Finalizes sprint planning by creating a persistent sprint record,
         linking items to it, updating statuses, and transitioning to GENESIS.
         """
+        # Check for an existing active sprint before creating a new one
+        latest_sprint = self.db_manager.get_latest_sprint_for_project(self.project_id)
+        if latest_sprint and latest_sprint['status'] in ['IN_PROGRESS', 'PAUSED']:
+            logging.info(f"Resuming existing active sprint: {latest_sprint['sprint_id']}")
+            self.active_sprint_id = latest_sprint['sprint_id']
+            self.load_development_plan(latest_sprint['sprint_plan_json'])
+            self.set_phase("GENESIS")
+            return # Exit early to avoid creating a new sprint
+
         logging.info(f"Starting sprint with {len(sprint_items)} items.")
         sprint_id = None  # Initialize sprint_id to None for the except block
         try:

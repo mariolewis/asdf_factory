@@ -293,7 +293,7 @@ class Ui_SpecElaborationPage(object):
 
     def retranslateUi(self, SpecElaborationPage):
         SpecElaborationPage.setWindowTitle(QCoreApplication.translate("SpecElaborationPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Your Requirements", None))
+        self.headerLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Your Requirement", None))
         self.instructionLabel.setText(QCoreApplication.translate("SpecElaborationPage", u"Please enter a brief description of the application you want, or upload a requirement document and any additional technical specifications and/or standards that it must comply with.", None))
         self.browseFilesButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Browse...", None))
         self.processFilesButton.setText(QCoreApplication.translate("SpecElaborationPage", u"Process Uploaded Document(s)", None))

@@ -146,6 +146,7 @@ class SpecElaborationPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.pmFirstReviewPage)
             task_data = self.orchestrator.task_awaiting_approval or {}
             draft = task_data.get("generated_spec_draft", "Error: Could not load spec draft.")
+            self.spec_draft = draft
             self.ui.pmReviewTextEdit.setHtml(markdown.markdown(draft, extensions=['fenced_code', 'extra']))
             self.ui.pmFeedbackTextEdit.clear()
 
@@ -263,6 +264,7 @@ class SpecElaborationPage(QWidget):
         Processes the initial user brief (from text or files) and passes it to the
         orchestrator's UX Triage workflow.
         """
+        self.ui.headerLabel.setText("Analyzing Requirement")
         sender = self.sender()
         input_data = None
         status_message = "Processing brief for initial analysis..."
@@ -355,7 +357,7 @@ class SpecElaborationPage(QWidget):
         """
         Handles the submission for AI analysis and refinement from the first review page.
         """
-        current_draft = self.ui.pmReviewTextEdit.toPlainText()
+        current_draft = self.spec_draft
         pm_feedback = self.ui.pmFeedbackTextEdit.toPlainText().strip()
         if not current_draft.strip():
             QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")

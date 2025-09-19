@@ -79,9 +79,12 @@ class EnvSetupPage(QWidget):
             docs_dir.mkdir(exist_ok=True)
             uploads_dir.mkdir(exist_ok=True)
 
-            # Save the confirmed path to the database and orchestrator memory.
-            self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "project_root_folder", str(project_path))
-            self.orchestrator.project_root_path = str(project_path)
+            # Finalize the project creation in the database for the first time.
+            self.orchestrator.finalize_project_creation(
+                project_id=self.orchestrator.project_id,
+                project_name=self.orchestrator.project_name,
+                project_root=str(project_path)
+            )
 
             QMessageBox.information(self, "Path Confirmed", f"Project folder created and set to:\n{project_path}")
 
