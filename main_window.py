@@ -1183,6 +1183,7 @@ class ASDFMainWindow(QMainWindow):
         Handles the signal to complete a sprint review and triggers a UI update
         to return to the backlog view.
         """
+        self.cr_management_page.clear_sprint_staging()
         self.orchestrator.handle_sprint_review_complete()
         self.update_ui_after_state_change()
 

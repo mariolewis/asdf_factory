@@ -2792,10 +2792,8 @@ class MasterOrchestrator:
             self.reset()
             return
 
-        if project_details['development_plan_text']:
+        if project_details['development_plan_text'] or project_details['coding_standard_text']:
             self.set_phase(FactoryPhase.BACKLOG_VIEW.name)
-        elif project_details['coding_standard_text']:
-            self.set_phase(FactoryPhase.PLANNING.name)
         elif project_details['tech_spec_text']:
             self.set_phase(FactoryPhase.CODING_STANDARD_GENERATION.name)
         elif project_details['final_spec_text']:

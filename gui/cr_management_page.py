@@ -31,6 +31,7 @@ class CRManagementPage(QWidget):
         self.ui = Ui_CRManagementPage()
         self.ui.setupUi(self)
         self.threadpool = QThreadPool()
+        self.staged_sprint_items = set()
         self.is_reorder_mode = False
         self.model = QStandardItemModel(self)
         self.ui.crTreeView.setModel(self.model)
@@ -38,6 +39,11 @@ class CRManagementPage(QWidget):
         self._configure_tree_view()
         self.connect_signals()
         self._exit_reorder_mode(refresh=False)
+
+    def clear_sprint_staging(self):
+        """Public method to allow the main window to clear the staging set."""
+        logging.info("Clearing sprint staging set for new sprint planning session.")
+        self.staged_sprint_items.clear()
 
     def _create_more_actions_menu(self):
         self.more_actions_menu = QMenu(self)
@@ -96,6 +102,7 @@ class CRManagementPage(QWidget):
         self.sync_action.triggered.connect(self.on_sync_clicked)
 
     def prepare_for_display(self):
+        # self.staged_sprint_items.clear()
         self.update_backlog_view()
 
     def update_backlog_view(self):
@@ -128,9 +135,7 @@ class CRManagementPage(QWidget):
             full_title_tooltip = item_data.get('title', 'N/A')
 
             num_item = QStandardItem(current_prefix)
-            # --- THIS IS THE CRITICAL MISSING LINE ---
             num_item.setData(item_data, Qt.UserRole)
-            # --- END OF FIX ---
 
             title_item = QStandardItem(item_data['title'])
 
@@ -144,6 +149,12 @@ class CRManagementPage(QWidget):
             priority_item = QStandardItem(priority)
             complexity = item_data.get('complexity') or ''
             complexity_item = QStandardItem(complexity)
+
+            # Highlight the row if the item is staged for the sprint
+            if item_data['cr_id'] in self.staged_sprint_items:
+                amber_color = QColor("#FFAB00") # As per GUI Design System: Warning Color
+                for cell_item in [num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item]:
+                    cell_item.setBackground(amber_color)
 
             # Set colors
             if item_data['status'] in status_colors: status_item.setForeground(status_colors[item_data['status']])
@@ -193,6 +204,24 @@ class CRManagementPage(QWidget):
             if item_data:
                 item_type = item_data.get("request_type")
 
+                item_status = item_data.get("status")
+                cr_id = item_data.get("cr_id")
+
+                is_eligible_for_sprint = item_status in ["TO_DO", "IMPACT_ANALYZED"]
+                is_staged_for_sprint = cr_id in self.staged_sprint_items
+
+                add_sprint_action = QAction("Add to Sprint Scope", self)
+                add_sprint_action.triggered.connect(self.on_add_to_sprint_scope)
+                add_sprint_action.setEnabled(is_eligible_for_sprint and not is_staged_for_sprint)
+                menu.addAction(add_sprint_action)
+
+                remove_sprint_action = QAction("Remove from Sprint Scope", self)
+                remove_sprint_action.triggered.connect(self.on_remove_from_sprint_scope)
+                remove_sprint_action.setEnabled(is_staged_for_sprint)
+                menu.addAction(remove_sprint_action)
+
+                menu.addSeparator()
+
                 # Contextual "Add" actions
                 if item_type == "EPIC":
                     add_feature_action = QAction("Add Feature to this Epic...", self)
@@ -232,6 +261,36 @@ class CRManagementPage(QWidget):
             menu.addAction(add_epic_action)
 
         menu.exec(self.ui.crTreeView.viewport().mapToGlobal(position))
+
+    def on_add_to_sprint_scope(self):
+        """Adds all selected, eligible items to the sprint staging set."""
+        selection_model = self.ui.crTreeView.selectionModel()
+        if not selection_model.hasSelection():
+            return
+
+        for index in selection_model.selectedRows():
+            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+            if num_item:
+                data = num_item.data(Qt.UserRole)
+                if data and data.get('cr_id'):
+                    self.staged_sprint_items.add(data['cr_id'])
+
+        self.update_backlog_view()
+
+    def on_remove_from_sprint_scope(self):
+        """Removes all selected items from the sprint staging set."""
+        selection_model = self.ui.crTreeView.selectionModel()
+        if not selection_model.hasSelection():
+            return
+
+        for index in selection_model.selectedRows():
+            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+            if num_item:
+                data = num_item.data(Qt.UserRole)
+                if data and data.get('cr_id'):
+                    self.staged_sprint_items.discard(data['cr_id'])
+
+        self.update_backlog_view()
 
     def _get_parent_candidates_for_dialog(self):
         """Traverses the model to get formatted names and IDs for parent selection."""
@@ -427,37 +486,24 @@ class CRManagementPage(QWidget):
 
     def on_primary_action_clicked(self):
         """
-        Handles the click event for the primary action button, which is now always "Plan Sprint".
+        Handles the click event for the "Plan Sprint" button. It uses the
+        staged items set as the source of truth.
         """
-        selection_model = self.ui.crTreeView.selectionModel()
-        if not selection_model.hasSelection():
-            QMessageBox.warning(self, "No Selection", "Please select one or more items to include in the Sprint Plan.")
+        if not self.staged_sprint_items:
+            QMessageBox.warning(self, "No Items Staged", "Please add one or more eligible items to the sprint scope using the right-click menu before planning.")
             return
 
-        eligible_ids = []
-        ineligible_items = []
-        for index in selection_model.selectedRows():
-            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
-            data = num_item.data(Qt.UserRole)
-            # Updated eligibility check for the new workflow
-            if data and data.get('status') in ['TO_DO', 'IMPACT_ANALYZED']:
-                eligible_ids.append(data['cr_id'])
-            elif data:
-                ineligible_items.append(data.get('hierarchical_id', f"ID-{data.get('cr_id')}"))
+        eligible_ids = list(self.staged_sprint_items)
 
-        if not eligible_ids:
-            QMessageBox.warning(self, "No Eligible Items", "None of the selected items are ready for a sprint. An item must have a status of 'TO DO' or 'IMPACT_ANALYZED' to be included.")
-            return
-
-        if ineligible_items:
-            QMessageBox.information(self, "Some Items Skipped", f"The following items are not ready for a sprint and will be ignored:\n\n - {', '.join(ineligible_items)}")
-
-        # Use the new, streamlined sprint initiator
+        # The rest of the logic proceeds as before, but with the staged IDs
         self.window().setEnabled(False)
         self.window().statusBar().showMessage("Initiating sprint planning...")
         worker = Worker(self.orchestrator.initiate_sprint_planning, eligible_ids)
-        worker.signals.finished.connect(self._on_pre_execution_check_finished) # Can be reused
+        worker.signals.finished.connect(self._on_pre_execution_check_finished)
         self.threadpool.start(worker)
+
+        # Clear the staging set now that the sprint plan is being generated
+        # self.staged_sprint_items.clear()
 
     def _on_pre_execution_check_finished(self):
         """Called when the background pre-execution check is complete."""
@@ -480,7 +526,7 @@ class CRManagementPage(QWidget):
         # The "Plan Sprint" button is the primary action and should always be visible.
         # It is enabled only when the user has selected one or more items.
         self.ui.primaryActionButton.setVisible(True)
-        self.ui.primaryActionButton.setEnabled(has_selection)
+        self.ui.primaryActionButton.setEnabled(bool(self.staged_sprint_items))
 
         # The "Proceed to Technical Specification" button is a one-time action.
         # It is only visible if a tech spec has NOT yet been created.
