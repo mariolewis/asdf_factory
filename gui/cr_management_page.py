@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from gui.ui_cr_management_page import Ui_CRManagementPage
-from master_orchestrator import MasterOrchestrator
+from master_orchestrator import MasterOrchestrator, FactoryPhase
 from gui.raise_request_dialog import RaiseRequestDialog
 from gui.cr_details_dialog import CRDetailsDialog
 from gui.worker import Worker
@@ -525,31 +525,25 @@ class CRManagementPage(QWidget):
         has_items = self.model.rowCount() > 0
         self.ui.reorderButton.setEnabled(has_items)
 
-        project_id = self.orchestrator.project_id
-        if not project_id: return
-        project_details = self.orchestrator.db_manager.get_project_by_id(project_id)
+        # --- SPRINT PROTECTION LOGIC (CORRECTED) ---
+        is_sprint_active = self.orchestrator.is_sprint_active()
+
+        if is_sprint_active:
+            self.ui.primaryActionButton.setEnabled(False)
+            self.ui.primaryActionButton.setToolTip("Cannot plan a new sprint while another is in progress.")
+        else:
+            # Check if any items are staged to enable the button
+            self.ui.primaryActionButton.setEnabled(bool(self.staged_sprint_items))
+            self.ui.primaryActionButton.setToolTip("Plan a new sprint with the staged items.")
+        # --- END OF SPRINT PROTECTION LOGIC ---
+
         selection_model = self.ui.crTreeView.selectionModel()
         has_selection = selection_model.hasSelection()
-
-        # --- CORRECTED LOGIC ---
-        # The "Plan Sprint" button is the primary action and should always be visible.
-        # It is enabled only when the user has selected one or more items.
-        self.ui.primaryActionButton.setVisible(True)
-        self.ui.primaryActionButton.setEnabled(bool(self.staged_sprint_items))
-
-        # The "Proceed to Technical Specification" button is a one-time action.
-        # It is only visible if a tech spec has NOT yet been created.
-        # CORRECTED to use bracket notation as per the programming standard.
-        tech_spec_exists = bool(project_details and 'tech_spec_text' in project_details.keys() and project_details['tech_spec_text'])
-        # The button itself will be removed from the UI, but we keep this check
-        # in case it's needed for other logic. The button's visibility is now irrelevant.
-
-        # --- END OF CORRECTION ---
 
         # Control the "More Actions..." menu
         self.ui.moreActionsButton.setEnabled(has_selection)
         if not has_selection:
-            for action in [self.edit_action, self.delete_action, self.analyze_action, self.implement_action, self.tech_preview_action, self.sync_action]:
+            for action in [self.edit_action, self.delete_action, self.analyze_action, self.tech_preview_action, self.sync_action]:
                 action.setEnabled(False)
             return
 
@@ -562,20 +556,17 @@ class CRManagementPage(QWidget):
             if data:
                 item_status = data.get("status", "")
                 self.edit_action.setEnabled(True)
-
-                # Enable "Run Full Analysis" only for new manual items
                 can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED", "BLOCKED"]
                 self.analyze_action.setEnabled(can_analyze)
-
-
-                # These actions are now obsolete in the new workflow
-                self.implement_action.setEnabled(False)
+                self.tech_preview_action.setEnabled(False) # Obsolete
+            else: # Should not happen, but for safety
+                self.edit_action.setEnabled(False)
+                self.analyze_action.setEnabled(False)
                 self.tech_preview_action.setEnabled(False)
         else:
             # Disable single-selection actions if multiple items are selected
             self.edit_action.setEnabled(False)
             self.analyze_action.setEnabled(False)
-            self.implement_action.setEnabled(False)
             self.tech_preview_action.setEnabled(False)
 
         # Logic for sync action (works on multiple selections)

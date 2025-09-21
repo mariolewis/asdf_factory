@@ -48,7 +48,10 @@ class GenesisPage(QWidget):
         page is shown. It ensures the UI is always up-to-date.
         """
         logging.info("Preparing GenesisPage for display.")
-        self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
+        if self.orchestrator.is_task_processing:
+            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+        else:
+            self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
         self.update_checkpoint_display()
 
     def _set_ui_busy(self, is_busy):
@@ -178,6 +181,7 @@ class GenesisPage(QWidget):
 
     def _on_task_finished(self):
         """Re-enables the UI after any background task is complete."""
+        self.orchestrator.set_task_processing_complete()
         self._set_ui_busy(False)
 
     def update_checkpoint_display(self):

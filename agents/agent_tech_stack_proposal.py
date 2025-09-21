@@ -52,20 +52,33 @@ class TechStackProposalAgent:
             """)
 
         prompt = textwrap.dedent(f"""
-            You are an expert Solutions Architect. Your task is to create a formal Technical Specification, including a high-level architecture and a complete technology stack, for a **{target_os}** environment.
+            You are an expert Solutions Architect. Your task is to create a formal and appropriately detailed Technical Specification for a **{target_os}** environment, based on the provided Functional Specification.
 
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Technical Specification document. Do not include any preamble or conversational text.
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Technical Specification document. Do not include any preamble, introduction, or conversational text.
 
             {template_instruction}
 
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Adhere to PM Guidelines:** If PM Guidelines are provided, they are a mandatory constraint and take precedence over your own suggestions. You must build the architecture around the specified technologies.
-            2.  **Propose if No Guidelines:** If no PM guidelines are provided, propose the most appropriate technology stack from scratch, providing a brief justification for each choice.
-            3.  **Include Setup Guide:** You MUST include a dedicated section titled **"Development Environment Setup Guide"**.
-            4.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
-            5.  **Strict Markdown:** Your response MUST use clean Markdown formatting ('##' for headings, etc.).
+            **--- Mandatory Analysis and Scoping Instructions ---**
+            You MUST analyze the provided Functional Specification to determine the application's type and complexity. Your primary goal is to produce a document that is appropriately detailed for the project's scope.
 
-            {pm_guidelines_section}
+            A comprehensive Technical Specification often includes the following sections. You MUST evaluate which of these are relevant and include them in your response. For a simple utility, only a few sections may be needed. For a complex enterprise system, most will be required.
+
+            **1. High-Level Architecture:**
+               - Provide a brief overview of the chosen architectural pattern (e.g., Monolith, Microservices, Client-Server, Event-Driven). Justify why this pattern is suitable.
+            **2. Component Architecture Design:**
+               - Break down the solution into its logical components (e.g., UI Frontend, Backend API, Database, Authentication Service, Data Processing Pipeline). Define the primary responsibility of each component.
+            **3. Technology Stack Selection:**
+               - List the chosen programming languages, frameworks, and key libraries. You MUST adhere to any specific technologies mentioned in the PM's Guidelines. Justify your choices based on the project's requirements.
+            **4. Data & Integration Architecture:**
+               - Describe the proposed data models or schema (logical, not physical SQL).
+               - If applicable, describe how the system will integrate with external services via APIs or event streams.
+            **5. Non-Functional Requirements (NFRs):**
+               - Briefly detail the key NFRs considered, such as Performance, Scalability, Security, and Reliability.
+            **6. Development Environment Setup Guide:**
+               - You MUST include this section. Provide a clear, human-readable list of all necessary languages, frameworks, and tools that need to be installed to build and run the application.
+
+            **--- PM Directive for Technology Stack (Mandatory Constraint, if provided) ---**
+            {pm_guidelines if pm_guidelines else "None provided. You are to propose the most suitable stack."}
 
             **--- Functional Specification (The "What") ---**
             {functional_spec_text}

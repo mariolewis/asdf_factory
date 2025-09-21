@@ -203,6 +203,16 @@ class ASDFMainWindow(QMainWindow):
 
         self.ui.verticalLayout_actionBar.addStretch()
 
+        # --- Active Sprint Button (Initially Hidden) ---
+        self.button_view_sprint = QToolButton()
+        self.button_view_sprint.setToolTip("Return to Active Sprint")
+        self.button_view_sprint.setIcon(QIcon(str(icons_path / "sprint_active.png"))) # We will need to add this icon
+        self.button_view_sprint.setCheckable(True)
+        self.button_view_sprint.setVisible(False) # Hidden by default
+        # Insert it before the stretch so it's with the other buttons
+        self.ui.verticalLayout_actionBar.insertWidget(self.ui.verticalLayout_actionBar.count() - 1, self.button_view_sprint)
+        self.button_group_sidebar.addButton(self.button_view_sprint)
+
         # Configure the existing "Manage CRs / Bugs" action, add it to the menu and toolbar
         icon = QIcon(str(icons_path / "manage_crs.png"))
         icon.addFile(str(icons_path / "manage_crs.png"), QSize(), QIcon.Normal, QIcon.Off) # Ensure color is preserved
@@ -271,6 +281,7 @@ class ASDFMainWindow(QMainWindow):
         self.button_view_reports.clicked.connect(self.on_view_reports)
         self.button_view_documents.clicked.connect(self.on_view_documents)
         # --- End of Corrected Section ---
+        self.button_view_sprint.clicked.connect(self.on_view_sprint)
 
         # Connect signals that trigger a FULL UI refresh and page transition
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page, self.ux_spec_page]:
@@ -684,6 +695,15 @@ class ASDFMainWindow(QMainWindow):
         self.update_ui_after_state_change()
         # --- END OF FIX ---
 
+    def on_view_sprint(self):
+        """
+        Returns the UI to the previously active sprint workflow phase,
+        whether it's the main dashboard or a debug escalation.
+        """
+        if self.orchestrator.project_id and self.previous_phase:
+            self.orchestrator.set_phase(self.previous_phase.name)
+            self.update_ui_after_state_change()
+
     def update_ui_after_state_change(self):
         logging.debug("update_ui_after_state_change: Method entered.")
         """
@@ -693,6 +713,18 @@ class ASDFMainWindow(QMainWindow):
         self.update_static_ui_elements()
 
         current_phase = self.orchestrator.current_phase
+
+        # --- SPRINT NAVIGATION AND PROTECTION LOGIC (CORRECTED) ---
+        # Use the new reliable method to check the project's persistent state
+        is_sprint_active = self.orchestrator.is_sprint_active()
+        self.button_view_sprint.setVisible(is_sprint_active)
+
+        # The button should only be "checked" if we are actively viewing the sprint page
+        is_viewing_sprint = (current_phase == FactoryPhase.SPRINT_IN_PROGRESS)
+        if is_sprint_active:
+            self.button_view_sprint.setChecked(is_viewing_sprint)
+        # --- END OF NEW LOGIC ---
+
         current_phase_name = current_phase.name
         logging.debug(f"update_ui_after_state_change: Detected phase: {current_phase_name}")
         is_project_active = self.orchestrator.project_id is not None
@@ -701,7 +733,7 @@ class ASDFMainWindow(QMainWindow):
         page_display_map = {
             "ENV_SETUP_TARGET_APP": self.env_setup_page,
             "SPEC_ELABORATION": self.spec_elaboration_page,
-            "GENERATING_APP_SPEC_AND_RISK_ANALYSIS": self.spec_elaboration_page, # <-- This line is new/changed
+            "GENERATING_APP_SPEC_AND_RISK_ANALYSIS": self.spec_elaboration_page,
             "AWAITING_SPEC_REFINEMENT_SUBMISSION": self.spec_elaboration_page,
             "AWAITING_SPEC_FINAL_APPROVAL": self.spec_elaboration_page,
             "TECHNICAL_SPECIFICATION": self.tech_spec_page,
@@ -711,6 +743,7 @@ class ASDFMainWindow(QMainWindow):
             "PLANNING": self.planning_page,
             "BACKLOG_RATIFICATION": self.backlog_ratification_page,
             "GENESIS": self.genesis_page,
+            "SPRINT_IN_PROGRESS": self.genesis_page, # <-- FIX 1: Map the new phase to the correct page
             "BACKLOG_VIEW": self.cr_management_page,
             "VIEWING_PROJECT_HISTORY": self.load_project_page,
             "VIEWING_ACTIVE_PROJECTS": self.load_project_page,

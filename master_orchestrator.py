@@ -114,6 +114,7 @@ class MasterOrchestrator:
         self.is_executing_cr_plan = False
         self.is_in_fix_mode = False
         self.is_resuming_from_manual_fix = False
+        self.is_task_processing = False
         self.fix_plan = None
         self.fix_plan_cursor = 0
         self.sprint_completed_with_failures = False
@@ -1771,6 +1772,7 @@ class MasterOrchestrator:
         Handles the logic for the Genesis Pipeline, now with a separate 'fix mode'
         track and correct debug counter reset logic.
         """
+        self.is_task_processing = True
         # --- FIX MODE LOGIC ---
         if self.is_in_fix_mode:
             logging.info("--- In Fix Mode: Executing from fix plan. ---")
@@ -1809,7 +1811,7 @@ class MasterOrchestrator:
         # --- END OF FIX MODE LOGIC ---
 
         # --- REGULAR PLAN LOGIC ---
-        if self.current_phase != FactoryPhase.GENESIS:
+        if self.current_phase not in [FactoryPhase.GENESIS, FactoryPhase.SPRINT_IN_PROGRESS]:
             logging.warning(f"Received 'Proceed' action in an unexpected phase: {self.current_phase.name}")
             return "No action taken."
 
@@ -3359,7 +3361,7 @@ class MasterOrchestrator:
     def handle_start_sprint(self, sprint_items: list, **kwargs):
         """
         Finalizes sprint planning by creating a persistent sprint record,
-        linking items to it, updating statuses, and transitioning to GENESIS.
+        linking items to it, updating statuses, and transitioning to SPRINT_IN_PROGRESS.
         """
         # Check for an existing active sprint before creating a new one
         latest_sprint = self.db_manager.get_latest_sprint_for_project(self.project_id)
@@ -3367,11 +3369,11 @@ class MasterOrchestrator:
             logging.info(f"Resuming existing active sprint: {latest_sprint['sprint_id']}")
             self.active_sprint_id = latest_sprint['sprint_id']
             self.load_development_plan(latest_sprint['sprint_plan_json'])
-            self.set_phase("GENESIS")
+            self.set_phase("SPRINT_IN_PROGRESS")
             return # Exit early to avoid creating a new sprint
 
         logging.info(f"Starting sprint with {len(sprint_items)} items.")
-        sprint_id = None  # Initialize sprint_id to None for the except block
+        sprint_id = None
         try:
             if not self.task_awaiting_approval or "sprint_plan_json" not in self.task_awaiting_approval:
                 raise ValueError("Cannot start sprint: No implementation plan was generated or cached.")
@@ -3385,20 +3387,15 @@ class MasterOrchestrator:
             self.active_sprint_id = sprint_id
 
             cr_ids_to_update = [item['cr_id'] for item in sprint_items]
-
-            # Dynamically create the sprint goal from the item titles.
             sprint_goal_text = ", ".join(f"'{item['title']}'" for item in sprint_items if item.get('title'))
-
-            # Pass the generated goal to the newly updated database method.
             self.db_manager.create_sprint(self.project_id, sprint_id, plan_json_str, sprint_goal_text)
             self.db_manager.link_items_to_sprint(sprint_id, cr_ids_to_update)
             self.db_manager.batch_update_cr_status(cr_ids_to_update, "IMPLEMENTATION_IN_PROGRESS")
 
-            self.set_phase("GENESIS")
-            logging.info(f"Sprint '{sprint_id}' started. Transitioning to GENESIS.")
+            self.set_phase("SPRINT_IN_PROGRESS")
+            logging.info(f"Sprint '{sprint_id}' started. Transitioning to SPRINT_IN_PROGRESS.")
         except Exception as e:
             logging.error(f"Failed to start sprint '{sprint_id}': {e}", exc_info=True)
-            # Rollback partial sprint creation on failure
             if sprint_id:
                 logging.warning(f"Rolling back failed sprint creation for sprint {sprint_id}.")
                 self.db_manager.delete_sprint_links(sprint_id)
@@ -4771,6 +4768,28 @@ class MasterOrchestrator:
         except Exception as e:
             logging.warning(f"Could not retrieve current git branch: {e}")
             return "N/A"
+
+    def is_sprint_active(self) -> bool:
+        """
+        Checks the database for the latest sprint and returns True if its
+        status is 'IN_PROGRESS' or 'PAUSED'. This is the reliable source of
+        truth for the sprint state, independent of the current UI phase.
+        """
+        if not self.project_id:
+            return False
+        try:
+            latest_sprint = self.db_manager.get_latest_sprint_for_project(self.project_id)
+            if latest_sprint and latest_sprint['status'] in ['IN_PROGRESS', 'PAUSED']:
+                return True
+        except Exception as e:
+            logging.error(f"Failed to check for active sprint: {e}")
+            return False
+        return False
+
+    def set_task_processing_complete(self):
+        """Resets the flag indicating a task is processing."""
+        self.is_task_processing = False
+        logging.info("Task processing flag has been reset.")
 
     def _debug_jump_to_phase(self, phase_name: str):
         """
