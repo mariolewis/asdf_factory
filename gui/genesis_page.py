@@ -204,35 +204,38 @@ class GenesisPage(QWidget):
             cursor = details.get("cursor", 0)
             total = details.get("total", 0)
             is_fix = details.get("is_fix_mode", False)
+            confidence = details.get("confidence_score", 0)
             task_name = task.get('component_name', 'Unnamed Task')
+            progress_percent = int((cursor / total) * 100) if total > 0 else 0
+
+            # Set values that are common to both pages
+            self.ui.progressBar.setValue(progress_percent)
+            self.ui.aiConfidenceGauge.setValue(confidence)
 
             if self.orchestrator.is_resuming_from_manual_fix:
-                # STATE: Manual Fix Resolution Screen.
-                # Display the task being resolved, not the next one.
+                # STATE: Manual Fix Resolution Screen (3-button page)
                 self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.manualFixModePage)
-                progress_percent = int((cursor / total) * 100) if total > 0 else 0
-                self.ui.progressBar.setValue(progress_percent)
-                self.ui.nextTaskLabel.setText(f"<b>Resolving manually fixed task ({cursor + 1}/{total}):</b> {task_name}")
-                self.ui.aiConfidenceLabel.setVisible(False)
-                self.ui.aiConfidenceGauge.setVisible(False)
+                # FIX 1: Update label text
+                self.ui.nextTaskLabel.setText(f"<b>Resuming from manual fix for task ({cursor + 1}/{total}):</b> {task_name}")
+                # FIX 2 & 3: Ensure gauges are visible
+                self.ui.aiConfidenceLabel.setVisible(True)
+                self.ui.aiConfidenceGauge.setVisible(True)
             else:
-                # STATE: Normal Genesis Workflow.
+                # STATE: Normal Genesis Workflow (1-button page)
                 self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.normalModePage)
                 self.ui.aiConfidenceLabel.setVisible(not is_fix)
                 self.ui.aiConfidenceGauge.setVisible(not is_fix)
 
                 if cursor >= total and total > 0:
-                    progress_percent = 100
+                    self.ui.progressBar.setValue(100)
                     self.ui.nextTaskLabel.setText("All development tasks are complete.")
                     self.ui.proceedButton.setText("▶️ Run Final Verification")
                 else:
-                    progress_percent = int((cursor / total) * 100) if total > 0 else 0
                     mode_prefix = "FIX: " if is_fix else ""
                     self.ui.nextTaskLabel.setText(f"Next task ({cursor + 1}/{total}): {mode_prefix}{task_name}")
                     self.ui.proceedButton.setText(f"▶️ Proceed with: {mode_prefix}{task_name}")
-
-                self.ui.progressBar.setValue(progress_percent)
         else:
+            # Fallback for when no plan is loaded
             self.ui.progressBar.setValue(0)
             self.ui.aiConfidenceGauge.setValue(0)
             self.ui.aiConfidenceLabel.setVisible(False)
