@@ -555,6 +555,12 @@ class ASDFDBManager:
         query = "UPDATE ChangeRequestRegister SET status = ?, last_modified_timestamp = ? WHERE cr_id = ?"
         self._execute_query(query, (new_status, timestamp, cr_id))
 
+    def update_cr_field(self, cr_id: int, field_name: str, value: any):
+        """Surgically updates a single field for a given CR item."""
+        timestamp = datetime.now(timezone.utc).isoformat()
+        query = f"UPDATE ChangeRequestRegister SET {field_name} = ?, last_modified_timestamp = ? WHERE cr_id = ?"
+        self._execute_query(query, (value, timestamp, cr_id))
+
     def update_change_request(self, cr_id: int, new_data: dict):
         """
         Updates a CR record with new data. If the status was IMPACT_ANALYZED,

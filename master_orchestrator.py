@@ -398,6 +398,18 @@ class MasterOrchestrator:
         else:
             logging.warning(f"Attempted to manually change status for a non-bug item (CR-{cr_id}). Action denied.")
 
+    def manually_update_cr_status(self, cr_id: int, new_status: str):
+        """
+        Handles the UI request to manually change the status of any CR item.
+        """
+        if not self.project_id:
+            logging.error(f"Cannot update status for CR-{cr_id}; no active project.")
+            return
+
+        self.db_manager.update_cr_status(cr_id, new_status)
+        self.is_project_dirty = True
+        logging.info(f"Manually updated status for CR-{cr_id} to '{new_status}'.")
+
     def get_sprint_summary_data(self) -> dict:
         """
         Gathers and structures the data for the sprint review summary using the active sprint ID.
@@ -3770,68 +3782,71 @@ class MasterOrchestrator:
             if not original_failing_task:
                 raise ValueError("Could not find the original failing task context.")
 
-            # 1. Save the detailed debug log and get its path
             log_file_path = self._save_debug_log_and_get_path(failure_log, original_failing_task)
             log_path_for_desc = log_file_path if log_file_path else "Not available."
 
-            # 2. Identify parent backlog items from the task's traceability info
             parent_cr_ids = original_failing_task.get('task', {}).get('parent_cr_ids', [])
             if not parent_cr_ids:
-                logging.error("Traceability Error: Cannot log bug as parent CR IDs were not found in the failed task. Aborting sprint.")
+                logging.error("Traceability Error: Cannot log bug as parent CR IDs were not found. Aborting sprint.")
                 self.escalate_for_manual_debug("Traceability link missing in failed task.")
                 return
 
-            # 3. Block parent items
             self.db_manager.batch_update_cr_status(parent_cr_ids, "BLOCKED")
 
-            # --- START FIX: Look up user-facing hierarchical IDs ---
             full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
-            flat_backlog_map = {}
-            def flatten_hierarchy(items):
-                for item in items:
-                    flat_backlog_map[item['cr_id']] = item
-                    if "features" in item: flatten_hierarchy(item["features"])
-                    if "user_stories" in item: flatten_hierarchy(item["user_stories"])
-            flatten_hierarchy(full_backlog_with_ids)
-
-            parent_hierarchical_ids = [
-                flat_backlog_map.get(pid, {}).get('hierarchical_id', f'CR-{pid}')
-                for pid in parent_cr_ids
-            ]
+            flat_backlog_map = {item['cr_id']: item for item in self._flatten_hierarchy(full_backlog_with_ids)}
+            parent_hierarchical_ids = [flat_backlog_map.get(pid, {}).get('hierarchical_id', f'CR-{pid}') for pid in parent_cr_ids]
             parent_ids_str = ', '.join(parent_hierarchical_ids)
-            # --- END FIX ---
 
-            # 4. Create and link the new bug report with the correct parent ID format
             task_name = original_failing_task.get('task', {}).get('component_name', 'Unknown Task')
             description = (
                 f"**Objective for Impact Analysis:** This is an auto-generated bug report for a failed sprint task. "
                 f"This bug is blocking the completion of parent item(s): {parent_ids_str}.\n\n"
-                f"--- ORIGINAL TASK ---\n"
-                f"```json\n{json.dumps(original_failing_task.get('task', {}), indent=2)}\n```\n\n"
-                f"--- FAILURE LOG ---\n"
-                f"```\n{failure_log}\n```\n\n"
+                f"--- ORIGINAL TASK ---\n```json\n{json.dumps(original_failing_task.get('task', {}), indent=2)}\n```\n\n"
+                f"--- FAILURE LOG ---\n```\n{failure_log}\n```\n\n"
                 f"**Full Debug Log Path:** `{log_path_for_desc}`"
             )
-
             bug_data = {
-                "request_type": "BUG_REPORT",
-                "title": f"Fix failed sprint task: {task_name}",
-                "description": description,
-                "severity": "High",
-                "parent_id": parent_cr_ids[0]
+                "request_type": "BUG_REPORT", "title": f"Fix failed sprint task: {task_name}",
+                "description": description, "severity": "High", "parent_id": parent_cr_ids[0]
             }
             success, new_bug_id = self.add_new_backlog_item(bug_data)
             if not success:
-                raise Exception(f"Failed to create new BUG_REPORT item in the database for task: {task_name}")
+                raise Exception(f"Failed to create new BUG_REPORT item for task: {task_name}")
 
-            # 5. Advance the plan and resume the sprint
+            if success:
+                full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
+                flat_backlog_map = {item['cr_id']: item for item in self._flatten_hierarchy(full_backlog_with_ids)}
+                new_bug_details = flat_backlog_map.get(new_bug_id)
+                if new_bug_details:
+                    new_bug_hierarchical_id = new_bug_details.get('hierarchical_id', f'CR-{new_bug_id}')
+                    for parent_id in parent_cr_ids:
+                        parent_details = self.db_manager.get_cr_by_id(parent_id)
+                        if parent_details:
+                            current_description = parent_details['description']
+                            traceability_note = f"\n\n---\n**Blocked by:** Auto-generated Bug Report `{new_bug_hierarchical_id}`"
+                            new_description = current_description + traceability_note
+                            self.db_manager.update_cr_field(parent_id, 'description', new_description)
+                            logging.info(f"Updated parent CR-{parent_id} with link to bug {new_bug_hierarchical_id}.")
+
             self.active_plan_cursor += 1
             self.task_awaiting_approval = None
             self.set_phase("GENESIS")
             logging.info(f"Successfully logged failure for '{task_name}' as BUG-{new_bug_id}. Sprint will continue.")
         except Exception as e:
             logging.error(f"Critical error in _log_failure_as_bug_report_and_proceed: {e}", exc_info=True)
-            self.escalate_for_manual_debug(f"A system error occurred while trying to log a bug and continue the sprint: {e}")
+            self.escalate_for_manual_debug(f"A system error occurred while logging a bug: {e}")
+
+    def _flatten_hierarchy(self, items: list) -> list:
+        """Helper to flatten the nested backlog into a simple list."""
+        flat_list = []
+        for item in items:
+            flat_list.append(item)
+            if "features" in item:
+                flat_list.extend(self._flatten_hierarchy(item["features"]))
+            if "user_stories" in item:
+                flat_list.extend(self._flatten_hierarchy(item["user_stories"]))
+        return flat_list
 
     def _save_current_state(self):
         """
