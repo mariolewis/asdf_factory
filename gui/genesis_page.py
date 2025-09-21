@@ -28,6 +28,9 @@ class GenesisPage(QWidget):
         """Connects UI element signals to Python methods."""
         self.ui.proceedButton.clicked.connect(self.run_development_step)
         self.ui.continueButton.clicked.connect(self.on_continue_clicked)
+        self.ui.acknowledgeButton.clicked.connect(self.on_acknowledge_manual_fix_clicked)
+        self.ui.retryButton.clicked.connect(self.on_retry_automated_fix_clicked)
+        self.ui.skipButton.clicked.connect(self.on_skip_task_clicked)
 
     def prepare_for_new_project(self):
         """Resets the page to its initial state for a new project."""
@@ -61,6 +64,59 @@ class GenesisPage(QWidget):
         self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
         # Emit the signal to have the main window show the correct next page.
         self.genesis_complete.emit()
+
+    # In file: gui/genesis_page.py
+
+    # Add this new method to the GenesisPage class
+    def _handle_acknowledgement_result(self, success):
+        """Handles the result of the manual fix acknowledgement task."""
+        try:
+            if success:
+                # This call forces the page to refresh itself with the new state
+                # from the orchestrator (which now has an advanced cursor).
+                self.prepare_for_display()
+            else:
+                QMessageBox.critical(self, "Error", "The acknowledgement process failed.")
+        finally:
+            self._set_ui_busy(False)
+            self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
+
+    def on_acknowledge_manual_fix_clicked(self):
+        """Triggers the orchestrator to accept the manual fix and proceed."""
+        self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+        self.ui.logOutputTextEdit.setText("Acknowledging manual fix and updating project records...")
+        self._set_ui_busy(True)
+
+        worker = Worker(self.orchestrator.acknowledge_manual_fix_and_advance)
+        worker.signals.result.connect(self._handle_acknowledgement_result)
+        worker.signals.error.connect(self._on_task_error)
+        worker.signals.finished.connect(self._on_task_finished)
+        self.window().threadpool.start(worker)
+
+    def on_retry_automated_fix_clicked(self):
+        """Triggers the orchestrator to attempt a new automated fix."""
+        self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+        self.ui.logOutputTextEdit.clear()
+        self._set_ui_busy(True)
+
+        failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No failure log available.")
+        worker = Worker(self.orchestrator.handle_retry_fix_action, failure_log)
+        worker.signals.progress.connect(self.on_progress_update)
+        worker.signals.result.connect(self._handle_development_result)
+        worker.signals.error.connect(self._on_task_error)
+        worker.signals.finished.connect(self._on_task_finished)
+        self.window().threadpool.start(worker)
+
+    def on_skip_task_clicked(self):
+        """Triggers the orchestrator to skip the manually handled task and log it."""
+        # This is now a synchronous call that updates the state.
+        success = self.orchestrator.skip_and_log_manually_handled_task()
+        if success:
+            # The orchestrator has advanced the cursor. A full UI refresh is needed
+            # to show the dashboard for the next task.
+            self.genesis_complete.emit()
+        else:
+            QMessageBox.critical(self, "Error", "Failed to skip the task and log the bug. Please check the logs.")
 
     def on_progress_update(self, progress_data):
         """
@@ -148,37 +204,34 @@ class GenesisPage(QWidget):
             cursor = details.get("cursor", 0)
             total = details.get("total", 0)
             is_fix = details.get("is_fix_mode", False)
+            task_name = task.get('component_name', 'Unnamed Task')
 
-            show_confidence = not is_fix
-            self.ui.aiConfidenceLabel.setVisible(show_confidence)
-            self.ui.aiConfidenceGauge.setVisible(show_confidence)
-
-            if show_confidence:
-                confidence_score = details.get("confidence_score", 0)
-                self.ui.aiConfidenceGauge.setValue(confidence_score)
-
-                if confidence_score > 80:
-                    self.ui.aiConfidenceGauge.setStyleSheet("QProgressBar::chunk { background-color: #6A8759; }")
-                    self.ui.aiConfidenceGauge.setToolTip("High Confidence: The AI had a clear and complete view of this task. The generated output is likely to be highly accurate.")
-                elif confidence_score > 40:
-                    self.ui.aiConfidenceGauge.setStyleSheet("QProgressBar::chunk { background-color: #FFC66D; }")
-                    self.ui.aiConfidenceGauge.setToolTip("Medium Confidence: The AI used summaries for some related files to understand the context. A standard review of the generated output is recommended.")
-                else:
-                    self.ui.aiConfidenceGauge.setStyleSheet("QProgressBar::chunk { background-color: #CC7832; }")
-                    self.ui.aiConfidenceGauge.setToolTip("Low Confidence - Review Required: This is a complex task that touches many parts of the project, and the AI's view was limited. Thorough manual review and testing are required.")
-
-            if cursor >= total and total > 0:
-                progress_percent = 100
-                self.ui.nextTaskLabel.setText("All development tasks are complete.")
-                self.ui.proceedButton.setText("▶️ Run Final Verification")
-            else:
+            if self.orchestrator.is_resuming_from_manual_fix:
+                # STATE: Manual Fix Resolution Screen.
+                # Display the task being resolved, not the next one.
+                self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.manualFixModePage)
                 progress_percent = int((cursor / total) * 100) if total > 0 else 0
-                mode_prefix = "FIX: " if is_fix else ""
-                task_name = task.get('component_name', 'Unnamed Task')
-                self.ui.nextTaskLabel.setText(f"Next task ({cursor + 1}/{total}): {mode_prefix}{task_name}")
-                self.ui.proceedButton.setText(f"▶️ Proceed with: {mode_prefix}{task_name}")
+                self.ui.progressBar.setValue(progress_percent)
+                self.ui.nextTaskLabel.setText(f"<b>Resolving manually fixed task ({cursor + 1}/{total}):</b> {task_name}")
+                self.ui.aiConfidenceLabel.setVisible(False)
+                self.ui.aiConfidenceGauge.setVisible(False)
+            else:
+                # STATE: Normal Genesis Workflow.
+                self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.normalModePage)
+                self.ui.aiConfidenceLabel.setVisible(not is_fix)
+                self.ui.aiConfidenceGauge.setVisible(not is_fix)
 
-            self.ui.progressBar.setValue(progress_percent)
+                if cursor >= total and total > 0:
+                    progress_percent = 100
+                    self.ui.nextTaskLabel.setText("All development tasks are complete.")
+                    self.ui.proceedButton.setText("▶️ Run Final Verification")
+                else:
+                    progress_percent = int((cursor / total) * 100) if total > 0 else 0
+                    mode_prefix = "FIX: " if is_fix else ""
+                    self.ui.nextTaskLabel.setText(f"Next task ({cursor + 1}/{total}): {mode_prefix}{task_name}")
+                    self.ui.proceedButton.setText(f"▶️ Proceed with: {mode_prefix}{task_name}")
+
+                self.ui.progressBar.setValue(progress_percent)
         else:
             self.ui.progressBar.setValue(0)
             self.ui.aiConfidenceGauge.setValue(0)
@@ -186,3 +239,4 @@ class GenesisPage(QWidget):
             self.ui.aiConfidenceGauge.setVisible(False)
             self.ui.nextTaskLabel.setText("No development plan loaded yet.")
             self.ui.proceedButton.setText("▶️ Proceed")
+

@@ -935,7 +935,7 @@ class ASDFMainWindow(QMainWindow):
                     instruction="The factory has been unable to fix a persistent bug. Please choose how to proceed.",
                     details=f"The automated debug procedure could not resolve the following issue:<br><br>{formatted_log}",
                     option1_text="Retry Automated Fix",
-                    option2_text="Pause for Manual Fix",
+                    option2_text="Pause for Manual Fix && Unit Test",
                     option3_text="Skip Task && Log as Backlog Item"
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)

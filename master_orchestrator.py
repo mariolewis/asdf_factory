@@ -113,6 +113,7 @@ class MasterOrchestrator:
         self.is_project_dirty = False
         self.is_executing_cr_plan = False
         self.is_in_fix_mode = False
+        self.is_resuming_from_manual_fix = False
         self.fix_plan = None
         self.fix_plan_cursor = 0
         self.sprint_completed_with_failures = False
@@ -140,11 +141,13 @@ class MasterOrchestrator:
         self.is_project_dirty = False
         self.is_executing_cr_plan = False
         self.is_in_fix_mode = False
+        self.is_resuming_from_manual_fix = False
         self.fix_plan = None
         self.fix_plan_cursor = 0
         self.current_task_confidence = 0
         self.active_spec_draft = None
         self.active_sprint_id = None
+        self.active_sprint_goal = None
 
     def close_active_project(self):
         """
@@ -340,20 +343,25 @@ class MasterOrchestrator:
         }
 
     def get_sprint_goal(self) -> str:
-        if not self.is_executing_cr_plan or not self.project_id:
+        """
+        Dynamically retrieves all items for the active sprint and constructs the
+        sprint goal string from their titles. This avoids caching issues.
+        """
+        if not self.active_sprint_id:
             return "N/A"
+
         try:
-            sprint_id = self.get_active_sprint_id()
-            if not sprint_id: return "Initializing sprint..."
+            sprint_items = self.db_manager.get_items_for_sprint(self.active_sprint_id)
+            if not sprint_items:
+                return "No items defined for the current sprint."
 
-            sprint_items = self.db_manager.get_items_for_sprint(sprint_id)
+            # Construct the goal from the titles of the items
+            goal_titles = [item['title'] for item in sprint_items if item['title']]
+            return ", ".join(f"'{title}'" for title in goal_titles)
 
-            if not sprint_items: return "Finalizing sprint..."
-
-            return ", ".join([f"'{item['title']}'" for item in sprint_items])
         except Exception as e:
-            logging.error(f"Failed to retrieve sprint goal: {e}")
-            return "Error retrieving goal..."
+            logging.error(f"Failed to dynamically get sprint goal for sprint '{self.active_sprint_id}': {e}")
+            return "Error retrieving sprint goal."
 
     def get_current_mode(self) -> str:
         """
@@ -1729,7 +1737,7 @@ class MasterOrchestrator:
             self.current_phase = new_phase
             logging.info(f"Transitioning to phase: {self.current_phase.name}")
 
-            if self.project_id and new_phase != FactoryPhase.VIEWING_PROJECT_HISTORY:
+            if self.project_id and new_phase not in non_dirtying_phases:
                 self._save_current_state()
 
         except KeyError:
@@ -2751,19 +2759,30 @@ class MasterOrchestrator:
 
     def resume_project(self):
         """
-        Resumes a project using a hierarchical approach to ensure the most accurate
-        state is restored.
+        Resumes a project using the detailed state loaded into self.resumable_state.
         """
-        # 1. Highest Priority: Attempt to load a detailed, formally saved session state.
+        # Highest Priority: Attempt to load a detailed, formally saved session state.
         if self.resumable_state:
             try:
                 logging.info(f"Found a saved session state for project {self.project_id}. Resuming...")
-                self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
+
+                # Load the details first
                 details = json.loads(self.resumable_state['state_details'])
+                self.task_awaiting_approval = details.get("task_awaiting_approval")
+
+                # Check for our special condition
+                if self.task_awaiting_approval and self.task_awaiting_approval.get("resuming_from_manual_fix"):
+                    self.is_resuming_from_manual_fix = True
+                    self.current_phase = FactoryPhase.GENESIS #<-- THIS IS THE FIX
+                    logging.info("Detected 'resuming_from_manual_fix' flag. Overriding phase to GENESIS.")
+                else:
+                    # If not our special condition, resume to the phase that was saved
+                    self.current_phase = FactoryPhase[self.resumable_state['current_phase']]
+
+                # Load the rest of the state
                 self.active_plan = details.get("active_plan")
                 self.active_plan_cursor = details.get("active_plan_cursor", 0)
                 self.debug_attempt_counter = details.get("debug_attempt_counter", 0)
-                self.task_awaiting_approval = details.get("task_awaiting_approval")
                 self.active_spec_draft = details.get("active_spec_draft")
                 self.active_sprint_id = details.get("active_sprint_id")
 
@@ -2772,19 +2791,9 @@ class MasterOrchestrator:
                 logging.info(f"Project '{self.project_name}' resumed successfully to phase {self.current_phase.name}.")
                 return
             except Exception as e:
-                logging.error(f"Failed to load saved session state, proceeding to next fallback. Error: {e}")
+                logging.error(f"Failed to load saved session state, proceeding to fallback. Error: {e}")
 
-        # 2. Second Priority: Check for an active (in-progress or paused) sprint.
-        latest_sprint = self.db_manager.get_latest_sprint_for_project(self.project_id)
-        if latest_sprint and latest_sprint['status'] in ['IN_PROGRESS', 'PAUSED']:
-            logging.warning(f"No detailed state found, but an active sprint ({latest_sprint['sprint_id']}) was discovered. Resuming sprint.")
-            self.active_sprint_id = latest_sprint['sprint_id']
-            self.load_development_plan(latest_sprint['sprint_plan_json'])
-            self._recalculate_plan_cursor_from_db() # Recalculate progress from artifacts
-            self.set_phase(FactoryPhase.GENESIS.name)
-            return
-
-        # 3. Lowest Priority: Fallback based on most recently completed document.
+        # Lowest Priority: Fallback based on most recently completed document.
         logging.info("No active session or sprint found. Performing intelligent fallback based on project documents.")
         project_details = self.db_manager.get_project_by_id(self.project_id)
         if not project_details:
@@ -2803,28 +2812,33 @@ class MasterOrchestrator:
 
         logging.info(f"Project '{self.project_name}' will resume at the most logical phase: {self.current_phase.name}")
 
+
     def resume_from_idle(self, project_id: str):
-        """Resumes an active project that is not currently loaded."""
+        """Resumes an active project by first loading its state and then running pre-flight checks."""
         if self.project_id:
-            logging.warning("Resuming from idle, but a project is already active. This should not happen.")
-            self.reset() # Reset to be safe
+            logging.warning("Resuming from idle, but a project is already active. Performing a safety reset.")
+            self.reset()
 
         project_details = self.db_manager.get_project_by_id(project_id)
         if not project_details:
             logging.error(f"Cannot resume project {project_id}: Not found in database.")
+            self.preflight_check_result = {"status": "ERROR", "message": f"Project with ID {project_id} not found."}
+            self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
             return
 
         self.project_id = project_id
         self.project_name = project_details['project_name']
         self.project_root_path = project_details['project_root_folder']
 
-        # Check for a paused session state for this project specifically
-        self.resumable_state = self.db_manager.get_any_paused_state()
-        if not (self.resumable_state and self.resumable_state['project_id'] == project_id):
-            self.resumable_state = None # Clear state if it belongs to another project
+        # CORRECTED LOGIC: Use the new, project-specific query.
+        self.resumable_state = self.db_manager.get_orchestration_state_for_project(self.project_id)
 
-        # Now call the main resume logic
-        self.resume_project()
+        # Now, run pre-flight checks and set the phase to display the pre-flight page.
+        check_result = self._perform_preflight_checks(self.project_root_path, self.project_id)
+        self.preflight_check_result = {**check_result, "history_id": None}
+
+        self.is_project_dirty = False
+        self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
         """
@@ -2943,6 +2957,139 @@ class MasterOrchestrator:
         elif choice == "SKIP_TASK_AND_LOG":
             self._log_failure_as_bug_report_and_proceed()
 
+    def acknowledge_manual_fix_and_advance(self, **kwargs):
+        """
+        Handles the PM's confirmation that a manual fix is complete.
+        This workflow trusts the PM's fix, updates the RoWD, and advances the plan.
+        """
+        logging.info("PM has acknowledged a manual fix. Updating records and proceeding.")
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            project_root = Path(project_details['project_root_folder'])
+
+            # 1. Get the details of the task that was just fixed
+            task_details = self.get_current_task_details()
+            if not task_details or not task_details.get('task'):
+                raise Exception("Could not retrieve details for the current task.")
+            task = task_details['task']
+
+            # 2. Read the manually fixed code from the file
+            component_file = project_root / task['component_file_path']
+            if not component_file.exists():
+                raise FileNotFoundError(f"Could not find the manually fixed file at: {component_file}")
+            source_code = component_file.read_text(encoding='utf-8')
+
+            # 3. Generate a summary for the fixed code
+            summarization_agent = CodeSummarizationAgent(llm_service=self.llm_service)
+            summary = summarization_agent.summarize_code(source_code)
+
+            # 4. Get the latest commit hash and file hash (NOW CONDITIONAL)
+            version_control_enabled = project_details['version_control_enabled'] == 1
+            commit_hash = "N/A"  # Default value for local workspaces
+
+            if version_control_enabled:
+                try:
+                    repo = git.Repo(project_root)
+                    commit_hash = repo.head.commit.hexsha
+                except git.exc.InvalidGitRepositoryError:
+                    logging.warning(f"Project {self.project_name} has version control enabled but is not a valid Git repo. Skipping commit hash.")
+                    commit_hash = "ERROR_NO_REPO"
+
+            file_hash = hashlib.sha256(source_code.encode('utf-8')).hexdigest()
+
+            # 5. Create the success record in the RoWD
+            from agents.doc_update_agent_rowd import DocUpdateAgentRoWD
+            doc_agent = DocUpdateAgentRoWD(db, self.llm_service)
+            doc_agent.update_artifact_record({
+                "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                "project_id": self.project_id,
+                "file_path": task.get("component_file_path"),
+                "artifact_name": task.get("component_name"),
+                "artifact_type": task.get("component_type"),
+                "short_description": task.get("task_description"),
+                "status": "UNIT_TESTS_PASSING",
+                "unit_test_status": "TESTS_PASSING",
+                "commit_hash": commit_hash,
+                "file_hash": file_hash,
+                "version": 1,
+                "last_modified_timestamp": datetime.now(timezone.utc).isoformat(),
+                "micro_spec_id": task.get("micro_spec_id"),
+                "code_summary": summary
+            })
+
+            # 6. Advance the plan and reset the flag
+            self.active_plan_cursor += 1
+            self.is_resuming_from_manual_fix = False
+            self.set_phase("GENESIS")
+            logging.info("Successfully recorded manual fix and advanced sprint plan.")
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to process manual fix acknowledgement: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred while trying to process your manual fix:\n{e}")
+
+    def skip_and_log_manually_handled_task(self, **kwargs):
+        """
+        Skips the current task after a manual fix attempt, logs it as a new bug,
+        blocks the parent items, and advances the sprint plan.
+        """
+        logging.warning("PM chose to skip task after manual fix attempt. Logging as bug and continuing sprint.")
+        try:
+            task_details = self.get_current_task_details()
+            if not task_details or not task_details.get('task'):
+                raise ValueError("Could not find the current task context to skip.")
+            task_to_skip = task_details['task']
+
+            parent_cr_ids = task_to_skip.get('parent_cr_ids', [])
+            if not parent_cr_ids:
+                logging.error("Traceability Error: Cannot log bug as parent CR IDs were not found in the skipped task.")
+            else:
+                self.db_manager.batch_update_cr_status(parent_cr_ids, "BLOCKED")
+
+            # Get user-facing hierarchical IDs for the description
+            full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
+            flat_backlog_map = {}
+            def flatten_hierarchy(items):
+                for item in items:
+                    flat_backlog_map[item['cr_id']] = item
+                    if "features" in item: flatten_hierarchy(item["features"])
+                    if "user_stories" in item: flatten_hierarchy(item["user_stories"])
+            flatten_hierarchy(full_backlog_with_ids)
+
+            parent_hierarchical_ids = [flat_backlog_map.get(pid, {}).get('hierarchical_id', f'CR-{pid}') for pid in parent_cr_ids]
+            parent_ids_str = ', '.join(parent_hierarchical_ids) if parent_hierarchical_ids else "N/A"
+
+            task_name = task_to_skip.get('component_name', 'Unknown Task')
+            description = (
+                f"**Objective for Impact Analysis:** This is an auto-generated bug report for a sprint task that was skipped after a manual fix attempt failed. "
+                f"This bug is blocking the completion of parent item(s): {parent_ids_str}.\n\n"
+                f"--- SKIPPED TASK ---\n"
+                f"```json\n{json.dumps(task_to_skip, indent=2)}\n```"
+            )
+
+            bug_data = {
+                "request_type": "BUG_REPORT",
+                "title": f"Fix skipped sprint task: {task_name}",
+                "description": description,
+                "severity": "High",
+                "parent_id": parent_cr_ids[0] if parent_cr_ids else None
+            }
+            success, new_bug_id = self.add_new_backlog_item(bug_data)
+            if not success:
+                raise Exception(f"Failed to create new BUG_REPORT item in the database for skipped task: {task_name}")
+
+            # Advance the plan and reset flags
+            self.active_plan_cursor += 1
+            self.is_resuming_from_manual_fix = False
+            self.set_phase("GENESIS")
+            logging.info(f"Successfully logged failure for '{task_name}' as BUG-{new_bug_id}. Sprint will continue.")
+            return True
+        except Exception as e:
+            logging.error(f"Critical error in skip_and_log_manually_handled_task: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred while trying to log a bug: {e}")
+            return False
+
     def _pause_sprint_for_manual_fix(self):
         """
         Saves the current sprint state and returns the UI to the idle screen,
@@ -2955,6 +3102,9 @@ class MasterOrchestrator:
             if sprint_id:
                 # Mark the sprint as paused in the database
                 self.db_manager.update_sprint_status_only(sprint_id, "PAUSED")
+
+            # Set a flag to indicate why this pause is happening.
+            self.task_awaiting_approval = {"resuming_from_manual_fix": True}
 
             # Save the entire orchestrator state (plan, cursor, etc.)
             self._save_current_state()
@@ -3224,7 +3374,11 @@ class MasterOrchestrator:
 
             cr_ids_to_update = [item['cr_id'] for item in sprint_items]
 
-            self.db_manager.create_sprint(self.project_id, sprint_id, plan_json_str)
+            # Dynamically create the sprint goal from the item titles.
+            sprint_goal_text = ", ".join(f"'{item['title']}'" for item in sprint_items if item.get('title'))
+
+            # Pass the generated goal to the newly updated database method.
+            self.db_manager.create_sprint(self.project_id, sprint_id, plan_json_str, sprint_goal_text)
             self.db_manager.link_items_to_sprint(sprint_id, cr_ids_to_update)
             self.db_manager.batch_update_cr_status(cr_ids_to_update, "IMPLEMENTATION_IN_PROGRESS")
 

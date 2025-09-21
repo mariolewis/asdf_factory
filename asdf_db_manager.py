@@ -89,6 +89,7 @@ class ASDFDBManager:
             start_timestamp TEXT NOT NULL,
             end_timestamp TEXT,
             status TEXT NOT NULL,
+            sprint_goal TEXT,
             sprint_plan_json TEXT,
             FOREIGN KEY (project_id) REFERENCES Projects (project_id)
         );"""
@@ -383,11 +384,11 @@ class ASDFDBManager:
             fetch="one"
         )
 
-    def create_sprint(self, project_id: str, sprint_id: str, plan_json: str):
+    def create_sprint(self, project_id: str, sprint_id: str, plan_json: str, sprint_goal: str):
         """Creates a new record for a sprint."""
         timestamp = datetime.now(timezone.utc).isoformat()
-        query = "INSERT INTO Sprints (sprint_id, project_id, start_timestamp, status, sprint_plan_json) VALUES (?, ?, ?, ?, ?)"
-        self._execute_query(query, (sprint_id, project_id, timestamp, 'IN_PROGRESS', plan_json))
+        query = "INSERT INTO Sprints (sprint_id, project_id, start_timestamp, status, sprint_plan_json, sprint_goal) VALUES (?, ?, ?, ?, ?, ?)"
+        self._execute_query(query, (sprint_id, project_id, timestamp, 'IN_PROGRESS', plan_json, sprint_goal))
 
     def link_items_to_sprint(self, sprint_id: str, cr_ids: list[int]):
         """Creates records in the SprintItems link table."""
@@ -497,6 +498,10 @@ class ASDFDBManager:
 
     def get_any_paused_state(self) -> Optional[sqlite3.Row]:
         return self._execute_query("SELECT * FROM OrchestrationState LIMIT 1", fetch="one")
+
+    def get_orchestration_state_for_project(self, project_id: str) -> Optional[sqlite3.Row]:
+        """Retrieves the saved orchestration state for a specific project."""
+        return self._execute_query("SELECT * FROM OrchestrationState WHERE project_id = ?", (project_id,), fetch="one")
 
     def delete_orchestration_state_for_project(self, project_id: str):
         self._execute_query("DELETE FROM OrchestrationState WHERE project_id = ?", (project_id,))

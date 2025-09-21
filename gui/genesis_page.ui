@@ -100,28 +100,73 @@
         </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayout">
-         <item>
-          <spacer name="horizontalSpacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QPushButton" name="proceedButton">
-           <property name="text">
-            <string>▶️ Proceed with Next Step</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
+        <widget class="QStackedWidget" name="actionButtonStackedWidget">
+         <property name="currentIndex">
+          <number>0</number>
+         </property>
+         <widget class="QWidget" name="normalModePage">
+          <layout class="QHBoxLayout" name="horizontalLayout">
+           <item>
+            <spacer name="horizontalSpacer">
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QPushButton" name="proceedButton">
+             <property name="text">
+              <string>▶️ Proceed with Next Step</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="manualFixModePage">
+          <layout class="QHBoxLayout" name="horizontalLayout_manual">
+           <item>
+            <spacer name="horizontalSpacer_manual">
+             <property name="orientation">
+              <enum>Qt::Horizontal</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>40</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+           <item>
+            <widget class="QPushButton" name="acknowledgeButton">
+             <property name="text">
+              <string>Proceed to Next Task</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="retryButton">
+             <property name="text">
+              <string>Retry Automated Fix</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="skipButton">
+             <property name="text">
+              <string>Skip Last Task and Log Bug</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+        </widget>
        </item>
        <item>
         <spacer name="verticalSpacer">

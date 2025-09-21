@@ -86,19 +86,48 @@ class Ui_GenesisPage(object):
 
         self.verticalLayout_2.addWidget(self.nextTaskLabel)
 
-        self.horizontalLayout = QHBoxLayout()
+        self.actionButtonStackedWidget = QStackedWidget(self.checkpointPage)
+        self.actionButtonStackedWidget.setObjectName(u"actionButtonStackedWidget")
+        self.normalModePage = QWidget()
+        self.normalModePage.setObjectName(u"normalModePage")
+        self.horizontalLayout = QHBoxLayout(self.normalModePage)
         self.horizontalLayout.setObjectName(u"horizontalLayout")
         self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
 
-        self.proceedButton = QPushButton(self.checkpointPage)
+        self.proceedButton = QPushButton(self.normalModePage)
         self.proceedButton.setObjectName(u"proceedButton")
 
         self.horizontalLayout.addWidget(self.proceedButton)
 
+        self.actionButtonStackedWidget.addWidget(self.normalModePage)
+        self.manualFixModePage = QWidget()
+        self.manualFixModePage.setObjectName(u"manualFixModePage")
+        self.horizontalLayout_manual = QHBoxLayout(self.manualFixModePage)
+        self.horizontalLayout_manual.setObjectName(u"horizontalLayout_manual")
+        self.horizontalSpacer_manual = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.verticalLayout_2.addLayout(self.horizontalLayout)
+        self.horizontalLayout_manual.addItem(self.horizontalSpacer_manual)
+
+        self.acknowledgeButton = QPushButton(self.manualFixModePage)
+        self.acknowledgeButton.setObjectName(u"acknowledgeButton")
+
+        self.horizontalLayout_manual.addWidget(self.acknowledgeButton)
+
+        self.retryButton = QPushButton(self.manualFixModePage)
+        self.retryButton.setObjectName(u"retryButton")
+
+        self.horizontalLayout_manual.addWidget(self.retryButton)
+
+        self.skipButton = QPushButton(self.manualFixModePage)
+        self.skipButton.setObjectName(u"skipButton")
+
+        self.horizontalLayout_manual.addWidget(self.skipButton)
+
+        self.actionButtonStackedWidget.addWidget(self.manualFixModePage)
+
+        self.verticalLayout_2.addWidget(self.actionButtonStackedWidget)
 
         self.verticalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -160,6 +189,9 @@ class Ui_GenesisPage(object):
 
         self.retranslateUi(GenesisPage)
 
+        self.actionButtonStackedWidget.setCurrentIndex(0)
+
+
         QMetaObject.connectSlotsByName(GenesisPage)
     # setupUi
 
@@ -171,6 +203,9 @@ class Ui_GenesisPage(object):
         self.aiConfidenceLabel.setText(QCoreApplication.translate("GenesisPage", u"AI Context Quality:", None))
         self.nextTaskLabel.setText(QCoreApplication.translate("GenesisPage", u"Next component in the plan is: '...'", None))
         self.proceedButton.setText(QCoreApplication.translate("GenesisPage", u"\u25b6\ufe0f Proceed with Next Step", None))
+        self.acknowledgeButton.setText(QCoreApplication.translate("GenesisPage", u"Proceed to Next Task", None))
+        self.retryButton.setText(QCoreApplication.translate("GenesisPage", u"Retry Automated Fix", None))
+        self.skipButton.setText(QCoreApplication.translate("GenesisPage", u"Skip Last Task and Log Bug", None))
         self.sprintStatusIndicatorLabel.setText(QCoreApplication.translate("GenesisPage", u"MODE: DEVELOPING", None))
         self.sprintGoalLabel_2.setText(QCoreApplication.translate("GenesisPage", u"Sprint Goal:", None))
         self.sprintGoalValueLabel.setText(QCoreApplication.translate("GenesisPage", u"...", None))
