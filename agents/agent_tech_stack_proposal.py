@@ -26,7 +26,7 @@ class TechStackProposalAgent:
         self.llm_service = llm_service
         logging.info("TechStackProposalAgent initialized.")
 
-    def propose_stack(self, functional_spec_text: str, target_os: str, template_content: str | None = None) -> str:
+    def propose_stack(self, functional_spec_text: str, target_os: str, template_content: str | None = None, pm_guidelines: str | None = None) -> str:
         """
         Analyzes a functional specification and proposes a tech stack tailored
         for a specific operating system, including a development setup guide.
@@ -38,35 +38,40 @@ class TechStackProposalAgent:
             template_instruction = textwrap.dedent(f"""
             **CRITICAL TEMPLATE INSTRUCTION:**
             Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template.
-            Populate the sections of the template with content derived from the functional specification.
             DO NOT invent new sections. DO NOT change the names of the headings from the template.
             --- TEMPLATE START ---
             {template_content}
             --- TEMPLATE END ---
             """)
 
-        prompt = textwrap.dedent(f"""
-            You are an expert Solutions Architect. Your task is to create a formal Technical Specification, including a high-level architecture and a complete technology stack, based on the provided functional specification for a **{target_os}** environment.
+        pm_guidelines_section = ""
+        if pm_guidelines:
+            pm_guidelines_section = textwrap.dedent(f"""
+            **--- PM Directive for Technology Stack (This is a mandatory constraint) ---**
+            {pm_guidelines}
+            """)
 
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Technical Specification document. Do not include any preamble, introduction, or conversational text.
+        prompt = textwrap.dedent(f"""
+            You are an expert Solutions Architect. Your task is to create a formal Technical Specification, including a high-level architecture and a complete technology stack, for a **{target_os}** environment.
+
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Technical Specification document. Do not include any preamble or conversational text.
 
             {template_instruction}
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-            2.  **Analyze for Existing Tech:** First, review the specification to see if a technology stack is already mentioned.
-            3.  **If Tech IS Specified:** Your primary task is to accept and expand upon the user's choice. Validate that it fits the requirements and then detail the architecture and any missing libraries or components needed to complete the stack.
-            4.  **If Tech IS NOT Specified:** Your task is to propose the most appropriate technology stack from scratch, providing a brief justification for each choice.
-            5.  **Include Setup Guide:** You MUST include a dedicated section in your response titled **"Development Environment Setup Guide"**. This section must contain a clear, human-readable list of all necessary languages, frameworks, libraries, and tools that need to be installed to build and run the application.
-            6.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
+            1.  **Adhere to PM Guidelines:** If PM Guidelines are provided, they are a mandatory constraint and take precedence over your own suggestions. You must build the architecture around the specified technologies.
+            2.  **Propose if No Guidelines:** If no PM guidelines are provided, propose the most appropriate technology stack from scratch, providing a brief justification for each choice.
+            3.  **Include Setup Guide:** You MUST include a dedicated section titled **"Development Environment Setup Guide"**.
+            4.  **OS-Specific:** All recommendations must be well-suited for a **"{target_os}"** environment.
+            5.  **Strict Markdown:** Your response MUST use clean Markdown formatting ('##' for headings, etc.).
 
-            ---
-            **Functional Specification:**
+            {pm_guidelines_section}
+
+            **--- Functional Specification (The "What") ---**
             {functional_spec_text}
             ---
-            **End of Specification** ---
 
-            Based on the specification provided, here is the recommended Technical Specification for a **{target_os}** deployment:
+            **--- Generated Technical Specification (The "How") ---**
         """)
 
         try:

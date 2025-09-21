@@ -221,16 +221,25 @@ class TechSpecPage(QWidget):
         return full_draft
 
     def _task_generate_from_guidelines(self, guidelines, target_os, **kwargs):
-
+        """The actual function that runs in the background when the user provides guidelines."""
         template_content = self._get_template_content("Default Technical Specification")
 
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         final_spec_text = project_details['final_spec_text']
-        context = f"{final_spec_text}\n\n--- PM Directive for Technology Stack ---\n{guidelines}"
+
+        if not final_spec_text:
+            raise Exception("Could not retrieve the application specification to provide context.")
+
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
 
-        draft_content = agent.propose_stack(context, target_os, template_content=template_content)
+        # Pass the spec and guidelines as separate, distinct arguments to the agent
+        draft_content = agent.propose_stack(
+            functional_spec_text=final_spec_text,
+            target_os=target_os,
+            template_content=template_content,
+            pm_guidelines=guidelines
+        )
 
         full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
         return full_draft
