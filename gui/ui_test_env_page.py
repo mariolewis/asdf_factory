@@ -15,9 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QLineEdit, QPushButton, QSizePolicy, QSpacerItem,
-    QStackedWidget, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFormLayout, QFrame, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QSizePolicy,
+    QSpacerItem, QStackedWidget, QVBoxLayout, QWidget)
 
 class Ui_TestEnvPage(object):
     def setupUi(self, TestEnvPage):
@@ -136,14 +136,34 @@ class Ui_TestEnvPage(object):
 
         self.verticalLayout_4.addWidget(self.finalizeLabel)
 
+        self.formLayout = QFormLayout()
+        self.formLayout.setObjectName(u"formLayout")
+        self.backendCommandLabel = QLabel(self.finalizePage)
+        self.backendCommandLabel.setObjectName(u"backendCommandLabel")
+
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.backendCommandLabel)
+
         self.testCommandLineEdit = QLineEdit(self.finalizePage)
         self.testCommandLineEdit.setObjectName(u"testCommandLineEdit")
 
-        self.verticalLayout_4.addWidget(self.testCommandLineEdit)
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.testCommandLineEdit)
+
+        self.uiCommandLabel = QLabel(self.finalizePage)
+        self.uiCommandLabel.setObjectName(u"uiCommandLabel")
+
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.LabelRole, self.uiCommandLabel)
+
+        self.uiTestCommandLineEdit = QLineEdit(self.finalizePage)
+        self.uiTestCommandLineEdit.setObjectName(u"uiTestCommandLineEdit")
+
+        self.formLayout.setWidget(1, QFormLayout.ItemRole.FieldRole, self.uiTestCommandLineEdit)
+
+
+        self.verticalLayout_4.addLayout(self.formLayout)
 
         self.horizontalLayout_3 = QHBoxLayout()
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
-        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer_3 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_3.addItem(self.horizontalSpacer_3)
 
@@ -155,7 +175,7 @@ class Ui_TestEnvPage(object):
 
         self.verticalLayout_4.addLayout(self.horizontalLayout_3)
 
-        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.verticalSpacer_2 = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout_4.addItem(self.verticalSpacer_2)
 
@@ -217,9 +237,9 @@ class Ui_TestEnvPage(object):
         self.doneButton.setText(QCoreApplication.translate("TestEnvPage", u"Done, Next Step", None))
         self.helpButton.setText(QCoreApplication.translate("TestEnvPage", u"I Need Help", None))
         self.ignoreButton.setText(QCoreApplication.translate("TestEnvPage", u"Ignore && Continue", None))
-        self.finalizeLabel.setText(QCoreApplication.translate("TestEnvPage", u"All setup steps have been actioned.\n"
-"\n"
-"Please confirm the final command that should be used to run all automated tests for this project (e.g., 'pytest', 'mvn test').", None))
+        self.finalizeLabel.setText(QCoreApplication.translate("TestEnvPage", u"All setup steps have been actioned. Please confirm the final commands that will be used to run the project's automated tests.", None))
+        self.backendCommandLabel.setText(QCoreApplication.translate("TestEnvPage", u"Backend Test Command:", None))
+        self.uiCommandLabel.setText(QCoreApplication.translate("TestEnvPage", u"Automated UI Test Command (Optional):", None))
         self.finalizeButton.setText(QCoreApplication.translate("TestEnvPage", u"Finalize Setup && Proceed", None))
         self.manualBuildScriptLabel.setText(QCoreApplication.translate("TestEnvPage", u"<b>Action Required</b><br>You previously chose to create the build script manually. Please enter the exact filename of the script you created (e.g., requirements.txt, build.gradle). This is required for the test environment setup.", None))
         self.confirmBuildScriptButton.setText(QCoreApplication.translate("TestEnvPage", u"Confirm Filename and Continue", None))

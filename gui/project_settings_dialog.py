@@ -30,38 +30,44 @@ class ProjectSettingsDialog(QDialog):
 
     def populate_data(self, settings: dict):
         """Pre-populates the dialog with the project's current settings."""
+        # --- Populate Integration Settings ---
         provider = settings.get("provider", "None")
-
         provider_index = self.ui.providerComboBox.findText(provider, Qt.MatchFixedString)
         if provider_index >= 0:
             self.ui.providerComboBox.setCurrentIndex(provider_index)
-
         self.on_provider_changed(provider_index)
 
         if provider == "Jira":
             self.ui.projectKeyLineEdit.setText(settings.get("project_key", ""))
-            # Pre-populate with common defaults if not set
             self.ui.epicTypeIdLineEdit.setText(settings.get("epic_type_id", "10001"))
             self.ui.storyTypeIdLineEdit.setText(settings.get("story_type_id", "10004"))
             self.ui.taskTypeIdLineEdit.setText(settings.get("task_type_id", "10003"))
             self.ui.bugTypeIdLineEdit.setText(settings.get("bug_type_id", ""))
             self.ui.changeRequestTypeIdLineEdit.setText(settings.get("change_request_type_id", ""))
 
+        # --- Populate Test Command Settings ---
+        self.ui.backendTestCommandLineEdit.setText(settings.get("test_execution_command", ""))
+        self.ui.uiTestCommandLineEdit.setText(settings.get("ui_test_execution_command", ""))
+
     def get_data(self) -> dict:
         """Returns the new settings from the dialog in a structured dictionary."""
         provider = self.ui.providerComboBox.currentText()
-        if provider == "None":
-            return {"provider": "None"}
+
+        all_settings = {
+            # --- Test Command Settings ---
+            "test_execution_command": self.ui.backendTestCommandLineEdit.text().strip(),
+            "ui_test_execution_command": self.ui.uiTestCommandLineEdit.text().strip(),
+            # --- Integration Settings ---
+            "provider": provider
+        }
 
         if provider == "Jira":
-            return {
-                "provider": "Jira",
+            all_settings.update({
                 "project_key": self.ui.projectKeyLineEdit.text().strip(),
                 "epic_type_id": self.ui.epicTypeIdLineEdit.text().strip(),
                 "story_type_id": self.ui.storyTypeIdLineEdit.text().strip(),
                 "task_type_id": self.ui.taskTypeIdLineEdit.text().strip(),
                 "bug_type_id": self.ui.bugTypeIdLineEdit.text().strip(),
                 "change_request_type_id": self.ui.changeRequestTypeIdLineEdit.text().strip()
-            }
-
-        return {"provider": provider}
+            })
+        return all_settings

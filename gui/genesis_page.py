@@ -127,25 +127,69 @@ class GenesisPage(QWidget):
         applying color based on the status.
         """
         try:
-            status, message = progress_data
+            if isinstance(progress_data, tuple) and len(progress_data) == 2:
+                status, message = progress_data
+            else:
+                status, message = "INFO", str(progress_data)
 
             color_map = {
-                "SUCCESS": "#00C853", # Bright Green
-                "INFO": "#A9B7C6",    # Light Gray (Secondary Text)
-                "WARNING": "#FFAB00", # Bright Amber
-                "ERROR": "#D50000"     # Bright Red
+                "SUCCESS": "#6A8759", # Green
+                "INFO": "#A9B7C6",    # Light Gray
+                "WARNING": "#FFC66D", # Amber
+                "ERROR": "#CC7832"     # Red/Orange
             }
 
             color = color_map.get(status, "#A9B7C6")
-            html_message = f'<font color="{color}">{message}</font>'
+            # Ensure message is properly escaped for HTML
+            escaped_message = message.replace('<', '&lt;').replace('>', '&gt;')
+            html_message = f'<font color="{color}">{escaped_message}</font>'
             QTimer.singleShot(0, lambda: self.ui.logOutputTextEdit.append(html_message))
 
         except Exception as e:
+            # Fallback for any unexpected data format
             QTimer.singleShot(0, lambda: self.ui.logOutputTextEdit.append(str(progress_data)))
             logging.error(f"Error processing progress update: {e}")
 
+    def update_processing_display(self, simple_status_message: str = None):
+        """
+        Updates the labels on the processing page with dynamic information.
+        Can be called with a simple string for phase-level status, or will
+        get detailed task info from the orchestrator if called without arguments.
+        """
+        # If a simple message is provided, use it. This is for testing phases.
+        if simple_status_message:
+            self.ui.statusLabel.setText(f"<b>{simple_status_message}</b>")
+            # Get all user story titles for the sprint context
+            sprint_stories = self.orchestrator.get_sprint_goal()
+            self.ui.contextLabel.setText(f"<b>User Stories:</b> {sprint_stories}")
+            return
+
+        # Otherwise, it's a development/fix task. Get the full details.
+        details = self.orchestrator.get_current_task_details()
+        if not details or not details.get("task") or "micro_spec_id" not in details.get("task"):
+            self.ui.statusLabel.setText("<b>All development tasks complete.</b>")
+            self.ui.contextLabel.setText("")
+            return
+
+        task = details.get("task", {})
+        cursor = details.get("cursor", 0)
+        total = details.get("total", 0)
+        is_fix = details.get("is_fix_mode", False)
+        task_name = task.get('component_name', 'Unnamed Task')
+        parent_cr_ids = task.get('parent_cr_ids', [])
+
+        # Format the status line
+        mode_prefix = "Executing fix for" if is_fix else "Executing"
+        status_text = f"<b>{mode_prefix} task {cursor + 1}/{total}:</b> {task_name}"
+        self.ui.statusLabel.setText(status_text)
+
+        # Get and set the user story context
+        story_context = self.orchestrator._get_user_story_context_for_task(parent_cr_ids)
+        self.ui.contextLabel.setText(f"<b>User Story:</b> {story_context}")
+
     def run_development_step(self):
         """Initiates the background task to run the next development step."""
+        self.update_processing_display()
         # Explicitly set the UI to the processing state before starting the worker.
         self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
         self.ui.logOutputTextEdit.clear()
@@ -191,15 +235,9 @@ class GenesisPage(QWidget):
         """
         sprint_goal_text = self.orchestrator.get_sprint_goal()
         self.ui.sprintGoalLabel.setText(f"<b>Sprint Goal:</b> {sprint_goal_text}")
-        self.ui.sprintGoalValueLabel.setText(sprint_goal_text)
 
         mode = self.orchestrator.get_current_mode()
-        self.ui.sprintStatusIndicatorLabel.setText(f"MODE: {mode}")
-
-        if mode == "FIXING":
-            self.ui.sprintStatusIndicatorLabel.setStyleSheet("color: #FFC66D; font-weight: bold;")
-        else:
-            self.ui.sprintStatusIndicatorLabel.setStyleSheet("color: #007ACC; font-weight: bold;")
+        # The sprintStatusIndicatorLabel was removed from the UI, so all references are gone.
 
         details = self.orchestrator.get_current_task_details()
 
@@ -212,34 +250,30 @@ class GenesisPage(QWidget):
             task_name = task.get('component_name', 'Unnamed Task')
             progress_percent = int((cursor / total) * 100) if total > 0 else 0
 
-            # Set values that are common to both pages
             self.ui.progressBar.setValue(progress_percent)
             self.ui.aiConfidenceGauge.setValue(confidence)
 
             if self.orchestrator.is_resuming_from_manual_fix:
-                # STATE: Manual Fix Resolution Screen (3-button page)
                 self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.manualFixModePage)
-                # FIX 1: Update label text
                 self.ui.nextTaskLabel.setText(f"<b>Resuming from manual fix for task ({cursor + 1}/{total}):</b> {task_name}")
-                # FIX 2 & 3: Ensure gauges are visible
                 self.ui.aiConfidenceLabel.setVisible(True)
                 self.ui.aiConfidenceGauge.setVisible(True)
             else:
-                # STATE: Normal Genesis Workflow (1-button page)
                 self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.normalModePage)
                 self.ui.aiConfidenceLabel.setVisible(not is_fix)
                 self.ui.aiConfidenceGauge.setVisible(not is_fix)
 
                 if cursor >= total and total > 0:
                     self.ui.progressBar.setValue(100)
-                    self.ui.nextTaskLabel.setText("All development tasks are complete.")
-                    self.ui.proceedButton.setText("▶️ Run Final Verification")
+                    self.ui.nextTaskLabel.setText("Sprint development tasks complete.")
+                    self.ui.proceedButton.setText("▶️ Run Backend Testing") # CORRECTED TEXT
+                    self.ui.aiConfidenceLabel.setVisible(False) # HIDE GAUGE
+                    self.ui.aiConfidenceGauge.setVisible(False) # HIDE GAUGE
                 else:
                     mode_prefix = "FIX: " if is_fix else ""
                     self.ui.nextTaskLabel.setText(f"Next task ({cursor + 1}/{total}): {mode_prefix}{task_name}")
                     self.ui.proceedButton.setText(f"▶️ Proceed with: {mode_prefix}{task_name}")
         else:
-            # Fallback for when no plan is loaded
             self.ui.progressBar.setValue(0)
             self.ui.aiConfidenceGauge.setValue(0)
             self.ui.aiConfidenceLabel.setVisible(False)

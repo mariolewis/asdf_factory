@@ -252,11 +252,14 @@ class TestEnvPage(QWidget):
             # --- END OF FIX ---
 
     def on_finalize_clicked(self):
-        command = self.ui.testCommandLineEdit.text().strip()
-        if not command:
-            QMessageBox.warning(self, "Input Required", "The test execution command cannot be empty.")
+        backend_command = self.ui.testCommandLineEdit.text().strip()
+        ui_command = self.ui.uiTestCommandLineEdit.text().strip()
+
+        if not backend_command:
+            QMessageBox.warning(self, "Input Required", "The Backend Test Command cannot be empty.")
             return
-        if self.orchestrator.finalize_test_environment_setup(command):
+
+        if self.orchestrator.finalize_test_environment_setup(backend_command, ui_command):
             self.test_env_setup_complete.emit()
         else:
             QMessageBox.critical(self, "Error", "Failed to finalize setup.")

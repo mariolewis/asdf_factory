@@ -681,6 +681,15 @@ class ASDFMainWindow(QMainWindow):
             error_msg = str(error[1]) if error else "An unknown error occurred."
             QTimer.singleShot(100, lambda: QMessageBox.critical(self, "Implementation Failed", f"Failed to create an implementation plan for CR-{cr_id}:\n{error_msg}"))
 
+    def _on_pausing_task_finished(self):
+        """
+        A dedicated slot that runs after a task that requires a user pause.
+        It re-enables the UI but does NOT trigger a state refresh.
+        """
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        self.orchestrator.set_task_processing_complete()
+
     def _on_background_task_finished(self):
         """
         A dedicated slot that runs AFTER a background task is completely finished.
@@ -697,11 +706,13 @@ class ASDFMainWindow(QMainWindow):
 
     def on_view_sprint(self):
         """
-        Returns the UI to the previously active sprint workflow phase,
-        whether it's the main dashboard or a debug escalation.
+        Returns the UI to the active sprint workflow, allowing the Genesis page
+        to display the correct context (dashboard, processing, or debug).
         """
-        if self.orchestrator.project_id and self.previous_phase:
-            self.orchestrator.set_phase(self.previous_phase.name)
+        if self.orchestrator.project_id and self.orchestrator.is_sprint_active():
+            # This is the fix: Always set the phase to the main sprint activity phase.
+            # The Genesis page's prepare_for_display() method will handle showing the correct sub-state.
+            self.orchestrator.set_phase("SPRINT_IN_PROGRESS")
             self.update_ui_after_state_change()
 
     def update_ui_after_state_change(self):
@@ -731,31 +742,29 @@ class ASDFMainWindow(QMainWindow):
 
         # This is the new, corrected dictionary
         page_display_map = {
-            "ENV_SETUP_TARGET_APP": self.env_setup_page,
-            "SPEC_ELABORATION": self.spec_elaboration_page,
-            "GENERATING_APP_SPEC_AND_RISK_ANALYSIS": self.spec_elaboration_page,
-            "AWAITING_SPEC_REFINEMENT_SUBMISSION": self.spec_elaboration_page,
-            "AWAITING_SPEC_FINAL_APPROVAL": self.spec_elaboration_page,
-            "TECHNICAL_SPECIFICATION": self.tech_spec_page,
-            "BUILD_SCRIPT_SETUP": self.build_script_page,
-            "TEST_ENVIRONMENT_SETUP": self.test_env_page,
-            "CODING_STANDARD_GENERATION": self.coding_standard_page,
-            "PLANNING": self.planning_page,
-            "BACKLOG_RATIFICATION": self.backlog_ratification_page,
-            "GENESIS": self.genesis_page,
-            "SPRINT_IN_PROGRESS": self.genesis_page, # <-- FIX 1: Map the new phase to the correct page
-            "BACKLOG_VIEW": self.cr_management_page,
-            "VIEWING_PROJECT_HISTORY": self.load_project_page,
-            "VIEWING_ACTIVE_PROJECTS": self.load_project_page,
-            "AWAITING_PREFLIGHT_RESOLUTION": self.preflight_check_page,
-            "VIEWING_DOCUMENTS": self.documents_page,
-            "VIEWING_REPORTS": self.reports_page,
-            "MANUAL_UI_TESTING": self.manual_ui_testing_page,
-            "IMPLEMENTING_CHANGE_REQUEST": self.cr_management_page,
-            "PROJECT_COMPLETED": self.project_complete_page,
-            "UX_UI_DESIGN": self.ux_spec_page,
-            "SPRINT_REVIEW": self.sprint_review_page,
-            }
+        "ENV_SETUP_TARGET_APP": self.env_setup_page, "SPEC_ELABORATION": self.spec_elaboration_page,
+        "GENERATING_APP_SPEC_AND_RISK_ANALYSIS": self.spec_elaboration_page,
+        "AWAITING_SPEC_REFINEMENT_SUBMISSION": self.spec_elaboration_page,
+        "AWAITING_SPEC_FINAL_APPROVAL": self.spec_elaboration_page,
+        "TECHNICAL_SPECIFICATION": self.tech_spec_page,
+        "BUILD_SCRIPT_SETUP": self.build_script_page,
+        "TEST_ENVIRONMENT_SETUP": self.test_env_page,
+        "CODING_STANDARD_GENERATION": self.coding_standard_page,
+        "PLANNING": self.planning_page,
+        "BACKLOG_RATIFICATION": self.backlog_ratification_page,
+        "GENESIS": self.genesis_page,
+        "SPRINT_IN_PROGRESS": self.genesis_page,
+        "BACKLOG_VIEW": self.cr_management_page,
+        "VIEWING_PROJECT_HISTORY": self.load_project_page,
+        "VIEWING_ACTIVE_PROJECTS": self.load_project_page,
+        "AWAITING_PREFLIGHT_RESOLUTION": self.preflight_check_page,
+        "VIEWING_DOCUMENTS": self.documents_page,
+        "VIEWING_REPORTS": self.reports_page,
+        "MANUAL_UI_TESTING": self.manual_ui_testing_page,
+        "PROJECT_COMPLETED": self.project_complete_page,
+        "UX_UI_DESIGN": self.ux_spec_page,
+        "SPRINT_REVIEW": self.sprint_review_page,
+        }
 
         # Disconnect all signals from the generic decision page to prevent multiple triggers
         with warnings.catch_warnings():
@@ -767,7 +776,80 @@ class ASDFMainWindow(QMainWindow):
             except TypeError:
                 pass # Still catch TypeError for other potential issues
 
-        if current_phase_name == "AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION":
+        if current_phase_name in page_display_map:
+            page_to_show = page_display_map[current_phase_name]
+            if hasattr(page_to_show, 'prepare_for_display'):
+                page_to_show.prepare_for_display()
+            self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
+        elif current_phase_name == "AWAITING_UI_TEST_DECISION":
+            project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
+            is_auto_test_configured = bool(project_details and project_details['ui_test_execution_command'])
+
+            self.decision_page.configure(
+                header="Front-end Testing Phase",
+                instruction="The automated backend tests passed. Choose how to proceed with Front-end Testing for this sprint.",
+                details="Select an option below to continue.",
+                option1_text="Run Automated Front-end Tests",
+                option1_enabled=is_auto_test_configured,
+                option2_text="Run Manual Front-end Tests",
+                option3_text="Skip and Go to Sprint Review"
+            )
+            self.decision_page.option1_selected.connect(self.on_ui_test_decision_automated)
+            self.decision_page.option2_selected.connect(self.on_ui_test_decision_manual)
+            self.decision_page.option3_selected.connect(self.on_ui_test_decision_skip)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "AWAITING_SCRIPT_FAILURE_RESOLUTION":
+            task_details = self.orchestrator.task_awaiting_approval or {}
+            error_msg = task_details.get("error", "An unknown error occurred.")
+            self.decision_page.configure(
+                header="Automated Test Script Failure",
+                instruction="The AI agent failed to generate the automated Front-end test scripts. Please choose a fallback option.",
+                details=f"<b>Agent Error:</b><br><pre>{error_msg}</pre>",
+                option1_text="Proceed with Manual Front-end Testing",
+                option2_text="Skip Front-end Testing & Go to Sprint Review"
+            )
+            self.decision_page.option1_selected.connect(self.on_script_failure_fallback_manual)
+            self.decision_page.option2_selected.connect(self.on_ui_test_decision_skip)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
+            self.setEnabled(False)
+            task_info = self.orchestrator.task_awaiting_approval or {}
+            task_to_run = task_info.get("task_to_run")
+
+            # Determine the status message and worker function based on the task
+            status_message = ""
+            worker_function = None
+            worker_args = []
+
+            if task_to_run == "automated_ui_tests":
+                status_message = "Running Front-end Testing..."
+                worker_function = self.orchestrator._run_automated_ui_test_phase
+            else: # Fallback for the old integration task
+                status_message = "Running Backend Testing..."
+                force_flag = task_info.get("force_integration", False)
+                worker_function = self.orchestrator.run_integration_and_verification_phase
+                worker_args = [force_flag]
+
+            self.statusBar().showMessage(status_message)
+
+            # Switch to the processing page and update its display using our new method
+            self.genesis_page.update_processing_display(simple_status_message=status_message)
+            self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+            self.genesis_page.ui.logOutputTextEdit.clear()
+            self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
+
+            # Start the worker
+            worker = Worker(worker_function, *worker_args)
+            worker.signals.progress.connect(self.genesis_page.on_progress_update)
+            worker.signals.result.connect(self.genesis_page._handle_development_result)
+            worker.signals.error.connect(self.genesis_page._on_task_error)
+            worker.signals.finished.connect(self._on_pausing_task_finished)
+            self.threadpool.start(worker)
+
+        elif current_phase_name == "AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION":
             task = self.orchestrator.task_awaiting_approval or {}
             analysis = task.get("analysis", {})
             error = task.get("analysis_error")
@@ -872,24 +954,6 @@ class ASDFMainWindow(QMainWindow):
             page_to_show.option2_selected.connect(self.on_close_project)
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
-        elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
-            self.setEnabled(False)
-            self.statusBar().showMessage("Running integration and verification phase...")
-            self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
-            self.genesis_page.ui.processingLabel.setText("Running Integration & Verification...")
-            self.genesis_page.ui.logOutputTextEdit.clear()
-            self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
-
-            task_info = self.orchestrator.task_awaiting_approval or {}
-            force_flag = task_info.get("force_integration", False)
-
-            worker = Worker(self.orchestrator.run_integration_and_verification_phase, force_proceed=force_flag)
-            worker.signals.progress.connect(self.genesis_page.on_progress_update)
-            worker.signals.result.connect(self._handle_integration_result)
-            worker.signals.error.connect(self._handle_integration_result) # Can be handled by the same logic
-            worker.signals.finished.connect(self._on_background_task_finished) # Re-enables the UI
-            self.threadpool.start(worker)
-
         elif current_phase_name == "AWAITING_INTEGRATION_CONFIRMATION":
             task = self.orchestrator.task_awaiting_approval or {}
             known_issues = task.get("known_issues", [])
@@ -952,8 +1016,8 @@ class ASDFMainWindow(QMainWindow):
                 self.decision_page.option2_selected.connect(self.on_stop_export_project)
             elif is_final_verification_failure:
                 self.decision_page.configure(
-                    header="Final Verification Failed",
-                    instruction="The final regression test suite failed. You can debug this issue now, or complete the sprint and log the failure as a new high-priority bug.",
+                    header="Backend Testing Failed",
+                    instruction="The backend regression test suite failed. You can debug this issue now, or complete the sprint and log the failure as a new high-priority bug.",
                     details=f"The automated regression test failed with the following output:<br><br>{formatted_log}",
                     option1_text="Debug Manually & Re-run",
                     option2_text="Acknowledge Failures & Complete Sprint"
@@ -963,17 +1027,20 @@ class ASDFMainWindow(QMainWindow):
                 # "Acknowledge Failures" connects to the new handler
                 self.decision_page.option2_selected.connect(self.on_decision_acknowledge_failures)
             else:
+                print(f"DEBUG_INFO: task_details = {task_details}")
+                is_phase_failure = task_details.get("is_phase_failure", False)
                 self.decision_page.configure(
                     header="Debug Escalation",
                     instruction="The factory has been unable to fix a persistent bug. Please choose how to proceed.",
                     details=f"The automated debug procedure could not resolve the following issue:<br><br>{formatted_log}",
                     option1_text="Retry Automated Fix",
-                    option2_text="Pause for Manual Fix && Unit Test",
-                    option3_text="Skip Task && Log as Backlog Item"
+                    option2_text="Pause for Manual Fix & Investigate",
+                    option3_text="Skip Task && Log as Backlog Item" if not is_phase_failure else None
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_decision_option2)
-                self.decision_page.option3_selected.connect(self.on_decision_option3)
+                if not is_phase_failure:
+                    self.decision_page.option3_selected.connect(self.on_decision_option3)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "AWAITING_IMPACT_ANALYSIS_CHOICE":
@@ -1085,12 +1152,12 @@ class ASDFMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Project", "Please load a project to view its settings.")
             return
 
-        current_settings = self.orchestrator.get_project_integration_settings()
+        current_settings = self.orchestrator.get_project_settings()
         dialog = ProjectSettingsDialog(current_settings, self)
 
         if dialog.exec():
             new_settings = dialog.get_data()
-            self.orchestrator.save_project_integration_settings(new_settings)
+            self.orchestrator.save_project_settings(new_settings)
             # Refresh the backlog page UI in case button states need to change
             self.cr_management_page.prepare_for_display()
             QMessageBox.information(self, "Success", "Project settings have been saved.")
@@ -1175,6 +1242,26 @@ class ASDFMainWindow(QMainWindow):
         """Handles the user's choice to apply the change manually and skip automated execution."""
         self.orchestrator.handle_declarative_checkpoint_decision("WILL_EXECUTE_MANUALLY")
         self.update_ui_after_state_change()
+
+    def on_ui_test_decision_skip(self):
+        """Handles the PM's choice to skip UI testing."""
+        self.orchestrator.handle_ui_test_decision("SKIP")
+        self.update_ui_after_state_change()
+
+    def on_ui_test_decision_manual(self):
+        """Handles the PM's choice to run manual UI tests."""
+        self.orchestrator.handle_ui_test_decision("MANUAL")
+        self.update_ui_after_state_change()
+
+    def on_ui_test_decision_automated(self):
+        """Handles the PM's choice to run automated UI tests."""
+        self.orchestrator.handle_ui_test_decision("AUTOMATED")
+        self.update_ui_after_state_change()
+
+    def on_script_failure_fallback_manual(self):
+        """Handles the fallback to manual testing after an agent failure."""
+        # Re-use the existing handler, which sets the phase to MANUAL_UI_TESTING
+        self.on_ui_test_decision_manual()
 
     def on_pre_execution_check_proceed(self):
         """Handles the user's choice to proceed to the sprint planning workspace."""

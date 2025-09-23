@@ -13,6 +13,8 @@ import hashlib
 
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_integration_pmt import IntegrationAgentPMT
+from agents.agent_automated_ui_test_script import AutomatedUITestScriptAgent
+from agents.agent_automated_test_result_parser import AutomatedTestResultParserAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_ux_triage import UX_Triage_Agent
 from agents.agent_ux_spec import UX_Spec_Agent
@@ -75,6 +77,8 @@ class FactoryPhase(Enum):
     INTEGRATION_AND_VERIFICATION = auto()
     AWAITING_INTEGRATION_RESOLUTION = auto()
     MANUAL_UI_TESTING = auto()
+    AWAITING_UI_TEST_DECISION = auto()
+    AWAITING_SCRIPT_FAILURE_RESOLUTION = auto()
     AWAITING_PM_DECLARATIVE_CHECKPOINT = auto()
     AWAITING_PREFLIGHT_RESOLUTION = auto()
     AWAITING_IMPACT_ANALYSIS_CHOICE = auto()
@@ -122,6 +126,7 @@ class MasterOrchestrator:
         self.current_task_confidence = 0
         self.active_spec_draft = None
         self.active_sprint_id = None
+        self.post_fix_reverification_path = None
         logging.info("MasterOrchestrator instance created.")
 
     def reset(self):
@@ -149,6 +154,7 @@ class MasterOrchestrator:
         self.active_spec_draft = None
         self.active_sprint_id = None
         self.active_sprint_goal = None
+        self.post_fix_reverification_path = None
 
     def close_active_project(self):
         """
@@ -221,6 +227,8 @@ class MasterOrchestrator:
         FactoryPhase.INTEGRATION_AND_VERIFICATION: "Integration & Verification",
         FactoryPhase.AWAITING_INTEGRATION_RESOLUTION: "Awaiting Integration Resolution",
         FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
+        FactoryPhase.AWAITING_UI_TEST_DECISION: "UI Test Decision",
+        FactoryPhase.AWAITING_SCRIPT_FAILURE_RESOLUTION: "Automated Test Script Failure",
         FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
         FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
         FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis",
@@ -363,6 +371,31 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to dynamically get sprint goal for sprint '{self.active_sprint_id}': {e}")
             return "Error retrieving sprint goal."
+
+    def _get_user_story_context_for_task(self, parent_cr_ids: list) -> str:
+        """
+        Finds the full hierarchical ID and title of the parent backlog item for a given task.
+        """
+        if not self.project_id or not parent_cr_ids:
+            return "N/A"
+        try:
+            # Re-use the established pattern to get the full backlog with hierarchical numbers.
+            full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
+            flat_backlog_map = {item['cr_id']: item for item in self._flatten_hierarchy(full_backlog_with_ids)}
+
+            # For simplicity, we use the first parent ID for context.
+            parent_id = parent_cr_ids[0]
+            parent_item = flat_backlog_map.get(parent_id)
+
+            if parent_item:
+                hierarchical_id = parent_item.get('hierarchical_id', f'CR-{parent_id}')
+                title = parent_item.get('title', 'Untitled Item')
+                return f"{hierarchical_id}: {title}"
+
+            return "Parent item not found"
+        except Exception as e:
+            logging.error(f"Failed to get user story context for parent_cr_ids {parent_cr_ids}: {e}")
+            return "Error retrieving context"
 
     def get_current_mode(self) -> str:
         """
@@ -1274,44 +1307,56 @@ class MasterOrchestrator:
             for story_data in user_stories:
                 self._save_backlog_item_recursive(story_data, parent_id=new_item_id)
 
-    def get_project_integration_settings(self) -> dict:
+    def get_project_settings(self) -> dict:
         """
-        Retrieves and parses the integration_settings JSON for the active project.
+        Retrieves a consolidated dictionary of all editable project settings.
         """
         if not self.project_id:
             return {}
-
         project_details = self.db_manager.get_project_by_id(self.project_id)
-        if not project_details or not project_details['integration_settings']:
+        if not project_details:
             return {}
 
-        settings_json = project_details['integration_settings']
-        if settings_json:
-            try:
-                return json.loads(settings_json)
-            except json.JSONDecodeError:
-                logging.warning(f"Could not parse integration_settings JSON for project {self.project_id}")
-                return {}
-        return {}
+        settings = {
+            "test_execution_command": project_details['test_execution_command'] or "",
+            "ui_test_execution_command": project_details['ui_test_execution_command'] or ""
+        }
 
-    def save_project_integration_settings(self, settings_dict: dict):
+        integration_settings_json = project_details['integration_settings']
+        try:
+            if integration_settings_json:
+                integration_settings = json.loads(integration_settings_json)
+                settings.update(integration_settings)
+        except json.JSONDecodeError:
+            logging.warning(f"Could not parse integration_settings for project {self.project_id}")
+        return settings
+
+    def save_project_settings(self, settings_dict: dict):
         """
-        Converts the settings dictionary to JSON and saves it to the active project.
+        Separates and saves a dictionary of project settings to the correct
+        database columns and JSON blobs.
         """
         if not self.project_id:
             logging.error("Cannot save project settings; no active project.")
             return
+        db = self.db_manager
 
+        # Extract and save direct-column values first
+        backend_cmd = settings_dict.pop("test_execution_command", None)
+        ui_cmd = settings_dict.pop("ui_test_execution_command", None)
+
+        if backend_cmd is not None:
+            db.update_project_field(self.project_id, "test_execution_command", backend_cmd)
+        if ui_cmd is not None:
+            db.update_project_field(self.project_id, "ui_test_execution_command", ui_cmd)
+
+        # The remaining items in the dictionary are for the integration settings JSON blob
         try:
-            settings_json = json.dumps(settings_dict)
-            self.db_manager.update_project_field(
-                project_id=self.project_id,
-                field_name="integration_settings",
-                value=settings_json
-            )
-            logging.info(f"Successfully saved integration settings for project {self.project_id}")
+            integration_settings_json = json.dumps(settings_dict)
+            db.update_project_field(self.project_id, "integration_settings", integration_settings_json)
+            logging.info(f"Successfully saved project settings for project {self.project_id}")
         except Exception as e:
-            logging.error(f"Failed to save project integration settings: {e}")
+            logging.error(f"Failed to save project settings: {e}")
             raise
 
     def handle_import_from_tool(self, import_data: dict) -> list:
@@ -1886,7 +1931,7 @@ class MasterOrchestrator:
 
         except Exception as e:
             logging.error(f"Integration and verification phase failed: {e}", exc_info=True)
-            self.escalate_for_manual_debug(str(e))
+            self.escalate_for_manual_debug(str(e), is_phase_failure_override=True)
 
     def handle_integration_confirmation(self, decision: str):
         """
@@ -1902,6 +1947,26 @@ class MasterOrchestrator:
             # --- END OF FIX ---
         else:
             self.set_phase("GENESIS")
+
+    def handle_ui_test_decision(self, decision: str):
+        """
+        Handles the PM's choice from the end-of-sprint UI testing decision page.
+        """
+        logging.info(f"PM selected UI testing option: {decision}")
+        if decision == "SKIP":
+            self.post_fix_reverification_path = None # Ensure flag is clear
+            self.set_phase("SPRINT_REVIEW")
+        elif decision == "MANUAL":
+            self.post_fix_reverification_path = decision
+            self.set_phase("MANUAL_UI_TESTING")
+        elif decision == "AUTOMATED":
+            self.post_fix_reverification_path = decision
+            # This will be a background task, so we set an intermediate phase
+            self.set_phase("INTEGRATION_AND_VERIFICATION") # Reuse this phase for a generic "processing" state
+            self.task_awaiting_approval = {"task_to_run": "automated_ui_tests"}
+        else:
+            logging.warning(f"Received unknown UI test decision: {decision}")
+            self.set_phase("SPRINT_REVIEW") # Default to a safe state
 
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
         """
@@ -2283,6 +2348,7 @@ class MasterOrchestrator:
                 original_code = target_file_path.read_text(encoding='utf-8') if target_file_path.exists() else ""
 
                 modified_code = orchestration_agent.apply_modifications(original_code, json.dumps(modifications))
+                target_file_path.parent.mkdir(parents=True, exist_ok=True)
                 target_file_path.write_text(modified_code, encoding='utf-8')
                 logging.info(f"Applied integration modifications to {file_path_str}")
 
@@ -2854,7 +2920,7 @@ class MasterOrchestrator:
         self.is_project_dirty = False
         self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
-    def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False):
+    def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False, is_phase_failure_override: bool = False):
         """
         Handles the escalation process for a task failure. It increments a
         counter, and if the maximum attempts are exceeded, it sets the phase
@@ -2864,7 +2930,11 @@ class MasterOrchestrator:
 
         # If this is a functional bug from UI testing, it's a direct escalation.
         if is_functional_bug:
-            self.task_awaiting_approval = {"failure_log": failure_log}
+            self.task_awaiting_approval = {
+                "failure_log": failure_log,
+                "original_failing_task": None,
+                "is_phase_failure": True
+            }
             self.set_phase("DEBUG_PM_ESCALATION")
             return
 
@@ -2880,7 +2950,8 @@ class MasterOrchestrator:
             original_failing_task = self.get_current_task_details()
             self.task_awaiting_approval = {
                 "failure_log": failure_log,
-                "original_failing_task": original_failing_task
+                "original_failing_task": original_failing_task,
+                "is_phase_failure": is_phase_failure_override or (original_failing_task is None)
             }
             self.debug_attempt_counter = 0 # Reset for the next issue
             self.set_phase("DEBUG_PM_ESCALATION")
@@ -2982,11 +3053,20 @@ class MasterOrchestrator:
             project_details = db.get_project_by_id(self.project_id)
             project_root = Path(project_details['project_root_folder'])
 
-            # 1. Get the details of the task that was just fixed
+            # Get the details of the task that was just fixed
             task_details = self.get_current_task_details()
             if not task_details or not task_details.get('task'):
                 raise Exception("Could not retrieve details for the current task.")
             task = task_details['task']
+
+            # --- THIS IS THE FIX ---
+            # Check if the plan is already complete. If so, there's no task to process.
+            if "micro_spec_id" not in task:
+                logging.info("Development plan is complete. Acknowledging manual fix for end-of-sprint verification.")
+                self.is_resuming_from_manual_fix = False
+                self.set_phase("GENESIS")
+                return True
+            # --- END OF FIX ---
 
             # 2. Read the manually fixed code from the file
             component_file = project_root / task['component_file_path']
@@ -3224,35 +3304,108 @@ class MasterOrchestrator:
 
     def _run_final_sprint_verification(self, progress_callback=None):
         """
-        Runs the full project test suite as a final quality gate for the sprint.
-        Transitions to SPRINT_REVIEW on success or escalates on failure with new options.
+        Runs the full project test suite as a final quality gate. On success,
+        it checks if a re-verification path is set. If so, it re-runs that
+        path; otherwise, it transitions to the UI test decision phase or sprint review.
         """
-        logging.info("Sprint plan complete. Running mandatory final regression test suite...")
+        logging.info("Sprint plan complete. Running mandatory final backend regression test suite...")
         if progress_callback:
-            progress_callback(("INFO", "Running mandatory final regression test suite..."))
+            progress_callback(("INFO", "Running Backend Testing..."))
 
         try:
             success, output = self.run_full_test_suite(progress_callback)
             if success:
-                logging.info("Final regression test suite PASSED. Proceeding to Sprint Review.")
+                logging.info("Final backend regression test suite PASSED.")
                 if progress_callback:
-                    progress_callback(("SUCCESS", "All tests passed."))
+                    progress_callback(("SUCCESS", "All backend tests passed."))
                 self.sprint_completed_with_failures = False
-                self.set_phase("SPRINT_REVIEW")
+
+                # --- THIS IS THE NEW LOGIC ---
+                if self.post_fix_reverification_path:
+                    logging.info(f"Re-verification path found: '{self.post_fix_reverification_path}'. Re-running chosen test path.")
+                    decision = self.post_fix_reverification_path
+                    self.post_fix_reverification_path = None # Clear the flag
+                    self.handle_ui_test_decision(decision)
+                    return
+                # --- END OF NEW LOGIC ---
+
+                project_details = self.db_manager.get_project_by_id(self.project_id)
+                if project_details and project_details['is_gui_project']:
+                    logging.info("GUI project detected. Transitioning to UI test decision point.")
+                    self.set_phase("AWAITING_UI_TEST_DECISION")
+                else:
+                    logging.info("Non-GUI project or flag not set. Proceeding directly to Sprint Review.")
+                    self.set_phase("SPRINT_REVIEW")
             else:
-                logging.error("Final regression test suite FAILED. Escalating to PM with options.")
+                logging.error("Final backend regression test suite FAILED. Escalating to PM.")
                 if progress_callback:
                     progress_callback(("ERROR", f"Regression test failed:\n{output}"))
-
-                # This is the new logic to enable the flexible completion workflow
                 self.task_awaiting_approval = {
-                    "failure_log": f"A regression failure was detected during final sprint verification.\n\n--- TEST OUTPUT ---\n{output}",
-                    "is_final_verification_failure": True # Flag to show the new option in the UI
+                    "failure_log": f"A regression failure was detected during Backend Testing.\n\n--- TEST OUTPUT ---\n{output}",
+                    "is_final_verification_failure": True
                 }
                 self.set_phase("DEBUG_PM_ESCALATION")
         except Exception as e:
             logging.error(f"An unexpected error occurred during final sprint verification: {e}", exc_info=True)
-            self.escalate_for_manual_debug(f"A system error occurred during the final regression test run:\n{e}")
+            self.escalate_for_manual_debug(f"A system error occurred during Backend Testing:\n{e}", is_phase_failure_override=True)
+
+    def _run_automated_ui_test_phase(self, progress_callback=None):
+        """
+        Orchestrates the entire automated UI testing workflow.
+        This method is designed to be run in a background thread.
+        """
+        logging.info("Starting automated UI testing phase...")
+        if progress_callback: progress_callback(("INFO", "Running Front-end Testing..."))
+
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details: raise Exception("Project details not found.")
+
+            # 1. Generate Scripts
+            if progress_callback: progress_callback(("INFO", "Generating UI test scripts..."))
+            sprint_items = db.get_items_for_sprint(self.active_sprint_id)
+            sprint_items_json = json.dumps([dict(row) for row in sprint_items])
+            ux_blueprint_json = project_details['ux_spec_text'] or '{}'
+
+            script_agent = AutomatedUITestScriptAgent(self.llm_service)
+            scripts_generated = script_agent.generate_scripts(sprint_items_json, ux_blueprint_json, project_details['project_root_folder'])
+
+            if not scripts_generated:
+                if progress_callback: progress_callback(("ERROR", "AI failed to generate test scripts."))
+                self.task_awaiting_approval = {"error": "The Automated UI Test Script Agent failed to generate a valid script."}
+                self.set_phase("AWAITING_SCRIPT_FAILURE_RESOLUTION")
+                return
+
+            # 2. Execute Tests
+            if progress_callback: progress_callback(("SUCCESS", "Scripts generated. Executing automated UI tests..."))
+            ui_test_command = project_details['ui_test_execution_command']
+            if not ui_test_command:
+                raise Exception("Cannot run automated UI tests: The UI Test Execution Command is not configured for this project.")
+
+            verification_agent = VerificationAgent_AppTarget(self.llm_service)
+            status, output = verification_agent.run_all_tests(project_details['project_root_folder'], ui_test_command)
+
+            if status == 'ENVIRONMENT_FAILURE':
+                if progress_callback: progress_callback(("ERROR", "UI test execution failed due to an environment error."))
+                self.escalate_for_manual_debug(output, is_env_failure=True, is_phase_failure_override=True)
+                return
+
+            # 3. Parse Results
+            if progress_callback: progress_callback(("INFO", "Parsing test results..."))
+            parser_agent = AutomatedTestResultParserAgent(self.llm_service)
+            parsed_result = parser_agent.parse_results(output)
+
+            if parsed_result.get("success"):
+                if progress_callback: progress_callback(("SUCCESS", "All automated UI tests passed."))
+                self.set_phase("SPRINT_REVIEW")
+            else:
+                if progress_callback: progress_callback(("ERROR", "One or more UI tests failed."))
+                self.escalate_for_manual_debug(parsed_result.get("summary", "No summary available."), is_functional_bug=True, is_phase_failure_override=True)
+
+        except Exception as e:
+            logging.error(f"Automated UI testing phase failed: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred during Front-end Testing:\n{e}", is_phase_failure_override=True)
 
     def handle_complete_with_failures(self):
         """
@@ -3429,6 +3582,7 @@ class MasterOrchestrator:
             # Clear out the completed plan details
             self.active_plan = None
             self.active_plan_cursor = 0
+            self.post_fix_reverification_path = None
             self.is_executing_cr_plan = False
             self.active_sprint_id = None
             self.task_awaiting_approval = {} # Clear any leftover task data
@@ -4598,16 +4752,18 @@ class MasterOrchestrator:
             logging.error(f"Failed to get help for setup task: {e}")
             return "An error occurred while fetching help. Please check the logs."
 
-    def finalize_test_environment_setup(self, test_command: str):
+    def finalize_test_environment_setup(self, backend_test_command: str, ui_test_command: str):
         """
-        Saves the confirmed test command and transitions to the next phase.
+        Saves the confirmed backend and UI test commands and transitions to the next phase.
 
         Returns:
             True on success, False on failure.
         """
-        logging.info(f"Finalizing test environment setup. Confirmed command: '{test_command}'")
+        logging.info(f"Finalizing test environment setup. Backend command: '{backend_test_command}', UI command: '{ui_test_command}'")
         try:
-            self.db_manager.update_project_field(self.project_id, "test_execution_command", test_command)
+            db = self.db_manager
+            db.update_project_field(self.project_id, "test_execution_command", backend_test_command)
+            db.update_project_field(self.project_id, "ui_test_execution_command", ui_test_command)
 
             self.set_phase("CODING_STANDARD_GENERATION")
             logging.info("Test environment setup complete. Transitioning to Coding Standard Generation.")

@@ -139,27 +139,18 @@ class Ui_GenesisPage(object):
         self.processingPage.setObjectName(u"processingPage")
         self.verticalLayout_3 = QVBoxLayout(self.processingPage)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.sprintStatusIndicatorLabel = QLabel(self.processingPage)
-        self.sprintStatusIndicatorLabel.setObjectName(u"sprintStatusIndicatorLabel")
-        self.sprintStatusIndicatorLabel.setAlignment(Qt.AlignCenter)
+        self.statusLabel = QLabel(self.processingPage)
+        self.statusLabel.setObjectName(u"statusLabel")
+        self.statusLabel.setAlignment(Qt.AlignCenter)
 
-        self.verticalLayout_3.addWidget(self.sprintStatusIndicatorLabel)
+        self.verticalLayout_3.addWidget(self.statusLabel)
 
-        self.formLayout_2 = QFormLayout()
-        self.formLayout_2.setObjectName(u"formLayout_2")
-        self.sprintGoalLabel_2 = QLabel(self.processingPage)
-        self.sprintGoalLabel_2.setObjectName(u"sprintGoalLabel_2")
+        self.contextLabel = QLabel(self.processingPage)
+        self.contextLabel.setObjectName(u"contextLabel")
+        self.contextLabel.setAlignment(Qt.AlignCenter)
+        self.contextLabel.setWordWrap(True)
 
-        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.LabelRole, self.sprintGoalLabel_2)
-
-        self.sprintGoalValueLabel = QLabel(self.processingPage)
-        self.sprintGoalValueLabel.setObjectName(u"sprintGoalValueLabel")
-        self.sprintGoalValueLabel.setWordWrap(True)
-
-        self.formLayout_2.setWidget(0, QFormLayout.ItemRole.FieldRole, self.sprintGoalValueLabel)
-
-
-        self.verticalLayout_3.addLayout(self.formLayout_2)
+        self.verticalLayout_3.addWidget(self.contextLabel)
 
         self.logOutputTextEdit = QTextEdit(self.processingPage)
         self.logOutputTextEdit.setObjectName(u"logOutputTextEdit")
@@ -206,9 +197,8 @@ class Ui_GenesisPage(object):
         self.acknowledgeButton.setText(QCoreApplication.translate("GenesisPage", u"Proceed to Next Task", None))
         self.retryButton.setText(QCoreApplication.translate("GenesisPage", u"Retry Automated Fix", None))
         self.skipButton.setText(QCoreApplication.translate("GenesisPage", u"Skip Last Task and Log Bug", None))
-        self.sprintStatusIndicatorLabel.setText(QCoreApplication.translate("GenesisPage", u"MODE: DEVELOPING", None))
-        self.sprintGoalLabel_2.setText(QCoreApplication.translate("GenesisPage", u"Sprint Goal:", None))
-        self.sprintGoalValueLabel.setText(QCoreApplication.translate("GenesisPage", u"...", None))
+        self.statusLabel.setText(QCoreApplication.translate("GenesisPage", u"Status: Initializing...", None))
+        self.contextLabel.setText(QCoreApplication.translate("GenesisPage", u"Context: ...", None))
         self.continueButton.setText(QCoreApplication.translate("GenesisPage", u"Continue", None))
     # retranslateUi
 

@@ -149,6 +149,35 @@
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="testCommandsGroupBox">
+    <property name="title">
+    <string>Test Command Configuration</string>
+    </property>
+    <layout class="QFormLayout" name="formLayout_3">
+    <item row="0" column="0">
+        <widget class="QLabel" name="backendTestCommandLabel">
+        <property name="text">
+        <string>Backend Test Command:</string>
+        </property>
+        </widget>
+    </item>
+    <item row="0" column="1">
+        <widget class="QLineEdit" name="backendTestCommandLineEdit"/>
+    </item>
+    <item row="1" column="0">
+        <widget class="QLabel" name="uiTestCommandLabel">
+        <property name="text">
+        <string>Automated UI Test Command:</string>
+        </property>
+        </widget>
+    </item>
+    <item row="1" column="1">
+        <widget class="QLineEdit" name="uiTestCommandLineEdit"/>
+    </item>
+    </layout>
+    </widget>
+    </item>
+   <item>
     <spacer name="verticalSpacer">
      <property name="orientation">
       <enum>Qt::Vertical</enum>

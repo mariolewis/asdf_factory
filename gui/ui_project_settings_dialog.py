@@ -137,6 +137,33 @@ class Ui_ProjectSettingsDialog(object):
 
         self.verticalLayout.addWidget(self.integrationsGroupBox)
 
+        self.testCommandsGroupBox = QGroupBox(ProjectSettingsDialog)
+        self.testCommandsGroupBox.setObjectName(u"testCommandsGroupBox")
+        self.formLayout_3 = QFormLayout(self.testCommandsGroupBox)
+        self.formLayout_3.setObjectName(u"formLayout_3")
+        self.backendTestCommandLabel = QLabel(self.testCommandsGroupBox)
+        self.backendTestCommandLabel.setObjectName(u"backendTestCommandLabel")
+
+        self.formLayout_3.setWidget(0, QFormLayout.ItemRole.LabelRole, self.backendTestCommandLabel)
+
+        self.backendTestCommandLineEdit = QLineEdit(self.testCommandsGroupBox)
+        self.backendTestCommandLineEdit.setObjectName(u"backendTestCommandLineEdit")
+
+        self.formLayout_3.setWidget(0, QFormLayout.ItemRole.FieldRole, self.backendTestCommandLineEdit)
+
+        self.uiTestCommandLabel = QLabel(self.testCommandsGroupBox)
+        self.uiTestCommandLabel.setObjectName(u"uiTestCommandLabel")
+
+        self.formLayout_3.setWidget(1, QFormLayout.ItemRole.LabelRole, self.uiTestCommandLabel)
+
+        self.uiTestCommandLineEdit = QLineEdit(self.testCommandsGroupBox)
+        self.uiTestCommandLineEdit.setObjectName(u"uiTestCommandLineEdit")
+
+        self.formLayout_3.setWidget(1, QFormLayout.ItemRole.FieldRole, self.uiTestCommandLineEdit)
+
+
+        self.verticalLayout.addWidget(self.testCommandsGroupBox)
+
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout.addItem(self.verticalSpacer)
@@ -180,5 +207,8 @@ class Ui_ProjectSettingsDialog(object):
 #if QT_CONFIG(tooltip)
         self.changeRequestTypeIdLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"Optional: The ID for a custom 'Change Request' issue type.", None))
 #endif // QT_CONFIG(tooltip)
+        self.testCommandsGroupBox.setTitle(QCoreApplication.translate("ProjectSettingsDialog", u"Test Command Configuration", None))
+        self.backendTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Backend Test Command:", None))
+        self.uiTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Automated UI Test Command:", None))
     # retranslateUi
 
