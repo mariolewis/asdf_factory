@@ -189,6 +189,12 @@ class GenesisPage(QWidget):
 
     def run_development_step(self):
         """Initiates the background task to run the next development step."""
+
+        details = self.orchestrator.get_current_task_details()
+        is_final_verification = not details or "micro_spec_id" not in details.get("task", {})
+        if is_final_verification:
+            self.window().statusBar().showMessage("Running Backend Testing...")
+
         self.update_processing_display()
         # Explicitly set the UI to the processing state before starting the worker.
         self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)

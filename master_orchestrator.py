@@ -14,6 +14,7 @@ import hashlib
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_integration_pmt import IntegrationAgentPMT
 from agents.agent_automated_ui_test_script import AutomatedUITestScriptAgent
+from agents.agent_backend_test_plan_extractor import BackendTestPlanExtractorAgent
 from agents.agent_automated_test_result_parser import AutomatedTestResultParserAgent
 from agents.agent_spec_clarification import SpecClarificationAgent
 from agents.agent_ux_triage import UX_Triage_Agent
@@ -43,6 +44,7 @@ from agents.agent_project_scoping import ProjectScopingAgent
 from agents.build_and_commit_agent_app_target import BuildAndCommitAgentAppTarget
 from agents.agent_plan_auditor import PlanAuditorAgent
 from agents.agent_code_summarization import CodeSummarizationAgent
+from agents.agent_test_report_formatting import TestReportFormattingAgent
 from gui.utils import format_timestamp_for_display
 
 class EnvironmentFailureException(Exception):
@@ -3304,30 +3306,75 @@ class MasterOrchestrator:
 
     def _run_final_sprint_verification(self, progress_callback=None):
         """
-        Runs the full project test suite as a final quality gate. On success,
-        it checks if a re-verification path is set. If so, it re-runs that
-        path; otherwise, it transitions to the UI test decision phase or sprint review.
+        Runs the full project test suite as a final quality gate and generates
+        a detailed test report.
         """
-        logging.info("Sprint plan complete. Running mandatory final backend regression test suite...")
+        logging.info("Sprint plan complete. Running Backend Testing and generating report...")
         if progress_callback:
             progress_callback(("INFO", "Running Backend Testing..."))
 
         try:
-            success, output = self.run_full_test_suite(progress_callback)
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details: raise Exception("Project details not found.")
+            project_root = Path(project_details['project_root_folder'])
+            technology_stack = project_details['technology_stack'] or 'python'
+
+            # Step 1: Find and read all test files to build a plan.
+            if progress_callback: progress_callback(("INFO", "Scanning for test files to build plan..."))
+            test_files_content = {}
+            # A simple glob for common test patterns. A future enhancement could make this language-specific.
+            for pattern in ['test_*.py', '*_test.py', '*Test.java', '*Tests.cs']:
+                # Search in common locations like 'tests/' or 'src/tests/'
+                for test_dir in [project_root / 'tests', project_root / 'src' / 'tests']:
+                    if test_dir.exists():
+                        for test_file in test_dir.rglob(pattern):
+                            relative_path = test_file.relative_to(project_root)
+                            test_files_content[str(relative_path)] = test_file.read_text(encoding='utf-8')
+
+            # Step 2: Extract the test plan from the files.
+            plan_json = "[]"
+            if test_files_content:
+                if progress_callback: progress_callback(("INFO", "Extracting test plan from source code..."))
+                extractor_agent = BackendTestPlanExtractorAgent(self.llm_service)
+                plan_json = extractor_agent.extract_plan(technology_stack, test_files_content)
+
+            # Step 3: Run the actual tests.
+            if progress_callback: progress_callback(("INFO", "Executing test suite..."))
+            success, raw_output = self.run_full_test_suite(progress_callback)
+
+            # Step 4 & 5: Format and generate the .docx report.
+            if progress_callback: progress_callback(("INFO", "Formatting and saving test report..."))
+            report_formatter = TestReportFormattingAgent(self.llm_service)
+            report_markdown = report_formatter.format_report(plan_json, raw_output)
+
+            report_generator = ReportGeneratorAgent()
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"Backend Test Report - {self.project_name}",
+                content=report_markdown
+            )
+
+            reports_dir = project_root / "docs" / "test_reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            report_path = reports_dir / f"backend_test_report_{timestamp}.docx"
+
+            with open(report_path, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+
+            # Step 6: Handle the outcome based on test success/failure.
             if success:
                 logging.info("Final backend regression test suite PASSED.")
                 if progress_callback:
-                    progress_callback(("SUCCESS", "All backend tests passed."))
+                    progress_callback(("SUCCESS", "All backend tests passed. Report saved."))
                 self.sprint_completed_with_failures = False
 
-                # --- THIS IS THE NEW LOGIC ---
                 if self.post_fix_reverification_path:
                     logging.info(f"Re-verification path found: '{self.post_fix_reverification_path}'. Re-running chosen test path.")
                     decision = self.post_fix_reverification_path
-                    self.post_fix_reverification_path = None # Clear the flag
+                    self.post_fix_reverification_path = None
                     self.handle_ui_test_decision(decision)
                     return
-                # --- END OF NEW LOGIC ---
 
                 project_details = self.db_manager.get_project_by_id(self.project_id)
                 if project_details and project_details['is_gui_project']:
@@ -3337,11 +3384,11 @@ class MasterOrchestrator:
                     logging.info("Non-GUI project or flag not set. Proceeding directly to Sprint Review.")
                     self.set_phase("SPRINT_REVIEW")
             else:
-                logging.error("Final backend regression test suite FAILED. Escalating to PM.")
+                logging.error("Final backend regression test suite FAILED. Report saved. Escalating to PM.")
                 if progress_callback:
-                    progress_callback(("ERROR", f"Regression test failed:\n{output}"))
+                    progress_callback(("ERROR", f"Regression test failed. Report saved.\n{raw_output}"))
                 self.task_awaiting_approval = {
-                    "failure_log": f"A regression failure was detected during Backend Testing.\n\n--- TEST OUTPUT ---\n{output}",
+                    "failure_log": f"A regression failure was detected during Backend Testing.\n\n--- TEST OUTPUT ---\n{raw_output}",
                     "is_final_verification_failure": True
                 }
                 self.set_phase("DEBUG_PM_ESCALATION")
@@ -3351,56 +3398,80 @@ class MasterOrchestrator:
 
     def _run_automated_ui_test_phase(self, progress_callback=None):
         """
-        Orchestrates the entire automated UI testing workflow.
-        This method is designed to be run in a background thread.
+        Orchestrates the entire automated UI testing workflow, including the
+        generation of a final, human-readable test report.
         """
-        logging.info("Starting automated UI testing phase...")
-        if progress_callback: progress_callback(("INFO", "Running Front-end Testing..."))
+        logging.info("Starting automated UI testing phase with reporting...")
+        if progress_callback: progress_callback(("INFO", "Starting automated Front-end Testing phase..."))
 
         try:
             db = self.db_manager
             project_details = db.get_project_by_id(self.project_id)
             if not project_details: raise Exception("Project details not found.")
+            project_root = Path(project_details['project_root_folder'])
 
-            # 1. Generate Scripts
-            if progress_callback: progress_callback(("INFO", "Generating UI test scripts..."))
+            # 1. Generate Scripts and Structured Plan
+            if progress_callback: progress_callback(("INFO", "Generating UI test scripts and plan..."))
             sprint_items = db.get_items_for_sprint(self.active_sprint_id)
             sprint_items_json = json.dumps([dict(row) for row in sprint_items])
             ux_blueprint_json = project_details['ux_spec_text'] or '{}'
 
             script_agent = AutomatedUITestScriptAgent(self.llm_service)
-            scripts_generated = script_agent.generate_scripts(sprint_items_json, ux_blueprint_json, project_details['project_root_folder'])
+            script_code, plan_json = script_agent.generate_scripts(sprint_items_json, ux_blueprint_json, project_details['project_root_folder'])
 
-            if not scripts_generated:
-                if progress_callback: progress_callback(("ERROR", "AI failed to generate test scripts."))
-                self.task_awaiting_approval = {"error": "The Automated UI Test Script Agent failed to generate a valid script."}
+            if not script_code or not plan_json:
+                if progress_callback: progress_callback(("ERROR", "AI failed to generate test scripts or a valid plan."))
+                self.task_awaiting_approval = {"error": "The Automated UI Test Script Agent failed to generate a valid script or test plan."}
                 self.set_phase("AWAITING_SCRIPT_FAILURE_RESOLUTION")
                 return
 
             # 2. Execute Tests
-            if progress_callback: progress_callback(("SUCCESS", "Scripts generated. Executing automated UI tests..."))
+            if progress_callback: progress_callback(("SUCCESS", "Scripts generated. Executing automated Front-end tests..."))
             ui_test_command = project_details['ui_test_execution_command']
             if not ui_test_command:
                 raise Exception("Cannot run automated UI tests: The UI Test Execution Command is not configured for this project.")
 
             verification_agent = VerificationAgent_AppTarget(self.llm_service)
-            status, output = verification_agent.run_all_tests(project_details['project_root_folder'], ui_test_command)
+            status, raw_output = verification_agent.run_all_tests(project_details['project_root_folder'], ui_test_command)
 
             if status == 'ENVIRONMENT_FAILURE':
-                if progress_callback: progress_callback(("ERROR", "UI test execution failed due to an environment error."))
-                self.escalate_for_manual_debug(output, is_env_failure=True, is_phase_failure_override=True)
+                if progress_callback: progress_callback(("ERROR", "Front-end test execution failed due to an environment error."))
+                self.escalate_for_manual_debug(raw_output, is_env_failure=True, is_phase_failure_override=True)
                 return
 
-            # 3. Parse Results
+            # 3. Parse Raw Results
             if progress_callback: progress_callback(("INFO", "Parsing test results..."))
             parser_agent = AutomatedTestResultParserAgent(self.llm_service)
-            parsed_result = parser_agent.parse_results(output)
+            parsed_result = parser_agent.parse_results(raw_output)
 
+            # 4. Format the Final Report
+            if progress_callback: progress_callback(("INFO", "Formatting final test report..."))
+            report_formatter = TestReportFormattingAgent(self.llm_service)
+            report_markdown = report_formatter.format_report(plan_json, raw_output)
+
+            # 5. Generate and Save .docx Report
+            if progress_callback: progress_callback(("INFO", "Saving test report to file..."))
+            report_generator = ReportGeneratorAgent()
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"Automated Front-end Test Report - {self.project_name}",
+                content=report_markdown
+            )
+
+            reports_dir = project_root / "docs" / "test_reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            report_path = reports_dir / f"automated_fe_test_report_{timestamp}.docx"
+
+            with open(report_path, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+            # self._commit_document(report_path, f"docs: Add automated front-end test report for sprint {self.active_sprint_id}")
+
+            # 6. Conclude the Phase
             if parsed_result.get("success"):
-                if progress_callback: progress_callback(("SUCCESS", "All automated UI tests passed."))
+                if progress_callback: progress_callback(("SUCCESS", "All automated Front-end tests passed. Report saved."))
                 self.set_phase("SPRINT_REVIEW")
             else:
-                if progress_callback: progress_callback(("ERROR", "One or more UI tests failed."))
+                if progress_callback: progress_callback(("ERROR", "One or more Front-end tests failed. Report saved."))
                 self.escalate_for_manual_debug(parsed_result.get("summary", "No summary available."), is_functional_bug=True, is_phase_failure_override=True)
 
         except Exception as e:
