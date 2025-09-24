@@ -1053,23 +1053,26 @@ class MasterOrchestrator:
             if not self.project_id:
                 raise Exception("Cannot generate application spec; no active project.")
 
-            # 1. Generate the raw spec content from the brief/UX spec
-            spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
-            app_spec_draft_content = spec_agent.expand_brief_description(initial_spec_text)
+            # 1. Consolidate all requirement sources into a single input document
+            consolidated_requirements = self._consolidate_specification_inputs()
 
-            # 2. Add the standard document header to the draft
+            # 2. Generate the raw spec content from the consolidated document
+            spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
+            app_spec_draft_content = spec_agent.expand_brief_description(consolidated_requirements)
+
+            # 3. Add the standard document header to the draft
             full_app_spec_draft = self.prepend_standard_header(
                 document_content=app_spec_draft_content,
                 document_type="Application Specification"
             )
 
-            # 3. Analyze the generated draft for complexity and risk
+            # 4. Analyze the generated draft for complexity and risk
             scoping_agent = ProjectScopingAgent(self.llm_service)
             analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content)
             if "error" in analysis_result:
                 raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
 
-            # 4. Store BOTH results for the next steps and set the new phase
+            # 5. Store BOTH results for the next steps and set the new phase
             self.task_awaiting_approval = {
                 "generated_spec_draft": full_app_spec_draft,
                 "complexity_analysis": analysis_result.get("complexity_analysis"),
@@ -3955,6 +3958,87 @@ class MasterOrchestrator:
             f"{'-' * 50}\n\n"
         )
         return header + document_content
+
+    def _get_blueprint_from_ux_spec(self, ux_spec_text: str) -> dict | None:
+        """Extracts the JSON blueprint from the composite UX spec field."""
+        if not ux_spec_text:
+            return None
+        # Use regex to find the json block, accommodating potential whitespace
+        match = re.search(r"```json\s*(\{.*?\})\s*```", ux_spec_text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1))
+            except json.JSONDecodeError:
+                logging.error("Failed to parse JSON blueprint from ux_spec_text in DB.")
+                return None
+        return None
+
+    def _consolidate_specification_inputs(self) -> str:
+        """
+        It intelligently merges the project brief, the UX/UI spec,
+        and any external changes to the UI blueprint.
+        """
+        if not self.project_id:
+            raise Exception("Cannot consolidate inputs; no active project.")
+
+        logging.info("Consolidating specification inputs...")
+        db = self.db_manager
+        project_details = db.get_project_by_id(self.project_id)
+        project_root = Path(project_details['project_root_folder'])
+
+        # 1. Get all three input sources
+        # Lowest priority: Project Brief
+        brief_path_str = project_details['project_brief_path'] or ""
+        brief_path = project_root / brief_path_str if brief_path_str else None
+        project_brief_text = ""
+        if brief_path and brief_path.exists():
+            project_brief_text = brief_path.read_text(encoding='utf-8')
+
+        # Medium priority: UX/UI Spec from DB
+        ux_spec_text_from_db = project_details['ux_spec_text'] or ""
+        db_blueprint_json = self._get_blueprint_from_ux_spec(ux_spec_text_from_db)
+
+        # Highest priority: External ux_ui_blueprint.json file
+        external_blueprint_path = project_root / "docs" / "ux_ui_blueprint.json"
+        external_blueprint_json = None
+        if external_blueprint_path.exists():
+            try:
+                external_blueprint_json = json.loads(external_blueprint_path.read_text(encoding='utf-8'))
+            except (json.JSONDecodeError, IOError) as e:
+                logging.warning(f"Could not read or parse external blueprint file: {e}")
+
+        # If there's no UX spec at all, just return the brief
+        if not ux_spec_text_from_db and not external_blueprint_json:
+             logging.info("No UX/UI specification found. Using project brief as is.")
+             return project_brief_text
+
+        # 2. Compare and update if necessary
+        final_blueprint_for_consolidation = db_blueprint_json or {}
+        if external_blueprint_json and external_blueprint_json != db_blueprint_json:
+            logging.info("External ux_ui_blueprint.json differs from database version. Updating...")
+            ux_spec_markdown_part = self._strip_header_from_document(ux_spec_text_from_db).split("MACHINE-READABLE JSON BLUEPRINT")[0]
+
+            composite_spec_for_db = (
+                f"{ux_spec_markdown_part.strip()}\n\n"
+                f"{'='*80}\n"
+                f"MACHINE-READABLE JSON BLUEPRINT\n"
+                f"{'='*80}\n\n"
+                f"```json\n{json.dumps(external_blueprint_json, indent=2)}\n```"
+            )
+            db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
+            final_blueprint_for_consolidation = external_blueprint_json
+            # ux_spec_text_from_db = composite_spec_for_db
+
+        # 3. Call the agent to perform the intelligent merge
+        from agents.agent_spec_clarification import SpecClarificationAgent
+        agent = SpecClarificationAgent(self.llm_service, db)
+        consolidated_requirements = agent.consolidate_requirements(
+            project_brief=project_brief_text,
+            ux_spec_markdown=ux_spec_text_from_db,
+            ui_blueprint_json=json.dumps(final_blueprint_for_consolidation, indent=2)
+        )
+
+        return consolidated_requirements
 
     def _strip_header_from_document(self, document_content: str) -> str:
         """

@@ -30,6 +30,59 @@ class SpecClarificationAgent:
         self.llm_service = llm_service
         self.db_manager = db_manager
 
+    def consolidate_requirements(self, project_brief: str, ux_spec_markdown: str, ui_blueprint_json: str) -> str:
+        """
+        Consolidates three sources of requirements into a single document using an LLM.
+
+        Args:
+            project_brief (str): The original project brief for non-GUI requirements.
+            ux_spec_markdown (str): The UX/UI spec for contextual information like personas.
+            ui_blueprint_json (str): The definitive JSON blueprint for UI structure.
+
+        Returns:
+            A string containing the consolidated requirements document.
+        """
+        logging.info("SpecClarificationAgent: Consolidating multiple requirement sources...")
+
+        prompt = textwrap.dedent(f"""
+            You are an expert Business Analyst and Technical Writer. Your task is to consolidate three sources of project requirements (a project brief, a UX/UI specification, and a UI blueprint JSON) into a single, coherent, and comprehensive 'Consolidated Requirements Document'.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  **Prioritize Inputs:** You MUST use the inputs according to this hierarchy:
+                -   **Highest Priority:** The UI Blueprint JSON is the definitive source of truth for all UI screens, components, and their structure. It overrides any conflicting UI descriptions in the other documents.
+                -   **Medium Priority:** The UX/UI Specification Markdown should be used for contextual information like User Personas, User Journeys, and Theming, but NOT for UI structure if it conflicts with the JSON.
+                -   **Lowest Priority:** The Original Project Brief is the source of truth for all **non-GUI requirements** (e.g., backend logic, services, data handling, performance requirements). You MUST preserve these.
+            2.  **Check for Discrepancies:** You MUST compare the screens listed in the UI Blueprint JSON against those described in the UX/UI Spec Markdown. If you detect that screens have been added or removed, you MUST insert a section at the top of your output titled "## Note to the Product Manager" and use a bulleted list to flag these discrepancies for review.
+            3.  **Output Format:** Your entire response MUST be the raw, consolidated Markdown document. Do not include any conversational text, preamble, or explanations.
+
+            ---
+            **INPUT 1: UI Blueprint (JSON - Highest Priority for UI)**
+            ```json
+            {ui_blueprint_json}
+            ```
+            ---
+            **INPUT 2: UX/UI Specification (Markdown - For UX Context)**
+            ```markdown
+            {ux_spec_markdown}
+            ```
+            ---
+            **INPUT 3: Original Project Brief (For all Non-GUI Requirements)**
+            ```
+            {project_brief}
+            ```
+            ---
+            **OUTPUT: Consolidated Requirements Document (Raw Markdown)**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            if not response_text or response_text.startswith("Error:"):
+                raise ValueError(f"LLM returned an error or empty response: {response_text}")
+            return response_text
+        except Exception as e:
+            logging.error(f"Failed during requirements consolidation: {e}")
+            return f"### Error\nAn unexpected error occurred during requirements consolidation: {e}"
+
     def _extract_tags_from_spec(self, spec_text: str) -> list[str]:
         """A simple helper to extract potential search tags from spec text."""
         keywords = re.findall(r'\b[A-Z][a-zA-Z]{3,}\b', spec_text)
