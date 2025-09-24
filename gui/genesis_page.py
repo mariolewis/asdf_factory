@@ -160,36 +160,47 @@ class GenesisPage(QWidget):
         Can be called with a simple string for phase-level status, or will
         get detailed task info from the orchestrator if called without arguments.
         """
+        main_window = self.window()
+        status_message = ""
+
         # If a simple message is provided, use it. This is for testing phases.
         if simple_status_message:
-            self.ui.statusLabel.setText(f"<b>{simple_status_message}</b>")
+            status_message = simple_status_message
+            self.ui.statusLabel.setText(f"<b>{status_message}</b>")
             # Get all user story titles for the sprint context
             sprint_stories = self.orchestrator.get_sprint_goal()
             self.ui.contextLabel.setText(f"<b>User Stories:</b> {sprint_stories}")
-            return
+        else:
+            # Otherwise, it's a development/fix task. Get the full details.
+            details = self.orchestrator.get_current_task_details()
+            if not details or not details.get("task") or "micro_spec_id" not in details.get("task"):
+                self.ui.statusLabel.setText("<b>All development tasks complete.</b>")
+                self.ui.contextLabel.setText("")
+                if main_window and hasattr(main_window, 'show_persistent_status'):
+                    main_window.show_persistent_status("All development tasks complete.")
+                return
 
-        # Otherwise, it's a development/fix task. Get the full details.
-        details = self.orchestrator.get_current_task_details()
-        if not details or not details.get("task") or "micro_spec_id" not in details.get("task"):
-            self.ui.statusLabel.setText("<b>All development tasks complete.</b>")
-            self.ui.contextLabel.setText("")
-            return
+            task = details.get("task", {})
+            cursor = details.get("cursor", 0)
+            total = details.get("total", 0)
+            is_fix = details.get("is_fix_mode", False)
+            task_name = task.get('component_name', 'Unnamed Task')
+            parent_cr_ids = task.get('parent_cr_ids', [])
 
-        task = details.get("task", {})
-        cursor = details.get("cursor", 0)
-        total = details.get("total", 0)
-        is_fix = details.get("is_fix_mode", False)
-        task_name = task.get('component_name', 'Unnamed Task')
-        parent_cr_ids = task.get('parent_cr_ids', [])
+            # Format the status line for the page
+            mode_prefix = "Executing fix for" if is_fix else "Executing"
+            status_text = f"<b>{mode_prefix} task {cursor + 1}/{total}:</b> {task_name}"
+            self.ui.statusLabel.setText(status_text)
 
-        # Format the status line
-        mode_prefix = "Executing fix for" if is_fix else "Executing"
-        status_text = f"<b>{mode_prefix} task {cursor + 1}/{total}:</b> {task_name}"
-        self.ui.statusLabel.setText(status_text)
+            # Create the status message for the main window's status bar
+            status_message = f"{mode_prefix.replace('Executing', 'Developing')} task {cursor + 1}/{total}: {task_name}..."
 
-        # Get and set the user story context
-        story_context = self.orchestrator._get_user_story_context_for_task(parent_cr_ids)
-        self.ui.contextLabel.setText(f"<b>User Story:</b> {story_context}")
+            # Get and set the user story context
+            story_context = self.orchestrator._get_user_story_context_for_task(parent_cr_ids)
+            self.ui.contextLabel.setText(f"<b>User Story:</b> {story_context}")
+
+        if main_window and hasattr(main_window, 'show_persistent_status'):
+            main_window.show_persistent_status(status_message)
 
     def run_development_step(self):
         """Initiates the background task to run the next development step."""
@@ -239,6 +250,10 @@ class GenesisPage(QWidget):
 
     def _on_task_finished(self):
         """Re-enables the UI after any background task is complete."""
+        main_window = self.window()
+        if main_window and hasattr(main_window, 'clear_persistent_status'):
+            main_window.clear_persistent_status()
+
         self.orchestrator.set_task_processing_complete()
         self._set_ui_busy(False)
 

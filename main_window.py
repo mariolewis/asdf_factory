@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
                                QStyle, QToolButton, QButtonGroup, QPushButton,
                                QSpacerItem, QSizePolicy, QFileDialog)
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem, QIcon
-from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize, QTimer
+from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize, QTimer, QEvent
 from PySide6.QtCore import QThreadPool
 
 from gui.ui_main_window import Ui_MainWindow
@@ -83,6 +83,23 @@ class ASDFMainWindow(QMainWindow):
 
         self.update_ui_after_state_change()
         self._check_mandatory_settings()
+        # Add instance variable for the status widget
+        self.persistent_status_widget = None
+
+        # Install event filters to protect the persistent status widget
+        self.ui.menubar.installEventFilter(self)
+        self.ui.toolBar.installEventFilter(self)
+        self.ui.verticalActionBar.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        # If a persistent status widget is active, intercept and ignore
+        # any status tip events from the menu, toolbar, or action bar
+        # that would normally clear our message.
+        if self.persistent_status_widget and event.type() == QEvent.Type.StatusTip:
+            return True # Event is handled and should be ignored
+
+        # For all other events, let them pass through to the default handler.
+        return super().eventFilter(watched, event)
 
     def _create_pages(self):
         """Creates and adds all page widgets to the stacked widget."""
@@ -205,7 +222,7 @@ class ASDFMainWindow(QMainWindow):
 
         # --- Active Sprint Button (Initially Hidden) ---
         self.button_view_sprint = QToolButton()
-        self.button_view_sprint.setToolTip("Return to Active Sprint")
+        self.button_view_sprint.setToolTip("Return to Active Process")
         self.button_view_sprint.setIcon(QIcon(str(icons_path / "sprint_active.png"))) # We will need to add this icon
         self.button_view_sprint.setCheckable(True)
         self.button_view_sprint.setVisible(False) # Hidden by default
@@ -687,7 +704,7 @@ class ASDFMainWindow(QMainWindow):
         It re-enables the UI but does NOT trigger a state refresh.
         """
         self.setEnabled(True)
-        self.statusBar().clearMessage()
+        self.clear_persistent_status()
         self.orchestrator.set_task_processing_complete()
 
     def _on_background_task_finished(self):
@@ -696,13 +713,11 @@ class ASDFMainWindow(QMainWindow):
         It re-enables the UI and then refreshes the data tables.
         """
         self.setEnabled(True)
-        self.statusBar().clearMessage()
+        self.clear_persistent_status()
 
-        # --- THIS IS THE FIX ---
         # The orchestrator's state is now final. A single call here will now
         # correctly read the new phase (GENESIS) and transition the page.
         self.update_ui_after_state_change()
-        # --- END OF FIX ---
 
     def on_view_sprint(self):
         """
@@ -817,7 +832,6 @@ class ASDFMainWindow(QMainWindow):
 
         elif current_phase_name == "GENERATING_MANUAL_TEST_PLAN":
             status_message = "Generating manual test plan documents..."
-            self.statusBar().showMessage(status_message)
 
             # Use the new method to update the processing page display
             self.genesis_page.update_processing_display(simple_status_message=status_message)
@@ -851,8 +865,6 @@ class ASDFMainWindow(QMainWindow):
                 force_flag = task_info.get("force_integration", False)
                 worker_function = self.orchestrator.run_integration_and_verification_phase
                 worker_args = [force_flag]
-
-            self.statusBar().showMessage(status_message)
 
             # Switch to the processing page and update its display using our new method
             self.genesis_page.update_processing_display(simple_status_message=status_message)
@@ -1096,6 +1108,25 @@ class ASDFMainWindow(QMainWindow):
             self.ui.mainContentArea.setCurrentWidget(self.ui.phasePage)
             self.ui.phaseLabel.setText(f"UI for phase '{current_phase_name}' is not yet implemented.")
         logging.debug("update_ui_after_state_change: Method finished.")
+
+    def show_persistent_status(self, message: str):
+        """Adds or updates a persistent QLabel in the status bar."""
+        # Remove the old widget if it exists
+        if self.persistent_status_widget:
+            self.ui.statusbar.removeWidget(self.persistent_status_widget)
+            self.persistent_status_widget.deleteLater()
+            self.persistent_status_widget = None
+
+        if message:
+            self.persistent_status_widget = QLabel(message)
+            self.ui.statusbar.addWidget(self.persistent_status_widget)
+
+    def clear_persistent_status(self):
+        """Removes the persistent status widget from the status bar."""
+        if self.persistent_status_widget:
+            self.ui.statusbar.removeWidget(self.persistent_status_widget)
+            self.persistent_status_widget.deleteLater()
+            self.persistent_status_widget = None
 
     def on_new_project(self):
         project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
