@@ -19,6 +19,7 @@ class GenesisPage(QWidget):
         self.orchestrator = orchestrator
         self.ui = Ui_GenesisPage()
         self.ui.setupUi(self)
+        self.next_phase_on_continue = None
         # self.threadpool = QThreadPool()
 
         self.ui.continueButton.setVisible(False)
@@ -61,16 +62,11 @@ class GenesisPage(QWidget):
         # by the methods that call this one.
 
     def on_continue_clicked(self):
-        """Hides the continue button, resets the view, and triggers the main UI update."""
+        """Hides the continue button and signals that the UI should update."""
         self.ui.continueButton.setVisible(False)
-        # Switch back to the checkpoint page view before the main window updates.
         self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
-        # Emit the signal to have the main window show the correct next page.
         self.genesis_complete.emit()
 
-    # In file: gui/genesis_page.py
-
-    # Add this new method to the GenesisPage class
     def _handle_acknowledgement_result(self, success):
         """Handles the result of the manual fix acknowledgement task."""
         try:
@@ -83,6 +79,14 @@ class GenesisPage(QWidget):
         finally:
             self._set_ui_busy(False)
             self.ui.stackedWidget.setCurrentWidget(self.ui.checkpointPage)
+
+    def _handle_phase_completion_result(self, success: bool):
+        """Handles a simple success/failure result from a background task."""
+        if success:
+            self.ui.logOutputTextEdit.append("\n--- TASK COMPLETE ---")
+        else:
+            self.ui.logOutputTextEdit.append("\n--- TASK FAILED ---")
+        self.ui.continueButton.setVisible(True)
 
     def on_acknowledge_manual_fix_clicked(self):
         """Triggers the orchestrator to accept the manual fix and proceed."""
@@ -209,19 +213,13 @@ class GenesisPage(QWidget):
         worker.signals.finished.connect(self._on_task_finished)
         self.window().threadpool.start(worker)
 
-    def _handle_development_result(self, result: str):
-        """
-        Handles the completion of the development step, checking if the
-        result indicates a success or a handled failure.
-        """
-        # On either a success or a handled failure, just show the appropriate
-        # message and the continue button. Do not emit a signal here.
-        if result and result.strip().startswith("Error"):
-            self.ui.logOutputTextEdit.append(f"\n--- TASK FAILED ---")
-            self.ui.continueButton.setVisible(True)
+    def _handle_development_result(self, result):
+        """Handles the completion of a development step."""
+        if result and "Error" in str(result):
+            self.ui.logOutputTextEdit.append(f"\n--- TASK FAILED: {result} ---")
         else:
             self.ui.logOutputTextEdit.append(f"\n--- TASK COMPLETE ---")
-            self.ui.continueButton.setVisible(True)
+        self.ui.continueButton.setVisible(True)
 
     def _on_task_error(self, error_tuple):
         """Handles an error from the worker and shows the continue button."""
@@ -242,9 +240,6 @@ class GenesisPage(QWidget):
         sprint_goal_text = self.orchestrator.get_sprint_goal()
         self.ui.sprintGoalLabel.setText(f"<b>Sprint Goal:</b> {sprint_goal_text}")
 
-        mode = self.orchestrator.get_current_mode()
-        # The sprintStatusIndicatorLabel was removed from the UI, so all references are gone.
-
         details = self.orchestrator.get_current_task_details()
 
         if details:
@@ -256,15 +251,18 @@ class GenesisPage(QWidget):
             task_name = task.get('component_name', 'Unnamed Task')
             progress_percent = int((cursor / total) * 100) if total > 0 else 0
 
+            # Set values that are common to both pages
             self.ui.progressBar.setValue(progress_percent)
             self.ui.aiConfidenceGauge.setValue(confidence)
 
             if self.orchestrator.is_resuming_from_manual_fix:
+                # STATE: Manual Fix Resolution Screen (3-button page)
                 self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.manualFixModePage)
                 self.ui.nextTaskLabel.setText(f"<b>Resuming from manual fix for task ({cursor + 1}/{total}):</b> {task_name}")
                 self.ui.aiConfidenceLabel.setVisible(True)
                 self.ui.aiConfidenceGauge.setVisible(True)
             else:
+                # STATE: Normal Genesis Workflow (1-button page)
                 self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.normalModePage)
                 self.ui.aiConfidenceLabel.setVisible(not is_fix)
                 self.ui.aiConfidenceGauge.setVisible(not is_fix)
@@ -272,14 +270,15 @@ class GenesisPage(QWidget):
                 if cursor >= total and total > 0:
                     self.ui.progressBar.setValue(100)
                     self.ui.nextTaskLabel.setText("Sprint development tasks complete.")
-                    self.ui.proceedButton.setText("▶️ Run Backend Testing") # CORRECTED TEXT
-                    self.ui.aiConfidenceLabel.setVisible(False) # HIDE GAUGE
-                    self.ui.aiConfidenceGauge.setVisible(False) # HIDE GAUGE
+                    self.ui.proceedButton.setText("▶️ Run Backend Testing")
+                    self.ui.aiConfidenceLabel.setVisible(False)
+                    self.ui.aiConfidenceGauge.setVisible(False)
                 else:
                     mode_prefix = "FIX: " if is_fix else ""
                     self.ui.nextTaskLabel.setText(f"Next task ({cursor + 1}/{total}): {mode_prefix}{task_name}")
                     self.ui.proceedButton.setText(f"▶️ Proceed with: {mode_prefix}{task_name}")
         else:
+            # Fallback for when no plan is loaded
             self.ui.progressBar.setValue(0)
             self.ui.aiConfidenceGauge.setValue(0)
             self.ui.aiConfidenceLabel.setVisible(False)

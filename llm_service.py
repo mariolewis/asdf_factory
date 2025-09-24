@@ -33,7 +33,7 @@ class GeminiAdapter(LLMService):
         """
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-            response = model_to_use.generate_content(prompt, request_options={'timeout': 180})
+            response = model_to_use.generate_content(prompt, request_options={'timeout': 600})
             if not hasattr(response, 'text') or not response.text:
                 logging.warning(f"Gemini model returned an empty or malformed response.")
                 return "Error: The Gemini model returned an empty response."
@@ -62,7 +62,7 @@ class OpenAIAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=600
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -92,7 +92,7 @@ class AnthropicAdapter(LLMService):
                 model=model_to_use,
                 max_tokens=4096,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=600
             )
             response_text = message.content[0].text
             if not response_text:
@@ -118,7 +118,7 @@ class LocalPhi3Adapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=600
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -150,7 +150,7 @@ class CustomEndpointAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=600
             )
             response_text = completion.choices[0].message.content
             if not response_text:

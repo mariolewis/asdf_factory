@@ -97,11 +97,12 @@ class Ui_ManualUITestingPage(object):
     def retranslateUi(self, ManualUITestingPage):
         ManualUITestingPage.setWindowTitle(QCoreApplication.translate("ManualUITestingPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"Testing && Validation", None))
-        self.instructionLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Your action is required to complete the UI testing:</b>\n"
+        self.instructionLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Your action is required to complete manual testing:</b>\n"
 "<ol>\n"
-"<li>Go to the <b>Documents</b> page to download the <i>UI Test Plan</i>.</li>\n"
-"<li>Execute the tests as described in the document and record the results.</li>\n"
-"<li>Upload the completed document below to trigger the final evaluation.</li>\n"
+"<li>The system has just generated a new <b>Manual UI Test Plan</b> for this sprint.</li>\n"
+"<li>Click the <b>'Go to Documents Page'</b> button to view and download the <code>manual_ui_test_plan.docx</code> file.</li>\n"
+"<li>Execute the tests as described in the document, record the results, and save the file.</li>\n"
+"<li>Return to this page and upload your completed results document below to finalize the sprint.</li>\n"
 "</ol>", None))
         self.goToDocumentsButton.setText(QCoreApplication.translate("ManualUITestingPage", u"Go to Documents Page", None))
         self.uploadLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Upload Completed Test Plan Results:</b>", None))

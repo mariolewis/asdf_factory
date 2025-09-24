@@ -79,6 +79,7 @@ class FactoryPhase(Enum):
     INTEGRATION_AND_VERIFICATION = auto()
     AWAITING_INTEGRATION_RESOLUTION = auto()
     MANUAL_UI_TESTING = auto()
+    GENERATING_MANUAL_TEST_PLAN = auto()
     AWAITING_UI_TEST_DECISION = auto()
     AWAITING_SCRIPT_FAILURE_RESOLUTION = auto()
     AWAITING_PM_DECLARATIVE_CHECKPOINT = auto()
@@ -1959,8 +1960,7 @@ class MasterOrchestrator:
             self.post_fix_reverification_path = None # Ensure flag is clear
             self.set_phase("SPRINT_REVIEW")
         elif decision == "MANUAL":
-            self.post_fix_reverification_path = decision
-            self.set_phase("MANUAL_UI_TESTING")
+            self.set_phase("GENERATING_MANUAL_TEST_PLAN")
         elif decision == "AUTOMATED":
             self.post_fix_reverification_path = decision
             # This will be a background task, so we set an intermediate phase
@@ -1969,6 +1969,74 @@ class MasterOrchestrator:
         else:
             logging.warning(f"Received unknown UI test decision: {decision}")
             self.set_phase("SPRINT_REVIEW") # Default to a safe state
+
+    def _generate_manual_ui_test_plan_phase(self, progress_callback=None):
+        """
+        Generates and saves all artifacts for the manual UI test plan.
+        This is designed to be run in a background worker.
+        """
+        if progress_callback: progress_callback(("INFO", "Generating manual UI test plan..."))
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details:
+                raise Exception("Project details not found.")
+
+            # Use bracket notation and provide defaults to avoid errors
+            final_spec_text = project_details['final_spec_text'] or ""
+            tech_spec_text = project_details['tech_spec_text'] or ""
+            ux_spec_text = project_details['ux_spec_text'] or ""
+
+            if not ux_spec_text:
+                raise Exception("Cannot generate UI test plan: The UX/UI Specification is missing.")
+
+            agent = UITestPlannerAgent_AppTarget(self.llm_service)
+            plan_markdown = agent.generate_ui_test_plan(final_spec_text, tech_spec_text, ux_spec_text)
+
+            if "Error:" in plan_markdown:
+                raise Exception(f"Agent failed to generate test plan: {plan_markdown}")
+
+            if progress_callback: progress_callback(("SUCCESS", "Test plan content generated."))
+
+            # Save to DB
+            final_plan_with_header = self.prepend_standard_header(plan_markdown, "UI Test Plan")
+            db.update_project_field(self.project_id, "ui_test_plan_text", final_plan_with_header)
+
+            # Save to Filesystem (.md and .docx)
+            if progress_callback: progress_callback(("INFO", "Saving report documents..."))
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "docs"
+            docs_dir.mkdir(parents=True, exist_ok=True)
+
+            # Use a specific filename to ensure consistency
+            plan_path_md = docs_dir / "manual_ui_test_plan.md"
+            plan_path_md.write_text(final_plan_with_header, encoding="utf-8")
+
+            report_generator = ReportGeneratorAgent()
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"Manual UI Test Plan - {self.project_name}",
+                content=plan_markdown
+            )
+            plan_path_docx = docs_dir / "manual_ui_test_plan.docx"
+            with open(plan_path_docx, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+
+            # Commit the new documents if version control is enabled
+            if project_details['version_control_enabled'] == 1:
+                if progress_callback: progress_callback(("INFO", "Committing documents to version control..."))
+                self._commit_document(plan_path_md, "docs: Add manual UI test plan (Markdown)")
+                self._commit_document(plan_path_docx, "docs: Add formatted manual UI test plan (docx)")
+
+            # Set the final phase to show the UI page
+            self.set_phase("MANUAL_UI_TESTING")
+            # return "MANUAL_UI_TESTING"
+            return True
+
+        except Exception as e:
+            logging.error(f"Failed to generate manual UI test plan: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred during test plan generation:\n{e}", is_phase_failure_override=True)
+            return False
+            # return "Error"
 
     def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
         """
@@ -2428,7 +2496,7 @@ class MasterOrchestrator:
             if "ALL_TESTS_PASSED" in failure_summary:
                 logging.info("UI test result evaluation complete: All tests passed.")
                 # If everything passes, we can consider the project complete and idle.
-                self.set_phase("PROJECT_COMPLETED")
+                self.set_phase("SPRINT_REVIEW")
             else:
                 logging.warning("UI test result evaluation complete: Failures detected.")
                 self.escalate_for_manual_debug(failure_summary, is_functional_bug=True)
@@ -3368,21 +3436,15 @@ class MasterOrchestrator:
                 if progress_callback:
                     progress_callback(("SUCCESS", "All backend tests passed. Report saved."))
                 self.sprint_completed_with_failures = False
+                self.active_plan = None # Explicitly conclude the development plan
 
-                if self.post_fix_reverification_path:
-                    logging.info(f"Re-verification path found: '{self.post_fix_reverification_path}'. Re-running chosen test path.")
-                    decision = self.post_fix_reverification_path
-                    self.post_fix_reverification_path = None
-                    self.handle_ui_test_decision(decision)
-                    return
-
+                # Set the next phase based on project type
                 project_details = self.db_manager.get_project_by_id(self.project_id)
                 if project_details and project_details['is_gui_project']:
-                    logging.info("GUI project detected. Transitioning to UI test decision point.")
                     self.set_phase("AWAITING_UI_TEST_DECISION")
                 else:
-                    logging.info("Non-GUI project or flag not set. Proceeding directly to Sprint Review.")
                     self.set_phase("SPRINT_REVIEW")
+                return True # Return simple success
             else:
                 logging.error("Final backend regression test suite FAILED. Report saved. Escalating to PM.")
                 if progress_callback:
@@ -3452,9 +3514,13 @@ class MasterOrchestrator:
             # 5. Generate and Save .docx Report
             if progress_callback: progress_callback(("INFO", "Saving test report to file..."))
             report_generator = ReportGeneratorAgent()
+            # First, create the final report content with a proper header
+            final_report_with_header = self.prepend_standard_header(report_markdown, "Automated Front-end Test Report")
+
+            # Then, generate the .docx file from that final content
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"Automated Front-end Test Report - {self.project_name}",
-                content=report_markdown
+                content=final_report_with_header
             )
 
             reports_dir = project_root / "docs" / "test_reports"

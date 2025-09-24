@@ -1,6 +1,9 @@
 # gui/manual_ui_testing_page.py
 
 import logging
+from pathlib import Path
+import shutil
+from datetime import datetime
 import docx
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog
 from PySide6.QtCore import Signal, QThreadPool
@@ -62,7 +65,8 @@ class ManualUITestingPage(QWidget):
         """Initiates the background task to process the test results."""
         self.orchestrator.is_project_dirty = True
 
-        self._set_ui_busy(True, "Processing test results file...")
+        self.window().statusBar().showMessage("Processing uploaded test results file...")
+        self._set_ui_busy(True)
 
         worker = Worker(self._task_process_results, self.selected_file_path)
         worker.signals.result.connect(self._handle_processing_result)
@@ -87,9 +91,29 @@ class ManualUITestingPage(QWidget):
             self._set_ui_busy(False)
 
     def _task_process_results(self, file_path, **kwargs):
-        """The actual function that runs in the background to read the file and pass it to the orchestrator."""
-        content = ""
+        """
+        Background worker task that saves a copy of the uploaded results,
+        reads its content, and passes it to the orchestrator for analysis.
+        """
         try:
+            # Step 1: Save a copy of the uploaded file for archiving.
+            project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
+            if not project_details or not project_details['project_root_folder']:
+                raise IOError("Project root folder could not be determined for archiving test results.")
+
+            project_root = Path(project_details['project_root_folder'])
+            reports_dir = project_root / "docs" / "test_reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+
+            source_path = Path(file_path)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            destination_path = reports_dir / f"manual_fe_test_results_{timestamp}{source_path.suffix}"
+
+            shutil.copy(source_path, destination_path)
+            logging.info(f"Archived uploaded test results to: {destination_path}")
+
+            # Step 2: Read the file content for processing (existing logic).
+            content = ""
             if file_path.endswith('.docx'):
                 doc = docx.Document(file_path)
                 content = "\n".join([p.text for p in doc.paragraphs])
@@ -97,6 +121,7 @@ class ManualUITestingPage(QWidget):
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
 
+            # Step 3: Pass content to the orchestrator.
             self.orchestrator.handle_ui_test_result_upload(content)
             return True
         except Exception as e:

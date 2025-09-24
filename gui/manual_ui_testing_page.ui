@@ -43,11 +43,12 @@
    <item>
     <widget class="QLabel" name="instructionLabel">
      <property name="text">
-      <string>&lt;b&gt;Your action is required to complete the UI testing:&lt;/b&gt;
+      <string>&lt;b&gt;Your action is required to complete manual testing:&lt;/b&gt;
 &lt;ol&gt;
-&lt;li&gt;Go to the &lt;b&gt;Documents&lt;/b&gt; page to download the &lt;i&gt;UI Test Plan&lt;/i&gt;.&lt;/li&gt;
-&lt;li&gt;Execute the tests as described in the document and record the results.&lt;/li&gt;
-&lt;li&gt;Upload the completed document below to trigger the final evaluation.&lt;/li&gt;
+&lt;li&gt;The system has just generated a new &lt;b&gt;Manual UI Test Plan&lt;/b&gt; for this sprint.&lt;/li&gt;
+&lt;li&gt;Click the &lt;b&gt;'Go to Documents Page'&lt;/b&gt; button to view and download the &lt;code&gt;manual_ui_test_plan.docx&lt;/code&gt; file.&lt;/li&gt;
+&lt;li&gt;Execute the tests as described in the document, record the results, and save the file.&lt;/li&gt;
+&lt;li&gt;Return to this page and upload your completed results document below to finalize the sprint.&lt;/li&gt;
 &lt;/ol&gt;</string>
      </property>
      <property name="wordWrap">

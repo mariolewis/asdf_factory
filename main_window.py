@@ -706,13 +706,10 @@ class ASDFMainWindow(QMainWindow):
 
     def on_view_sprint(self):
         """
-        Returns the UI to the active sprint workflow, allowing the Genesis page
-        to display the correct context (dashboard, processing, or debug).
+        Returns the UI to the previously active sprint workflow phase.
         """
-        if self.orchestrator.project_id and self.orchestrator.is_sprint_active():
-            # This is the fix: Always set the phase to the main sprint activity phase.
-            # The Genesis page's prepare_for_display() method will handle showing the correct sub-state.
-            self.orchestrator.set_phase("SPRINT_IN_PROGRESS")
+        if self.orchestrator.project_id and self.previous_phase:
+            self.orchestrator.set_phase(self.previous_phase.name)
             self.update_ui_after_state_change()
 
     def update_ui_after_state_change(self):
@@ -783,8 +780,11 @@ class ASDFMainWindow(QMainWindow):
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
         elif current_phase_name == "AWAITING_UI_TEST_DECISION":
+            self.statusBar().clearMessage()
+            # Find this entire block and replace it
             project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
             is_auto_test_configured = bool(project_details and project_details['ui_test_execution_command'])
+            is_gui = bool(project_details and project_details['is_gui_project'] == 1)
 
             self.decision_page.configure(
                 header="Front-end Testing Phase",
@@ -793,6 +793,7 @@ class ASDFMainWindow(QMainWindow):
                 option1_text="Run Automated Front-end Tests",
                 option1_enabled=is_auto_test_configured,
                 option2_text="Run Manual Front-end Tests",
+                option2_enabled=is_gui,  # This line enforces the new rule
                 option3_text="Skip and Go to Sprint Review"
             )
             self.decision_page.option1_selected.connect(self.on_ui_test_decision_automated)
@@ -813,6 +814,26 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.option1_selected.connect(self.on_script_failure_fallback_manual)
             self.decision_page.option2_selected.connect(self.on_ui_test_decision_skip)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "GENERATING_MANUAL_TEST_PLAN":
+            self.setEnabled(False)
+            status_message = "Generating manual test plan documents..."
+            self.statusBar().showMessage(status_message)
+
+            # Use the new method to update the processing page display
+            self.genesis_page.update_processing_display(simple_status_message=status_message)
+
+            # Set the main UI to show the genesis page in its processing state
+            self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+            self.genesis_page.ui.logOutputTextEdit.clear()
+            self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
+
+            worker = Worker(self.orchestrator._generate_manual_ui_test_plan_phase)
+            worker.signals.progress.connect(self.genesis_page.on_progress_update)
+            worker.signals.result.connect(self.genesis_page._handle_phase_completion_result)
+            worker.signals.error.connect(self.genesis_page._on_task_error)
+            worker.signals.finished.connect(self._on_pausing_task_finished)
+            self.threadpool.start(worker)
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
             self.setEnabled(False)

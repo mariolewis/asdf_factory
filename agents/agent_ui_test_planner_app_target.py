@@ -27,39 +27,44 @@ class UITestPlannerAgent_AppTarget:
             raise ValueError("llm_service is required for the UITestPlannerAgent_AppTarget.")
         self.llm_service = llm_service
 
-    def generate_ui_test_plan(self, functional_spec_text: str, technical_spec_text: str) -> str:
+    def generate_ui_test_plan(self, functional_spec_text: str, technical_spec_text: str, ux_spec_text: str) -> str:
         """
-        Generates a UI test plan based on functional and technical specs.
+        Generates a UI test plan based on functional, technical, and UX specs.
 
         Args:
             functional_spec_text (str): The complete functional specification.
             technical_spec_text (str): The complete technical specification.
+            ux_spec_text (str): The complete UX/UI specification, including the JSON blueprint.
 
         Returns:
             str: A string containing the UI test plan in Markdown table format.
-                 Returns an error message string if an API call fails.
+                Returns an error message string if an API call fails.
         """
         try:
             prompt = f"""
             You are a meticulous Software Quality Assurance (QA) Specialist.
-            Your task is to create a detailed, human-readable UI test plan.
+            Your task is to create a detailed, human-readable UI test plan based on the provided project documentation.
 
             **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown table for the test plan. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the table's header.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Format:** Your entire response MUST be a single Markdown table. Do not include any other text.
-            2.  **Table Columns:** The table MUST have the columns: "Test Case ID", "Feature", "Test Scenario", "Steps to Reproduce", and "Expected Result".
-            3.  **Comprehensive Coverage:** Your test cases must cover:
-                - All user-facing features described in the Functional Specification.
-                - Technical constraints and components mentioned in the Technical Specification (e.g., test API error responses, database validation rules).
-            4.  **Clarity:** Provide clear, numbered steps that a non-technical user can follow.
+            1.  **Primary Source:** You MUST use the **UX/UI Specification** as the primary source for creating test cases, as it contains the most detailed descriptions of screens, components, and user flows.
+            2.  **Format:** Your entire response MUST be a single Markdown table.
+            3.  **Table Columns:** The table MUST have the columns: "Test Case ID", "Feature", "Test Scenario", "Steps to Reproduce", "Expected Result", and a blank "Actual Result" column for the user to fill in.
+            4.  **Comprehensive Coverage:** Your test cases must cover all user-facing features, screens, and components described in the UX/UI Specification. Use the other specifications for additional context on business logic and technical constraints.
+            5.  **Clarity:** Provide clear, numbered steps that a non-technical user can follow.
 
-            **--- INPUT 1: Functional Specification ---**
+            **--- INPUT 1: UX/UI Specification (Primary Source) ---**
+            ```
+            {ux_spec_text}
+            ```
+
+            **--- INPUT 2: Functional Specification (Context) ---**
             ```
             {functional_spec_text}
             ```
 
-            **--- INPUT 2: Technical Specification ---**
+            **--- INPUT 3: Technical Specification (Context) ---**
             ```
             {technical_spec_text}
             ```
