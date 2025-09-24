@@ -816,7 +816,6 @@ class ASDFMainWindow(QMainWindow):
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "GENERATING_MANUAL_TEST_PLAN":
-            self.setEnabled(False)
             status_message = "Generating manual test plan documents..."
             self.statusBar().showMessage(status_message)
 
@@ -832,11 +831,10 @@ class ASDFMainWindow(QMainWindow):
             worker.signals.progress.connect(self.genesis_page.on_progress_update)
             worker.signals.result.connect(self.genesis_page._handle_phase_completion_result)
             worker.signals.error.connect(self.genesis_page._on_task_error)
-            worker.signals.finished.connect(self._on_pausing_task_finished)
+            worker.signals.finished.connect(self.genesis_page._on_task_finished)
             self.threadpool.start(worker)
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
-            self.setEnabled(False)
             task_info = self.orchestrator.task_awaiting_approval or {}
             task_to_run = task_info.get("task_to_run")
 
@@ -867,7 +865,7 @@ class ASDFMainWindow(QMainWindow):
             worker.signals.progress.connect(self.genesis_page.on_progress_update)
             worker.signals.result.connect(self.genesis_page._handle_development_result)
             worker.signals.error.connect(self.genesis_page._on_task_error)
-            worker.signals.finished.connect(self._on_pausing_task_finished)
+            worker.signals.finished.connect(self.genesis_page._on_task_finished)
             self.threadpool.start(worker)
 
         elif current_phase_name == "AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION":
