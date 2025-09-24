@@ -46,11 +46,6 @@ class Ui_ManualUITestingPage(object):
 
         self.verticalLayout.addWidget(self.instructionLabel)
 
-        self.goToDocumentsButton = QPushButton(ManualUITestingPage)
-        self.goToDocumentsButton.setObjectName(u"goToDocumentsButton")
-
-        self.verticalLayout.addWidget(self.goToDocumentsButton)
-
         self.line_2 = QFrame(ManualUITestingPage)
         self.line_2.setObjectName(u"line_2")
         self.line_2.setFrameShape(QFrame.Shape.HLine)
@@ -79,10 +74,24 @@ class Ui_ManualUITestingPage(object):
 
         self.verticalLayout.addLayout(self.horizontalLayout)
 
+        self.horizontalLayout_2 = QHBoxLayout()
+        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_2.addItem(self.horizontalSpacer)
+
+        self.goToDocumentsButton = QPushButton(ManualUITestingPage)
+        self.goToDocumentsButton.setObjectName(u"goToDocumentsButton")
+
+        self.horizontalLayout_2.addWidget(self.goToDocumentsButton)
+
         self.processResultsButton = QPushButton(ManualUITestingPage)
         self.processResultsButton.setObjectName(u"processResultsButton")
 
-        self.verticalLayout.addWidget(self.processResultsButton)
+        self.horizontalLayout_2.addWidget(self.processResultsButton)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_2)
 
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
@@ -96,7 +105,7 @@ class Ui_ManualUITestingPage(object):
 
     def retranslateUi(self, ManualUITestingPage):
         ManualUITestingPage.setWindowTitle(QCoreApplication.translate("ManualUITestingPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"Testing && Validation", None))
+        self.headerLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"Manual UI Testing", None))
         self.instructionLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Your action is required to complete manual testing:</b>\n"
 "<ol>\n"
 "<li>The system has just generated a new <b>Manual UI Test Plan</b> for this sprint.</li>\n"
@@ -104,9 +113,9 @@ class Ui_ManualUITestingPage(object):
 "<li>Execute the tests as described in the document, record the results, and save the file.</li>\n"
 "<li>Return to this page and upload your completed results document below to finalize the sprint.</li>\n"
 "</ol>", None))
-        self.goToDocumentsButton.setText(QCoreApplication.translate("ManualUITestingPage", u"Go to Documents Page", None))
         self.uploadLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Upload Completed Test Plan Results:</b>", None))
         self.browseButton.setText(QCoreApplication.translate("ManualUITestingPage", u"Browse...", None))
+        self.goToDocumentsButton.setText(QCoreApplication.translate("ManualUITestingPage", u"Go to Documents Page", None))
         self.processResultsButton.setText(QCoreApplication.translate("ManualUITestingPage", u"Process Test Results", None))
     # retranslateUi
 

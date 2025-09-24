@@ -194,7 +194,17 @@ class GenesisPage(QWidget):
     def run_development_step(self):
         """Initiates the background task to run the next development step."""
 
+        # Set the main window's status bar message for the current task
         details = self.orchestrator.get_current_task_details()
+        if details:
+            task = details.get("task", {})
+            cursor = details.get("cursor", 0)
+            total = details.get("total", 0)
+            task_name = task.get('component_name', 'Unnamed Task')
+            is_fix = details.get("is_fix_mode", False)
+            mode_prefix = "Fixing" if is_fix else "Developing"
+            status_message = f"{mode_prefix} task {cursor + 1}/{total}: {task_name}..."
+            self.window().statusBar().showMessage(status_message)
         is_final_verification = not details or "micro_spec_id" not in details.get("task", {})
         if is_final_verification:
             self.window().statusBar().showMessage("Running Backend Testing...")
