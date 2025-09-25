@@ -759,6 +759,8 @@ class ASDFMainWindow(QMainWindow):
         "AWAITING_SPEC_REFINEMENT_SUBMISSION": self.spec_elaboration_page,
         "AWAITING_SPEC_FINAL_APPROVAL": self.spec_elaboration_page,
         "TECHNICAL_SPECIFICATION": self.tech_spec_page,
+        "AWAITING_TECH_SPEC_GUIDELINES": self.tech_spec_page,
+        "AWAITING_TECH_SPEC_RECTIFICATION": self.tech_spec_page,
         "BUILD_SCRIPT_SETUP": self.build_script_page,
         "TEST_ENVIRONMENT_SETUP": self.test_env_page,
         "CODING_STANDARD_GENERATION": self.coding_standard_page,

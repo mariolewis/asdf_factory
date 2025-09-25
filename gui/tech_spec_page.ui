@@ -45,42 +45,9 @@
      <widget class="QWidget" name="initialChoicePage">
       <layout class="QVBoxLayout" name="verticalLayout_2">
        <item>
-        <widget class="QLabel" name="osLabel">
-         <property name="text">
-          <string>First, select the target Operating System for the application.</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QComboBox" name="osComboBox">
-         <item>
-          <property name="text">
-           <string>Windows</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>Linux</string>
-          </property>
-         </item>
-         <item>
-          <property name="text">
-           <string>macOS</string>
-          </property>
-         </item>
-        </widget>
-       </item>
-       <item>
-        <widget class="Line" name="line_2">
-         <property name="orientation">
-          <enum>Qt::Horizontal</enum>
-         </property>
-        </widget>
-       </item>
-       <item>
         <widget class="QLabel" name="instructionLabel">
          <property name="text">
-          <string>Next, choose how to create the Technical Specification document.</string>
+          <string>First, choose how to create the Technical Specification document.</string>
          </property>
         </widget>
        </item>
@@ -145,7 +112,7 @@
        <item>
         <widget class="QLabel" name="pmDefineInstructionLabel">
          <property name="text">
-          <string>Provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). The AI will use your input to generate the full technical specification document.</string>
+          <string>Provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). You can also upload supporting documents. The AI will use your input to generate the full technical specification document.</string>
          </property>
          <property name="wordWrap">
           <bool>true</bool>
@@ -154,6 +121,31 @@
        </item>
        <item>
         <widget class="QPlainTextEdit" name="pmGuidelinesTextEdit"/>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_5">
+         <item>
+          <widget class="QLabel" name="uploadLabel">
+           <property name="text">
+            <string>Supporting Documents (Optional):</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="uploadPathLineEdit">
+           <property name="readOnly">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="browseFilesButton">
+           <property name="text">
+            <string>Browse...</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout_3">
@@ -173,7 +165,7 @@
          <item>
           <widget class="QPushButton" name="generateFromGuidelinesButton">
            <property name="text">
-            <string>Generate Full Specification from My Input</string>
+            <string>Analyze &amp; Generate Draft</string>
            </property>
           </widget>
          </item>
@@ -191,33 +183,51 @@
         </widget>
        </item>
        <item>
-        <widget class="QLabel" name="infoLabel">
-         <property name="text">
-          <string>Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please enter your input in the box below the draft.</string>
-         </property>
-         <property name="wordWrap">
-          <bool>true</bool>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QTextEdit" name="techSpecTextEdit"/>
-       </item>
-       <item>
-        <widget class="QLabel" name="feedbackLabel">
-         <property name="text">
-          <string>Provide feedback for refinement (optional):</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPlainTextEdit" name="feedbackTextEdit">
-         <property name="maximumSize">
-          <size>
-           <width>16777215</width>
-           <height>100</height>
-          </size>
-         </property>
+        <widget class="QTabWidget" name="reviewTabWidget">
+         <widget class="QWidget" name="specDraftTab">
+          <attribute name="title">
+           <string>Specification Draft</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_7">
+           <item>
+            <widget class="QTextEdit" name="techSpecTextEdit"/>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="aiAnalysisTab">
+          <attribute name="title">
+           <string>AI Analysis &amp; Suggestions</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_8">
+           <item>
+            <widget class="QTextEdit" name="aiAnalysisTextEdit">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="feedbackTab">
+          <attribute name="title">
+           <string>Your Feedback &amp; Refinements</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_10">
+           <item>
+            <widget class="QLabel" name="feedbackLabel">
+             <property name="text">
+              <string>Provide feedback and clarifications below to have the AI generate a new version of the draft.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPlainTextEdit" name="feedbackTextEdit"/>
+           </item>
+          </layout>
+         </widget>
         </widget>
        </item>
        <item>
@@ -226,12 +236,6 @@
           <spacer name="horizontalSpacer">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
-           </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
            </property>
           </spacer>
          </item>
@@ -288,6 +292,79 @@
            <width>20</width>
            <height>40</height>
           </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="osSelectionPage">
+      <layout class="QVBoxLayout" name="verticalLayout_6">
+       <item>
+        <widget class="QLabel" name="osLabel">
+         <property name="text">
+          <string>Please select the target Operating System for the application.</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QComboBox" name="osComboBox">
+         <item>
+          <property name="text">
+           <string>Windows</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>Linux</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>macOS</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>Android and iOS</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>Windows and iOS</string>
+          </property>
+         </item>
+         <item>
+          <property name="text">
+           <string>Linux and Windows</string>
+          </property>
+         </item>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <item>
+          <spacer name="horizontalSpacer_4">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="generateProposalButton">
+           <property name="text">
+            <string>Generate Proposal</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_4">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeType">
+          <enum>QSizePolicy::Expanding</enum>
          </property>
         </spacer>
        </item>

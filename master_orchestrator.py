@@ -70,6 +70,8 @@ class FactoryPhase(Enum):
     AWAITING_SPEC_REFINEMENT_SUBMISSION = auto()
     AWAITING_SPEC_FINAL_APPROVAL = auto()
     TECHNICAL_SPECIFICATION = auto()
+    AWAITING_TECH_SPEC_GUIDELINES = auto()
+    AWAITING_TECH_SPEC_RECTIFICATION = auto()
     BUILD_SCRIPT_SETUP = auto()
     TEST_ENVIRONMENT_SETUP = auto()
     CODING_STANDARD_GENERATION = auto()
@@ -221,6 +223,8 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION: "Review Application Specification Draft",
         FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL: "Refine Application Specification",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
+        FactoryPhase.AWAITING_TECH_SPEC_GUIDELINES: "Awaiting Technology Guidelines",
+        FactoryPhase.AWAITING_TECH_SPEC_RECTIFICATION: "Refine Technical Specification",
         FactoryPhase.BUILD_SCRIPT_SETUP: "Build Script Generation",
         FactoryPhase.TEST_ENVIRONMENT_SETUP: "Test Environment Setup",
         FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
@@ -728,6 +732,42 @@ class MasterOrchestrator:
             self.set_phase("GENERATING_APP_SPEC_AND_RISK_ANALYSIS")
         else:
             logging.warning(f"Received an unknown decision for UX/UI phase: {decision}")
+
+    def handle_tech_spec_validation_failure(self, pm_guidelines: str, ai_analysis: str):
+        """
+        Handles a failed validation of PM-provided tech guidelines.
+        """
+        logging.warning("PM-provided tech guidelines failed validation. Awaiting rectification.")
+        self.task_awaiting_approval = {
+            "draft_spec_from_guidelines": pm_guidelines,
+            "ai_analysis": ai_analysis
+        }
+        self.set_phase("AWAITING_TECH_SPEC_RECTIFICATION")
+
+    def handle_tech_spec_refinement(self, current_draft: str, pm_feedback: str, target_os: str, iteration_count: int, ai_issues_text: str):
+        """
+        Handles the iterative refinement loop for the technical specification.
+        """
+        from agents.agent_tech_stack_proposal import TechStackProposalAgent
+        agent = TechStackProposalAgent(self.llm_service)
+
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        final_spec_text = project_details['final_spec_text'] if project_details else ""
+
+        pure_content = self._strip_header_from_document(current_draft)
+        refined_content = agent.refine_stack(pure_content, pm_feedback, target_os, final_spec_text, ai_issues_text)
+
+        clean_refined_body = self._strip_header_from_document(refined_content)
+        refined_draft_with_header = self.prepend_standard_header(clean_refined_body, "Technical Specification")
+
+        # Pass the previous analysis (ai_issues_text) to the agent for convergence
+        ai_analysis = agent.analyze_draft(refined_draft_with_header, iteration_count, ai_issues_text)
+
+        self.task_awaiting_approval = {
+            "draft_spec_from_guidelines": refined_draft_with_header,
+            "ai_analysis": ai_analysis
+        }
+        self.set_phase("AWAITING_TECH_SPEC_RECTIFICATION")
 
     def generate_initial_ux_spec_draft(self):
         """

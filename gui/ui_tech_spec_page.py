@@ -16,9 +16,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QComboBox, QFrame, QHBoxLayout,
-    QLabel, QPlainTextEdit, QPushButton, QSizePolicy,
-    QSpacerItem, QStackedWidget, QTextEdit, QVBoxLayout,
-    QWidget)
+    QLabel, QLineEdit, QPlainTextEdit, QPushButton,
+    QSizePolicy, QSpacerItem, QStackedWidget, QTabWidget,
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_TechSpecPage(object):
     def setupUi(self, TechSpecPage):
@@ -46,26 +46,6 @@ class Ui_TechSpecPage(object):
         self.initialChoicePage.setObjectName(u"initialChoicePage")
         self.verticalLayout_2 = QVBoxLayout(self.initialChoicePage)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.osLabel = QLabel(self.initialChoicePage)
-        self.osLabel.setObjectName(u"osLabel")
-
-        self.verticalLayout_2.addWidget(self.osLabel)
-
-        self.osComboBox = QComboBox(self.initialChoicePage)
-        self.osComboBox.addItem("")
-        self.osComboBox.addItem("")
-        self.osComboBox.addItem("")
-        self.osComboBox.setObjectName(u"osComboBox")
-
-        self.verticalLayout_2.addWidget(self.osComboBox)
-
-        self.line_2 = QFrame(self.initialChoicePage)
-        self.line_2.setObjectName(u"line_2")
-        self.line_2.setFrameShape(QFrame.Shape.HLine)
-        self.line_2.setFrameShadow(QFrame.Shadow.Sunken)
-
-        self.verticalLayout_2.addWidget(self.line_2)
-
         self.instructionLabel = QLabel(self.initialChoicePage)
         self.instructionLabel.setObjectName(u"instructionLabel")
 
@@ -115,6 +95,27 @@ class Ui_TechSpecPage(object):
 
         self.verticalLayout_4.addWidget(self.pmGuidelinesTextEdit)
 
+        self.horizontalLayout_5 = QHBoxLayout()
+        self.horizontalLayout_5.setObjectName(u"horizontalLayout_5")
+        self.uploadLabel = QLabel(self.pmDefinePage)
+        self.uploadLabel.setObjectName(u"uploadLabel")
+
+        self.horizontalLayout_5.addWidget(self.uploadLabel)
+
+        self.uploadPathLineEdit = QLineEdit(self.pmDefinePage)
+        self.uploadPathLineEdit.setObjectName(u"uploadPathLineEdit")
+        self.uploadPathLineEdit.setReadOnly(True)
+
+        self.horizontalLayout_5.addWidget(self.uploadPathLineEdit)
+
+        self.browseFilesButton = QPushButton(self.pmDefinePage)
+        self.browseFilesButton.setObjectName(u"browseFilesButton")
+
+        self.horizontalLayout_5.addWidget(self.browseFilesButton)
+
+
+        self.verticalLayout_4.addLayout(self.horizontalLayout_5)
+
         self.horizontalLayout_3 = QHBoxLayout()
         self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
         self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
@@ -139,31 +140,51 @@ class Ui_TechSpecPage(object):
 
         self.verticalLayout_3.addWidget(self.reviewHeaderLabel)
 
-        self.infoLabel = QLabel(self.reviewPage)
-        self.infoLabel.setObjectName(u"infoLabel")
-        self.infoLabel.setWordWrap(True)
-
-        self.verticalLayout_3.addWidget(self.infoLabel)
-
-        self.techSpecTextEdit = QTextEdit(self.reviewPage)
+        self.reviewTabWidget = QTabWidget(self.reviewPage)
+        self.reviewTabWidget.setObjectName(u"reviewTabWidget")
+        self.specDraftTab = QWidget()
+        self.specDraftTab.setObjectName(u"specDraftTab")
+        self.verticalLayout_7 = QVBoxLayout(self.specDraftTab)
+        self.verticalLayout_7.setObjectName(u"verticalLayout_7")
+        self.techSpecTextEdit = QTextEdit(self.specDraftTab)
         self.techSpecTextEdit.setObjectName(u"techSpecTextEdit")
 
-        self.verticalLayout_3.addWidget(self.techSpecTextEdit)
+        self.verticalLayout_7.addWidget(self.techSpecTextEdit)
 
-        self.feedbackLabel = QLabel(self.reviewPage)
+        self.reviewTabWidget.addTab(self.specDraftTab, "")
+        self.aiAnalysisTab = QWidget()
+        self.aiAnalysisTab.setObjectName(u"aiAnalysisTab")
+        self.verticalLayout_8 = QVBoxLayout(self.aiAnalysisTab)
+        self.verticalLayout_8.setObjectName(u"verticalLayout_8")
+        self.aiAnalysisTextEdit = QTextEdit(self.aiAnalysisTab)
+        self.aiAnalysisTextEdit.setObjectName(u"aiAnalysisTextEdit")
+        self.aiAnalysisTextEdit.setReadOnly(True)
+
+        self.verticalLayout_8.addWidget(self.aiAnalysisTextEdit)
+
+        self.reviewTabWidget.addTab(self.aiAnalysisTab, "")
+        self.feedbackTab = QWidget()
+        self.feedbackTab.setObjectName(u"feedbackTab")
+        self.verticalLayout_10 = QVBoxLayout(self.feedbackTab)
+        self.verticalLayout_10.setObjectName(u"verticalLayout_10")
+        self.feedbackLabel = QLabel(self.feedbackTab)
         self.feedbackLabel.setObjectName(u"feedbackLabel")
+        self.feedbackLabel.setWordWrap(True)
 
-        self.verticalLayout_3.addWidget(self.feedbackLabel)
+        self.verticalLayout_10.addWidget(self.feedbackLabel)
 
-        self.feedbackTextEdit = QPlainTextEdit(self.reviewPage)
+        self.feedbackTextEdit = QPlainTextEdit(self.feedbackTab)
         self.feedbackTextEdit.setObjectName(u"feedbackTextEdit")
-        self.feedbackTextEdit.setMaximumSize(QSize(16777215, 100))
 
-        self.verticalLayout_3.addWidget(self.feedbackTextEdit)
+        self.verticalLayout_10.addWidget(self.feedbackTextEdit)
+
+        self.reviewTabWidget.addTab(self.feedbackTab, "")
+
+        self.verticalLayout_3.addWidget(self.reviewTabWidget)
 
         self.horizontalLayout_2 = QHBoxLayout()
         self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer)
 
@@ -200,6 +221,45 @@ class Ui_TechSpecPage(object):
         self.verticalLayout_5.addItem(self.verticalSpacer_3)
 
         self.stackedWidget.addWidget(self.processingPage)
+        self.osSelectionPage = QWidget()
+        self.osSelectionPage.setObjectName(u"osSelectionPage")
+        self.verticalLayout_6 = QVBoxLayout(self.osSelectionPage)
+        self.verticalLayout_6.setObjectName(u"verticalLayout_6")
+        self.osLabel = QLabel(self.osSelectionPage)
+        self.osLabel.setObjectName(u"osLabel")
+
+        self.verticalLayout_6.addWidget(self.osLabel)
+
+        self.osComboBox = QComboBox(self.osSelectionPage)
+        self.osComboBox.addItem("")
+        self.osComboBox.addItem("")
+        self.osComboBox.addItem("")
+        self.osComboBox.addItem("")
+        self.osComboBox.addItem("")
+        self.osComboBox.addItem("")
+        self.osComboBox.setObjectName(u"osComboBox")
+
+        self.verticalLayout_6.addWidget(self.osComboBox)
+
+        self.horizontalLayout_4 = QHBoxLayout()
+        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
+        self.horizontalSpacer_4 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_4.addItem(self.horizontalSpacer_4)
+
+        self.generateProposalButton = QPushButton(self.osSelectionPage)
+        self.generateProposalButton.setObjectName(u"generateProposalButton")
+
+        self.horizontalLayout_4.addWidget(self.generateProposalButton)
+
+
+        self.verticalLayout_6.addLayout(self.horizontalLayout_4)
+
+        self.verticalSpacer_4 = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout_6.addItem(self.verticalSpacer_4)
+
+        self.stackedWidget.addWidget(self.osSelectionPage)
 
         self.verticalLayout.addWidget(self.stackedWidget)
 
@@ -212,22 +272,30 @@ class Ui_TechSpecPage(object):
     def retranslateUi(self, TechSpecPage):
         TechSpecPage.setWindowTitle(QCoreApplication.translate("TechSpecPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("TechSpecPage", u"Technical Specification & Architecture", None))
-        self.osLabel.setText(QCoreApplication.translate("TechSpecPage", u"First, select the target Operating System for the application.", None))
-        self.osComboBox.setItemText(0, QCoreApplication.translate("TechSpecPage", u"Windows", None))
-        self.osComboBox.setItemText(1, QCoreApplication.translate("TechSpecPage", u"Linux", None))
-        self.osComboBox.setItemText(2, QCoreApplication.translate("TechSpecPage", u"macOS", None))
-
-        self.instructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"Next, choose how to create the Technical Specification document.", None))
+        self.instructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"First, choose how to create the Technical Specification document.", None))
         self.proposeStackButton.setText(QCoreApplication.translate("TechSpecPage", u"Let ASDF Propose a Tech Stack", None))
         self.pmDefineButton.setText(QCoreApplication.translate("TechSpecPage", u"I Will Provide Technology Guidelines", None))
         self.pmDefineHeaderLabel.setText(QCoreApplication.translate("TechSpecPage", u"Define Technology Guidelines", None))
-        self.pmDefineInstructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). The AI will use your input to generate the full technical specification document.", None))
-        self.generateFromGuidelinesButton.setText(QCoreApplication.translate("TechSpecPage", u"Generate Full Specification from My Input", None))
+        self.pmDefineInstructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). You can also upload supporting documents. The AI will use your input to generate the full technical specification document.", None))
+        self.uploadLabel.setText(QCoreApplication.translate("TechSpecPage", u"Supporting Documents (Optional):", None))
+        self.browseFilesButton.setText(QCoreApplication.translate("TechSpecPage", u"Browse...", None))
+        self.generateFromGuidelinesButton.setText(QCoreApplication.translate("TechSpecPage", u"Analyze & Generate Draft", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("TechSpecPage", u"Review Technical Specification", None))
-        self.infoLabel.setText(QCoreApplication.translate("TechSpecPage", u"Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please enter your input in the box below the draft.", None))
-        self.feedbackLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide feedback for refinement (optional):", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.specDraftTab), QCoreApplication.translate("TechSpecPage", u"Specification Draft", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.aiAnalysisTab), QCoreApplication.translate("TechSpecPage", u"AI Analysis & Suggestions", None))
+        self.feedbackLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide feedback and clarifications below to have the AI generate a new version of the draft.", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.feedbackTab), QCoreApplication.translate("TechSpecPage", u"Your Feedback & Refinements", None))
         self.refineButton.setText(QCoreApplication.translate("TechSpecPage", u"Submit Feedback & Refine", None))
         self.approveButton.setText(QCoreApplication.translate("TechSpecPage", u"Approve Technical Specification", None))
         self.processingLabel.setText(QCoreApplication.translate("TechSpecPage", u"Processing... Please wait.", None))
+        self.osLabel.setText(QCoreApplication.translate("TechSpecPage", u"Please select the target Operating System for the application.", None))
+        self.osComboBox.setItemText(0, QCoreApplication.translate("TechSpecPage", u"Windows", None))
+        self.osComboBox.setItemText(1, QCoreApplication.translate("TechSpecPage", u"Linux", None))
+        self.osComboBox.setItemText(2, QCoreApplication.translate("TechSpecPage", u"macOS", None))
+        self.osComboBox.setItemText(3, QCoreApplication.translate("TechSpecPage", u"Android and iOS", None))
+        self.osComboBox.setItemText(4, QCoreApplication.translate("TechSpecPage", u"Windows and iOS", None))
+        self.osComboBox.setItemText(5, QCoreApplication.translate("TechSpecPage", u"Linux and Windows", None))
+
+        self.generateProposalButton.setText(QCoreApplication.translate("TechSpecPage", u"Generate Proposal", None))
     # retranslateUi
 

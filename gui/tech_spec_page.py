@@ -6,13 +6,15 @@ from pathlib import Path
 import logging
 import markdown
 import warnings
-from PySide6.QtWidgets import QWidget, QMessageBox
+import json
+from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog
 from PySide6.QtCore import Signal, QThreadPool
 
 from gui.ui_tech_spec_page import Ui_TechSpecPage
 from gui.worker import Worker
-from master_orchestrator import MasterOrchestrator
+from master_orchestrator import MasterOrchestrator, FactoryPhase
 from agents.agent_tech_stack_proposal import TechStackProposalAgent
+from agents.agent_project_bootstrap import ProjectBootstrapAgent
 
 class TechSpecPage(QWidget):
     """
@@ -25,6 +27,9 @@ class TechSpecPage(QWidget):
         super().__init__(parent)
         self.orchestrator = orchestrator
         self.tech_spec_draft = ""
+        self.selected_files = []
+        self.ai_analysis = ""
+        self.refinement_iteration_count = 1
 
         self.ui = Ui_TechSpecPage()
         self.ui.setupUi(self)
@@ -33,22 +38,42 @@ class TechSpecPage(QWidget):
         self.connect_signals()
 
     def prepare_for_display(self):
-        """Prepares the page, loading a resumed draft if one exists."""
-        if self.orchestrator.active_spec_draft is not None:
+        """Prepares the page based on the orchestrator's current phase."""
+        current_phase = self.orchestrator.current_phase
+        logging.debug(f"TechSpecPage preparing for display in phase: {current_phase.name}")
+
+        if current_phase == FactoryPhase.TECHNICAL_SPECIFICATION:
+            self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+            self.refinement_iteration_count = 1 # Reset counter
+
+        elif current_phase == FactoryPhase.AWAITING_TECH_SPEC_RECTIFICATION:
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            self.tech_spec_draft = task_data.get("draft_spec_from_guidelines", "# Your guidelines will appear here.")
+            self.ai_analysis = task_data.get("ai_analysis", "No analysis found.")
+
+            # This is the fix for the rendering bug
+            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
+            self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
+            self.ui.feedbackTextEdit.clear()
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.ui.reviewTabWidget.setCurrentIndex(1)
+
+        elif self.orchestrator.active_spec_draft is not None:
             logging.info("Resuming tech spec with a saved draft.")
             self.tech_spec_draft = self.orchestrator.active_spec_draft
-            self.orchestrator.set_active_spec_draft(None) # Clear the draft
-
+            self.orchestrator.set_active_spec_draft(None)
             self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
         else:
-            # Default behavior if not resuming
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
 
     def prepare_for_new_project(self):
         """Resets the page to its initial state for a new project."""
         logging.info("Resetting TechSpecPage for a new project.")
         self.tech_spec_draft = ""
+        self.selected_files = []
+        self.ai_analysis = ""
+        self.refinement_iteration_count = 1
 
         self.ui.techSpecTextEdit.blockSignals(True)
         self.ui.feedbackTextEdit.blockSignals(True)
@@ -57,6 +82,7 @@ class TechSpecPage(QWidget):
         self.ui.techSpecTextEdit.clear()
         self.ui.feedbackTextEdit.clear()
         self.ui.pmGuidelinesTextEdit.clear()
+        self.ui.uploadPathLineEdit.clear()
 
         self.ui.techSpecTextEdit.blockSignals(False)
         self.ui.feedbackTextEdit.blockSignals(False)
@@ -68,12 +94,11 @@ class TechSpecPage(QWidget):
 
     def connect_signals(self):
         """Connects UI element signals to Python methods."""
-        self.ui.proposeStackButton.clicked.connect(self.run_propose_stack_task)
+        self.ui.proposeStackButton.clicked.connect(self.on_propose_stack_clicked)
         self.ui.pmDefineButton.clicked.connect(self.on_pm_define_clicked)
+        self.ui.browseFilesButton.clicked.connect(self.on_browse_files_clicked)
         self.ui.generateFromGuidelinesButton.clicked.connect(self.run_generate_from_guidelines_task)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", RuntimeWarning)
-            self.ui.refineButton.clicked.disconnect()
+        self.ui.generateProposalButton.clicked.connect(self.run_propose_stack_task)
         self.ui.refineButton.clicked.connect(self.run_refine_task)
         self.ui.approveButton.clicked.connect(self.on_approve_clicked)
         self.ui.techSpecTextEdit.textChanged.connect(self.on_draft_changed)
@@ -85,15 +110,21 @@ class TechSpecPage(QWidget):
             self.orchestrator.set_active_spec_draft(draft_text)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
-        """Disables or enables the page and updates the main status bar."""
-        self.setEnabled(not is_busy)
+        """Disables or enables the main window and updates the status bar."""
         main_window = self.window()
-        if main_window and hasattr(main_window, 'statusBar'):
+        if not main_window:
+            self.setEnabled(not is_busy)
+            return
+
+        main_window.setEnabled(not is_busy)
+        if hasattr(main_window, 'statusBar'):
             if is_busy:
+                self.ui.processingLabel.setText(message)
                 self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
                 main_window.statusBar().showMessage(message)
             else:
                 main_window.statusBar().clearMessage()
+                # Switch back to review page after processing is done.
                 self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
 
     def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
@@ -111,37 +142,61 @@ class TechSpecPage(QWidget):
             QMessageBox.critical(self, "Error", error_msg)
         finally:
             self._set_ui_busy(False)
+            self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
 
-    def run_propose_stack_task(self):
-        target_os = self.ui.osComboBox.currentText()
-        self._execute_task(self._task_propose_stack, self._handle_generation_result, target_os,
-                           status_message="Generating tech stack proposal...")
+    def on_propose_stack_clicked(self):
+        """Switches to the OS selection view."""
+        self.ui.stackedWidget.setCurrentWidget(self.ui.osSelectionPage)
 
     def on_pm_define_clicked(self):
+        """Switches to the PM guidelines input view."""
         self.ui.stackedWidget.setCurrentWidget(self.ui.pmDefinePage)
 
-    def run_generate_from_guidelines_task(self):
-        guidelines = self.ui.pmGuidelinesTextEdit.toPlainText().strip()
-        if not guidelines:
-            QMessageBox.warning(self, "Input Required", "Please provide your technology guidelines.")
-            return
+    def on_browse_files_clicked(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Specification Documents", "", "Documents (*.txt *.md *.pdf *.docx)")
+        if files:
+            self.selected_files = files
+            self.ui.uploadPathLineEdit.setText("; ".join(files))
+
+    def run_propose_stack_task(self):
+        """Runs the task to generate a tech spec without PM guidelines."""
         target_os = self.ui.osComboBox.currentText()
-        self._execute_task(self._task_generate_from_guidelines, self._handle_generation_result, guidelines, target_os,
-                           status_message="Generating specification from guidelines...")
+        self._execute_task(self._task_propose_stack, self._handle_generation_result, target_os, None,
+                           status_message="Generating tech stack proposal...")
+
+    def run_generate_from_guidelines_task(self):
+        """Validates PM guidelines and then generates the tech spec."""
+        guidelines = self.ui.pmGuidelinesTextEdit.toPlainText().strip()
+        if not guidelines and not self.selected_files:
+            QMessageBox.warning(self, "Input Required", "Please provide technology guidelines or upload a document.")
+            return
+
+        target_os = self.ui.osComboBox.currentText()
+        self._execute_task(self._task_validate_and_generate, self._handle_validation_result, guidelines, self.selected_files, target_os,
+                           status_message="Analyzing guidelines...")
 
     def run_refine_task(self):
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback to refine the draft.")
             return
+
         current_draft = self.ui.techSpecTextEdit.toPlainText()
+        ai_issues = self.ui.aiAnalysisTextEdit.toPlainText()
         target_os = self.ui.osComboBox.currentText()
-        # This is the corrected line that now includes the status_message
-        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback, target_os,
-                        status_message="Refining technical specification...")
+
+        self._execute_task(self._task_refine_spec, self._handle_refinement_result, current_draft, feedback, target_os, self.refinement_iteration_count, ai_issues,
+                         status_message="Refining technical specification...")
+
+        self.refinement_iteration_count += 1
 
     def _handle_generation_result(self, tech_spec_draft):
         try:
+            if "Error:" in tech_spec_draft:
+                 QMessageBox.critical(self, "Generation Failed", tech_spec_draft)
+                 self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+                 return
+
             self.tech_spec_draft = tech_spec_draft
             self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
@@ -150,20 +205,31 @@ class TechSpecPage(QWidget):
         finally:
             self._set_ui_busy(False)
 
-    def _handle_refinement_result(self, new_draft):
+    def _handle_validation_result(self, result):
+        """Handles the result of the validation task, routing to generation or refinement."""
         try:
-            self.tech_spec_draft = new_draft
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
-            self.ui.feedbackTextEdit.clear()
-            self.state_changed.emit()
+            if isinstance(result, str):
+                self._handle_generation_result(result)
+            elif isinstance(result, dict) and "compatible" in result:
+                user_guidelines = result.get("user_guidelines", "")
+                recommendation = result.get("recommendation", "No recommendation provided.")
+                self.orchestrator.handle_tech_spec_validation_failure(user_guidelines, recommendation)
+                self.tech_spec_complete.emit()
+        finally:
+            self._set_ui_busy(False)
+
+    def _handle_refinement_result(self, success):
+        """Handles the completion of the refinement task by triggering a full UI update."""
+        try:
+            if success:
+                self.tech_spec_complete.emit()
+            else:
+                QMessageBox.critical(self, "Error", "The refinement process failed.")
         finally:
             self._set_ui_busy(False)
 
     def on_approve_clicked(self):
-        """
-        Finalizes the tech spec by running the save and commit operations in a
-        background thread to keep the UI responsive.
-        """
+        """Finalizes the tech spec."""
         final_tech_spec = self.ui.techSpecTextEdit.toPlainText()
         if not final_tech_spec.strip():
             QMessageBox.warning(self, "Approval Failed", "The technical specification cannot be empty.")
@@ -204,60 +270,44 @@ class TechSpecPage(QWidget):
         finally:
             self._set_ui_busy(False)
 
-    def _task_propose_stack(self, target_os, **kwargs):
-
+    def _task_propose_stack(self, target_os, pm_guidelines, **kwargs):
         template_content = self._get_template_content("Default Technical Specification")
-
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         final_spec_text = project_details['final_spec_text']
         if not final_spec_text:
             raise Exception("Could not retrieve the application specification.")
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
-
-        draft_content = agent.propose_stack(final_spec_text, target_os, template_content=template_content)
-
+        draft_content = agent.propose_stack(final_spec_text, target_os, template_content=template_content, pm_guidelines=pm_guidelines)
         full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
         return full_draft
 
-    def _task_generate_from_guidelines(self, guidelines, target_os, **kwargs):
-        """The actual function that runs in the background when the user provides guidelines."""
-        template_content = self._get_template_content("Default Technical Specification")
+    def _task_validate_and_generate(self, guidelines, uploaded_files, target_os, **kwargs):
+        """Background task for the full PM-led workflow."""
+        full_guidelines = guidelines
+        if uploaded_files:
+            bootstrap_agent = ProjectBootstrapAgent(self.orchestrator.db_manager)
+            text_from_files, _, error = bootstrap_agent.extract_text_from_file_paths(uploaded_files)
+            if error:
+                raise Exception(f"Failed to process uploaded files: {error}")
+            full_guidelines += "\n\n--- Content from Uploaded Documents ---\n" + text_from_files
+
+        if not full_guidelines.strip():
+            raise Exception("No guidelines were provided in the text box or extracted from files.")
 
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         final_spec_text = project_details['final_spec_text']
-
-        if not final_spec_text:
-            raise Exception("Could not retrieve the application specification to provide context.")
-
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
+        validation_result = agent.validate_guidelines(full_guidelines, final_spec_text)
 
-        # Pass the spec and guidelines as separate, distinct arguments to the agent
-        draft_content = agent.propose_stack(
-            functional_spec_text=final_spec_text,
-            target_os=target_os,
-            template_content=template_content,
-            pm_guidelines=guidelines
-        )
+        if validation_result.get("compatible"):
+            return self._task_propose_stack(target_os, full_guidelines)
+        else:
+            validation_result["user_guidelines"] = full_guidelines
+            return validation_result
 
-        full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
-        return full_draft
-
-    def _task_refine_spec(self, current_draft, feedback, target_os, **kwargs):
-        """
-        The actual function that runs in the background to refine the tech spec.
-        This version now handles stripping and prepending the document header.
-        """
-        agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
-
-        # 1. Strip the header to get pure content
-        pure_content = self.orchestrator._strip_header_from_document(current_draft)
-
-        # 2. Get the refined content from the agent
-        refined_content = agent.refine_stack(pure_content, feedback, target_os)
-
-        # 3. Prepend a fresh, updated header
-        final_draft = self.orchestrator.prepend_standard_header(refined_content, "Technical Specification")
-
-        return final_draft
+    def _task_refine_spec(self, current_draft, feedback, target_os, iteration_count, ai_issues, **kwargs):
+        """Background worker task that calls the orchestrator to handle the full refinement loop."""
+        self.orchestrator.handle_tech_spec_refinement(current_draft, feedback, target_os, iteration_count, ai_issues)
+        return True
