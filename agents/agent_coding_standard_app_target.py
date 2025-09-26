@@ -27,7 +27,7 @@ class CodingStandardAgent_AppTarget:
         self.llm_service = llm_service
         logging.info("CodingStandardAgent_AppTarget initialized.")
 
-    def generate_standard(self, tech_spec_text: str, template_content: str | None = None) -> str:
+    def generate_standard(self, tech_spec_text: str, technology_name: str, template_content: str | None = None) -> str:
         """
         Analyzes a technical specification and generates a coding standard document.
 
@@ -58,6 +58,7 @@ class CodingStandardAgent_AppTarget:
             Your task is to generate a detailed, professional coding standard document based on the provided Technical Specification. The goal is to produce code that is highly readable, modular, and easily maintainable.
 
             **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the coding standard document. Do not include any preamble, introduction, or conversational text.
+            **CRITICAL FOCUS INSTRUCTION:** Your entire output MUST be a coding standard specifically and exclusively for the **{technology_name}** language. You MUST ignore all other languages or technologies mentioned in the Technical Specification.
 
             {template_instruction}
 
@@ -105,7 +106,7 @@ class CodingStandardAgent_AppTarget:
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's feedback. Do not regenerate the entire document from scratch.
-            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document.
+            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document's body. Do NOT add a header, preamble, conversational text, or markdown fences.
             3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
 
             **--- INPUT 1: Current Draft ---**

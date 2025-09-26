@@ -37,7 +37,7 @@ class DecisionPage(QWidget):
         self.ui.option2Button.clicked.connect(self.option2_selected.emit)
         self.ui.option3Button.clicked.connect(self.option3_selected.emit)
 
-    def configure(self, header: str, instruction: str, details: str,
+    def configure(self, header: str, instruction: str, details: str = "",
                 option1_text: str = None, option1_enabled: bool = True,
                 option2_text: str = None, option2_enabled: bool = True,
                 option3_text: str = None, option3_enabled: bool = True):
@@ -45,8 +45,12 @@ class DecisionPage(QWidget):
         Configures the page content and buttons for a specific decision.
         """
         self.ui.headerLabel.setText(header)
-        self.ui.instructionLabel.setText(instruction)
-        self.ui.detailsTextEdit.setHtml(details)
+
+        # Combine instruction and details into the main label
+        full_instruction_html = instruction
+        if details and details.strip():
+            full_instruction_html += f"<br><br>{details}"
+        self.ui.instructionLabel.setText(full_instruction_html)
 
         if option1_text:
             self.ui.option1Button.setText(option1_text)

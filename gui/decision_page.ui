@@ -51,14 +51,20 @@
     </widget>
    </item>
    <item>
-    <widget class="QTextEdit" name="detailsTextEdit">
-     <property name="readOnly">
-      <bool>true</bool>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
      </property>
-    </widget>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
    </item>
    <item>
-   <layout class="QHBoxLayout" name="buttonLayout">
+    <layout class="QHBoxLayout" name="buttonLayout">
      <item>
       <spacer name="horizontalSpacer">
        <property name="orientation">

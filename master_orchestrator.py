@@ -75,6 +75,7 @@ class FactoryPhase(Enum):
     BUILD_SCRIPT_SETUP = auto()
     TEST_ENVIRONMENT_SETUP = auto()
     CODING_STANDARD_GENERATION = auto()
+    AWAITING_BACKLOG_GATEWAY_DECISION = auto()
     PLANNING = auto()
     GENESIS = auto()
     AWAITING_INTEGRATION_CONFIRMATION = auto()
@@ -228,6 +229,7 @@ class MasterOrchestrator:
         FactoryPhase.BUILD_SCRIPT_SETUP: "Build Script Generation",
         FactoryPhase.TEST_ENVIRONMENT_SETUP: "Test Environment Setup",
         FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
+        FactoryPhase.AWAITING_BACKLOG_GATEWAY_DECISION: "Backlog Gateway",
         FactoryPhase.PLANNING: "Development Planning",
         FactoryPhase.GENESIS: "Iterative Development",
         FactoryPhase.AWAITING_INTEGRATION_CONFIRMATION: "Awaiting Integration Confirmation",
@@ -1228,7 +1230,7 @@ class MasterOrchestrator:
 
         return analysis_result
 
-    def generate_coding_standard(self, tech_spec_text: str):
+    def generate_coding_standard(self, tech_spec_text: str, technology_name: str):
         """
         Generates the coding standard by calling the appropriate agent with the
         pure technical specification text.
@@ -1242,12 +1244,32 @@ class MasterOrchestrator:
             # The code now correctly calls the agent.
             from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
             agent = CodingStandardAgent_AppTarget(self.llm_service)
-            standard_draft = agent.generate_standard(tech_spec_text)
+            standard_draft = agent.generate_standard(tech_spec_text, technology_name)
             return standard_draft
             # --- END OF FIX ---
         except Exception as e:
             logging.error(f"Failed to generate coding standard: {e}", exc_info=True)
             return f"### Error\nAn unexpected error occurred during coding standard generation: {e}"
+
+    def generate_standard_from_guidelines(self, tech_spec_text: str, pm_guidelines: str) -> str:
+        """
+        Generates a coding standard by calling the agent with additional
+        PM-provided guidelines, which are treated as a mandatory template.
+        """
+        if not self.project_id:
+            raise Exception("Cannot generate coding standard; no active project.")
+        if not tech_spec_text:
+            raise ValueError("Cannot generate coding standard; the technical specification is empty.")
+        try:
+            from agents.agent_coding_standard_app_target import CodingStandardAgent_AppTarget
+            agent = CodingStandardAgent_AppTarget(self.llm_service)
+            # We reuse the generate_standard method, passing the PM's guidelines
+            # as a high-priority template for the AI to follow.
+            standard_draft = agent.generate_standard(tech_spec_text, template_content=pm_guidelines)
+            return standard_draft
+        except Exception as e:
+            logging.error(f"Failed to generate coding standard from guidelines: {e}", exc_info=True)
+            return f"### Error\nAn unexpected error occurred during guided generation: {e}"
 
     def finalize_and_save_app_spec(self, final_spec_with_header: str):
         """
@@ -1697,55 +1719,82 @@ class MasterOrchestrator:
             logging.error(f"Failed to finalize and save technical spec: {e}")
             self.task_awaiting_approval = {"error": str(e)}
 
-    def finalize_and_save_coding_standard(self, final_standard_with_header: str):
+    def finalize_and_save_coding_standard(self, final_standard_with_header: str, technology_name: str = "default"):
         """
-        Saves the final coding standard, then calls the PlanningAgent to generate
-        the initial backlog, and transitions to the BACKLOG_RATIFICATION phase. This
-        version saves only the pure, raw content to the database.
+        Saves the final coding standard as a distinct artifact in both .md and .docx
+        formats, and transitions to the AWAITING_BACKLOG_GATEWAY_DECISION phase.
         """
         if not self.project_id:
             logging.error("Cannot save coding standard; no active project.")
             return
 
         try:
-            # --- THIS IS THE FIX ---
-            # Strip the header to get pure content for the DB and docx body.
             pure_standard_content = self._strip_header_from_document(final_standard_with_header)
-
             db = self.db_manager
-            # Save the PURE content to the database.
-            db.update_project_field(self.project_id, "coding_standard_text", pure_standard_content)
-            logging.info(f"Successfully saved final Coding Standard to database for project {self.project_id}")
-
             project_details = db.get_project_by_id(self.project_id)
+
             if project_details and project_details['project_root_folder']:
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "docs"
+                docs_dir.mkdir(exist_ok=True)
 
-                # Save the HEADED version to the Markdown file.
-                standard_file_path_md = docs_dir / "coding_standard.md"
+                safe_tech_name = technology_name.lower().replace('#', 'sharp').replace('+', 'plus')
+
+                # --- Save .md file (existing logic) ---
+                md_artifact_name = f"coding_standard_{safe_tech_name}.md"
+                standard_file_path_md = docs_dir / md_artifact_name
                 standard_file_path_md.write_text(final_standard_with_header, encoding="utf-8")
-                self._commit_document(standard_file_path_md, "docs: Finalize Coding Standard (Markdown)")
+                self._commit_document(standard_file_path_md, f"docs: Add coding standard for {technology_name} (Markdown)")
 
-                # Generate and save the formatted .docx file using the PURE content.
+                # --- NEW: Generate and save .docx file ---
                 from agents.agent_report_generator import ReportGeneratorAgent
-                standard_file_path_docx = docs_dir / "coding_standard.docx"
                 report_generator = ReportGeneratorAgent()
                 docx_bytes = report_generator.generate_text_document_docx(
-                    title=f"Coding Standard - {self.project_name}",
+                    title=f"Coding Standard ({technology_name}) - {self.project_name}",
                     content=pure_standard_content
                 )
+                docx_artifact_name = f"coding_standard_{safe_tech_name}.docx"
+                standard_file_path_docx = docs_dir / docx_artifact_name
                 with open(standard_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
-                self._commit_document(standard_file_path_docx, "docs: Add formatted Coding Standard (docx)")
-            # --- END OF FIX ---
+                self._commit_document(standard_file_path_docx, f"docs: Add formatted coding standard for {technology_name} (docx)")
 
-            # The rest of the logic for backlog generation remains the same.
-            logging.info("Coding standard saved. Now generating initial backlog for ratification.")
+                # --- Save the record for the .md artifact to the Artifacts table ---
+                artifact_data = {
+                    "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                    "project_id": self.project_id,
+                    "status": "COMPLETED",
+                    "file_path": str(standard_file_path_md.relative_to(project_root)),
+                    "artifact_name": f"Coding Standard ({technology_name})",
+                    "artifact_type": "CODING_STANDARD",
+                    "last_modified_timestamp": datetime.now(timezone.utc).isoformat()
+                }
+                db.add_or_update_artifact(artifact_data)
+                logging.info(f"Successfully saved coding standard for {technology_name} as an artifact.")
+
+            self.set_phase("AWAITING_BACKLOG_GATEWAY_DECISION")
+
+        except Exception as e:
+            logging.error(f"Failed to finalize and save coding standard: {e}", exc_info=True)
+            self.task_awaiting_approval = {"error": str(e)}
+
+    def handle_backlog_generation(self, **kwargs):
+        """
+        Generates the initial project backlog from the specifications and sets
+        the project's backlog generation flag to True on success.
+        """
+        if not self.project_id:
+            logging.error("Cannot generate backlog; no active project.")
+            return
+
+        try:
+            logging.info("Starting initial backlog generation...")
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+
             from agents.agent_planning_app_target import PlanningAgent_AppTarget
-            planning_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
+            planning_agent = PlanningAgent_AppTarget(self.llm_service, db)
 
-            # NOTE: Because we fixed tech_spec_text in the previous step, project_details now contains the PURE version.
             cleaned_tech_spec = self._strip_environment_setup_from_spec(project_details['tech_spec_text'])
             backlog_items_json = planning_agent.generate_backlog_items(
                 final_spec_text=project_details['final_spec_text'],
@@ -1754,11 +1803,17 @@ class MasterOrchestrator:
 
             self.task_awaiting_approval = {"generated_backlog_items": backlog_items_json}
 
+            # Set the flag to True now that the backlog exists
+            db.update_project_field(self.project_id, "is_backlog_generated", 1)
+            logging.info(f"Successfully generated backlog and set 'is_backlog_generated' flag for project {self.project_id}.")
+
             self.set_phase("BACKLOG_RATIFICATION")
 
         except Exception as e:
-            logging.error(f"Failed to finalize and save coding standard: {e}")
+            logging.error(f"Failed to generate project backlog: {e}", exc_info=True)
             self.task_awaiting_approval = {"error": str(e)}
+            # Fallback to the gateway on error so the user can retry
+            self.set_phase("AWAITING_BACKLOG_GATEWAY_DECISION")
 
     def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
         """
@@ -5186,6 +5241,45 @@ class MasterOrchestrator:
             logging.warning(f"Could not retrieve current git branch: {e}")
             return "N/A"
 
+    def detect_technologies_in_spec(self, tech_spec_text: str) -> list[str]:
+        """
+        Uses an LLM to parse a technical specification and identify all distinct
+        programming languages, returning them as a list.
+        """
+        logging.info("Detecting technologies from technical specification...")
+        if not tech_spec_text:
+            logging.warning("Cannot detect technologies: tech_spec_text is empty.")
+            return []
+        try:
+            prompt = textwrap.dedent(f"""
+                Analyze the following technical specification document. Your single task is to identify every distinct programming language (e.g., Python, JavaScript, C#, HTML, CSS, SQL) mentioned.
+
+                **MANDATORY INSTRUCTIONS:**
+                1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of strings.
+                2.  **One Language Per String:** Each string in the array must be the name of one programming language.
+                3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself. If no languages are found, return an empty array `[]`.
+
+                **--- Technical Specification ---**
+                {tech_spec_text}
+                **--- End Specification ---**
+
+                **--- REQUIRED OUTPUT: JSON Array of Language Names ---**
+            """)
+
+            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
+
+            technologies = json.loads(cleaned_response)
+            if isinstance(technologies, list):
+                logging.info(f"Detected technologies: {technologies}")
+                return technologies
+
+            logging.warning("LLM response for technology detection was not a list.")
+            return []
+        except Exception as e:
+            logging.error(f"Failed to detect technologies from spec: {e}")
+            return []
+
     def is_sprint_active(self) -> bool:
         """
         Checks the database for the latest sprint and returns True if its
@@ -5208,7 +5302,7 @@ class MasterOrchestrator:
         self.is_task_processing = False
         logging.info("Task processing flag has been reset.")
 
-    def _debug_jump_to_phase(self, phase_name: str):
+    def debug_jump_to_phase(self, phase_name: str):
         """
         A debug-only method to jump the application to a specific phase.
         It will create a new project only if no project is currently active.
@@ -5217,17 +5311,29 @@ class MasterOrchestrator:
 
         db = self.db_manager
 
-        # This is the fix: Only create a new project if one isn't already active.
         if not self.project_id:
             logging.info("No active project found, creating a new 'Debug Project'.")
+            # This sets up the orchestrator state in memory
             self.start_new_project("Debug Project")
-            db.update_project_field(self.project_id, "project_root_folder", "data/debug_project")
+
+            # This creates the actual database record
+            timestamp = datetime.now(timezone.utc).isoformat()
+            db.create_project(self.project_id, self.project_name, timestamp)
+
+            # This is the new, corrective logic: create the physical directories
+            project_root_str = "data/debug_project"
+            project_root = Path(project_root_str)
+            docs_dir = project_root / "docs"
+            docs_dir.mkdir(parents=True, exist_ok=True)
+            logging.info(f"Debug mode: Ensured project directory exists at {docs_dir}")
+
+            # Now these updates will work correctly
+            db.update_project_field(self.project_id, "project_root_folder", project_root_str)
             db.update_project_field(self.project_id, "final_spec_text", "Debug final spec.")
-            db.update_project_field(self.project_id, "tech_spec_text", "Debug tech spec using Python.")
+            db.update_project_field(self.project_id, "tech_spec_text", "This is a debug tech spec for a project using Python for the backend and JavaScript with HTML for the frontend.")
             db.update_project_field(self.project_id, "technology_stack", "Python")
 
         if phase_name == "GENESIS":
-            # The rest of the logic for a direct jump to Genesis remains the same.
             dummy_plan_str = """
             {
                 "main_executable_file": "main.py",

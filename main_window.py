@@ -482,14 +482,16 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionClose_Project.setEnabled(is_project_active)
         self.ui.actionArchive_Project.setEnabled(is_project_active)
 
-        self.ui.actionManage_CRs_Bugs.setEnabled(is_project_active) # Now always enabled if project is active
-        self.ui.actionManage_CRs_Bugs.setToolTip("View and manage the Project Backlog")
+        # --- Backlog Manager Button & File Tree Logic ---
+        project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id) if is_project_active else None
+        project_root = project_details['project_root_folder'] if project_details and project_details['project_root_folder'] else ""
 
-        project_root = ""
-        if is_project_active:
-            project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
-            if project_details and project_details['project_root_folder']:
-                project_root = project_details['project_root_folder']
+        is_backlog_ready = is_project_active and bool(project_details and project_details['is_backlog_generated'])
+        self.ui.actionManage_CRs_Bugs.setEnabled(is_backlog_ready)
+        if is_backlog_ready:
+            self.ui.actionManage_CRs_Bugs.setToolTip("View and manage the Project Backlog")
+        else:
+            self.ui.actionManage_CRs_Bugs.setToolTip("The project backlog must be generated before it can be managed.")
 
         if project_root and Path(project_root).exists():
             if self.current_tree_root_path != project_root:
@@ -795,6 +797,19 @@ class ASDFMainWindow(QMainWindow):
             if hasattr(page_to_show, 'prepare_for_display'):
                 page_to_show.prepare_for_display()
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
+        elif current_phase_name == "AWAITING_BACKLOG_GATEWAY_DECISION":
+            self.decision_page.configure(
+                header="Specification Phase Complete",
+                instruction="All required project specifications have been finalized. The next major step is to generate the initial project backlog from these documents.",
+                details="Select an option below to continue.",
+                option1_text="Generate Project Backlog Now",
+                option2_text="Pause Project & Continue Later"
+            )
+            # Note: The on_gateway_generate_backlog and on_gateway_pause_project methods will be created in the next step.
+            self.decision_page.option1_selected.connect(self.on_gateway_generate_backlog)
+            self.decision_page.option2_selected.connect(self.on_gateway_pause_project)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "AWAITING_UI_TEST_DECISION":
             self.statusBar().clearMessage()
@@ -1227,7 +1242,7 @@ class ASDFMainWindow(QMainWindow):
         self.reset_to_idle()
 
     def on_debug_jump_to_phase(self, phase_name: str):
-        self.orchestrator.set_phase(phase_name)
+        self.orchestrator.debug_jump_to_phase(phase_name)
         self.update_ui_after_state_change()
 
     def on_decision_option1(self):
@@ -1267,6 +1282,23 @@ class ASDFMainWindow(QMainWindow):
     def on_decision_acknowledge_failures(self):
         """Handles the PM's choice to complete the sprint with acknowledged failures."""
         self.orchestrator.handle_complete_with_failures()
+        self.update_ui_after_state_change()
+
+    def on_gateway_generate_backlog(self):
+        """Handles the user's choice to generate the project backlog."""
+        self.setEnabled(False)
+        self.statusBar().showMessage("Generating project backlog from specifications...")
+
+        worker = Worker(self.orchestrator.handle_backlog_generation)
+        # The worker will change the orchestrator's state; the generic finished
+        # handler will then correctly refresh the UI to the new page.
+        worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
+
+    def on_gateway_pause_project(self):
+        """Handles the user's choice to pause the project at the gateway."""
+        self.orchestrator.pause_project()
         self.update_ui_after_state_change()
 
     def on_stale_analysis_rerun(self):

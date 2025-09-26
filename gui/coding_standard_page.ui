@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>700</width>
-    <height>500</height>
+    <width>800</width>
+    <height>600</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -42,51 +42,124 @@
    </item>
    <item>
     <widget class="QStackedWidget" name="stackedWidget">
-     <widget class="QWidget" name="generatePage">
+     <widget class="QWidget" name="initialChoicePage">
       <layout class="QVBoxLayout" name="verticalLayout_2">
        <item>
         <widget class="QLabel" name="instructionLabel">
          <property name="text">
-          <string>Generate a project-specific coding standard based on the technical specification. This standard will be enforced during coding.</string>
-         </property>
-         <property name="wordWrap">
-          <bool>true</bool>
+          <string>Choose how to create the Coding Standard document(s) for the detected technologies.</string>
          </property>
         </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="horizontalLayout_2">
+        <widget class="QListWidget" name="techListWidget"/>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout">
          <item>
           <spacer name="horizontalSpacer_2">
            <property name="orientation">
             <enum>Qt::Horizontal</enum>
            </property>
-           <property name="sizeHint" stdset="0">
-            <size>
-             <width>40</width>
-             <height>20</height>
-            </size>
-           </property>
           </spacer>
          </item>
          <item>
-          <widget class="QPushButton" name="generateButton">
+          <widget class="QPushButton" name="aiProposedButton">
            <property name="text">
-            <string>Generate Coding Standard Draft</string>
+            <string>Generate with AI Proposal</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="pmGuidedButton">
+           <property name="text">
+            <string>Generate with PM Guidelines</string>
            </property>
           </widget>
          </item>
         </layout>
        </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="pmDefinePage">
+      <layout class="QVBoxLayout" name="verticalLayout_4">
        <item>
-        <spacer name="verticalSpacer">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
+        <widget class="QLabel" name="pmDefineHeaderLabel">
+         <property name="text">
+          <string>Define Guidelines for [Technology]</string>
          </property>
-         <property name="sizeType">
-          <enum>QSizePolicy::Expanding</enum>
-         </property>
-        </spacer>
+        </widget>
+       </item>
+       <item>
+        <widget class="QTabWidget" name="pmInputTabWidget">
+         <widget class="QWidget" name="textInputTab">
+          <attribute name="title">
+           <string>Enter Text Guidelines</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_text">
+           <item>
+            <widget class="QPlainTextEdit" name="pmGuidelinesTextEdit"/>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="uploadTab">
+          <attribute name="title">
+           <string>Upload Guideline Documents</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_upload">
+           <item>
+            <layout class="QHBoxLayout" name="horizontalLayout_upload">
+             <item>
+              <widget class="QLineEdit" name="uploadPathLineEdit">
+               <property name="readOnly">
+                <bool>true</bool>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="browseFilesButton">
+               <property name="text">
+                <string>Browse...</string>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </item>
+           <item>
+            <spacer name="verticalSpacer_upload">
+             <property name="orientation">
+              <enum>Qt::Vertical</enum>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </widget>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_3">
+         <item>
+          <widget class="QPushButton" name="cancelButton_1">
+           <property name="text">
+            <string>Cancel</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacer_3">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="generateFromGuidelinesButton">
+           <property name="text">
+            <string>Analyze Guidelines &amp; Generate Draft</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </item>
       </layout>
      </widget>
@@ -95,42 +168,67 @@
        <item>
         <widget class="QLabel" name="reviewHeaderLabel">
          <property name="text">
-          <string>Review Coding Standard</string>
+          <string>Review Coding Standard for [Technology]</string>
          </property>
         </widget>
        </item>
        <item>
-        <widget class="QLabel" name="infoLabel">
-         <property name="text">
-          <string>Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please enter your input in the box below the draft.</string>
-         </property>
-         <property name="wordWrap">
-          <bool>true</bool>
-         </property>
+        <widget class="QTabWidget" name="reviewTabWidget">
+         <widget class="QWidget" name="specDraftTab">
+          <attribute name="title">
+           <string>Standard Draft</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_7">
+           <item>
+            <widget class="QTextEdit" name="standardTextEdit"/>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="aiAnalysisTab">
+          <attribute name="title">
+           <string>AI Analysis &amp; Suggestions</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_8">
+           <item>
+            <widget class="QTextEdit" name="aiAnalysisTextEdit">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="feedbackTab">
+          <attribute name="title">
+           <string>Your Feedback</string>
+          </attribute>
+          <layout class="QVBoxLayout" name="verticalLayout_10">
+           <item>
+            <widget class="QLabel" name="feedbackLabel">
+             <property name="text">
+              <string>Provide feedback and clarifications below to have the AI generate a new version.</string>
+             </property>
+             <property name="wordWrap">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPlainTextEdit" name="feedbackTextEdit"/>
+           </item>
+          </layout>
+         </widget>
         </widget>
        </item>
        <item>
-        <widget class="QTextEdit" name="standardTextEdit"/>
-       </item>
-       <item>
-        <widget class="QLabel" name="feedbackLabel">
-         <property name="text">
-          <string>Provide feedback for refinement (optional):</string>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <widget class="QPlainTextEdit" name="feedbackTextEdit">
-         <property name="maximumSize">
-          <size>
-           <width>16777215</width>
-           <height>100</height>
-          </size>
-         </property>
-        </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="horizontalLayout">
+        <layout class="QHBoxLayout" name="horizontalLayout_4">
+         <item>
+          <widget class="QPushButton" name="cancelButton_2">
+           <property name="text">
+            <string>Cancel</string>
+           </property>
+          </widget>
+         </item>
          <item>
           <spacer name="horizontalSpacer">
            <property name="orientation">
@@ -148,7 +246,7 @@
          <item>
           <widget class="QPushButton" name="approveButton">
            <property name="text">
-            <string>Approve Coding Standard</string>
+            <string>Approve Standard</string>
            </property>
           </widget>
          </item>
@@ -157,17 +255,11 @@
       </layout>
      </widget>
      <widget class="QWidget" name="processingPage">
-      <layout class="QVBoxLayout" name="verticalLayout_4">
+      <layout class="QVBoxLayout" name="verticalLayout_5">
        <item>
         <spacer name="verticalSpacer_2">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>40</height>
-          </size>
          </property>
         </spacer>
        </item>
@@ -185,12 +277,6 @@
         <spacer name="verticalSpacer_3">
          <property name="orientation">
           <enum>Qt::Vertical</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>40</height>
-          </size>
          </property>
         </spacer>
        </item>

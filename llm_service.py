@@ -34,9 +34,16 @@ class GeminiAdapter(LLMService):
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
             response = model_to_use.generate_content(prompt, request_options={'timeout': 600})
-            if not hasattr(response, 'text') or not response.text:
-                logging.warning(f"Gemini model returned an empty or malformed response.")
-                return "Error: The Gemini model returned an empty response."
+
+            # Robust check for valid response content
+            if not response.candidates or not response.candidates[0].content.parts:
+                finish_reason = response.candidates[0].finish_reason if response.candidates else 'N/A'
+                safety_ratings = response.prompt_feedback.safety_ratings if response.prompt_feedback else 'N/A'
+                log_msg = (f"Gemini model returned an empty response. "
+                        f"Finish Reason: {finish_reason}, Safety Ratings: {safety_ratings}")
+                logging.warning(log_msg)
+                return f"Error: The AI model returned an empty response. This could be due to a safety filter or hitting a token limit. Please check the logs."
+
             return response.text.strip()
         except Exception as e:
             logging.error(f"Gemini API call failed: {e}", exc_info=True)
