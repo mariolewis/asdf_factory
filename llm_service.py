@@ -42,7 +42,7 @@ class GeminiAdapter(LLMService):
                 log_msg = (f"Gemini model returned an empty response. "
                         f"Finish Reason: {finish_reason}, Safety Ratings: {safety_ratings}")
                 logging.warning(log_msg)
-                return f"Error: The AI model returned an empty response. This could be due to a safety filter or hitting a token limit. Please check the logs."
+                return f"Error: The AI model returned an empty response. This could be due to a safety filter or hitting a token limit."
 
             return response.text.strip()
         except Exception as e:

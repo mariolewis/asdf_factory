@@ -3,6 +3,7 @@
 import logging
 import markdown
 import warnings
+import html
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QListWidgetItem
 from PySide6.QtCore import Signal, QThreadPool
 from pathlib import Path
@@ -24,14 +25,91 @@ class CodingStandardPage(QWidget):
         self.selected_files = []
         self.current_technology = ""
         self.tech_status = {}
+        self.review_is_error_state = False
+        self.last_failed_action = None # Will be 'generation' or 'refinement'
 
         self.ui = Ui_CodingStandardPage()
         self.ui.setupUi(self)
 
         self.threadpool = QThreadPool()
         self.connect_signals()
-        self.ui.reviewTabWidget.setTabVisible(1, False) # Hide the unimplemented AI Analysis tab
+        self.ui.reviewTabWidget.setTabVisible(1, False)
 
+    def connect_signals(self):
+        """Connects UI element signals to Python methods."""
+        self.ui.aiProposedButton.clicked.connect(self.on_ai_proposed_clicked)
+        self.ui.pmGuidedButton.clicked.connect(self.on_pm_guided_clicked)
+        self.ui.browseFilesButton.clicked.connect(self.on_browse_files_clicked)
+        self.ui.generateFromGuidelinesButton.clicked.connect(self.run_generate_from_guidelines_task)
+        self.ui.cancelButton_1.clicked.connect(self.on_cancel_clicked)
+        self.ui.refineButton.clicked.connect(self.run_refinement_task)
+        self.ui.approveButton.clicked.connect(self.on_approve_or_retry_clicked) # Single, stable handler
+        self.ui.cancelButton_2.clicked.connect(self.on_cancel_clicked)
+        self.ui.standardTextEdit.textChanged.connect(self.on_draft_changed)
+
+    def on_approve_or_retry_clicked(self):
+        """
+        Handles the primary action on the review page. Either approves the draft
+        or retries the last failed action based on the current state.
+        """
+        if self.review_is_error_state:
+            if self.last_failed_action == 'generation':
+                self.run_generation_task()
+            elif self.last_failed_action == 'refinement':
+                self.run_refinement_task()
+        else:
+            self.on_approve_clicked()
+
+    def _handle_generation_result(self, standard_draft):
+        """Handles the result from the generation worker, reconfiguring the UI on success or failure."""
+        try:
+            self.coding_standard_draft = standard_draft
+            self.ui.reviewHeaderLabel.setText(f"Review Coding Standard for {self.current_technology}")
+
+            is_error = standard_draft.strip().startswith("Error:") or standard_draft.strip().startswith("### Error")
+
+            if is_error:
+                self.review_is_error_state = True
+                self.last_failed_action = 'generation'
+                self.ui.standardTextEdit.setText(standard_draft)
+                self.ui.approveButton.setText("Retry Generation")
+            else:
+                self.review_is_error_state = False
+                self.last_failed_action = None
+                self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
+                self.ui.approveButton.setText("Approve Standard")
+
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.state_changed.emit()
+        finally:
+            self._set_ui_busy(False)
+
+    def _handle_refinement_result(self, new_draft):
+        """Handles the result from the refinement worker, reconfiguring the UI on success or failure."""
+        try:
+            self.coding_standard_draft = new_draft
+            is_error = new_draft.strip().startswith("Error:") or new_draft.strip().startswith("### Error")
+
+            if is_error:
+                self.review_is_error_state = True
+                self.last_failed_action = 'refinement'
+                self.ui.standardTextEdit.setText(new_draft) # Show error in the main window
+                self.ui.approveButton.setText("Retry Refinement")
+            else:
+                self.review_is_error_state = False
+                self.last_failed_action = None
+                self.ui.standardTextEdit.setHtml(markdown.markdown(html.unescape(self.coding_standard_draft), extensions=['fenced_code', 'extra']))
+                self.ui.feedbackTextEdit.clear()
+                self.ui.reviewTabWidget.setCurrentIndex(0)
+                self.ui.approveButton.setText("Approve Standard")
+
+            self.state_changed.emit()
+        finally:
+            self._set_ui_busy(False)
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+
+    # (All other methods remain the same as the last full version I provided)
+    # ... copy the rest of the methods from my response that started with "Step 11b of 11" ...
     def prepare_for_new_project(self):
         """Resets the page to its initial state."""
         logging.info("Resetting CodingStandardPage for a new project.")
@@ -39,6 +117,8 @@ class CodingStandardPage(QWidget):
         self.selected_files = []
         self.current_technology = ""
         self.tech_status = {}
+        self.review_is_error_state = False
+        self.last_failed_action = None
         self.ui.techListWidget.clear()
         self.ui.pmGuidelinesTextEdit.clear()
         self.ui.uploadPathLineEdit.clear()
@@ -46,17 +126,6 @@ class CodingStandardPage(QWidget):
         self.ui.feedbackTextEdit.clear()
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
         self.setEnabled(True)
-
-    def connect_signals(self):
-        self.ui.aiProposedButton.clicked.connect(self.on_ai_proposed_clicked)
-        self.ui.pmGuidedButton.clicked.connect(self.on_pm_guided_clicked)
-        self.ui.browseFilesButton.clicked.connect(self.on_browse_files_clicked)
-        self.ui.generateFromGuidelinesButton.clicked.connect(self.run_generate_from_guidelines_task)
-        self.ui.cancelButton_1.clicked.connect(self.on_cancel_clicked)
-        self.ui.refineButton.clicked.connect(self.run_refinement_task)
-        self.ui.approveButton.clicked.connect(self.on_approve_clicked)
-        self.ui.cancelButton_2.clicked.connect(self.on_cancel_clicked)
-        self.ui.standardTextEdit.textChanged.connect(self.on_draft_changed)
 
     def prepare_for_display(self):
         """Prepares the page by detecting technologies and populating the list."""
@@ -101,10 +170,9 @@ class CodingStandardPage(QWidget):
             return
 
         self.current_technology = selected_items[0].text().split(" ")[0]
-        if self.tech_status.get(self.current_technology) == "Generated":
-            QMessageBox.information(self, "Already Generated", f"A standard for {self.current_technology} has already been generated and approved.")
+        if self.tech_status.get(self.current_technology) == "Completed":
+            QMessageBox.information(self, "Already Completed", f"A standard for {self.current_technology} has already been completed.")
             return
-
         self.run_generation_task()
 
     def on_pm_guided_clicked(self):
@@ -114,8 +182,8 @@ class CodingStandardPage(QWidget):
             return
 
         self.current_technology = selected_items[0].text().split(" ")[0]
-        if self.tech_status.get(self.current_technology) == "Generated":
-            QMessageBox.information(self, "Already Generated", f"A standard for {self.current_technology} has already been generated and approved.")
+        if self.tech_status.get(self.current_technology) == "Completed":
+            QMessageBox.information(self, "Already Completed", f"A standard for {self.current_technology} has already been completed.")
             return
 
         self.ui.pmDefineHeaderLabel.setText(f"Define Guidelines for {self.current_technology}")
@@ -130,8 +198,9 @@ class CodingStandardPage(QWidget):
     def on_cancel_clicked(self):
         """Returns to the tech list and clears the state of the aborted task."""
         self.coding_standard_draft = ""
-        self.refinement_iteration_count = 1
         self.current_technology = ""
+        self.review_is_error_state = False
+        self.last_failed_action = None
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
 
     def on_draft_changed(self):
@@ -140,6 +209,7 @@ class CodingStandardPage(QWidget):
             self.orchestrator.set_active_spec_draft(draft_text)
 
     def on_approve_clicked(self):
+        """Finalizes the coding standard and transitions to the backlog gateway."""
         final_draft = self.ui.standardTextEdit.toPlainText()
         if not final_draft.strip():
             QMessageBox.warning(self, "Approval Failed", "The coding standard cannot be empty.")
@@ -183,10 +253,12 @@ class CodingStandardPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
 
     def run_generation_task(self):
+        """Initiates the background task to generate the coding standard."""
         self._execute_task(self._task_generate_standard, self._handle_generation_result,
                            status_message=f"Generating standard for {self.current_technology}...")
 
     def _task_generate_standard(self, **kwargs):
+        """Background task that calls the orchestrator to generate the standard."""
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         tech_spec_text = project_details['tech_spec_text']
@@ -195,16 +267,8 @@ class CodingStandardPage(QWidget):
         full_draft = self.orchestrator.prepend_standard_header(draft_content, f"Coding Standard ({self.current_technology})")
         return full_draft
 
-    def _handle_generation_result(self, standard_draft):
-        try:
-            self.coding_standard_draft = standard_draft
-            self.ui.reviewHeaderLabel.setText(f"Review Coding Standard for {self.current_technology}")
-            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
-            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
-        finally:
-            self._set_ui_busy(False)
-
     def run_refinement_task(self):
+        """Initiates the background task to refine the coding standard."""
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement.")
@@ -215,32 +279,17 @@ class CodingStandardPage(QWidget):
 
     def _task_refine_standard(self, current_draft, feedback, **kwargs):
         """Background worker task that handles the refinement logic."""
-        import html
         agent = CodingStandardAgent_AppTarget(llm_service=self.orchestrator.llm_service)
         pure_content = self.orchestrator._strip_header_from_document(current_draft)
 
-        # Get refined content from the agent
         refined_content_from_agent = agent.refine_standard(pure_content, feedback)
 
-        # FIX: Unescape HTML entities from the agent's response
         unescaped_content = html.unescape(refined_content_from_agent)
 
-        # Defensively strip any header the agent may have added back
         clean_refined_body = self.orchestrator._strip_header_from_document(unescaped_content)
 
-        # Prepend a fresh, correct header
         final_draft = self.orchestrator.prepend_standard_header(clean_refined_body, f"Coding Standard ({self.current_technology})")
         return final_draft
-
-    def _handle_refinement_result(self, new_draft):
-        try:
-            self.coding_standard_draft = new_draft
-            self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
-            self.ui.feedbackTextEdit.clear()
-            self.ui.reviewTabWidget.setCurrentIndex(0)
-        finally:
-            self._set_ui_busy(False)
-            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
 
     def run_generate_from_guidelines_task(self):
         guidelines = self.ui.pmGuidelinesTextEdit.toPlainText().strip()
