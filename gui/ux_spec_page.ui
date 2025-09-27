@@ -86,27 +86,34 @@
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout">
-         <item>
-          <spacer name="horizontalSpacer">
-           <property name="orientation">
-            <enum>Qt::Horizontal</enum>
-           </property>
-          </spacer>
-         </item>
-         <item>
-          <widget class="QPushButton" name="refineButton">
-           <property name="text">
-            <string>Submit Feedback &amp;&amp; Refine</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QPushButton" name="approveButton">
-           <property name="text">
-            <string>Approve Specification</string>
-           </property>
-          </widget>
-         </item>
+            <item>
+            <spacer name="horizontalSpacer">
+            <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+            </property>
+            </spacer>
+            </item>
+            <item>
+            <widget class="QPushButton" name="pauseProjectButton">
+            <property name="text">
+                <string>Pause Project</string>
+            </property>
+            </widget>
+            </item>
+            <item>
+            <widget class="QPushButton" name="refineButton">
+            <property name="text">
+                <string>Submit Feedback &amp;&amp; Refine</string>
+            </property>
+            </widget>
+            </item>
+            <item>
+            <widget class="QPushButton" name="approveButton">
+            <property name="text">
+                <string>Approve Specification</string>
+            </property>
+            </widget>
+            </item>
         </layout>
        </item>
       </layout>

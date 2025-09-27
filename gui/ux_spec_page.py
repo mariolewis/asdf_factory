@@ -11,11 +11,9 @@ from gui.worker import Worker
 from master_orchestrator import MasterOrchestrator
 
 class UXSpecPage(QWidget):
-    """
-    The logic handler for the UX/UI Specification page.
-    """
     state_changed = Signal()
     ux_spec_complete = Signal()
+    project_cancelled = Signal() # Used to signal a return to main screen after pause
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
@@ -25,24 +23,25 @@ class UXSpecPage(QWidget):
         self.threadpool = QThreadPool()
 
         self.ux_spec_draft = ""
+        self.review_is_error_state = False
+        self.last_failed_action = None # Will be 'generation' or 'refinement'
+        self.retry_count = 0
 
         self.connect_signals()
+        self.ui.pauseProjectButton.setVisible(False)
 
     def prepare_for_new_project(self):
         """Resets the page to its initial state for a new project."""
         logging.info("Resetting UXSpecPage for a new project.")
         self.ux_spec_draft = ""
-
-        # Block signals during widget clearing ---
-        self.ui.specTextEdit.blockSignals(True)
-        self.ui.feedbackTextEdit.blockSignals(True)
+        self.review_is_error_state = False
+        self.last_failed_action = None
+        self.retry_count = 0
 
         self.ui.specTextEdit.clear()
         self.ui.feedbackTextEdit.clear()
-
-        self.ui.specTextEdit.blockSignals(False)
-        self.ui.feedbackTextEdit.blockSignals(False)
-
+        self.ui.pauseProjectButton.setVisible(False)
+        self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
         self.setEnabled(True)
 
     def connect_signals(self):
@@ -51,7 +50,8 @@ class UXSpecPage(QWidget):
             warnings.simplefilter("ignore", RuntimeWarning)
             self.ui.refineButton.clicked.disconnect()
         self.ui.refineButton.clicked.connect(self.run_refinement_task)
-        self.ui.approveButton.clicked.connect(self.on_approve_clicked)
+        self.ui.approveButton.clicked.connect(self.on_approve_or_retry_clicked)
+        self.ui.pauseProjectButton.clicked.connect(self.on_pause_project_clicked)
         self.ui.specTextEdit.textChanged.connect(self.on_draft_changed)
 
     def on_draft_changed(self):
@@ -61,10 +61,9 @@ class UXSpecPage(QWidget):
             self.orchestrator.set_active_spec_draft(draft_text)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
-        """Disables or enables the main window and updates the status bar."""
         main_window = self.window()
         if not main_window:
-            self.setEnabled(not is_busy) # Fallback
+            self.setEnabled(not is_busy)
             return
 
         main_window.setEnabled(not is_busy)
@@ -77,7 +76,6 @@ class UXSpecPage(QWidget):
                 self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
 
     def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
-        """Generic method to run a task in the background."""
         self._set_ui_busy(True, status_message)
         worker = Worker(task_function, *args)
         worker.signals.result.connect(on_result)
@@ -85,7 +83,6 @@ class UXSpecPage(QWidget):
         self.threadpool.start(worker)
 
     def _on_task_error(self, error_tuple):
-        """Handles errors from the worker thread."""
         try:
             error_msg = f"An error occurred in a background task:\n{error_tuple[1]}"
             QMessageBox.critical(self, "Error", error_msg)
@@ -94,40 +91,50 @@ class UXSpecPage(QWidget):
             self._set_ui_busy(False)
 
     def prepare_for_display(self):
-        """
-        Triggers the UX_Spec_Agent to generate the initial draft, unless a
-        resumable draft exists.
-        """
-        # Prioritize Resumed Draft ---
         if self.orchestrator.active_spec_draft is not None:
             logging.info("Resuming UX spec with a saved draft.")
             self.ux_spec_draft = self.orchestrator.active_spec_draft
-            self.orchestrator.set_active_spec_draft(None) # Clear the draft
-
+            self.orchestrator.set_active_spec_draft(None)
             self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             return
-        # --- END ---
 
         logging.info("UXSpecPage: Preparing for display, starting draft generation.")
+        self.run_generation_task()
+
+    def run_generation_task(self):
         self._execute_task(self._task_generate_draft, self._handle_generation_result,
                         status_message="Generating UX/UI specification draft...")
 
     def _task_generate_draft(self, **kwargs):
-        """The actual function that runs in the background."""
         return self.orchestrator.generate_initial_ux_spec_draft()
 
     def _handle_generation_result(self, draft_text: str):
-        """Handles the result from the worker thread."""
         try:
             self.ux_spec_draft = draft_text
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+            is_error = draft_text.strip().startswith("Error:") or draft_text.strip().startswith("### Error")
+
+            if is_error:
+                self.review_is_error_state = True
+                self.last_failed_action = 'generation'
+                self.retry_count += 1
+                self.ui.specTextEdit.setText(self.ux_spec_draft)
+                self.ui.approveButton.setText("Retry Generation")
+                if self.retry_count >= 2:
+                    self.ui.pauseProjectButton.setVisible(True)
+            else:
+                self.review_is_error_state = False
+                self.last_failed_action = None
+                self.retry_count = 0
+                self.ui.pauseProjectButton.setVisible(False)
+                self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+                self.ui.approveButton.setText("Approve Specification")
+
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 
     def run_refinement_task(self):
-        """Initiates the background task to refine the UX spec."""
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement.")
@@ -138,19 +145,42 @@ class UXSpecPage(QWidget):
                            status_message="Refining UX/UI specification...")
 
     def _task_refine_draft(self, current_draft, feedback, **kwargs):
-        """Background task to call the orchestrator for refinement."""
         return self.orchestrator.refine_ux_spec_draft(current_draft, feedback)
 
     def _handle_refinement_result(self, new_draft: str):
-        """Handles the result from the refinement worker thread."""
         try:
             self.ux_spec_draft = new_draft
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+            is_error = new_draft.strip().startswith("Error:") or new_draft.strip().startswith("### Error")
+
+            if is_error:
+                self.review_is_error_state = True
+                self.last_failed_action = 'refinement'
+                self.retry_count += 1
+                self.ui.specTextEdit.setText(self.ux_spec_draft) # Show error in main window
+                self.ui.approveButton.setText("Retry Refinement")
+                if self.retry_count >= 2:
+                    self.ui.pauseProjectButton.setVisible(True)
+            else:
+                self.review_is_error_state = False
+                self.last_failed_action = None
+                self.retry_count = 0
+                self.ui.pauseProjectButton.setVisible(False)
+                self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+                self.ui.approveButton.setText("Approve Specification")
+
             self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "Success: The UX/UI Specification has been refined based on your feedback.")
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
+
+    def on_approve_or_retry_clicked(self):
+        if self.review_is_error_state:
+            if self.last_failed_action == 'generation':
+                self.run_generation_task()
+            elif self.last_failed_action == 'refinement':
+                self.run_refinement_task()
+        else:
+            self.on_approve_clicked()
 
     def on_approve_clicked(self):
         """Saves the final UX/UI spec and proceeds to the next phase."""
@@ -160,7 +190,7 @@ class UXSpecPage(QWidget):
             return
 
         reply = QMessageBox.question(self, "Approve Specification",
-                                     "Are you sure you want to approve this UX/UI Specification? This will lock the document and proceed to the next phase.",
+                                     "Are you sure you want to approve this UX/UI Specification?",
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
@@ -168,18 +198,19 @@ class UXSpecPage(QWidget):
                                status_message="Saving design to .json file for external graphical review...")
 
     def _task_finalize_spec(self, final_spec, **kwargs):
-        """Background task for the finalization step."""
         return self.orchestrator.handle_ux_spec_completion(final_spec)
 
     def _handle_finalization_result(self, success):
-        """Handles the result of the finalization task."""
         try:
             if success:
-                QMessageBox.information(self, "Success", "Success: UX/UI Specification approved and saved. Proceeding to Application Specification.")
-                logging.debug("on_approve_clicked: Emitting ux_spec_complete signal.")
                 self.ux_spec_complete.emit()
             else:
                 error_msg = self.orchestrator.task_awaiting_approval.get('error', 'An unknown error occurred.')
                 QMessageBox.critical(self, "Error", f"Failed to finalize the UX/UI Specification:\n{error_msg}")
         finally:
             self._set_ui_busy(False)
+
+    def on_pause_project_clicked(self):
+        """Calls the orchestrator to save state and then signals the main window to reset."""
+        self.orchestrator.pause_project()
+        self.project_cancelled.emit()

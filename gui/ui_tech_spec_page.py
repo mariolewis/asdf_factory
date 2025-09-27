@@ -188,6 +188,11 @@ class Ui_TechSpecPage(object):
 
         self.horizontalLayout_2.addItem(self.horizontalSpacer)
 
+        self.pauseProjectButton = QPushButton(self.reviewPage)
+        self.pauseProjectButton.setObjectName(u"pauseProjectButton")
+
+        self.horizontalLayout_2.addWidget(self.pauseProjectButton)
+
         self.refineButton = QPushButton(self.reviewPage)
         self.refineButton.setObjectName(u"refineButton")
 
@@ -285,7 +290,8 @@ class Ui_TechSpecPage(object):
         self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.aiAnalysisTab), QCoreApplication.translate("TechSpecPage", u"AI Analysis & Suggestions", None))
         self.feedbackLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide feedback and clarifications below to have the AI generate a new version of the draft.", None))
         self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.feedbackTab), QCoreApplication.translate("TechSpecPage", u"Your Feedback & Refinements", None))
-        self.refineButton.setText(QCoreApplication.translate("TechSpecPage", u"Submit Feedback & Refine", None))
+        self.pauseProjectButton.setText(QCoreApplication.translate("TechSpecPage", u"Pause Project", None))
+        self.refineButton.setText(QCoreApplication.translate("TechSpecPage", u"Submit Feedback && Refine", None))
         self.approveButton.setText(QCoreApplication.translate("TechSpecPage", u"Approve Technical Specification", None))
         self.processingLabel.setText(QCoreApplication.translate("TechSpecPage", u"Processing... Please wait.", None))
         self.osLabel.setText(QCoreApplication.translate("TechSpecPage", u"Please select the target Operating System for the application.", None))

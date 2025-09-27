@@ -22,20 +22,25 @@ class TechSpecPage(QWidget):
     """
     state_changed = Signal()
     tech_spec_complete = Signal()
+    project_cancelled = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
+        self.ui = Ui_TechSpecPage()
+        self.ui.setupUi(self)
+        self.threadpool = QThreadPool()
+
         self.tech_spec_draft = ""
         self.selected_files = []
         self.ai_analysis = ""
         self.refinement_iteration_count = 1
+        self.review_is_error_state = False
+        self.last_failed_action = None # 'generation', 'guidelines', or 'refinement'
+        self.retry_count = 0
 
-        self.ui = Ui_TechSpecPage()
-        self.ui.setupUi(self)
-
-        self.threadpool = QThreadPool()
         self.connect_signals()
+        self.ui.pauseProjectButton.setVisible(False)
 
     def prepare_for_display(self):
         """Prepares the page based on the orchestrator's current phase."""
@@ -74,34 +79,57 @@ class TechSpecPage(QWidget):
         self.selected_files = []
         self.ai_analysis = ""
         self.refinement_iteration_count = 1
+        self.review_is_error_state = False
+        self.last_failed_action = None
+        self.retry_count = 0
 
+        # Block signals to prevent handlers from firing during programmatic clear
         self.ui.techSpecTextEdit.blockSignals(True)
         self.ui.feedbackTextEdit.blockSignals(True)
         self.ui.pmGuidelinesTextEdit.blockSignals(True)
 
+        # Clear all UI inputs
         self.ui.techSpecTextEdit.clear()
         self.ui.feedbackTextEdit.clear()
         self.ui.pmGuidelinesTextEdit.clear()
         self.ui.uploadPathLineEdit.clear()
 
+        # Re-enable signals
         self.ui.techSpecTextEdit.blockSignals(False)
         self.ui.feedbackTextEdit.blockSignals(False)
         self.ui.pmGuidelinesTextEdit.blockSignals(False)
 
+        # Reset UI state
         self.ui.osComboBox.setCurrentIndex(0)
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+        self.ui.pauseProjectButton.setVisible(False)
         self.setEnabled(True)
 
     def connect_signals(self):
-        """Connects UI element signals to Python methods."""
         self.ui.proposeStackButton.clicked.connect(self.on_propose_stack_clicked)
         self.ui.pmDefineButton.clicked.connect(self.on_pm_define_clicked)
         self.ui.browseFilesButton.clicked.connect(self.on_browse_files_clicked)
         self.ui.generateFromGuidelinesButton.clicked.connect(self.run_generate_from_guidelines_task)
         self.ui.generateProposalButton.clicked.connect(self.run_propose_stack_task)
         self.ui.refineButton.clicked.connect(self.run_refine_task)
-        self.ui.approveButton.clicked.connect(self.on_approve_clicked)
+        self.ui.approveButton.clicked.connect(self.on_approve_or_retry_clicked)
+        self.ui.pauseProjectButton.clicked.connect(self.on_pause_project_clicked)
         self.ui.techSpecTextEdit.textChanged.connect(self.on_draft_changed)
+
+    def on_approve_or_retry_clicked(self):
+        if self.review_is_error_state:
+            if self.last_failed_action == 'generation':
+                self.run_propose_stack_task()
+            elif self.last_failed_action == 'guidelines':
+                self.run_generate_from_guidelines_task()
+            elif self.last_failed_action == 'refinement':
+                self.run_refine_task()
+        else:
+            self.on_approve_clicked()
+
+    def on_pause_project_clicked(self):
+        self.orchestrator.pause_project()
+        self.project_cancelled.emit()
 
     def on_draft_changed(self):
         """Saves the current text content to the orchestrator's active draft variable."""
@@ -160,12 +188,14 @@ class TechSpecPage(QWidget):
 
     def run_propose_stack_task(self):
         """Runs the task to generate a tech spec without PM guidelines."""
+        self.last_failed_action = 'generation'
         target_os = self.ui.osComboBox.currentText()
         self._execute_task(self._task_propose_stack, self._handle_generation_result, target_os, None,
                            status_message="Generating tech stack proposal...")
 
     def run_generate_from_guidelines_task(self):
         """Validates PM guidelines and then generates the tech spec."""
+        self.last_failed_action = 'guidelines'
         guidelines = self.ui.pmGuidelinesTextEdit.toPlainText().strip()
         if not guidelines and not self.selected_files:
             QMessageBox.warning(self, "Input Required", "Please provide technology guidelines or upload a document.")
@@ -176,6 +206,7 @@ class TechSpecPage(QWidget):
                            status_message="Analyzing guidelines...")
 
     def run_refine_task(self):
+        self.last_failed_action = 'refinement'
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback to refine the draft.")
@@ -192,13 +223,28 @@ class TechSpecPage(QWidget):
 
     def _handle_generation_result(self, tech_spec_draft):
         try:
-            if "Error:" in tech_spec_draft:
-                 QMessageBox.critical(self, "Generation Failed", tech_spec_draft)
-                 self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
-                 return
-
             self.tech_spec_draft = tech_spec_draft
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
+            is_error = tech_spec_draft.strip().startswith("Error:") or tech_spec_draft.strip().startswith("### Error")
+
+            if is_error:
+                self.review_is_error_state = True
+                self.retry_count += 1
+                self.ui.techSpecTextEdit.setText(self.tech_spec_draft)
+                if self.last_failed_action == 'generation':
+                    self.ui.approveButton.setText("Retry Generation")
+                else: # From guidelines
+                    self.ui.approveButton.setText("Retry from Guidelines")
+
+                if self.retry_count >= 2:
+                    self.ui.pauseProjectButton.setVisible(True)
+            else:
+                self.review_is_error_state = False
+                self.last_failed_action = None
+                self.retry_count = 0
+                self.ui.pauseProjectButton.setVisible(False)
+                self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
+                self.ui.approveButton.setText("Approve Technical Specification")
+
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.state_changed.emit()
@@ -218,13 +264,35 @@ class TechSpecPage(QWidget):
         finally:
             self._set_ui_busy(False)
 
-    def _handle_refinement_result(self, success):
-        """Handles the completion of the refinement task by triggering a full UI update."""
+    def _handle_refinement_result(self, result_tuple):
         try:
-            if success:
-                self.tech_spec_complete.emit()
+            # result_tuple = ("Error: This is a simulated refinement failure.", "")
+            new_draft, new_analysis = result_tuple
+            self.tech_spec_draft = new_draft
+            self.ai_analysis = new_analysis
+            is_error = new_draft.strip().startswith("Error:") or new_draft.strip().startswith("### Error")
+
+            if is_error:
+                self.review_is_error_state = True
+                self.last_failed_action = 'refinement'
+                self.retry_count += 1
+                self.ui.techSpecTextEdit.setText(self.tech_spec_draft)
+                self.ui.approveButton.setText("Retry Refinement")
+                if self.retry_count >= 2:
+                    self.ui.pauseProjectButton.setVisible(True)
             else:
-                QMessageBox.critical(self, "Error", "The refinement process failed.")
+                self.review_is_error_state = False
+                self.last_failed_action = None
+                self.retry_count = 0
+                self.ui.pauseProjectButton.setVisible(False)
+                self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
+                self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
+                self.ui.approveButton.setText("Approve Technical Specification")
+
+            self.ui.feedbackTextEdit.clear()
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.ui.reviewTabWidget.setCurrentIndex(0)
+            self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
 
