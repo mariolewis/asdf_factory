@@ -228,10 +228,10 @@ class Ui_TestEnvPage(object):
 
     def retranslateUi(self, TestEnvPage):
         TestEnvPage.setWindowTitle(QCoreApplication.translate("TestEnvPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("TestEnvPage", u"Test Environment Setup", None))
-        self.standbyLabel.setText(QCoreApplication.translate("TestEnvPage", u"This step generates a setup guide for the project's testing environment based on the technical specification. Click 'Start Analysis' to begin.", None))
+        self.headerLabel.setText(QCoreApplication.translate("TestEnvPage", u"Development & Test Environment Setup", None))
+        self.standbyLabel.setText(QCoreApplication.translate("TestEnvPage", u"This step generates a setup guide for the project's development and testing environments based on the technical specification. Click 'Start Analysis' to begin.", None))
         self.startButton.setText(QCoreApplication.translate("TestEnvPage", u"Start Analysis", None))
-        self.checklistHeaderLabel.setText(QCoreApplication.translate("TestEnvPage", u"Please follow the steps below to set up the testing environment:", None))
+        self.checklistHeaderLabel.setText(QCoreApplication.translate("TestEnvPage", u"Please follow the steps below to set up the environment:", None))
         self.exportButton.setText(QCoreApplication.translate("TestEnvPage", u"Save to .docx", None))
         self.previousButton.setText(QCoreApplication.translate("TestEnvPage", u"< Previous Step", None))
         self.doneButton.setText(QCoreApplication.translate("TestEnvPage", u"Done, Next Step", None))

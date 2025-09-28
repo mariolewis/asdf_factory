@@ -46,6 +46,7 @@ from agents.agent_plan_auditor import PlanAuditorAgent
 from agents.agent_code_summarization import CodeSummarizationAgent
 from agents.agent_test_report_formatting import TestReportFormattingAgent
 from gui.utils import format_timestamp_for_display
+from agents.agent_dev_environment_advisor import DevEnvironmentAdvisorAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -5017,9 +5018,10 @@ class MasterOrchestrator:
 
     def start_test_environment_setup(self, progress_callback=None):
         """
-        Calls the advisor agent to get a list of test environment setup tasks.
+        Calls both the dev and test advisor agents to get a consolidated list
+        of environment setup tasks.
         """
-        logging.info("Initiating test environment setup guidance.")
+        logging.info("Initiating unified development and test environment setup guidance.")
         try:
             if not self.llm_service:
                 raise Exception("Cannot get setup tasks: LLM Service is not configured.")
@@ -5030,15 +5032,28 @@ class MasterOrchestrator:
                 raise Exception("Cannot get setup tasks: Project details not found.")
 
             tech_spec_text = project_details['tech_spec_text']
-            # Corrected to handle missing key gracefully
-            target_os = project_details['target_os'] if 'target_os' in project_details.keys() and project_details['target_os'] else 'Linux'
+            target_os = project_details['target_os'] if project_details and 'target_os' in project_details.keys() and project_details['target_os'] else 'Linux'
 
             if not tech_spec_text:
                 raise Exception("Cannot get setup tasks: Technical Specification is missing.")
 
-            agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
-            tasks = agent.get_setup_tasks(tech_spec_text, target_os)
-            return tasks
+            # Step 1: Get Development environment steps
+            dev_agent = DevEnvironmentAdvisorAgent(llm_service=self.llm_service)
+            dev_tasks = dev_agent.get_setup_tasks(tech_spec_text, target_os) or []
+
+            # Step 2: Get Test environment steps
+            test_agent = TestEnvironmentAdvisorAgent(llm_service=self.llm_service)
+            test_tasks = test_agent.get_setup_tasks(tech_spec_text, target_os) or []
+
+            # Step 3: Combine and tag the tasks
+            combined_tasks = []
+            for task in dev_tasks:
+                combined_tasks.append({'type': 'development', **task})
+            for task in test_tasks:
+                combined_tasks.append({'type': 'test', **task})
+
+            logging.info(f"Generated {len(dev_tasks)} dev steps and {len(test_tasks)} test steps.")
+            return combined_tasks
 
         except Exception as e:
             logging.error(f"Failed to start test environment setup: {e}")

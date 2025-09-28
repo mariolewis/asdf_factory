@@ -115,7 +115,6 @@ class IntegrationAgentPMT:
         full_description = description
         parent_link_key = None
 
-        # --- FIX: Use bracket notation instead of .get() for sqlite3.Row objects ---
         if parent_epic and parent_epic['external_id']:
             parent_link_key = parent_epic['external_id']
             full_description = f"**Epic:** {parent_epic['title']} ({parent_link_key})\n\n---\n\n{description}"
@@ -124,7 +123,6 @@ class IntegrationAgentPMT:
 
         if parent_link_key:
             fields["parent"] = {"key": parent_link_key}
-        # --- END FIX ---
 
         description_payload = {
             "type": "doc", "version": 1, "content": [
