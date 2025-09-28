@@ -90,6 +90,7 @@ class FactoryPhase(Enum):
     AWAITING_PREFLIGHT_RESOLUTION = auto()
     AWAITING_IMPACT_ANALYSIS_CHOICE = auto()
     IMPLEMENTING_CHANGE_REQUEST = auto()
+    UPDATING_SPECIFICATION_DOCUMENTS = auto()
     AWAITING_LINKED_DELETE_CONFIRMATION = auto()
     DEBUG_PM_ESCALATION = auto()
     VIEWING_DOCUMENTS = auto()
@@ -243,6 +244,7 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_PREFLIGHT_RESOLUTION: "Pre-flight Check",
         FactoryPhase.AWAITING_IMPACT_ANALYSIS_CHOICE: "New CR - Impact Analysis",
         FactoryPhase.IMPLEMENTING_CHANGE_REQUEST: "Implement Change Request",
+        FactoryPhase.UPDATING_SPECIFICATION_DOCUMENTS: "Updating Project Documents",
         FactoryPhase.AWAITING_LINKED_DELETE_CONFIRMATION: "Confirm Linked Deletion",
         FactoryPhase.DEBUG_PM_ESCALATION: "Debug Escalation to PM",
         FactoryPhase.VIEWING_DOCUMENTS: "Viewing Project Documents",
@@ -2335,61 +2337,64 @@ class MasterOrchestrator:
         self.set_phase("GENESIS")
         logging.info("Declarative task handled. Returning to Genesis phase.")
 
-    def _run_post_implementation_doc_update(self):
+    def _run_post_implementation_doc_update(self, progress_callback=None):
         """
-        After a CR/bug fix, this method updates all relevant project documents
-        in the database AND writes the changes back to the filesystem.
+        After a sprint, this method updates all relevant project documents,
+        clears the completed sprint's state, and transitions to the backlog.
+        This is designed to be run in a background worker.
         """
-        logging.info("Change implementation complete. Running post-implementation documentation update...")
+        logging.info("Sprint complete. Running post-sprint documentation update...")
         try:
             db = self.db_manager
             project_details = db.get_project_by_id(self.project_id)
             if not project_details:
-                logging.error("Could not run doc update; project details not found.")
-                return
+                raise Exception("Could not run doc update; project details not found.")
 
             if not self.llm_service:
-                logging.error("Could not run doc update; LLM Service is not configured.")
-                return
+                raise Exception("Could not run doc update; LLM Service is not configured.")
 
             project_root = Path(project_details['project_root_folder'])
             docs_dir = project_root / "docs"
-
             implementation_plan_for_update = json.dumps(self.active_plan, indent=4)
             doc_agent = DocUpdateAgentRoWD(db, llm_service=self.llm_service)
 
-            # --- THIS IS THE NEW, REFACTORED LOGIC ---
             def update_and_save_document(doc_key: str, doc_name: str, file_name: str):
                 original_doc = project_details[doc_key]
                 if original_doc:
-                    logging.info(f"Checking for {doc_name} updates...")
-
-                    # Get the current date to pass to the agent
+                    if progress_callback: progress_callback(("INFO", f"Updating {doc_name}..."))
                     current_date = datetime.now().strftime('%x')
-
                     updated_content = doc_agent.update_specification_text(
                         original_spec=original_doc,
                         implementation_plan=implementation_plan_for_update,
-                        current_date=current_date  # Pass the date to the agent
+                        current_date=current_date
                     )
-
-                    # The content of the document itself contains the header with the version
                     db.update_project_field(self.project_id, doc_key, updated_content)
-
-                    # Also write the updated content back to the file system
                     doc_path = docs_dir / file_name
                     doc_path.write_text(updated_content, encoding="utf-8")
-                    self._commit_document(doc_path, f"docs: Update {doc_name} after CR implementation")
-                    logging.info(f"Successfully updated, saved, and committed the {doc_name}.")
+                    self._commit_document(doc_path, f"docs: Update {doc_name} after sprint {self.active_sprint_id}")
+                    if progress_callback: progress_callback(("SUCCESS", f"Successfully updated the {doc_name}."))
 
             update_and_save_document('final_spec_text', 'Application Specification', 'application_spec.md')
             update_and_save_document('tech_spec_text', 'Technical Specification', 'technical_spec.md')
             update_and_save_document('ux_spec_text', 'UX/UI Specification', 'ux_ui_specification.md')
-            update_and_save_document('ui_test_plan_text', 'UI Test Plan', 'ui_test_plan.md')
-            # --- END OF NEW LOGIC ---
+            # We don't update the UI Test Plan here as it's sprint-specific, not a core spec.
 
         except Exception as e:
             logging.error(f"Failed during post-implementation doc update: {e}")
+            if progress_callback: progress_callback(("ERROR", f"Failed during document update: {e}"))
+            # We still proceed to the finally block to avoid getting stuck.
+        finally:
+            # This logic is moved here from handle_sprint_review_complete
+            # It runs after the update is attempted, successful or not.
+            if progress_callback: progress_callback(("INFO", "Finalizing sprint and returning to backlog..."))
+            self.active_plan = None
+            self.active_plan_cursor = 0
+            self.post_fix_reverification_path = None
+            self.is_executing_cr_plan = False
+            self.active_sprint_id = None
+            self.task_awaiting_approval = {}
+            self.set_phase("BACKLOG_VIEW")
+            logging.info("Post-sprint cleanup complete. Returned to BACKLOG_VIEW.")
 
     def _get_integration_context_files(self, new_artifacts: list[dict]) -> list[str]:
         """
@@ -3795,33 +3800,46 @@ class MasterOrchestrator:
 
     def handle_sprint_review_complete(self, **kwargs):
         """
-        Handles the user's action to complete the sprint review, updates the
-        status of completed items, and returns to the backlog.
+        Handles the user's action to complete the sprint review. This method
+        now ONLY updates the status of the sprint and its items.
+        The rest of the finalization is handled by run_doc_update_and_finalize_sprint.
         """
-        logging.info("Sprint review complete. Finalizing sprint.")
+        logging.info("Sprint review acknowledged. Finalizing sprint item statuses.")
         try:
             sprint_id = self.get_active_sprint_id()
             if not sprint_id: return
 
             items_in_sprint = self.db_manager.get_items_for_sprint(sprint_id)
             if items_in_sprint:
-                # Only mark items as COMPLETED if they were still in progress.
-                # This prevents overwriting a BLOCKED status.
                 completed_ids = [item['cr_id'] for item in items_in_sprint if item['status'] == 'IMPLEMENTATION_IN_PROGRESS']
                 if completed_ids:
                     self.db_manager.batch_update_cr_status(completed_ids, "COMPLETED")
 
             self.db_manager.update_sprint_status(sprint_id, "COMPLETED")
         except Exception as e:
-            logging.error(f"Failed to update sprint statuses: {e}")
+            logging.error(f"Failed to update sprint statuses during finalization: {e}")
+            # Re-raise to notify the UI that something went wrong
+            raise
+
+    def run_doc_update_and_finalize_sprint(self, progress_callback=None):
+        """
+        A single method for a background worker that runs the doc update,
+        then finalizes the sprint state.
+        """
+        try:
+            # First, run the document update process.
+            self._run_post_implementation_doc_update(progress_callback)
+        except Exception as e:
+            logging.error(f"An error occurred during the doc update portion of finalization: {e}")
         finally:
-            # Clear out the completed plan details
+            # After the update is attempted (even if it fails), finalize the state.
+            logging.info("Finalizing sprint state and returning to backlog...")
             self.active_plan = None
             self.active_plan_cursor = 0
             self.post_fix_reverification_path = None
             self.is_executing_cr_plan = False
             self.active_sprint_id = None
-            self.task_awaiting_approval = {} # Clear any leftover task data
+            self.task_awaiting_approval = {}
             self.set_phase("BACKLOG_VIEW")
 
     def handle_acknowledge_technical_preview(self, cr_id: int, preview_text: str):
