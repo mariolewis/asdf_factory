@@ -25,6 +25,7 @@ from gui.spec_elaboration_page import SpecElaborationPage
 from gui.tech_spec_page import TechSpecPage
 from gui.build_script_page import BuildScriptPage
 from gui.test_env_page import TestEnvPage
+from gui.dockerization_page import DockerizationPage
 from gui.coding_standard_page import CodingStandardPage
 from gui.planning_page import PlanningPage
 from gui.genesis_page import GenesisPage
@@ -116,6 +117,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.test_env_page)
         self.coding_standard_page = CodingStandardPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.coding_standard_page)
+        self.dockerization_page = DockerizationPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.dockerization_page)
         self.planning_page = PlanningPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.planning_page)
         self.genesis_page = GenesisPage(self.orchestrator, self)
@@ -317,6 +320,8 @@ class ASDFMainWindow(QMainWindow):
             if hasattr(page, 'project_loaded'): page.project_loaded.connect(self.update_ui_after_state_change)
             if hasattr(page, 'project_load_finalized'): page.project_load_finalized.connect(self.update_ui_after_state_change)
             if hasattr(page, 'ux_spec_complete'): page.ux_spec_complete.connect(self.update_ui_after_state_change)
+
+        self.dockerization_page.dockerization_complete.connect(self.update_ui_after_state_change)
 
         # Connect signals that trigger a PARTIAL UI refresh (no page transition)
         for page in [self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page]:
@@ -774,6 +779,7 @@ class ASDFMainWindow(QMainWindow):
         "AWAITING_TECH_SPEC_RECTIFICATION": self.tech_spec_page,
         "BUILD_SCRIPT_SETUP": self.build_script_page,
         "TEST_ENVIRONMENT_SETUP": self.test_env_page,
+        "DOCKERIZATION_SETUP": self.dockerization_page,
         "CODING_STANDARD_GENERATION": self.coding_standard_page,
         "PLANNING": self.planning_page,
         "BACKLOG_RATIFICATION": self.backlog_ratification_page,

@@ -89,6 +89,7 @@ class BuildScriptPage(QWidget):
                 QMessageBox.information(self, "Success", f"Success: Generated and saved '{filename}' to the project root.")
                 self.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
                 self.orchestrator.is_project_dirty = True
+                self.orchestrator.finalize_build_script()
                 self.build_script_setup_complete.emit()
             else:
                 QMessageBox.critical(self, "Generation Failed", "The AI was unable to generate a build script. Please proceed manually.")
@@ -104,6 +105,7 @@ class BuildScriptPage(QWidget):
             QMessageBox.information(self, "Acknowledged", "You will be responsible for creating and maintaining the project's build script.")
             self.orchestrator.set_phase("TEST_ENVIRONMENT_SETUP")
             self.orchestrator.is_project_dirty = True
+            self.orchestrator.finalize_build_script()
             self.build_script_setup_complete.emit()
         except Exception as e:
             QMessageBox.critical(self, "Database Error", f"Failed to save build automation status:\n{e}")

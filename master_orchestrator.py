@@ -74,10 +74,9 @@ class FactoryPhase(Enum):
     AWAITING_SPEC_REFINEMENT_SUBMISSION = auto()
     AWAITING_SPEC_FINAL_APPROVAL = auto()
     TECHNICAL_SPECIFICATION = auto()
-    AWAITING_TECH_SPEC_GUIDELINES = auto()
-    AWAITING_TECH_SPEC_RECTIFICATION = auto()
-    BUILD_SCRIPT_SETUP = auto()
     TEST_ENVIRONMENT_SETUP = auto()
+    BUILD_SCRIPT_SETUP = auto()
+    DOCKERIZATION_SETUP = auto()
     CODING_STANDARD_GENERATION = auto()
     AWAITING_BACKLOG_GATEWAY_DECISION = auto()
     PLANNING = auto()
@@ -219,6 +218,7 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_SPRINT_VALIDATION_APPROVAL: "Sprint Validation Report",
         FactoryPhase.SPRINT_IN_PROGRESS: "Sprint in Progress",
         FactoryPhase.SPRINT_REVIEW: "Sprint Review",
+        FactoryPhase.POST_SPRINT_DOC_UPDATE: "Finalizing Sprint",
         FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
         FactoryPhase.VIEWING_ACTIVE_PROJECTS: "Open Project",
         FactoryPhase.UX_UI_DESIGN: "User Experience & Interface Design",
@@ -231,10 +231,9 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION: "Review Application Specification Draft",
         FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL: "Refine Application Specification",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
-        FactoryPhase.AWAITING_TECH_SPEC_GUIDELINES: "Awaiting Technology Guidelines",
-        FactoryPhase.AWAITING_TECH_SPEC_RECTIFICATION: "Refine Technical Specification",
+        FactoryPhase.TEST_ENVIRONMENT_SETUP: "Environment Setup",
         FactoryPhase.BUILD_SCRIPT_SETUP: "Build Script Generation",
-        FactoryPhase.TEST_ENVIRONMENT_SETUP: "Test Environment Setup",
+        FactoryPhase.DOCKERIZATION_SETUP: "Dockerization",
         FactoryPhase.CODING_STANDARD_GENERATION: "Coding Standard Generation",
         FactoryPhase.AWAITING_BACKLOG_GATEWAY_DECISION: "Backlog Gateway",
         FactoryPhase.PLANNING: "Development Planning",
@@ -243,6 +242,7 @@ class MasterOrchestrator:
         FactoryPhase.INTEGRATION_AND_VERIFICATION: "Integration & Verification",
         FactoryPhase.AWAITING_INTEGRATION_RESOLUTION: "Awaiting Integration Resolution",
         FactoryPhase.MANUAL_UI_TESTING: "Testing & Validation",
+        FactoryPhase.GENERATING_MANUAL_TEST_PLAN: "Generating Manual Test Plan",
         FactoryPhase.AWAITING_UI_TEST_DECISION: "UI Test Decision",
         FactoryPhase.AWAITING_SCRIPT_FAILURE_RESOLUTION: "Automated Test Script Failure",
         FactoryPhase.AWAITING_PM_DECLARATIVE_CHECKPOINT: "Checkpoint: High-Risk Change Approval",
@@ -1720,7 +1720,7 @@ class MasterOrchestrator:
             # This can still use the headed version as it's a separate analysis.
             self._extract_and_save_primary_technology(final_tech_spec_with_header)
             self.active_spec_draft = None
-            self.set_phase("BUILD_SCRIPT_SETUP")
+            self.set_phase("TEST_ENVIRONMENT_SETUP")
             # --- END OF FIX ---
 
         except Exception as e:
@@ -2475,6 +2475,36 @@ class MasterOrchestrator:
             if len(parts) > 1:
                 return parts[1]
         return doc_text # Return original text if delimiter not found
+
+    def _extract_and_save_primary_technology(self, tech_spec_text: str):
+        """
+        Uses the LLM service to extract the primary programming language from the
+        technical specification text and saves it to the database.
+        """
+        logging.info("Extracting primary technology from technical specification...")
+        try:
+            if not self.llm_service:
+                raise Exception("Cannot extract technology: LLM Service is not initialized.")
+
+            prompt = f"""
+                Analyze the following technical specification document. Your single task is to identify the primary, top-level programming language or technology stack.
+                Your response MUST be only the name of the language (e.g., "Python", "Java", "C#", "Go").
+                Do not include any other words, explanations, or punctuation.
+                --- Technical Specification ---
+                {tech_spec_text}
+                --- End Specification ---
+                Primary Language:
+            """
+            primary_technology = self.llm_service.generate_text(prompt, task_complexity="simple").strip()
+
+            if primary_technology and not primary_technology.startswith("Error:"):
+                self.db_manager.update_project_field(self.project_id, "technology_stack", primary_technology)
+                logging.info(f"Successfully extracted and saved primary technology: {primary_technology}")
+            else:
+                raise ValueError(f"LLM service returned an empty or error response for technology extraction: {primary_technology}")
+
+        except Exception as e:
+            logging.error(f"Failed to extract and save primary technology: {e}")
 
     def _strip_environment_setup_from_spec(self, tech_spec_text: str) -> str:
         """Removes the Development Environment Setup Guide from the spec text."""
@@ -5256,10 +5286,8 @@ class MasterOrchestrator:
 
     def finalize_test_environment_setup(self, backend_test_command: str, ui_test_command: str):
         """
-        Saves the confirmed backend and UI test commands and transitions to the next phase.
-
-        Returns:
-            True on success, False on failure.
+        Saves the confirmed backend and UI test commands and transitions to the next phase,
+        conditionally skipping the build script phase if not required.
         """
         logging.info(f"Finalizing test environment setup. Backend command: '{backend_test_command}', UI command: '{ui_test_command}'")
         try:
@@ -5267,12 +5295,42 @@ class MasterOrchestrator:
             db.update_project_field(self.project_id, "test_execution_command", backend_test_command)
             db.update_project_field(self.project_id, "ui_test_execution_command", ui_test_command)
 
-            self.set_phase("CODING_STANDARD_GENERATION")
-            logging.info("Test environment setup complete. Transitioning to Coding Standard Generation.")
+            # --- Conditional Phase Logic ---
+            project_details = db.get_project_by_id(self.project_id)
+            primary_technology = project_details['technology_stack'] if project_details else ''
+
+            # Define technologies that do not require a formal build script
+            build_script_not_required = ["Shell Script", "Bash", "PowerShell"]
+
+            if primary_technology in build_script_not_required:
+                logging.info(f"Primary technology '{primary_technology}' does not require a build script. Skipping to Dockerization.")
+                self.set_phase("DOCKERIZATION_SETUP")
+            else:
+                self.set_phase("BUILD_SCRIPT_SETUP")
+
+            logging.info("Test environment setup complete.")
             return True
         except Exception as e:
             logging.error(f"Failed to finalize test environment setup: {e}")
             return False
+
+    def finalize_build_script(self):
+        """
+        Transitions the factory to the Dockerization phase after the build script is handled.
+        """
+        logging.info("Build script phase complete. Transitioning to Dockerization setup.")
+        self.set_phase("DOCKERIZATION_SETUP")
+        # In a real scenario, you might pass a success flag or data back.
+        # For this workflow, the UI's continuation implies success.
+        return True
+
+    def finalize_dockerization_setup(self):
+        """
+        Transitions the factory to the Coding Standard phase after Dockerization is handled.
+        """
+        logging.info("Dockerization phase complete. Transitioning to Coding Standard generation.")
+        self.set_phase("CODING_STANDARD_GENERATION")
+        return True
 
     def handle_ignore_setup_task(self, task: dict):
         """

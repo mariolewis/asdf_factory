@@ -302,10 +302,10 @@ class TechSpecPage(QWidget):
         if not final_tech_spec.strip():
             QMessageBox.warning(self, "Approval Failed", "The technical specification cannot be empty.")
             return
-
         target_os = self.ui.osComboBox.currentText()
+        # This task now also handles the technology extraction
         self._execute_task(self._task_approve_spec, self._handle_approval_result, final_tech_spec, target_os,
-                           status_message="Finalizing technical specification...")
+                        status_message="Finalizing tech spec and extracting primary technology...")
 
     def _get_template_content(self, template_name: str) -> str | None:
         """A helper to load a specific template from the database."""

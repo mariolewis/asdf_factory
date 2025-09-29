@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>BuildScriptPage</class>
- <widget class="QWidget" name="BuildScriptPage">
+ <class>DockerizationPage</class>
+ <widget class="QWidget" name="DockerizationPage">
   <property name="geometry">
    <rect>
     <x>0</x>
@@ -29,7 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>Build Script Generation</string>
+      <string>Dockerization</string>
      </property>
     </widget>
    </item>
@@ -43,7 +43,7 @@
    <item>
     <widget class="QLabel" name="instructionLabel">
      <property name="text">
-      <string>The environment setups are complete. Now, let's establish the build script for the project. This script (e.g., requirements.txt, pom.xml) manages project dependencies and how the application is built.</string>
+      <string>A Dockerfile defines a consistent, portable environment for the application. Choose whether to generate a Dockerfile for this project.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -57,25 +57,19 @@
        <property name="orientation">
         <enum>Qt::Horizontal</enum>
        </property>
-       <property name="sizeHint" stdset="0">
-        <size>
-         <width>40</width>
-         <height>20</height>
-        </size>
-       </property>
       </spacer>
      </item>
      <item>
       <widget class="QPushButton" name="autoGenerateButton">
        <property name="text">
-        <string>Auto-Generate Build Script</string>
+        <string>Auto-Generate Dockerfile</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="manualCreateButton">
+      <widget class="QPushButton" name="skipButton">
        <property name="text">
-        <string>I Will Create It Manually</string>
+        <string>Skip Dockerization</string>
        </property>
       </widget>
      </item>
