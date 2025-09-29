@@ -255,8 +255,16 @@ class BuildAndCommitAgentAppTarget:
             # Stage all changes, including untracked files
             repo.git.add(A=True)
 
-            # Check if there is anything to commit after staging
-            if not repo.index.diff("HEAD"):
+            # Check if there is anything to commit after staging.
+            # This now handles the edge case of a new repo with no commits yet.
+            has_changes_to_commit = False
+            if not repo.head.is_valid(): # Checks if HEAD exists (i.e., if there are any commits)
+                if repo.index.entries: # Check if anything is staged
+                    has_changes_to_commit = True
+            elif repo.index.diff("HEAD"): # Standard check for existing repos
+                has_changes_to_commit = True
+
+            if not has_changes_to_commit:
                 logging.info("No changes to commit after staging.")
                 return True, "No changes detected to commit."
 

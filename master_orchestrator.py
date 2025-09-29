@@ -57,8 +57,11 @@ class FactoryPhase(Enum):
     IDLE = auto()
     BACKLOG_VIEW = auto()
     SPRINT_PLANNING = auto()
+    AWAITING_SPRINT_VALIDATION_CHECK = auto()
+    AWAITING_SPRINT_VALIDATION_APPROVAL = auto()
     SPRINT_IN_PROGRESS = auto()
     SPRINT_REVIEW = auto()
+    POST_SPRINT_DOC_UPDATE = auto()
     BACKLOG_RATIFICATION = auto()
     VIEWING_ACTIVE_PROJECTS = auto()
     UX_UI_DESIGN = auto()
@@ -212,6 +215,8 @@ class MasterOrchestrator:
         FactoryPhase.IDLE: "Idle",
         FactoryPhase.BACKLOG_VIEW: "Backlog Overview",
         FactoryPhase.SPRINT_PLANNING: "Sprint Planning",
+        FactoryPhase.AWAITING_SPRINT_VALIDATION_CHECK: "Validating Sprint Scope",
+        FactoryPhase.AWAITING_SPRINT_VALIDATION_APPROVAL: "Sprint Validation Report",
         FactoryPhase.SPRINT_IN_PROGRESS: "Sprint in Progress",
         FactoryPhase.SPRINT_REVIEW: "Sprint Review",
         FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
@@ -2165,6 +2170,7 @@ class MasterOrchestrator:
         target_language = project_details['technology_stack']
         test_command = project_details['test_execution_command']
         version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
+        logging.warning(f"DEBUG PRE-FLIGHT: version_control_enabled is '{version_control_enabled}' for project {project_id}")
 
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
@@ -3055,7 +3061,10 @@ class MasterOrchestrator:
             self.reset()
             return
 
-        if project_details['development_plan_text'] or project_details['coding_standard_text']:
+        all_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+        has_coding_standard = any(art['artifact_type'] == 'CODING_STANDARD' for art in all_artifacts)
+
+        if project_details['development_plan_text'] or has_coding_standard:
             self.set_phase(FactoryPhase.BACKLOG_VIEW.name)
         elif project_details['tech_spec_text']:
             self.set_phase(FactoryPhase.CODING_STANDARD_GENERATION.name)
@@ -3720,15 +3729,139 @@ class MasterOrchestrator:
             logging.error(error_msg, exc_info=True)
             return f"### Error\n{error_msg}"
 
+    def _task_run_sprint_validation_checks(self, **kwargs):
+        """Background task to run all sprint pre-execution validation checks."""
+        from agents.agent_sprint_pre_execution_check import SprintPreExecutionCheckAgent
+        logging.info("Running sprint validation checks...")
+        task_data = self.task_awaiting_approval or {}
+        selected_items = task_data.get("selected_sprint_items", [])
+        if not selected_items:
+            raise ValueError("Cannot run validation check: No items selected.")
+
+        final_report = {
+            "scope_guardrail": {"status": "NOT_RUN", "details": ""},
+            "stale_analysis": {"status": "NOT_RUN", "details": ""},
+            "technical_risk": {"status": "NOT_RUN", "details": ""}
+        }
+
+        # 1. Scope Guardrail Check
+        limit = int(self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "2500000") * 0.40
+        total_chars = sum(len(item.get('description', '')) + len(item.get('title', '')) for item in selected_items)
+        if total_chars > limit:
+            large_items = [f"- {item.get('hierarchical_id')}: {item.get('title')}" for item in selected_items if item.get('complexity') == 'Large']
+            details = f"The combined text of the selected items ({total_chars:,} characters) exceeds the recommended limit of {int(limit):,} for reliable plan generation. "
+            if large_items:
+                details += "Consider removing one or more 'Large' complexity items to reduce the scope:\n" + "\n".join(large_items)
+            else:
+                details += "Consider reducing the number of items in the sprint."
+            final_report["scope_guardrail"] = {"status": "FAIL", "details": details}
+            self.task_awaiting_approval["sprint_validation_report"] = final_report
+            self.set_phase("AWAITING_SPRINT_VALIDATION_APPROVAL")
+            return
+        else:
+            final_report["scope_guardrail"] = {"status": "PASS", "details": "Sprint scope size is within acceptable limits."}
+
+        # 2. Stale Analysis Check
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        if project_details and project_details['version_control_enabled'] == 1:
+            stale_items_found = []
+            latest_commit_time = self.get_latest_commit_timestamp()
+            if latest_commit_time:
+                for item in selected_items:
+                    if item['status'] == 'IMPACT_ANALYZED' and item['last_modified_timestamp']:
+                        analysis_time = datetime.fromisoformat(item['last_modified_timestamp'])
+                        if latest_commit_time > analysis_time:
+                            stale_items_found.append(f"- {item.get('hierarchical_id')}: {item.get('title')}")
+            if stale_items_found:
+                details = "The following items have a stale impact analysis because the codebase has been modified since they were last analyzed:\n" + "\n".join(stale_items_found)
+                stale_ids = [item['cr_id'] for item in selected_items if f"- {item.get('hierarchical_id')}" in details]
+                final_report["stale_analysis"] = {"status": "FAIL", "details": details, "stale_item_ids": stale_ids}
+                self.task_awaiting_approval["sprint_validation_report"] = final_report
+                self.set_phase("AWAITING_SPRINT_VALIDATION_APPROVAL")
+                return
+            else:
+                final_report["stale_analysis"] = {"status": "PASS", "details": "All analyzed items are up-to-date with the latest codebase."}
+        else:
+             final_report["stale_analysis"] = {"status": "NOT_RUN", "details": "Version control is not enabled for this project; check was skipped."}
+
+        # 3. Technical Risk Check
+        full_backlog = self._get_backlog_with_hierarchical_numbers()
+        rowd = self.db_manager.get_all_artifacts_for_project(self.project_id)
+        agent = SprintPreExecutionCheckAgent(self.llm_service)
+        report_json = agent.run_check(
+            selected_items_json=json.dumps(selected_items, indent=2),
+            rowd_json=json.dumps([dict(r) for r in rowd], indent=2),
+            full_backlog_json=json.dumps(full_backlog, indent=2)
+        )
+        report_data = json.loads(report_json).get("pre_execution_report", {})
+        missing_deps = report_data.get("missing_dependencies", [])
+        tech_conflicts = report_data.get("technical_conflicts", [])
+        if missing_deps or tech_conflicts:
+            details = ""
+            if missing_deps:
+                details += "Missing Dependencies Found:\n" + "\n".join([f"- {dep}" for dep in missing_deps]) + "\n\n"
+            if tech_conflicts:
+                details += "Potential Technical Conflicts Found:\n" + "\n".join([f"- {con}" for con in tech_conflicts])
+            final_report["technical_risk"] = {"status": "FAIL", "details": details.strip()}
+        else:
+            final_report["technical_risk"] = {"status": "PASS", "details": "No technical conflicts or missing dependencies were found."}
+
+        self.task_awaiting_approval["sprint_validation_report"] = final_report
+        self.set_phase("AWAITING_SPRINT_VALIDATION_APPROVAL")
+
+    def handle_sprint_validation_decision(self, decision: str):
+        """Handles the PM's decision after reviewing the sprint validation report."""
+        if decision == "PROCEED":
+            logging.info("PM approved sprint validation report. Proceeding to Sprint Planning.")
+            self.set_phase("SPRINT_PLANNING")
+        elif decision == "CANCEL":
+            logging.info("PM cancelled sprint after validation. Returning to Backlog.")
+            self.task_awaiting_approval = None # Clear the pending task
+            self.set_phase("BACKLOG_VIEW")
+
+    def rerun_stale_sprint_analysis(self, stale_item_ids: list, progress_callback=None):
+        """
+        Runs full analysis on a list of stale items and then re-initiates
+        the sprint planning process. Designed for a background worker.
+        """
+        try:
+            if not stale_item_ids:
+                raise ValueError("Stale items list cannot be empty for re-run.")
+
+            # Get the original full list of selected item IDs from the cached task data
+            task_data = self.task_awaiting_approval or {}
+            original_sprint_items = task_data.get("selected_sprint_items", [])
+            original_cr_ids = [item['cr_id'] for item in original_sprint_items]
+
+            if not original_cr_ids:
+                raise ValueError("Could not find original list of sprint items to resume planning.")
+
+            for i, cr_id in enumerate(stale_item_ids):
+                if progress_callback:
+                    progress_callback(("INFO", f"({i+1}/{len(stale_item_ids)}) Re-running analysis for CR-{cr_id}..."))
+                self.run_full_analysis(cr_id)
+
+            if progress_callback:
+                progress_callback(("SUCCESS", "All stale analyses complete. Resuming sprint planning..."))
+
+            # Re-trigger the planning process now that analyses are fresh
+            self.initiate_sprint_planning(original_cr_ids)
+        except Exception as e:
+            logging.error(f"Failed during batch re-analysis of stale items: {e}", exc_info=True)
+            self.task_awaiting_approval = {"error": str(e)}
+            self.set_phase("BACKLOG_VIEW")
+            raise # Re-raise to be caught by the worker's error handler
+
     def initiate_sprint_planning(self, selected_cr_ids: list, **kwargs):
         """
-        Prepares the context for the SPRINT_PLANNING phase.
-        This is called by the UI when the 'Plan Sprint' button is clicked.
+        Prepares the context for the sprint workflow, starting with the
+        pre-execution validation checks.
         """
         logging.info(f"Initiating sprint planning for {len(selected_cr_ids)} items.")
         try:
+            # Note: Stale analysis logic for Git projects will be integrated here
+            # by the new validation task that this method now triggers.
             full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
-
             # Create a flat map for easy lookup of the enriched data
             flat_backlog = {}
             def flatten_hierarchy(items):
@@ -3739,14 +3872,13 @@ class MasterOrchestrator:
                     if "user_stories" in item:
                         flatten_hierarchy(item["user_stories"])
             flatten_hierarchy(full_backlog_with_ids)
-
             # Get the full data for the selected items
             selected_items = [flat_backlog[cr_id] for cr_id in selected_cr_ids if cr_id in flat_backlog]
-
             self.task_awaiting_approval = {
                 "selected_sprint_items": selected_items
             }
-            self.set_phase("SPRINT_PLANNING")
+            # Instead of going to SPRINT_PLANNING, we start the validation check first.
+            self.set_phase("AWAITING_SPRINT_VALIDATION_CHECK")
         except Exception as e:
             logging.error(f"Failed during sprint initiation: {e}", exc_info=True)
             self.set_phase("BACKLOG_VIEW") # Go back on error
@@ -4511,8 +4643,9 @@ class MasterOrchestrator:
     def _perform_preflight_checks(self, project_root_str: str, project_id: str) -> dict:
         """
         Performs a sequence of pre-flight checks on an existing project environment.
-        This version now also reports if a development plan is active.
+        This version uses the most robust GitPython introspection methods.
         """
+        print("\n--- DEBUG: ENTERING _perform_preflight_checks (FINAL VERSION) ---")
         import os
         import subprocess
         import git
@@ -4524,21 +4657,41 @@ class MasterOrchestrator:
             return {"status": "PATH_NOT_FOUND", "message": f"The project folder could not be found or is not a directory. Please confirm the new location: {project_root_str}", "has_active_plan": has_active_plan}
 
         project_details = self.db_manager.get_project_by_id(project_id)
-        version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
+        version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else False
+
+        print(f"--- DEBUG: Calculated boolean for version_control_enabled: {version_control_enabled}")
 
         # 2. VCS Validation (Only if enabled for this project)
         if version_control_enabled:
+            print("--- DEBUG: version_control_enabled is True. Proceeding with GitPython checks.")
             if not (project_root / '.git').is_dir():
-                return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing. Version control is enabled for this project.", "has_active_plan": has_active_plan}
+                return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing.", "has_active_plan": has_active_plan}
+
             try:
                 repo = git.Repo(project_root)
-            except git.InvalidGitRepositoryError:
-                return {"status": "GIT_MISSING", "message": "The project folder is not a valid Git repository (GitPython check failed).", "has_active_plan": has_active_plan}
 
-            if repo.is_dirty(untracked_files=True):
-                return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository.", "has_active_plan": has_active_plan}
+                # Direct and robust checks using GitPython's properties
+                is_dirty_tracked = repo.is_dirty()
+                has_untracked_files = bool(repo.untracked_files)
+
+                print(f"--- DEBUG: repo.is_dirty() check returned: {is_dirty_tracked}")
+                print(f"--- DEBUG: repo.untracked_files check returned: {repo.untracked_files}")
+
+                if is_dirty_tracked or has_untracked_files:
+                    print("--- DEBUG: State drift detected.")
+                    print("--- DEBUG: EXITING _perform_preflight_checks ---")
+                    return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository.", "has_active_plan": has_active_plan}
+
+            except git.InvalidGitRepositoryError as e:
+                return {"status": "GIT_MISSING", "message": f"The project folder is not a valid Git repository. Error: {e}", "has_active_plan": has_active_plan}
+            except Exception as e:
+                 return {"status": "GIT_MISSING", "message": f"An unexpected error occurred with GitPython. Error: {e}", "has_active_plan": has_active_plan}
+        else:
+            print("--- DEBUG: version_control_enabled is False. Skipping Git checks.")
 
         # All checks passed
+        print("--- DEBUG: All checks passed.")
+        print("--- DEBUG: EXITING _perform_preflight_checks ---")
         return {"status": "ALL_PASS", "message": "Project environment successfully verified.", "vcs_enabled": version_control_enabled, "has_active_plan": has_active_plan}
 
     def handle_discard_changes(self, history_id: int):

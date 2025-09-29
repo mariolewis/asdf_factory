@@ -38,13 +38,14 @@ from gui.documents_page import DocumentsPage
 from gui.reports_page import ReportsPage
 from gui.manual_ui_testing_page import ManualUITestingPage
 from gui.project_complete_page import ProjectCompletePage
+from gui.sprint_planning_page import SprintPlanningPage
+from gui.sprint_validation_page import SprintValidationPage
 from gui.sprint_review_page import SprintReviewPage
 from gui.project_settings_dialog import ProjectSettingsDialog
 from gui.cr_management_page import CRManagementPage
 from gui.ux_spec_page import UXSpecPage
 from gui.backlog_ratification_page import BacklogRatificationPage
 from agents.agent_integration_pmt import IntegrationAgentPMT
-from gui.sprint_planning_page import SprintPlanningPage
 from gui.worker import Worker
 
 from gui.import_issue_dialog import ImportIssueDialog
@@ -141,6 +142,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.backlog_ratification_page)
         self.sprint_planning_page = SprintPlanningPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.sprint_planning_page)
+        self.sprint_validation_page = SprintValidationPage(self)
+        self.ui.mainContentArea.addWidget(self.sprint_validation_page)
         self.sprint_review_page = SprintReviewPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.sprint_review_page)
 
@@ -344,6 +347,11 @@ class ASDFMainWindow(QMainWindow):
         self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
         self.sprint_planning_page.sprint_started.connect(self.on_start_sprint)
         self.sprint_review_page.return_to_backlog.connect(self.on_return_to_backlog)
+
+        # --- Sprint Validation Connections ---
+        self.sprint_validation_page.proceed_to_planning.connect(self.on_validation_proceed)
+        self.sprint_validation_page.return_to_backlog.connect(self.on_validation_cancel)
+        self.sprint_validation_page.rerun_stale_analysis.connect(self.on_validation_rerun_stale)
 
     def _reset_all_pages_for_new_project(self):
         """Iterates through all page widgets and calls their reset method if it exists."""
@@ -715,10 +723,11 @@ class ASDFMainWindow(QMainWindow):
         It re-enables the UI and then refreshes the data tables.
         """
         self.setEnabled(True)
+        self.statusBar().clearMessage()
         self.clear_persistent_status()
 
         # The orchestrator's state is now final. A single call here will now
-        # correctly read the new phase (GENESIS) and transition the page.
+        # correctly read the new phase (e.g., SPRINT_PLANNING) and transition the page.
         self.update_ui_after_state_change()
 
     def on_view_sprint(self):
@@ -1037,6 +1046,21 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.option1_selected.connect(self.on_integration_confirmed)
             self.decision_page.option2_selected.connect(self.on_stop_export_project)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "AWAITING_SPRINT_VALIDATION_CHECK":
+            self.sprint_validation_page.show_processing()
+            self.ui.mainContentArea.setCurrentWidget(self.sprint_validation_page)
+            self.setEnabled(False) # Disable main window during processing
+            worker = Worker(self.orchestrator._task_run_sprint_validation_checks)
+            worker.signals.error.connect(self._on_background_task_error)
+            worker.signals.finished.connect(self._on_background_task_finished)
+            self.threadpool.start(worker)
+
+        elif current_phase_name == "AWAITING_SPRINT_VALIDATION_APPROVAL":
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            report_data = task_data.get("sprint_validation_report", {})
+            self.sprint_validation_page.populate_report(report_data)
+            self.ui.mainContentArea.setCurrentWidget(self.sprint_validation_page)
 
         elif current_phase_name == "SPRINT_PLANNING":
             page_to_show = self.sprint_planning_page
@@ -1397,6 +1421,26 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator.handle_start_sprint(sprint_items)
         # This is the missing step that forces the UI to refresh to the new phase
         self.update_ui_after_state_change()
+
+    def on_validation_proceed(self):
+        """Handles the user's choice to proceed after a successful validation check."""
+        self.orchestrator.handle_sprint_validation_decision("PROCEED")
+        self.update_ui_after_state_change()
+
+    def on_validation_cancel(self):
+        """Handles the user's choice to cancel the sprint after validation."""
+        self.orchestrator.handle_sprint_validation_decision("CANCEL")
+        self.update_ui_after_state_change()
+
+    def on_validation_rerun_stale(self, stale_item_ids: list):
+        """Handles re-running analysis for stale items in a background thread."""
+        self.setEnabled(False)
+        self.statusBar().showMessage(f"Re-running analysis for {len(stale_item_ids)} stale item(s)...")
+
+        worker = Worker(self.orchestrator.rerun_stale_sprint_analysis, stale_item_ids)
+        worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
 
     def on_return_to_backlog(self):
         """

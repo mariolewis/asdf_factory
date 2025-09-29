@@ -371,3 +371,17 @@ QTreeView::branch:open:has-children:has-siblings {
 QGroupBox#advisoryGroupBox {
     margin-top: 0px;
 }
+
+/* ---- Sprint Validation Page Specifics ---- */
+QWidget#scrollAreaWidgetContents {
+    background-color: #1E1E1E; /* Dark background for the container */
+    border: 1px solid #007ACC; /* Accent Color for border */
+    border-radius: 4px;
+}
+
+QTextEdit#scopeDetailsTextEdit,
+QTextEdit#staleDetailsTextEdit,
+QTextEdit#riskDetailsTextEdit {
+    border: 1px solid #4A4A4A; /* Subtle border for text boxes */
+    background-color: #202021; /* Match other input fields */
+}
