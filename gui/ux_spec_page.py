@@ -91,6 +91,26 @@ class UXSpecPage(QWidget):
             self._set_ui_busy(False)
 
     def prepare_for_display(self):
+        """
+        Prepares the page by either loading a user-provided draft (REFINE),
+        resuming a paused session, or generating a new draft (ELABORATE).
+        """
+        # Case 1: REFINE workflow (user provided a document at the start)
+        task_data = self.orchestrator.task_awaiting_approval or {}
+        segregated_content = task_data.get("segregated_content", {})
+        user_content = segregated_content.get("ux_spec_text")
+
+        if user_content:
+            logging.info("UXSpecPage: REFINE workflow detected. Loading user-provided UX spec.")
+            self.ux_spec_draft = self.orchestrator.prepend_standard_header(user_content, "UX/UI Specification")
+            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            # Consume the content so this block doesn't re-trigger on a simple UI refresh
+            if "ux_spec_text" in self.orchestrator.task_awaiting_approval["segregated_content"]:
+                del self.orchestrator.task_awaiting_approval["segregated_content"]["ux_spec_text"]
+            return
+
+        # Case 2: RESUME workflow (resuming from a previously paused state)
         if self.orchestrator.active_spec_draft is not None:
             logging.info("Resuming UX spec with a saved draft.")
             self.ux_spec_draft = self.orchestrator.active_spec_draft
@@ -99,7 +119,8 @@ class UXSpecPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             return
 
-        logging.info("UXSpecPage: Preparing for display, starting draft generation.")
+        # Case 3: ELABORATE workflow (default, generate from scratch)
+        logging.info("UXSpecPage: ELABORATE workflow detected. Starting draft generation.")
         self.run_generation_task()
 
     def run_generation_task(self):

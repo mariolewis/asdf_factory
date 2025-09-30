@@ -98,11 +98,35 @@ class SpecElaborationPage(QWidget):
         if self.orchestrator:
             self.orchestrator.set_active_spec_draft(draft_text)
 
-    # This is the new, fully corrected method
     def prepare_for_display(self):
         """
-        Configures the page based on the orchestrator's current phase.
+        Configures the page based on the orchestrator's current phase, now with
+        a REFINE path to handle pre-existing user content.
         """
+        # Case 1: REFINE workflow (user provided a document at the start)
+        task_data = self.orchestrator.task_awaiting_approval or {}
+        segregated_content = task_data.get("segregated_content", {})
+        user_content = segregated_content.get("final_spec_text")
+
+        if user_content and self.orchestrator.current_phase == FactoryPhase.SPEC_ELABORATION:
+            logging.info("SpecElaborationPage: REFINE workflow detected. Analyzing user-provided content.")
+            # Consume the content to prevent re-triggering
+            if "final_spec_text" in self.orchestrator.task_awaiting_approval.get("segregated_content", {}):
+                del self.orchestrator.task_awaiting_approval["segregated_content"]["final_spec_text"]
+
+            draft_with_header = self.orchestrator.prepend_standard_header(user_content, "Application Specification")
+            self.spec_draft = draft_with_header # Store the draft
+
+            # Trigger a background task to get ONLY the AI analysis of the user's content
+            self._execute_task(
+                self._task_analyze_only,
+                self._handle_analysis_only_result,
+                draft_with_header,
+                status_message="Analyzing user-provided application specification..."
+            )
+            return # Exit the method to let the background task complete
+
+        # Existing logic for other phases
         current_phase = self.orchestrator.current_phase
         logging.debug(f"SpecElaborationPage preparing for display in phase: {current_phase.name}")
 
@@ -125,7 +149,6 @@ class SpecElaborationPage(QWidget):
 
             if not initial_brief:
                 QMessageBox.critical(self, "Error", "Could not find the initial brief text to start the analysis.")
-                # Safely transition back to a stable state instead of looping
                 self.orchestrator.set_phase("SPEC_ELABORATION")
                 self.window().setEnabled(True)
                 self.window().statusBar().clearMessage()
@@ -133,9 +156,6 @@ class SpecElaborationPage(QWidget):
                 return
 
             worker = Worker(self.orchestrator.generate_application_spec_draft_and_risk_analysis, initial_brief)
-
-            # When the worker is finished, the orchestrator's state will have changed.
-            # A single call to the main window's update function is all that's needed.
             worker.signals.finished.connect(self._on_generation_finished)
             worker.signals.error.connect(self._on_task_error)
             self.threadpool.start(worker)
@@ -261,13 +281,13 @@ class SpecElaborationPage(QWidget):
 
     def run_generation_task(self):
         """
-        Processes the initial user brief (from text or files) and passes it to the
-        orchestrator's UX Triage workflow.
+        Gathers the initial user brief (from text or files) and triggers the
+        new intelligent intake workflow in the orchestrator.
         """
-        self.ui.headerLabel.setText("Analyzing Requirement")
+        self.ui.headerLabel.setText("Analyzing Project Brief...")
         sender = self.sender()
         input_data = None
-        status_message = "Processing brief for initial analysis..."
+        status_message = "Analyzing project brief..."
 
         if sender == self.ui.processTextButton:
             input_data = self.ui.briefDescriptionTextEdit.toPlainText().strip()
@@ -283,12 +303,12 @@ class SpecElaborationPage(QWidget):
 
         if input_data:
             self._execute_task(self._task_process_brief,
-                            self._handle_brief_processing_result,
-                            input_data,
-                            status_message=status_message)
+                             self._handle_brief_processing_result,
+                             input_data,
+                             status_message=status_message)
 
     def _task_process_brief(self, input_data, **kwargs):
-        """Background task to process the initial brief from either text or files."""
+        """Background task to extract text and pass it to the orchestrator's intake handler."""
         initial_text = ""
         if isinstance(input_data, list):
             bootstrap_agent = ProjectBootstrapAgent(self.orchestrator.db_manager)
@@ -302,9 +322,9 @@ class SpecElaborationPage(QWidget):
         if not initial_text or not initial_text.strip():
             raise Exception("No text could be extracted from the provided input.")
 
-        # This single orchestrator call handles the entire triage workflow.
-        self.orchestrator.handle_ux_ui_brief_submission(initial_text)
-        return "Triage initiated."
+        # This now calls the new central intake handler in the orchestrator
+        self.orchestrator.handle_initial_brief_submission(initial_text)
+        return "Intake analysis initiated."
 
     def _handle_brief_processing_result(self, result):
         """
@@ -496,3 +516,24 @@ class SpecElaborationPage(QWidget):
             self.spec_elaboration_complete.emit()
         else:
             QMessageBox.critical(self, "Error", "The approval and backlog generation process failed.")
+
+    def _task_analyze_only(self, draft_to_analyze, **kwargs):
+        """Background worker to run only the issue identification part of the workflow."""
+        agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
+        analysis = agent.identify_potential_issues(draft_to_analyze, iteration_count=1)
+        return analysis
+
+    def _handle_analysis_only_result(self, analysis_text: str):
+        """Result handler for the REFINE workflow's initial analysis."""
+        try:
+            self.ai_issues = analysis_text
+            self.ui.headerLabel.setText("Refine Application Specification")
+            self.ui.stackedWidget.setCurrentWidget(self.ui.finalReviewPage)
+            self.ui.reviewTabWidget.setCurrentIndex(0)
+
+            # Populate both tabs of the final review page
+            self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code', 'extra']))
+            self.ui.aiIssuesTextEdit.setHtml(markdown.markdown(self.ai_issues, extensions=['fenced_code', 'extra']))
+            self.ui.feedbackTextEdit.clear()
+        finally:
+            self._set_ui_busy(False)

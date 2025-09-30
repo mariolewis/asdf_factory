@@ -8,7 +8,7 @@ import subprocess
 import sys
 import warnings
 
-from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QStackedWidget,
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu,
                                QVBoxLayout, QHeaderView, QAbstractItemView,
                                QStyle, QToolButton, QButtonGroup, QPushButton,
@@ -48,9 +48,10 @@ from gui.ux_spec_page import UXSpecPage
 from gui.backlog_ratification_page import BacklogRatificationPage
 from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.worker import Worker
-
+from gui.new_project_dialog import NewProjectDialog
 from gui.import_issue_dialog import ImportIssueDialog
 from agents.agent_integration_pmt import IntegrationAgentPMT
+from gui.intake_assessment_page import IntakeAssessmentPage
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -137,6 +138,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.manual_ui_testing_page)
         self.project_complete_page = ProjectCompletePage(self)
         self.ui.mainContentArea.addWidget(self.project_complete_page)
+        self.intake_assessment_page = IntakeAssessmentPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.intake_assessment_page)
         self.cr_management_page = CRManagementPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.cr_management_page)
         self.ux_spec_page = UXSpecPage(self.orchestrator, self)
@@ -352,6 +355,8 @@ class ASDFMainWindow(QMainWindow):
         self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
         self.sprint_planning_page.sprint_started.connect(self.on_start_sprint)
         self.sprint_review_page.return_to_backlog.connect(self.on_return_to_backlog)
+        self.intake_assessment_page.proposal_accepted.connect(self.on_intake_proposal_accepted)
+        self.intake_assessment_page.override_selected.connect(self.on_intake_override_selected)
 
         # --- Sprint Validation Connections ---
         self.sprint_validation_page.proceed_to_planning.connect(self.on_validation_proceed)
@@ -813,6 +818,11 @@ class ASDFMainWindow(QMainWindow):
                 page_to_show.prepare_for_display()
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
+        elif current_phase_name == "PROJECT_INTAKE_ASSESSMENT":
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            self.intake_assessment_page.configure(task_data)
+            self.ui.mainContentArea.setCurrentWidget(self.intake_assessment_page)
+
         elif current_phase_name == "AWAITING_BACKLOG_GATEWAY_DECISION":
             self.decision_page.configure(
                 header="Specification Phase Complete",
@@ -1192,19 +1202,20 @@ class ASDFMainWindow(QMainWindow):
             self.persistent_status_widget = None
 
     def on_new_project(self):
-        project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
-        if ok and project_name:
-            # The orchestrator now returns the suggested path
-            suggested_path = self.orchestrator.start_new_project(project_name)
-
-            # This is the new line that fixes the state bug
-            self._reset_all_pages_for_new_project()
-
-            # We now explicitly tell the setup page what path to display
-            self.env_setup_page.set_initial_path(suggested_path)
-
-            # This call will now show the page with the pre-populated path
-            self.update_ui_after_state_change()
+        """
+        Launches the workflow selection dialog to start a new project.
+        """
+        dialog = NewProjectDialog(self)
+        if dialog.exec():
+            selection = dialog.get_selection()
+            if selection == "spec":
+                project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
+                if ok and project_name:
+                    suggested_path = self.orchestrator.start_new_project(project_name)
+                    self._reset_all_pages_for_new_project()
+                    self.env_setup_page.set_initial_path(suggested_path)
+                    self.update_ui_after_state_change()
+            # "codebase" selection will be handled in a future featureintake_assessment_page.py
 
     def on_open_project(self):
         """Handles the new 'Open Project' action to show recent/active projects."""
@@ -1730,3 +1741,38 @@ class ASDFMainWindow(QMainWindow):
             msg_box.setDetailedText(details.strip())
 
         QTimer.singleShot(100, lambda: msg_box.exec())
+
+    def on_intake_proposal_accepted(self):
+        """
+        Handles the PM's acceptance of the AI-proposed workflow by running
+        the orchestrator's logic in a background thread and showing a clean processing page.
+        """
+        # Configure and switch to a processing view BEFORE starting the worker
+        status_message = "Processing intake decision..."
+        self.statusBar().showMessage(status_message)
+
+        # Set both the main header and the central label for the temporary page
+        self.spec_elaboration_page.ui.headerLabel.setText("Processing Request")
+        self.spec_elaboration_page.ui.processingLabel.setText(status_message)
+
+        self.ui.mainContentArea.setCurrentWidget(self.spec_elaboration_page)
+        self.spec_elaboration_page.ui.stackedWidget.setCurrentWidget(self.spec_elaboration_page.ui.processingPage)
+        QApplication.processEvents() # Ensure the UI updates before the worker starts
+
+        # Now, run the task in the background
+        worker = Worker(self.orchestrator.handle_intake_assessment_decision, "ACCEPT")
+        worker.signals.finished.connect(self._on_intake_assessment_finished)
+        worker.signals.error.connect(self._on_background_task_error)
+        self.threadpool.start(worker)
+
+    def on_intake_override_selected(self):
+        """Handles the PM's choice to override the proposal and run the full workflow."""
+        # This will be fully implemented in Scene 4
+        self.orchestrator.handle_intake_assessment_decision("OVERRIDE")
+        self.update_ui_after_state_change()
+
+    def _on_intake_assessment_finished(self):
+        """Called when the background intake assessment task is complete."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+        self.update_ui_after_state_change()

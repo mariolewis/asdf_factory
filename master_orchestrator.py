@@ -47,6 +47,7 @@ from agents.agent_code_summarization import CodeSummarizationAgent
 from agents.agent_test_report_formatting import TestReportFormattingAgent
 from gui.utils import format_timestamp_for_display
 from agents.agent_dev_environment_advisor import DevEnvironmentAdvisorAgent
+from agents.agent_project_intake_advisor import ProjectIntakeAdvisorAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -102,6 +103,8 @@ class FactoryPhase(Enum):
     AWAITING_PM_TRIAGE_INPUT = auto()
     AWAITING_REASSESSMENT_CONFIRMATION = auto()
     PROJECT_COMPLETED = auto()
+    PROJECT_INTAKE_ASSESSMENT = auto()
+    BROWNFIELD_CODE_ANALYSIS = auto()
 
 
 class MasterOrchestrator:
@@ -5821,3 +5824,169 @@ class MasterOrchestrator:
 
         recurse_and_add_ids(full_hierarchy)
         return full_hierarchy
+
+    def handle_initial_brief_submission(self, initial_text: str):
+        """
+        Invokes the ProjectIntakeAdvisorAgent to analyze the initial brief,
+        stores the result, and sets the phase to await PM decision.
+        """
+        logging.info("Orchestrator: Handling initial brief submission for intelligent intake.")
+        if not self.project_id:
+            logging.error("Cannot handle brief submission; no active project.")
+            return
+
+        try:
+            if not self.llm_service:
+                raise Exception("Cannot analyze brief: LLM Service is not configured.")
+
+            agent = ProjectIntakeAdvisorAgent(self.llm_service)
+            analysis_json_str = agent.assess_brief_completeness(initial_text)
+            analysis_data = json.loads(analysis_json_str)
+
+            if "error" in analysis_data:
+                raise Exception(f"Agent failed to analyze brief: {analysis_data.get('details')}")
+
+            # Store the complete analysis AND the original brief for the UI and potential override
+            analysis_data['original_brief'] = initial_text
+            self.task_awaiting_approval = analysis_data
+            self.set_phase("PROJECT_INTAKE_ASSESSMENT")
+            logging.info("Successfully received intake assessment. Awaiting PM decision.")
+
+        except Exception as e:
+            logging.error(f"Failed during initial brief submission and analysis: {e}", exc_info=True)
+            # As a safe fallback, revert to the original, linear workflow
+            self.task_awaiting_approval = {"pending_brief": initial_text, "error": str(e)}
+            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
+
+    def handle_intake_assessment_decision(self, decision: str, **kwargs):
+        """
+        Handles the PM's decision from the IntakeAssessmentPage, executing either
+        the override, trivial, or granular workflow path.
+        """
+        logging.info(f"PM made intake assessment decision: {decision}")
+        task_data = self.task_awaiting_approval
+        if not task_data:
+            logging.error("Cannot handle intake decision, no assessment data found.")
+            self.set_phase("SPEC_ELABORATION") # Go back to a safe state
+            return
+
+        if decision == "OVERRIDE":
+            logging.info("PM chose to override proposal. Reverting to standard linear workflow.")
+            original_brief = task_data.get('original_brief', '')
+            self.task_awaiting_approval = {"pending_brief": original_brief}
+            self.set_phase("AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION")
+            return
+
+        if decision == "ACCEPT":
+            if task_data.get("is_trivial"):
+                self._execute_direct_to_plan(task_data)
+                return
+
+            # Non-trivial project: process the granular plan
+            try:
+                proposed_plan = task_data.get("proposed_plan", [])
+                segregated_content = task_data.get("segregated_content", {})
+                db = self.db_manager
+
+                phase_map = {
+                    "UX/UI Design": "ux_spec_text",
+                    "Application Specification": "final_spec_text",
+                    "Technical Specification": "tech_spec_text",
+                    "Coding Standard": "coding_standard_text",
+                    "Backlog Generation": "project_backlog_text"
+                }
+
+                for item in proposed_plan:
+                    action = item.get("action")
+                    phase = item.get("phase")
+                    db_key = phase_map.get(phase)
+
+                    if not db_key:
+                        continue
+
+                    content = segregated_content.get(db_key)
+                    if content and action in ["SKIP", "ADOPT", "REFINE"]:
+                        logging.info(f"Adopting user-provided content for: {phase}")
+                        if phase == "Coding Standard":
+                            # Special handling for coding standard as a file-based artifact
+                            project_details = db.get_project_by_id(self.project_id)
+                            project_root = Path(project_details['project_root_folder'])
+                            docs_dir = project_root / "docs"
+                            standard_path = docs_dir / "user_provided_coding_standard.md"
+                            standard_path.write_text(content, encoding='utf-8')
+
+                            from agents.doc_update_agent_rowd import DocUpdateAgentRoWD
+                            doc_agent = DocUpdateAgentRoWD(db, self.llm_service)
+                            doc_agent.update_artifact_record({
+                                "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
+                                "project_id": self.project_id,
+                                "status": "COMPLETED",
+                                "file_path": str(standard_path.relative_to(project_root)),
+                                "artifact_name": "User-Provided Coding Standard",
+                                "artifact_type": "CODING_STANDARD",
+                                "last_modified_timestamp": datetime.now(timezone.utc).isoformat()
+                            })
+                        else:
+                            db.update_project_field(self.project_id, db_key, content)
+
+                # Find the next step
+                next_phase_name = None
+                for item in proposed_plan:
+                    if item.get("action") in ["ELABORATE", "REFINE"]:
+                        phase_to_factory_phase = {
+                            "UX/UI Design": "UX_UI_DESIGN",
+                            "Application Specification": "SPEC_ELABORATION",
+                            "Technical Specification": "TECHNICAL_SPECIFICATION",
+                            "Coding Standard": "CODING_STANDARD_GENERATION",
+                            "Backlog Generation": "AWAITING_BACKLOG_GATEWAY_DECISION"
+                        }
+                        next_phase_name = phase_to_factory_phase.get(item.get("phase"))
+                        if next_phase_name:
+                            break
+
+                if next_phase_name:
+                    # Pass forward any remaining content for the REFINE step
+                    self.task_awaiting_approval = task_data
+                    self.set_phase(next_phase_name)
+                else: # All phases were skipped or adopted
+                    self.set_phase("AWAITING_BACKLOG_GATEWAY_DECISION")
+
+            except Exception as e:
+                logging.error(f"Failed to execute granular plan: {e}", exc_info=True)
+                self.set_phase("SPEC_ELABORATION") # Fallback on error
+
+    def _execute_direct_to_plan(self, task_data: dict):
+        """
+        Handles the 'fast-track' workflow for trivial projects by generating a
+        minimal plan and transitioning directly to backlog ratification.
+        """
+        logging.info("Executing Direct-to-Plan fast-track for trivial project.")
+        try:
+            original_brief = task_data.get('original_brief')
+            if not original_brief:
+                raise ValueError("Original brief not found in assessment data.")
+
+            from agents.agent_planning_app_target import PlanningAgent_AppTarget
+            planning_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
+
+            # The existing agent's prompt already has logic to handle trivial projects,
+            # so we can call it directly with the brief.
+            backlog_items_json = planning_agent.generate_backlog_items(
+                final_spec_text=original_brief,
+                tech_spec_text="This is a trivial project with no complex technical requirements."
+            )
+
+            # Store the generated backlog for the ratification page
+            self.task_awaiting_approval = {"generated_backlog_items": backlog_items_json}
+
+            # Set the flag to enable the main "Project Backlog" button
+            self.db_manager.update_project_field(self.project_id, "is_backlog_generated", 1)
+
+            self.set_phase("BACKLOG_RATIFICATION")
+            logging.info("Successfully fast-tracked trivial project to Backlog Ratification.")
+
+        except Exception as e:
+            logging.error(f"Failed during Direct-to-Plan execution: {e}", exc_info=True)
+            # Fall back to the start if the fast-track fails
+            self.task_awaiting_approval = {"pending_brief": task_data.get('original_brief', ''), "error": str(e)}
+            self.set_phase("SPEC_ELABORATION")
