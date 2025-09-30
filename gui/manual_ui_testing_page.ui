@@ -41,25 +41,25 @@
     </widget>
    </item>
    <item>
-    <widget class="QLabel" name="instructionLabel">
-     <property name="text">
-      <string>&lt;b&gt;Your action is required to complete manual testing:&lt;/b&gt;
-&lt;ol&gt;
-&lt;li&gt;The system has just generated a new &lt;b&gt;Manual UI Test Plan&lt;/b&gt; for this sprint.&lt;/li&gt;
-&lt;li&gt;Click the &lt;b&gt;'Go to Documents Page'&lt;/b&gt; button to view and download the &lt;code&gt;manual_ui_test_plan.docx&lt;/code&gt; file.&lt;/li&gt;
-&lt;li&gt;Execute the tests as described in the document, record the results, and save the file.&lt;/li&gt;
-&lt;li&gt;Return to this page and upload your completed results document below to finalize the sprint.&lt;/li&gt;
-&lt;/ol&gt;</string>
-     </property>
-     <property name="wordWrap">
+    <widget class="QTextEdit" name="instructionTextEdit">
+      <property name="readOnly">
       <bool>true</bool>
-     </property>
-     <property name="openExternalLinks">
-      <bool>true</bool>
-     </property>
+      </property>
+      <property name="html">
+      <string>&lt;!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" "http://www.w3.org/TR/REC-html40/strict.dtd"&gt;
+    &lt;html&gt;&lt;head&gt;&lt;meta name="qrichtext" content="1" /&gt;&lt;style type="text/css"&gt;
+    p, li { white-space: pre-wrap; }
+    &lt;/style&gt;&lt;/head&gt;&lt;body&gt;
+    &lt;p style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;&lt;span style=" font-weight:600;"&gt;Your action is required to complete manual testing:&lt;/span&gt;&lt;/p&gt;
+    &lt;ol style="margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;"&gt;
+    &lt;li style=" margin-top:12px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;The system has just generated a new &lt;span style=" font-weight:600;"&gt;Manual UI Test Plan&lt;/span&gt; for this sprint.&lt;/li&gt;
+    &lt;li style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;Click the &lt;span style=" font-weight:600;"&gt;'Go to Documents Page'&lt;/span&gt; button to view and download the &lt;code&gt;manual_ui_test_plan.docx&lt;/code&gt; file.&lt;/li&gt;
+    &lt;li style=" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;Execute the tests as described in the document, record the results, and save the file.&lt;/li&gt;
+    &lt;li style=" margin-top:0px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;"&gt;Return to this page and upload your completed results document below to finalize the sprint.&lt;/li&gt;&lt;/ol&gt;&lt;/body&gt;&lt;/html&gt;</string>
+      </property>
     </widget>
-   </item>
-   <item>
+    </item>
+    <item>
     <widget class="Line" name="line_2">
      <property name="orientation">
       <enum>Qt::Horizontal</enum>
@@ -122,20 +122,7 @@
       </item>
      </layout>
     </item>
-   <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
-  </layout>
+   </layout>
  </widget>
  <resources/>
  <connections/>

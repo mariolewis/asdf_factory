@@ -208,7 +208,7 @@ class PlanningPage(QWidget):
             plan_for_display = self._format_plan_for_display(new_plan_json_str)
             self.ui.planTextEdit.setHtml(plan_for_display)
             self.ui.feedbackTextEdit.clear()
-            QMessageBox.information(self, "Success", "Success: The development plan has been refined based on your feedback.")
+            # QMessageBox.information(self, "Success", "Success: The development plan has been refined based on your feedback.")
             self.state_changed.emit()
             self.on_draft_changed()
         finally:

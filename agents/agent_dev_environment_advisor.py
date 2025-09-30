@@ -37,7 +37,7 @@ class DevEnvironmentAdvisorAgent:
             1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of objects `[]`.
             2.  **Object Schema:** Each object MUST have two keys: "tool_name" (a string, e.g., "Python 3.9", "Node.js") and "instructions" (a string detailing the setup steps for that tool).
             3.  **Focus:** You MUST ignore all other sections of the document (like testing, architecture, etc.) and focus exclusively on the development environment setup. If no such section exists, return an empty array.
-            4.  **No Markdown in Instructions:** The "instructions" value MUST be plain text. Do not use Markdown headings like '##'.
+            4.  **Use Markdown:** The "instructions" value MUST be formatted using simple Markdown for clarity (e.g., bulleted lists with `*`, bolding with `**`, and code snippets with backticks).
             5.  **No Other Text:** Do not include any text or explanations outside of the raw JSON array.
 
             **--- Technical Specification ---**

@@ -17,7 +17,7 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QSizePolicy, QSpacerItem,
-    QVBoxLayout, QWidget)
+    QTextEdit, QVBoxLayout, QWidget)
 
 class Ui_ManualUITestingPage(object):
     def setupUi(self, ManualUITestingPage):
@@ -39,12 +39,11 @@ class Ui_ManualUITestingPage(object):
 
         self.verticalLayout.addWidget(self.line)
 
-        self.instructionLabel = QLabel(ManualUITestingPage)
-        self.instructionLabel.setObjectName(u"instructionLabel")
-        self.instructionLabel.setWordWrap(True)
-        self.instructionLabel.setOpenExternalLinks(True)
+        self.instructionTextEdit = QTextEdit(ManualUITestingPage)
+        self.instructionTextEdit.setObjectName(u"instructionTextEdit")
+        self.instructionTextEdit.setReadOnly(True)
 
-        self.verticalLayout.addWidget(self.instructionLabel)
+        self.verticalLayout.addWidget(self.instructionTextEdit)
 
         self.line_2 = QFrame(ManualUITestingPage)
         self.line_2.setObjectName(u"line_2")
@@ -93,10 +92,6 @@ class Ui_ManualUITestingPage(object):
 
         self.verticalLayout.addLayout(self.horizontalLayout_2)
 
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-
-        self.verticalLayout.addItem(self.verticalSpacer)
-
 
         self.retranslateUi(ManualUITestingPage)
 
@@ -106,13 +101,17 @@ class Ui_ManualUITestingPage(object):
     def retranslateUi(self, ManualUITestingPage):
         ManualUITestingPage.setWindowTitle(QCoreApplication.translate("ManualUITestingPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"Manual UI Testing", None))
-        self.instructionLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Your action is required to complete manual testing:</b>\n"
-"<ol>\n"
-"<li>The system has just generated a new <b>Manual UI Test Plan</b> for this sprint.</li>\n"
-"<li>Click the <b>'Go to Documents Page'</b> button to view and download the <code>manual_ui_test_plan.docx</code> file.</li>\n"
-"<li>Execute the tests as described in the document, record the results, and save the file.</li>\n"
-"<li>Return to this page and upload your completed results document below to finalize the sprint.</li>\n"
-"</ol>", None))
+        self.instructionTextEdit.setHtml(QCoreApplication.translate("ManualUITestingPage", u"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.0//EN\" \"http://www.w3.org/TR/REC-html40/strict.dtd\">\n"
+"    <html><head><meta name=\"qrichtext\" content=\"1\" /><style type=\"text/css\">\n"
+"    p, li { white-space: pre-wrap; }\n"
+"    </style></head><body>\n"
+"    <p style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><span style=\" font-weight:600;\">Your action is required to complete manual testing:</span></p>\n"
+"    <ol style=\"margin-top: 0px; margin-bottom: 0px; margin-left: 0px; margin-right: 0px; -qt-list-indent: 1;\">\n"
+"    <li style=\" margin-top:12px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">The system has just generated a new <span style=\" font-weight:600;\">Manual UI Test Plan</span> for this sprint.</li>\n"
+"    <li style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">Click the <span style=\" font-weight:600;\">'"
+                        "Go to Documents Page'</span> button to view and download the <code>manual_ui_test_plan.docx</code> file.</li>\n"
+"    <li style=\" margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">Execute the tests as described in the document, record the results, and save the file.</li>\n"
+"    <li style=\" margin-top:0px; margin-bottom:12px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\">Return to this page and upload your completed results document below to finalize the sprint.</li></ol></body></html>", None))
         self.uploadLabel.setText(QCoreApplication.translate("ManualUITestingPage", u"<b>Upload Completed Test Plan Results:</b>", None))
         self.browseButton.setText(QCoreApplication.translate("ManualUITestingPage", u"Browse...", None))
         self.goToDocumentsButton.setText(QCoreApplication.translate("ManualUITestingPage", u"Go to Documents Page", None))

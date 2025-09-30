@@ -16,8 +16,8 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QApplication, QFrame, QHBoxLayout, QLabel,
-    QPushButton, QSizePolicy, QSpacerItem, QVBoxLayout,
-    QWidget)
+    QPushButton, QSizePolicy, QSpacerItem, QTextEdit,
+    QVBoxLayout, QWidget)
 
 class Ui_DecisionPage(object):
     def setupUi(self, DecisionPage):
@@ -45,9 +45,11 @@ class Ui_DecisionPage(object):
 
         self.verticalLayout.addWidget(self.instructionLabel)
 
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.detailsTextEdit = QTextEdit(DecisionPage)
+        self.detailsTextEdit.setObjectName(u"detailsTextEdit")
+        self.detailsTextEdit.setReadOnly(True)
 
-        self.verticalLayout.addItem(self.verticalSpacer)
+        self.verticalLayout.addWidget(self.detailsTextEdit)
 
         self.buttonLayout = QHBoxLayout()
         self.buttonLayout.setObjectName(u"buttonLayout")
@@ -73,6 +75,7 @@ class Ui_DecisionPage(object):
 
         self.verticalLayout.addLayout(self.buttonLayout)
 
+        self.verticalLayout.setStretch(3, 1)
 
         self.retranslateUi(DecisionPage)
 

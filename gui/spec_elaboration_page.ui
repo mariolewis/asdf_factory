@@ -230,13 +230,13 @@
      </widget>
      <widget class="QWidget" name="pmFirstReviewPage">
         <layout class="QVBoxLayout" name="verticalLayout_9">
-        <item>
+        <!-- <item>
             <widget class="QLabel" name="pmReviewHeaderLabel">
             <property name="text">
             <string>Draft Application Specification</string>
             </property>
             </widget>
-        </item>
+        </item> -->
         <item>
             <widget class="QLabel" name="pmReviewInstructionLabel">
             <property name="text">

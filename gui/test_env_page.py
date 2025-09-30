@@ -152,17 +152,19 @@ class TestEnvPage(QWidget):
             page.setProperty("class", "contentPanel")
 
             layout = QVBoxLayout(page)
-            # The header text is now generated dynamically in _update_step_view
             header = QLabel()
-            instructions = QLabel(task.get('instructions'))
-            instructions.setWordWrap(True)
+
+            instructions = QTextEdit()
+            instructions.setReadOnly(True)
+            # Use setMarkdown to render the formatted text from the agent as rich text.
+            instructions.setMarkdown(task.get('instructions'))
+
             layout.addWidget(header)
-            layout.addWidget(instructions)
-            layout.addStretch()
+            layout.addWidget(instructions, 1)
+
             scroll_area.setWidget(page)
             self.ui.stepsStackedWidget.addWidget(scroll_area)
 
-    # MODIFIED: This method now dynamically updates headers
     def _update_step_view(self):
         if not self.setup_tasks:
             return

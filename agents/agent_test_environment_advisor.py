@@ -36,7 +36,7 @@ class TestEnvironmentAdvisorAgent:
             1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of objects `[]`.
             2.  **Object Schema:** Each object MUST have two keys: "tool_name" (a string) and "instructions" (a string).
             3.  **Grouping:** Group all actions for a single tool (e.g., installing pytest and its plugins) into a single object.
-            4.  **No Markdown in Instructions:** The "instructions" value MUST be plain text. Do not use Markdown headings like '##'.
+            4.  **Use Markdown:** The "instructions" value MUST be formatted using simple Markdown for clarity (e.g., bulleted lists with `*`, bolding with `**`, and code snippets with backticks).
             5.  **No Other Text:** Do not include any text or explanations outside of the raw JSON array.
 
             **--- Technical Specification ---**

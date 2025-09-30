@@ -385,3 +385,30 @@ QTextEdit#riskDetailsTextEdit {
     border: 1px solid #4A4A4A; /* Subtle border for text boxes */
     background-color: #202021; /* Match other input fields */
 }
+
+/* ---- Accent Border for Main Content Displays ---- */
+/* Targets the main QTextEdit widgets on spec, planning, and report pages */
+QTextEdit#aiAnalysisTextEdit,
+QTextEdit#aiIssuesTextEdit,
+QTextEdit#auditResultTextEdit,
+QTextEdit#detailsTextEdit,
+QTextEdit#implementationPlanTextEdit,
+QTextEdit#instructionTextEdit,
+QTextEdit#planTextEdit,
+QTextEdit#pmReviewTextEdit,
+QTextEdit#riskDetailsTextEdit,
+QTextEdit#scopeDetailsTextEdit,
+QTextEdit#specDraftTextEdit,
+QTextEdit#specTextEdit,
+QTextEdit#staleDetailsTextEdit,
+QTextEdit#standardTextEdit,
+QTextEdit#summaryTextEdit,
+QTextEdit#techSpecTextEdit {
+    border: 1px solid #007ACC; /* Standard Accent Blue */
+}
+
+/* Targets the QScrollArea that contains the instructions on the Test Env page */
+QStackedWidget#stepsStackedWidget QScrollArea {
+    border: 1px solid #007ACC; /* Standard Accent Blue */
+    border-radius: 4px;
+}

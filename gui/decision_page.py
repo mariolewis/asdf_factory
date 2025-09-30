@@ -45,12 +45,14 @@ class DecisionPage(QWidget):
         Configures the page content and buttons for a specific decision.
         """
         self.ui.headerLabel.setText(header)
+        self.ui.instructionLabel.setText(instruction)
 
-        # Combine instruction and details into the main label
-        full_instruction_html = instruction
+        # Set content for the new QTextEdit and manage its visibility
         if details and details.strip():
-            full_instruction_html += f"<br><br>{details}"
-        self.ui.instructionLabel.setText(full_instruction_html)
+            self.ui.detailsTextEdit.setHtml(details)
+            self.ui.detailsTextEdit.setVisible(True)
+        else:
+            self.ui.detailsTextEdit.setVisible(False)
 
         if option1_text:
             self.ui.option1Button.setText(option1_text)
