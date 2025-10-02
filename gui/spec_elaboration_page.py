@@ -438,7 +438,7 @@ class SpecElaborationPage(QWidget):
         Handles the submission for AI analysis and refinement from the final
         review page, now using a background worker to prevent UI freeze.
         """
-        current_draft = self.ui.specDraftTextEdit.toPlainText()
+        current_draft = self.spec_draft
         feedback = self.ui.feedbackTextEdit.toPlainText().strip()
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement in the third tab.")
@@ -465,17 +465,30 @@ class SpecElaborationPage(QWidget):
         self.threadpool.start(worker)
 
     def _task_refine_spec(self, current_draft, feedback, **kwargs):
+        """Background worker task that handles the refinement logic."""
         spec_agent = SpecClarificationAgent(self.orchestrator.llm_service, self.orchestrator.db_manager)
-        refined_draft = spec_agent.refine_specification(current_draft, self.ai_issues, feedback)
-        current_date = datetime.now().strftime('%x')
-        # This is the corrected regex to prevent the crash
-        date_updated_draft = re.sub(r"(Date: ).*", r"\g<1>" + current_date, refined_draft)
-        return date_updated_draft
+
+        # FIX: Strip the header from the draft before sending it to the agent
+        pure_content = self.orchestrator._strip_header_from_document(current_draft)
+
+        # The agent now receives only the body, as per its prompt's contract
+        refined_body_from_agent = spec_agent.refine_specification(pure_content, self.ai_issues, feedback)
+
+        # FIX: Prepend a fresh, updated header to the refined body
+        final_draft = self.orchestrator.prepend_standard_header(
+            refined_body_from_agent, "Application Specification"
+        )
+
+        return final_draft
 
     def _handle_refinement_result(self, new_draft):
         """Handles the result from the refinement worker thread."""
         try:
-            # ADDED THIS BLOCK TO CLEAR THE STATUS
+            # FIX: Update the orchestrator's state with the new draft immediately.
+            if self.orchestrator.task_awaiting_approval:
+                self.orchestrator.task_awaiting_approval['refined_spec_draft'] = new_draft
+
+            # This is the previous fix we added, which is still correct.
             main_window = self.window()
             if main_window and hasattr(main_window, 'clear_persistent_status'):
                 main_window.clear_persistent_status()

@@ -74,32 +74,27 @@ class ProjectScopingAgent:
             JSON OUTPUT:
         """)
 
-        response_text = ""
-        try:
-            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+        for attempt in range(3): # Try up to 3 times
+            try:
+                response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
+                json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
+                if not json_match:
+                    raise ValueError("No JSON object found in the LLM response.")
 
-            # More robustly find the JSON block
-            json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
-            if not json_match:
-                raise ValueError("No JSON object found in the LLM response.")
+                json_str = json_match.group(0)
+                result = json.loads(json_str)
+                logging.info(f"Successfully received and parsed complexity and risk analysis on attempt {attempt + 1}.")
+                return result
 
-            json_str = json_match.group(0)
+            except json.JSONDecodeError as e:
+                logging.warning(f"Attempt {attempt + 1}: Failed to parse LLM response. Error: {e}. Retrying...")
+                # Add a correction instruction to the prompt for the next attempt
+                prompt += f"\n\n--- PREVIOUS ATTEMPT FAILED ---\nYour last response was not valid JSON due to the following error: {e}. You MUST correct the format and return a single, valid JSON object."
+                continue # Go to the next iteration of the loop
 
-            # This is the new fix: Remove trailing commas that cause parsing errors
-            json_str = re.sub(r',\s*([\}\]])', r'\1', json_str)
-
-            result = json.loads(json_str)
-            logging.info("Successfully received and parsed complexity and risk analysis.")
-            return result
-        except json.JSONDecodeError as e:
-            logging.error(f"ProjectScopingAgent failed to parse LLM response: {e}\nResponse was: {response_text}")
-            return {
-                "error": "Failed to get a valid analysis from the AI model.",
-                "details": response_text
-            }
-        except Exception as e:
-            logging.error(f"ProjectScopingAgent API call failed: {e}")
-            return {
-                "error": "An unexpected error occurred during analysis.",
-                "details": str(e)
-            }
+        # If all retries fail
+        logging.error("ProjectScopingAgent failed to parse LLM response after multiple attempts.")
+        return {
+            "error": "Failed to get a valid analysis from the AI model after multiple retries.",
+            "details": "The LLM provided a consistently malformed JSON response."
+        }
