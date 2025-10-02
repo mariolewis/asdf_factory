@@ -16,14 +16,14 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QDialog, QDialogButtonBox,
-    QGroupBox, QLabel, QPushButton, QSizePolicy,
+    QHBoxLayout, QLabel, QPushButton, QSizePolicy,
     QSpacerItem, QVBoxLayout, QWidget)
 
 class Ui_NewProjectDialog(object):
     def setupUi(self, NewProjectDialog):
         if not NewProjectDialog.objectName():
             NewProjectDialog.setObjectName(u"NewProjectDialog")
-        NewProjectDialog.resize(450, 200)
+        NewProjectDialog.resize(400, 200)
         NewProjectDialog.setModal(True)
         self.verticalLayout = QVBoxLayout(NewProjectDialog)
         self.verticalLayout.setObjectName(u"verticalLayout")
@@ -33,47 +33,47 @@ class Ui_NewProjectDialog(object):
 
         self.verticalLayout.addWidget(self.instructionLabel)
 
-        self.groupBox = QGroupBox(NewProjectDialog)
-        self.groupBox.setObjectName(u"groupBox")
-        self.verticalLayout_2 = QVBoxLayout(self.groupBox)
-        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.fromSpecButton = QPushButton(self.groupBox)
-        self.fromSpecButton.setObjectName(u"fromSpecButton")
-
-        self.verticalLayout_2.addWidget(self.fromSpecButton)
-
-        self.fromCodebaseButton = QPushButton(self.groupBox)
-        self.fromCodebaseButton.setObjectName(u"fromCodebaseButton")
-
-        self.verticalLayout_2.addWidget(self.fromCodebaseButton)
-
-
-        self.verticalLayout.addWidget(self.groupBox)
-
         self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
         self.verticalLayout.addItem(self.verticalSpacer)
+
+        self.horizontalLayout = QHBoxLayout()
+        self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.fromSpecButton = QPushButton(NewProjectDialog)
+        self.fromSpecButton.setObjectName(u"fromSpecButton")
+
+        self.horizontalLayout.addWidget(self.fromSpecButton)
+
+        self.fromCodebaseButton = QPushButton(NewProjectDialog)
+        self.fromCodebaseButton.setObjectName(u"fromCodebaseButton")
+
+        self.horizontalLayout.addWidget(self.fromCodebaseButton)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout)
+
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.verticalLayout.addItem(self.verticalSpacer_2)
 
         self.buttonBox = QDialogButtonBox(NewProjectDialog)
         self.buttonBox.setObjectName(u"buttonBox")
         self.buttonBox.setOrientation(Qt.Horizontal)
         self.buttonBox.setStandardButtons(QDialogButtonBox.Cancel)
+        self.buttonBox.setCenterButtons(True)
 
         self.verticalLayout.addWidget(self.buttonBox)
 
 
         self.retranslateUi(NewProjectDialog)
-        self.buttonBox.accepted.connect(NewProjectDialog.accept)
-        self.buttonBox.rejected.connect(NewProjectDialog.reject)
 
         QMetaObject.connectSlotsByName(NewProjectDialog)
     # setupUi
 
     def retranslateUi(self, NewProjectDialog):
         NewProjectDialog.setWindowTitle(QCoreApplication.translate("NewProjectDialog", u"Create New Project", None))
-        self.instructionLabel.setText(QCoreApplication.translate("NewProjectDialog", u"How would you like to start this project?", None))
-        self.groupBox.setTitle("")
-        self.fromSpecButton.setText(QCoreApplication.translate("NewProjectDialog", u"From a New Specification or Project Brief", None))
-        self.fromCodebaseButton.setText(QCoreApplication.translate("NewProjectDialog", u"Work with an existing Application Codebase", None))
+        self.instructionLabel.setText(QCoreApplication.translate("NewProjectDialog", u"How would you like to create the new project?", None))
+        self.fromSpecButton.setText(QCoreApplication.translate("NewProjectDialog", u"Create from a New Specification", None))
+        self.fromCodebaseButton.setText(QCoreApplication.translate("NewProjectDialog", u"Work with an Existing Codebase", None))
     # retranslateUi
 

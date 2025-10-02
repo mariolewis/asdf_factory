@@ -8,7 +8,7 @@ import subprocess
 import sys
 import warnings
 
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QStackedWidget,
+from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu,
                                QVBoxLayout, QHeaderView, QAbstractItemView,
                                QStyle, QToolButton, QButtonGroup, QPushButton,
@@ -20,6 +20,8 @@ from PySide6.QtCore import QThreadPool
 from gui.ui_main_window import Ui_MainWindow
 from master_orchestrator import MasterOrchestrator, FactoryPhase
 from gui.settings_dialog import SettingsDialog
+from gui.new_project_dialog import NewProjectDialog
+from gui.intake_assessment_page import IntakeAssessmentPage
 from gui.env_setup_page import EnvSetupPage
 from gui.spec_elaboration_page import SpecElaborationPage
 from gui.tech_spec_page import TechSpecPage
@@ -48,10 +50,8 @@ from gui.ux_spec_page import UXSpecPage
 from gui.backlog_ratification_page import BacklogRatificationPage
 from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.worker import Worker
-from gui.new_project_dialog import NewProjectDialog
 from gui.import_issue_dialog import ImportIssueDialog
 from agents.agent_integration_pmt import IntegrationAgentPMT
-from gui.intake_assessment_page import IntakeAssessmentPage
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -138,8 +138,6 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.manual_ui_testing_page)
         self.project_complete_page = ProjectCompletePage(self)
         self.ui.mainContentArea.addWidget(self.project_complete_page)
-        self.intake_assessment_page = IntakeAssessmentPage(self.orchestrator, self)
-        self.ui.mainContentArea.addWidget(self.intake_assessment_page)
         self.cr_management_page = CRManagementPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.cr_management_page)
         self.ux_spec_page = UXSpecPage(self.orchestrator, self)
@@ -152,6 +150,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.sprint_validation_page)
         self.sprint_review_page = SprintReviewPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.sprint_review_page)
+        self.intake_assessment_page = IntakeAssessmentPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.intake_assessment_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -326,6 +326,10 @@ class ASDFMainWindow(QMainWindow):
 
         self.dockerization_page.dockerization_complete.connect(self.update_ui_after_state_change)
 
+        self.intake_assessment_page.full_lifecycle_selected.connect(self.on_intake_full_lifecycle_selected)
+        self.intake_assessment_page.direct_to_development_selected.connect(self.on_intake_direct_to_dev_selected)
+        self.intake_assessment_page.back_selected.connect(self.on_intake_back_selected)
+
         # Connect signals that trigger a PARTIAL UI refresh (no page transition)
         for page in [self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page]:
             if hasattr(page, 'state_changed'): page.state_changed.connect(self.update_static_ui_elements)
@@ -355,8 +359,6 @@ class ASDFMainWindow(QMainWindow):
         self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
         self.sprint_planning_page.sprint_started.connect(self.on_start_sprint)
         self.sprint_review_page.return_to_backlog.connect(self.on_return_to_backlog)
-        self.intake_assessment_page.proposal_accepted.connect(self.on_intake_proposal_accepted)
-        self.intake_assessment_page.override_selected.connect(self.on_intake_override_selected)
 
         # --- Sprint Validation Connections ---
         self.sprint_validation_page.proceed_to_planning.connect(self.on_validation_proceed)
@@ -775,7 +777,8 @@ class ASDFMainWindow(QMainWindow):
 
         # This is the new, corrected dictionary
         page_display_map = {
-        "ENV_SETUP_TARGET_APP": self.env_setup_page, "SPEC_ELABORATION": self.spec_elaboration_page,
+        "ENV_SETUP_TARGET_APP": self.env_setup_page,
+        "SPEC_ELABORATION": self.spec_elaboration_page,
         "GENERATING_APP_SPEC_AND_RISK_ANALYSIS": self.spec_elaboration_page,
         "AWAITING_SPEC_REFINEMENT_SUBMISSION": self.spec_elaboration_page,
         "AWAITING_SPEC_FINAL_APPROVAL": self.spec_elaboration_page,
@@ -818,11 +821,6 @@ class ASDFMainWindow(QMainWindow):
                 page_to_show.prepare_for_display()
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
-        elif current_phase_name == "PROJECT_INTAKE_ASSESSMENT":
-            task_data = self.orchestrator.task_awaiting_approval or {}
-            self.intake_assessment_page.configure(task_data)
-            self.ui.mainContentArea.setCurrentWidget(self.intake_assessment_page)
-
         elif current_phase_name == "AWAITING_BACKLOG_GATEWAY_DECISION":
             self.decision_page.configure(
                 header="Specification Phase Complete",
@@ -835,6 +833,12 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.option1_selected.connect(self.on_gateway_generate_backlog)
             self.decision_page.option2_selected.connect(self.on_gateway_pause_project)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "PROJECT_INTAKE_ASSESSMENT":
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            assessment_data = task_data.get("assessment_data", {})
+            self.intake_assessment_page.configure(assessment_data)
+            self.ui.mainContentArea.setCurrentWidget(self.intake_assessment_page)
 
         elif current_phase_name == "AWAITING_UI_TEST_DECISION":
             self.statusBar().clearMessage()
@@ -888,6 +892,23 @@ class ASDFMainWindow(QMainWindow):
             worker.signals.result.connect(self.genesis_page._handle_phase_completion_result)
             worker.signals.error.connect(self.genesis_page._on_task_error)
             worker.signals.finished.connect(self.genesis_page._on_task_finished)
+            self.threadpool.start(worker)
+
+        elif current_phase_name == "GENERATING_UX_UI_SPEC_DRAFT":
+            status_message = "Generating initial UX/UI specification draft..."
+
+            # Use the correct, non-blocking persistent status message
+            self.show_persistent_status(status_message)
+
+            # Use the simpler processing page from the Spec Elaboration screen
+            self.spec_elaboration_page.ui.processingLabel.setText(status_message)
+            self.spec_elaboration_page.ui.stackedWidget.setCurrentWidget(self.spec_elaboration_page.ui.processingPage)
+            self.ui.mainContentArea.setCurrentWidget(self.spec_elaboration_page)
+
+            # The worker now calls the new wrapper method in the orchestrator
+            worker = Worker(self.orchestrator._task_generate_ux_spec_draft)
+            worker.signals.error.connect(self._on_background_task_error)
+            worker.signals.finished.connect(self._on_background_task_finished) # This handler correctly calls clear_persistent_status()
             self.threadpool.start(worker)
 
         elif current_phase_name == "INTEGRATION_AND_VERIFICATION":
@@ -1202,20 +1223,24 @@ class ASDFMainWindow(QMainWindow):
             self.persistent_status_widget = None
 
     def on_new_project(self):
-        """
-        Launches the workflow selection dialog to start a new project.
-        """
+        # First, show the new workflow selection dialog
         dialog = NewProjectDialog(self)
         if dialog.exec():
-            selection = dialog.get_selection()
-            if selection == "spec":
-                project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
-                if ok and project_name:
-                    suggested_path = self.orchestrator.start_new_project(project_name)
-                    self._reset_all_pages_for_new_project()
-                    self.env_setup_page.set_initial_path(suggested_path)
-                    self.update_ui_after_state_change()
-            # "codebase" selection will be handled in a future featureintake_assessment_page.py
+            # If the user chose "Create from a New Specification" (dialog was accepted),
+            # then proceed with the original workflow of asking for a project name.
+            project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
+            if ok and project_name:
+                # The orchestrator now returns the suggested path
+                suggested_path = self.orchestrator.start_new_project(project_name)
+
+                # This is the new line that fixes the state bug
+                self._reset_all_pages_for_new_project()
+
+                # We now explicitly tell the setup page what path to display
+                self.env_setup_page.set_initial_path(suggested_path)
+
+                # This call will now show the page with the pre-populated path
+                self.update_ui_after_state_change()
 
     def on_open_project(self):
         """Handles the new 'Open Project' action to show recent/active projects."""
@@ -1356,6 +1381,31 @@ class ASDFMainWindow(QMainWindow):
     def on_gateway_pause_project(self):
         """Handles the user's choice to pause the project at the gateway."""
         self.orchestrator.pause_project()
+        self.update_ui_after_state_change()
+
+    def on_intake_full_lifecycle_selected(self):
+        """Handles the PM's choice to proceed with the full spec elaboration lifecycle."""
+        status_message = "Processing specifications for full lifecycle..."
+        self.show_persistent_status(status_message)
+
+        worker = Worker(self.orchestrator.handle_intake_assessment_decision, "FULL_LIFECYCLE")
+        worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
+
+    def on_intake_direct_to_dev_selected(self):
+        """Handles the PM's choice to proceed directly to backlog generation."""
+        status_message = "Processing specifications for direct development..."
+        self.show_persistent_status(status_message)
+
+        worker = Worker(self.orchestrator.handle_intake_assessment_decision, "DIRECT_TO_DEVELOPMENT")
+        worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
+
+    def on_intake_back_selected(self):
+        """Handles the user clicking 'Back' on the assessment page, returning to the brief submission page."""
+        self.orchestrator.set_phase("SPEC_ELABORATION")
         self.update_ui_after_state_change()
 
     def on_stale_analysis_rerun(self):
@@ -1741,38 +1791,3 @@ class ASDFMainWindow(QMainWindow):
             msg_box.setDetailedText(details.strip())
 
         QTimer.singleShot(100, lambda: msg_box.exec())
-
-    def on_intake_proposal_accepted(self):
-        """
-        Handles the PM's acceptance of the AI-proposed workflow by running
-        the orchestrator's logic in a background thread and showing a clean processing page.
-        """
-        # Configure and switch to a processing view BEFORE starting the worker
-        status_message = "Processing intake decision..."
-        self.statusBar().showMessage(status_message)
-
-        # Set both the main header and the central label for the temporary page
-        self.spec_elaboration_page.ui.headerLabel.setText("Processing Request")
-        self.spec_elaboration_page.ui.processingLabel.setText(status_message)
-
-        self.ui.mainContentArea.setCurrentWidget(self.spec_elaboration_page)
-        self.spec_elaboration_page.ui.stackedWidget.setCurrentWidget(self.spec_elaboration_page.ui.processingPage)
-        QApplication.processEvents() # Ensure the UI updates before the worker starts
-
-        # Now, run the task in the background
-        worker = Worker(self.orchestrator.handle_intake_assessment_decision, "ACCEPT")
-        worker.signals.finished.connect(self._on_intake_assessment_finished)
-        worker.signals.error.connect(self._on_background_task_error)
-        self.threadpool.start(worker)
-
-    def on_intake_override_selected(self):
-        """Handles the PM's choice to override the proposal and run the full workflow."""
-        # This will be fully implemented in Scene 4
-        self.orchestrator.handle_intake_assessment_decision("OVERRIDE")
-        self.update_ui_after_state_change()
-
-    def _on_intake_assessment_finished(self):
-        """Called when the background intake assessment task is complete."""
-        self.setEnabled(True)
-        self.statusBar().clearMessage()
-        self.update_ui_after_state_change()

@@ -42,34 +42,8 @@ class TechSpecPage(QWidget):
         self.connect_signals()
         self.ui.pauseProjectButton.setVisible(False)
 
-    # REPLACE the existing prepare_for_display method with this one
-
     def prepare_for_display(self):
         """Prepares the page based on the orchestrator's current phase."""
-        # Case 1: REFINE workflow (user provided a document at the start)
-        task_data = self.orchestrator.task_awaiting_approval or {}
-        segregated_content = task_data.get("segregated_content", {})
-        user_content = segregated_content.get("tech_spec_text")
-
-        if user_content and self.orchestrator.current_phase == FactoryPhase.TECHNICAL_SPECIFICATION:
-            logging.info("TechSpecPage: REFINE workflow detected. Analyzing user-provided content.")
-            # Consume the content to prevent re-triggering
-            if "tech_spec_text" in self.orchestrator.task_awaiting_approval.get("segregated_content", {}):
-                del self.orchestrator.task_awaiting_approval["segregated_content"]["tech_spec_text"]
-
-            draft_with_header = self.orchestrator.prepend_standard_header(user_content, "Technical Specification")
-            self.tech_spec_draft = draft_with_header
-
-            # Trigger a background task to get ONLY the AI analysis of the user's content
-            self._execute_task(
-                self._task_analyze_only_tech_spec,
-                self._handle_analysis_only_tech_spec_result,
-                draft_with_header,
-                status_message="Analyzing user-provided technical specification..."
-            )
-            return
-
-        # Existing logic for other phases
         current_phase = self.orchestrator.current_phase
         logging.debug(f"TechSpecPage preparing for display in phase: {current_phase.name}")
 
@@ -81,6 +55,8 @@ class TechSpecPage(QWidget):
             task_data = self.orchestrator.task_awaiting_approval or {}
             self.tech_spec_draft = task_data.get("draft_spec_from_guidelines", "# Your guidelines will appear here.")
             self.ai_analysis = task_data.get("ai_analysis", "No analysis found.")
+
+            # This is the fix for the rendering bug
             self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
             self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
             self.ui.feedbackTextEdit.clear()
@@ -367,6 +343,7 @@ class TechSpecPage(QWidget):
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         final_spec_text = project_details['final_spec_text']
+        logging.debug(f"DATA RETRIEVAL: Content read from DB for agent input: {final_spec_text[:200]}...")
         if not final_spec_text:
             raise Exception("Could not retrieve the application specification.")
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
@@ -403,25 +380,3 @@ class TechSpecPage(QWidget):
         """Background worker task that calls the orchestrator to handle the full refinement loop."""
         self.orchestrator.handle_tech_spec_refinement(current_draft, feedback, target_os, iteration_count, ai_issues)
         return True
-
-    def _task_analyze_only_tech_spec(self, draft_to_analyze, **kwargs):
-        """Background worker to run only the analysis of a user-provided tech spec."""
-        agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
-        # We pass an empty string for previous_analysis as this is the first look.
-        analysis = agent.analyze_draft(draft_to_analyze, iteration_count=1, previous_analysis="")
-        return analysis
-
-    def _handle_analysis_only_tech_spec_result(self, analysis_text: str):
-        """Result handler for the REFINE workflow's initial analysis."""
-        try:
-            self.ai_analysis = analysis_text
-            self.ui.headerLabel.setText("Refine Technical Specification")
-            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
-            self.ui.reviewTabWidget.setCurrentIndex(0) # Start on the draft tab
-
-            # Populate both tabs of the review page
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
-            self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
-            self.ui.feedbackTextEdit.clear()
-        finally:
-            self._set_ui_busy(False)

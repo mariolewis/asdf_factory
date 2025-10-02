@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>450</width>
+    <width>400</width>
     <height>200</height>
    </rect>
   </property>
@@ -20,7 +20,7 @@
    <item>
     <widget class="QLabel" name="instructionLabel">
      <property name="text">
-      <string>How would you like to start this project?</string>
+      <string>How would you like to create the new project?</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
@@ -28,30 +28,38 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="groupBox">
-     <property name="title">
-      <string/>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
      </property>
-     <layout class="QVBoxLayout" name="verticalLayout_2">
-      <item>
-       <widget class="QPushButton" name="fromSpecButton">
-        <property name="text">
-         <string>From a New Specification or Project Brief</string>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QPushButton" name="fromCodebaseButton">
-        <property name="text">
-         <string>Work with an existing Application Codebase</string>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
    </item>
    <item>
-    <spacer name="verticalSpacer">
+    <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QPushButton" name="fromSpecButton">
+       <property name="text">
+        <string>Create from a New Specification</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="fromCodebaseButton">
+       <property name="text">
+        <string>Work with an Existing Codebase</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <spacer name="verticalSpacer_2">
      <property name="orientation">
       <enum>Qt::Vertical</enum>
      </property>
@@ -71,23 +79,13 @@
      <property name="standardButtons">
       <set>QDialogButtonBox::Cancel</set>
      </property>
+     <property name="centerButtons">
+      <bool>true</bool>
+     </property>
     </widget>
    </item>
   </layout>
  </widget>
  <resources/>
- <connections>
-  <connection>
-   <sender>buttonBox</sender>
-   <signal>accepted()</signal>
-   <receiver>NewProjectDialog</receiver>
-   <slot>accept()</slot>
-  </connection>
-  <connection>
-   <sender>buttonBox</sender>
-   <signal>rejected()</signal>
-   <receiver>NewProjectDialog</receiver>
-   <slot>reject()</slot>
-  </connection>
- </connections>
+ <connections/>
 </ui>

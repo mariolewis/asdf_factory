@@ -8,8 +8,9 @@ from llm_service import LLMService
 
 class ProjectIntakeAdvisorAgent:
     """
-    Performs a holistic analysis of a user's initial project documents
-    to propose a tailored, proportional workflow plan.
+    Analyzes the user's initial project brief to provide a summary and
+    an advisory assessment on its completeness, guiding the PM's choice
+    of a development lifecycle path.
     """
 
     def __init__(self, llm_service: LLMService):
@@ -26,60 +27,34 @@ class ProjectIntakeAdvisorAgent:
 
     def assess_brief_completeness(self, brief_text: str) -> str:
         """
-        Analyzes the initial brief for triviality and completeness, and
-        segregates content to propose a tailored workflow.
+        Analyzes the initial brief for completeness and generates a summary.
 
         Args:
             brief_text (str): The combined text from the user's initial input.
 
         Returns:
-            A JSON string containing the full workflow proposal.
+            A JSON string containing the project summary and completeness assessment.
         """
         prompt = textwrap.dedent(f"""
-            You are an expert Solutions Architect responsible for project intake. Your task is to perform a multi-stage analysis of a user's initial project brief and return a single, structured JSON object proposing a tailored workflow.
+            You are an expert Solutions Architect. Your task is to analyze a user's initial project brief and produce a structured JSON summary.
 
-            **Stage 1: Triviality Assessment**
-            First, determine if the request is for a trivial, "Hello World" style application. A trivial project is defined as a simple, single-file application with no complex logic or dependencies.
-            - If the project is trivial, your entire output MUST be a simple JSON object:
-              `{{ "is_trivial": true, "justification": "A brief explanation of why it's trivial." }}`
-            - If it is not trivial, proceed to Stage 2.
-
-            **Stage 2: Granular Completeness Assessment (for non-trivial projects)**
-            Independently assess the provided text for the completeness of the following five artifacts. For each, determine a proposed action from the allowed list:
-            - **UX/UI Specification**: `ELABORATE` (missing), `REFINE` (high-level ideas present), `SKIP` (comprehensive details found).
-            - **Application Specification**: `ELABORATE`, `REFINE`, `SKIP`.
-            - **Technical Specification**: `ELABORATE`, `REFINE`, `SKIP`.
-            - **Coding Standard**: `ELABORATE` (not found), `ADOPT` (a complete standard is present).
-            - **Project Backlog**: `ELABORATE` (not found), `ADOPT` (a well-defined backlog of epics/features/stories is present).
-
-            **Stage 3: Content Segregation**
-            For any artifact where the proposed action is `SKIP`, `REFINE`, or `ADOPT`, you MUST extract the clean, relevant block of text for that artifact from the user's brief.
+            **Your Analysis & Summary Task:**
+            1.  Read the entire project brief provided by the user.
+            2.  Synthesize your understanding into a concise, two-part summary formatted in markdown. The summary should be no more than 8-9 lines in total.
+                - Use a "#### Functional Description" heading for the first part.
+                - Use a "#### Technical Description" heading for the second part.
+            3.  Based on your analysis, provide a brief, advisory assessment on the completeness of the documents.
+                - If you identify potential gaps (e.g., in error handling, user interface details, data validation, technology gaps, conflicting specifications), your assessment should be a soft, advisory statement like: "Gaps or inconsistencies were identified in the detailing of [area], for which the system may be able to offer solution options during the specification phases."
+                - If the brief appears very detailed and complete, your assessment should be: "The provided brief appears to be sufficiently detailed to proceed for development."
 
             **Final Output: MANDATORY JSON STRUCTURE**
-            Your entire response MUST be a single, valid JSON object and nothing else.
-            - For a trivial project, use the simple structure from Stage 1.
-            - For a non-trivial project, you MUST use the following comprehensive structure:
+            Your entire response MUST be a single, valid JSON object and nothing else. Use the following structure:
             ```json
             {{
-              "is_trivial": false,
-              "assessment_summary": "A concise, one-sentence summary of your findings for the PM.",
-              "proposed_plan": [
-                {{ "phase": "UX/UI Design", "action": "...", "justification": "..." }},
-                {{ "phase": "Application Specification", "action": "...", "justification": "..." }},
-                {{ "phase": "Technical Specification", "action": "...", "justification": "..." }},
-                {{ "phase": "Coding Standard", "action": "...", "justification": "..." }},
-                {{ "phase": "Backlog Generation", "action": "...", "justification": "..." }}
-              ],
-              "segregated_content": {{
-                "ux_spec_text": "...",
-                "final_spec_text": "...",
-                "tech_spec_text": "...",
-                "coding_standard_text": "...",
-                "project_backlog_text": "..."
-              }}
+              "project_summary_markdown": "#### Functional Description\\n...\\n\\n#### Technical Description\\n...",
+              "completeness_assessment": "..."
             }}
             ```
-            - Note: For `segregated_content`, only include keys for content that was actually found and extracted.
 
             **--- USER'S PROJECT BRIEF ---**
             {brief_text}
@@ -100,9 +75,9 @@ class ProjectIntakeAdvisorAgent:
             json.loads(cleaned_json)
             return cleaned_json
         except Exception as e:
-            logging.error(f"ProjectIntakeAdvisorAgent failed to get or parse LLM response: {e}")
-            error_payload = {
-                "error": "Failed to analyze the project brief.",
-                "details": str(e)
-            }
+            logging.error(f"ProjectIntakeAdvisorAgent failed to get or parse LLM response: {{e}}")
+            error_payload = {{
+                "project_summary_markdown": "### Error\\nAn error occurred while analyzing the project brief.",
+                "completeness_assessment": f"Details: {{str(e)}}"
+            }}
             return json.dumps(error_payload)

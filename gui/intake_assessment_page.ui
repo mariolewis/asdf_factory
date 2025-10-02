@@ -13,7 +13,7 @@
   <property name="windowTitle">
    <string>Form</string>
   </property>
-  <layout class="QVBoxLayout" name="verticalLayout" stretch="0,0,0,0,1,0">
+  <layout class="QVBoxLayout" name="verticalLayout">
    <property name="leftMargin">
     <number>20</number>
    </property>
@@ -29,7 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>Intelligent Intake Assessment</string>
+      <string>Project Input Analysis &amp; Recommendation</string>
      </property>
     </widget>
    </item>
@@ -43,7 +43,7 @@
    <item>
     <widget class="QLabel" name="instructionLabel">
      <property name="text">
-      <string>The AI has analyzed the project brief and proposes the following workflow. You can accept this proportional plan or override it to run the full, standard workflow.</string>
+      <string>The system has analyzed your project brief. Review the summary and assessment below, then choose the desired workflow for this project.</string>
      </property>
      <property name="wordWrap">
       <bool>true</bool>
@@ -51,54 +51,58 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="summaryGroupBox">
-     <property name="title">
-      <string>Assessment Summary</string>
+    <widget class="QLabel" name="summaryHeaderLabel">
+     <property name="text">
+      <string>&lt;b&gt;AI Summary of Inputs&lt;/b&gt;</string>
      </property>
-     <layout class="QVBoxLayout" name="verticalLayout_2">
-      <item>
-       <widget class="QTextEdit" name="summaryTextEdit">
-        <property name="readOnly">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-     </layout>
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="planGroupBox">
-     <property name="title">
-      <string>Proposed Plan</string>
+    <widget class="QTextEdit" name="summaryTextEdit">
+     <property name="readOnly">
+      <bool>true</bool>
      </property>
-     <layout class="QVBoxLayout" name="verticalLayout_3">
-      <item>
-       <widget class="QScrollArea" name="scrollArea">
-        <property name="widgetResizable">
-         <bool>true</bool>
-        </property>
-        <widget class="QWidget" name="scrollAreaWidgetContents">
-         <property name="geometry">
-          <rect>
-           <x>0</x>
-           <y>0</y>
-           <width>742</width>
-           <height>123</height>
-          </rect>
-         </property>
-         <layout class="QVBoxLayout" name="verticalLayout_4">
-          <item>
-           <layout class="QFormLayout" name="planFormLayout"/>
-          </item>
-         </layout>
-        </widget>
-       </widget>
-      </item>
-     </layout>
     </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="assessmentHeaderLabel">
+     <property name="text">
+      <string>&lt;b&gt;Completeness Assessment&lt;/b&gt;</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="completenessAssessmentLabel">
+     <property name="text">
+      <string>Assessment text will appear here...</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <spacer name="verticalSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>20</width>
+       <height>40</height>
+      </size>
+     </property>
+    </spacer>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
+     <item>
+      <widget class="QPushButton" name="backButton">
+       <property name="text">
+        <string>Cancel</string>
+       </property>
+      </widget>
+     </item>
      <item>
       <spacer name="horizontalSpacer">
        <property name="orientation">
@@ -113,16 +117,16 @@
       </spacer>
      </item>
      <item>
-      <widget class="QPushButton" name="overrideButton">
+      <widget class="QPushButton" name="fullLifecycleButton">
        <property name="text">
-        <string>Override &amp; Run Full Workflow</string>
+        <string>Proceed with Spec Elaboration and Development</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="acceptProposalButton">
+      <widget class="QPushButton" name="directToDevelopmentButton">
        <property name="text">
-        <string>Accept Proposal &amp; Proceed</string>
+        <string>Proceed Directly to Development</string>
        </property>
       </widget>
      </item>

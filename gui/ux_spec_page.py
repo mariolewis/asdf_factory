@@ -92,36 +92,30 @@ class UXSpecPage(QWidget):
 
     def prepare_for_display(self):
         """
-        Prepares the page by either loading a user-provided draft (REFINE),
-        resuming a paused session, or generating a new draft (ELABORATE).
+        Populates the page with the UX/UI spec draft that was generated in the
+        previous 'GENERATING_UX_UI_SPEC_DRAFT' phase.
         """
-        # Case 1: REFINE workflow (user provided a document at the start)
+        logging.info("UXSpecPage: Preparing to display pre-generated draft.")
+        self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+
+        # The draft is now generated in the previous step and stored here by the orchestrator
         task_data = self.orchestrator.task_awaiting_approval or {}
-        segregated_content = task_data.get("segregated_content", {})
-        user_content = segregated_content.get("ux_spec_text")
+        draft = task_data.get("ux_spec_draft", "### Error\nCould not retrieve the generated UX/UI specification draft.")
 
-        if user_content:
-            logging.info("UXSpecPage: REFINE workflow detected. Loading user-provided UX spec.")
-            self.ux_spec_draft = self.orchestrator.prepend_standard_header(user_content, "UX/UI Specification")
+        self.ux_spec_draft = draft # Store it locally
+
+        # This handles both success and error messages from the previous step
+        is_error = draft.strip().startswith("### Error")
+        if is_error:
+            self.review_is_error_state = True
+            self.last_failed_action = 'generation'
+            self.ui.specTextEdit.setText(self.ux_spec_draft)
+            self.ui.approveButton.setText("Retry Generation")
+        else:
+            self.review_is_error_state = False
+            self.last_failed_action = None
             self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
-            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
-            # Consume the content so this block doesn't re-trigger on a simple UI refresh
-            if "ux_spec_text" in self.orchestrator.task_awaiting_approval["segregated_content"]:
-                del self.orchestrator.task_awaiting_approval["segregated_content"]["ux_spec_text"]
-            return
-
-        # Case 2: RESUME workflow (resuming from a previously paused state)
-        if self.orchestrator.active_spec_draft is not None:
-            logging.info("Resuming UX spec with a saved draft.")
-            self.ux_spec_draft = self.orchestrator.active_spec_draft
-            self.orchestrator.set_active_spec_draft(None)
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
-            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
-            return
-
-        # Case 3: ELABORATE workflow (default, generate from scratch)
-        logging.info("UXSpecPage: ELABORATE workflow detected. Starting draft generation.")
-        self.run_generation_task()
+            self.ui.approveButton.setText("Approve Specification")
 
     def run_generation_task(self):
         self._execute_task(self._task_generate_draft, self._handle_generation_result,
