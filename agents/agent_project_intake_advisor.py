@@ -45,7 +45,7 @@ class ProjectIntakeAdvisorAgent:
                 - Use a "#### Technical Description" heading for the second part.
             3.  Based on your analysis, provide a brief, advisory assessment on the completeness of the documents.
                 - If you identify potential gaps (e.g., in error handling, user interface details, data validation, technology gaps, conflicting specifications), your assessment should be a soft, advisory statement like: "Gaps or inconsistencies were identified in the detailing of [area], for which the system may be able to offer solution options during the specification phases."
-                - If the brief appears very detailed and complete, your assessment should be: "The provided brief appears to be sufficiently detailed to proceed for development."
+                - If the brief appears very detailed and complete, your assessment should be: "The provided brief appears to be sufficiently detailed to proceed directly to development."
 
             **Final Output: MANDATORY JSON STRUCTURE**
             Your entire response MUST be a single, valid JSON object and nothing else. Use the following structure:

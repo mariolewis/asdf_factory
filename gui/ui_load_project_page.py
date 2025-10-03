@@ -84,7 +84,7 @@ class Ui_LoadProjectPage(object):
         LoadProjectPage.setWindowTitle(QCoreApplication.translate("LoadProjectPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("LoadProjectPage", u"Load an Exported Project", None))
         self.instructionLabel.setText(QCoreApplication.translate("LoadProjectPage", u"Select a project from the history below to load it into the factory. Loading a project will archive any currently active work.", None))
-        self.backButton.setText(QCoreApplication.translate("LoadProjectPage", u"Back to Main Page", None))
+        self.backButton.setText(QCoreApplication.translate("LoadProjectPage", u"Cancel", None))
         self.deleteButton.setText(QCoreApplication.translate("LoadProjectPage", u"Delete Selected Project", None))
         self.loadButton.setText(QCoreApplication.translate("LoadProjectPage", u"Load Selected Project", None))
     # retranslateUi

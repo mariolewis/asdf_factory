@@ -732,32 +732,38 @@ class MasterOrchestrator:
         elif decision == "DIRECT_TO_DEVELOPMENT":
             logging.info("PM chose Direct to Development path. Bypassing specification phases.")
             try:
-                extracted_specs = self._extract_specifications_from_consolidated_text(original_brief)
-                if "error" in extracted_specs:
-                    raise Exception(f"Failed to extract specifications: {extracted_specs['error']}")
+                # Use a more intelligent agent to synthesize the specs from the brief.
+                from agents.agent_spec_clarification import SpecClarificationAgent
+                spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
 
-                app_spec = extracted_specs.get("application_spec")
-                tech_spec = extracted_specs.get("technical_spec")
-                coding_standard = extracted_specs.get("coding_standard")
+                # Generate the Application Spec
+                app_spec = spec_agent.expand_brief_description(original_brief)
+                if not app_spec or app_spec.strip().startswith("Error:"):
+                    raise ValueError(f"The AI failed to synthesize an Application Specification from the brief. Details: {app_spec}")
 
-                if not app_spec or not tech_spec:
-                    raise ValueError("The provided documents did not contain a clearly identifiable Application Specification and Technical Specification, which are required to proceed.")
+                # Generate the Technical Spec based on the newly created App Spec
+                from agents.agent_tech_stack_proposal import TechStackProposalAgent
+                tech_agent = TechStackProposalAgent(self.llm_service)
+                tech_spec = tech_agent.propose_stack(app_spec, "Windows") # Assuming a default OS
+                if not tech_spec or tech_spec.strip().startswith("Error:"):
+                    raise ValueError(f"The AI failed to synthesize a Technical Specification. Details: {tech_spec}")
 
-                # Save the user-provided specs directly to the database
+                # Save the synthesized specs to the database
                 db = self.db_manager
                 db.update_project_field(self.project_id, "final_spec_text", app_spec)
                 db.update_project_field(self.project_id, "tech_spec_text", tech_spec)
-                if coding_standard:
-                    # In a full implementation, we would save this to the artifacts table
-                    logging.info("Found a coding standard, which will be used during development.")
 
-                # Proceed to generate the backlog, which will then transition to ratification
+                # Proceed to generate the backlog
                 self.handle_backlog_generation()
 
             except Exception as e:
                 logging.error(f"Direct to Development path failed: {e}", exc_info=True)
-                self.task_awaiting_approval['error'] = str(e) # Pass error to UI
-                self.set_phase("PROJECT_INTAKE_ASSESSMENT") # Return to decision page with error
+                # This is the improved, graceful error handling
+                if 'assessment_data' in self.task_awaiting_approval:
+                    self.task_awaiting_approval['assessment_data']['error'] = str(e)
+                else:
+                    self.task_awaiting_approval['assessment_data'] = {"error": str(e)}
+                self.set_phase("PROJECT_INTAKE_ASSESSMENT")
 
     def handle_ux_ui_brief_submission(self, brief_input):
         """
