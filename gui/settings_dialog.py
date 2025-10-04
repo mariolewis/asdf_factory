@@ -9,10 +9,12 @@ from PySide6.QtWidgets import QFileDialog
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
                                QPushButton)
-from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTabWidget, QWidget,
+from PySide6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QTabWidget, QWidget,
                                QFormLayout, QLabel, QComboBox, QStackedWidget,
                                QLineEdit, QSpinBox, QDialogButtonBox, QSpacerItem,
                                QSizePolicy, QMessageBox, QHBoxLayout, QListWidget)
+from PySide6.QtCore import QThreadPool
+from .worker import Worker
 
 from master_orchestrator import MasterOrchestrator
 
@@ -66,6 +68,9 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.orchestrator = orchestrator
         self.all_config = {}
+        self.threadpool = QThreadPool()
+        self.initial_provider = ""
+        self.is_calibrating_on_save = False
 
         self.setWindowTitle("ASDF Settings")
         self.setMinimumSize(600, 500)
@@ -117,9 +122,9 @@ class SettingsDialog(QDialog):
         self.factory_behavior_tab = QWidget()
         self.max_debug_spin_box = QSpinBox()
         self.max_debug_spin_box.setRange(1, 10)
-        self.context_limit_spin_box = QSpinBox()
-        self.context_limit_spin_box.setRange(10000, 10000000)
-        self.context_limit_spin_box.setSingleStep(10000)
+        self.context_limit_display = QLineEdit()
+        self.context_limit_display.setReadOnly(True)
+        self.calibrate_button = QPushButton("Auto-Calibrate Now")
         self.logging_combo_box = QComboBox()
         self.logging_combo_box.addItems(["Standard", "Detailed", "Debug"])
         self.project_path_input = QLineEdit()
@@ -195,7 +200,11 @@ class SettingsDialog(QDialog):
 
         factory_tab_layout = QFormLayout(self.factory_behavior_tab)
         factory_tab_layout.addRow("Max Debug Attempts:", self.max_debug_spin_box)
-        factory_tab_layout.addRow("Context Window Limit:", self.context_limit_spin_box)
+        context_limit_layout = QHBoxLayout()
+        context_limit_layout.addWidget(self.context_limit_display)
+        context_limit_layout.addWidget(self.calibrate_button)
+        factory_tab_layout.addRow("Context Window Limit:", context_limit_layout)
+        self.calibrate_button.setToolTip("Queries the selected LLM to determine and set its optimal context limit with a safety margin.")
         factory_tab_layout.addRow("Logging Level:", self.logging_combo_box)
         factory_tab_layout.addRow("Default Project Path:", self.project_path_input)
         factory_tab_layout.addRow("Default Export Path:", self.archive_path_input)
@@ -351,7 +360,7 @@ class SettingsDialog(QDialog):
         self.custom_fast_model_input.setText(get_val("CUSTOM_FAST_MODEL"))
 
         self.max_debug_spin_box.setValue(int(get_val("MAX_DEBUG_ATTEMPTS", 2)))
-        self.context_limit_spin_box.setValue(int(get_val("CONTEXT_WINDOW_CHAR_LIMIT", 2500000)))
+        self.context_limit_display.setText(get_val("CONTEXT_WINDOW_CHAR_LIMIT", "2500000"))
         self.logging_combo_box.setCurrentText(get_val("LOGGING_LEVEL", "Standard"))
         self.project_path_input.setText(get_val("DEFAULT_PROJECT_PATH"))
         self.archive_path_input.setText(get_val("DEFAULT_ARCHIVE_PATH"))
@@ -368,6 +377,7 @@ class SettingsDialog(QDialog):
         self.jira_token_input.setText(get_val("INTEGRATION_API_TOKEN"))
 
         self.on_provider_changed()
+        self.initial_provider = self.provider_combo_box.currentText()
         self._populate_templates_tab()
 
     def connect_signals(self):
@@ -377,6 +387,7 @@ class SettingsDialog(QDialog):
         self.provider_list.currentRowChanged.connect(self.on_integration_provider_changed)
         self.add_template_button.clicked.connect(self._on_add_template_clicked)
         self.remove_template_button.clicked.connect(self._on_remove_template_clicked)
+        self.calibrate_button.clicked.connect(self.on_calibrate_clicked)
 
     def on_provider_changed(self):
         provider_name = self.provider_combo_box.currentText()
@@ -394,11 +405,54 @@ class SettingsDialog(QDialog):
         # Index 0 is "None", Index 1 is "Jira"
         self.integrations_stacked_widget.setCurrentIndex(index)
 
+    def on_calibrate_clicked(self):
+        """Initiates the background task for manual auto-calibration."""
+        self.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        worker = Worker(self._task_run_calibration)
+        worker.signals.result.connect(self._handle_calibration_result)
+        worker.signals.error.connect(self._handle_calibration_error)
+        self.threadpool.start(worker)
+
+    def _task_run_calibration(self, **kwargs):
+        """Background worker task that calls the orchestrator."""
+        # First, ensure the orchestrator has the latest LLM service initialized
+        self.orchestrator._llm_service = None
+        return self.orchestrator.run_auto_calibration()
+
+    def _handle_calibration_result(self, result_tuple):
+        """Handles the result of the calibration worker."""
+        self.setEnabled(True)
+        QApplication.restoreOverrideCursor()
+        success, message = result_tuple
+        if success:
+            self.context_limit_display.setText(message)
+            if not self.is_calibrating_on_save:
+                QMessageBox.information(self, "Success", f"Auto-calibration complete. Context limit has been set to {message} characters.")
+        else:
+            QMessageBox.critical(self, "Calibration Failed", f"Auto-calibration failed:\n{message}")
+
+        if self.is_calibrating_on_save:
+            self.is_calibrating_on_save = False # Reset flag
+            if success:
+                self.accept() # Close the dialog automatically
+
+    def _handle_calibration_error(self, error_tuple):
+        """Handles a system error from the calibration worker."""
+        self.setEnabled(True)
+        QApplication.restoreOverrideCursor()
+        if self.is_calibrating_on_save:
+            self.is_calibrating_on_save = False # Reset flag
+        error_msg = f"An unexpected error occurred during calibration:\n{error_tuple[1]}"
+        QMessageBox.critical(self, "Error", error_msg)
+
     def save_settings_and_accept(self):
-        """Saves all settings from all tabs to the database."""
+        """Saves all settings, automatically calibrates on provider change, and accepts."""
         logging.info("Saving settings from dialog...")
+
+        provider_changed = self.provider_combo_box.currentText() != self.initial_provider
+
         try:
-            # (The logic to gather settings remains the same)
             settings_to_save = {
                 "SELECTED_LLM_PROVIDER": self.provider_combo_box.currentText(),
                 "GEMINI_API_KEY": self.gemini_api_key_input.text(),
@@ -415,7 +469,6 @@ class SettingsDialog(QDialog):
                 "CUSTOM_REASONING_MODEL": self.custom_reasoning_model_input.text(),
                 "CUSTOM_FAST_MODEL": self.custom_fast_model_input.text(),
                 "MAX_DEBUG_ATTEMPTS": str(self.max_debug_spin_box.value()),
-                "CONTEXT_WINDOW_CHAR_LIMIT": str(self.context_limit_spin_box.value()),
                 "LOGGING_LEVEL": self.logging_combo_box.currentText(),
                 "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
                 "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text(),
@@ -425,28 +478,22 @@ class SettingsDialog(QDialog):
                 "INTEGRATION_API_TOKEN": self.jira_token_input.text()
             }
 
-            provider = settings_to_save["SELECTED_LLM_PROVIDER"]
-            if provider in ["Gemini", "ChatGPT", "Claude", "Any Other"]:
-                prefix_map = {"Gemini": "GEMINI", "ChatGPT": "OPENAI", "Claude": "ANTHROPIC", "Any Other": "CUSTOM"}
-                prefix = prefix_map.get(provider)
-                reasoning_key = f"{prefix}_REASONING_MODEL"
-                fast_key = f"{prefix}_FAST_MODEL"
-                if not settings_to_save[reasoning_key] and settings_to_save[fast_key]:
-                    settings_to_save[reasoning_key] = settings_to_save[fast_key]
-                elif not settings_to_save[fast_key] and settings_to_save[reasoning_key]:
-                    settings_to_save[fast_key] = settings_to_save[reasoning_key]
-
             db_manager = self.orchestrator.db_manager
             for key, value in settings_to_save.items():
                 db_manager.set_config_value(key, value)
 
-            # This is the corrected line:
-            self.orchestrator._llm_service = None # Clear the cached service
-
+            self.orchestrator._llm_service = None
             logging.info("Settings saved. LLM service will be re-initialized on next use.")
-            self.accept()
+
+            if provider_changed:
+                self.is_calibrating_on_save = True
+                QMessageBox.information(self, "Provider Changed",
+                                        "LLM Provider has been changed. The system will now auto-calibrate the context window limit. Please wait...")
+                self.on_calibrate_clicked()
+            else:
+                self.accept()
 
         except Exception as e:
             logging.error(f"Failed to save settings: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to save settings:\n{e}")
-            self.reject()
+            # Do not reject, allow user to fix the issue.

@@ -5751,6 +5751,102 @@ class MasterOrchestrator:
 
         self.set_phase(phase_name)
 
+    def run_auto_calibration(self, progress_callback=None) -> tuple[bool, str]:
+        """
+        Queries the active LLM by asking it to browse the web for its own
+        token limit, then saves the calibrated value to the database.
+        Includes fallback to pre-configured defaults on failure.
+        """
+        import textwrap
+        import json
+        import re
+
+        if progress_callback:
+            progress_callback(("INFO", "Starting auto-calibration..."))
+
+        try:
+            if not self.llm_service:
+                raise Exception("LLM Service is not initialized.")
+
+            prompt = textwrap.dedent("""
+                You are a helpful assistant with web browsing capabilities. Your only task is to browse the internet to find the standard, published maximum context window size in tokens for your own model.
+
+                **MANDATORY INSTRUCTIONS:**
+                1.  **Web Search:** You MUST perform a web search to find the official documentation for your model's context window.
+                2.  **NUMERIC OUTPUT ONLY:** Your entire response MUST be ONLY the integer representing the token limit.
+                3.  **DO NOT INCLUDE:** Do not include commas, units (like "tokens"), explanations, caveats, or any other words or characters. Just the raw number.
+
+                **Example of a PERFECT response:**
+                2048000
+
+                **Example of a FAILED response:**
+                The context window is 2,048,000 tokens.
+
+                **Your Numeric-Only Response:**
+            """)
+
+            if progress_callback:
+                progress_callback(("INFO", "Querying LLM via web search for max context window..."))
+
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+
+            if response_text.strip().startswith("Error:"):
+                raise Exception(f"LLM service returned an error during calibration: {response_text}")
+
+            # Extract all digits from the response, ignoring commas or other text
+            numeric_string = re.sub(r'[^\d]', '', response_text)
+            if not numeric_string:
+                raise ValueError("LLM response contained no numbers.")
+
+            max_tokens = int(numeric_string)
+
+            if progress_callback:
+                progress_callback(("SUCCESS", f"LLM reported a max of {max_tokens:,} tokens."))
+
+            # Convert to characters (4 chars/token) and apply 20% safety margin (multiply by 0.8)
+            safe_char_limit = int((max_tokens * 4) * 0.8)
+
+            self.db_manager.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", str(safe_char_limit))
+
+            success_msg = f"Auto-calibration complete. Context limit set to {safe_char_limit:,} characters."
+            logging.info(success_msg)
+            if progress_callback:
+                progress_callback(("SUCCESS", success_msg))
+            return True, str(safe_char_limit)
+
+        except Exception as e:
+            logging.warning(f"Web-sourced auto-calibration failed: {e}. Attempting to fall back to pre-configured default.")
+            if progress_callback:
+                progress_callback(("WARNING", f"Web-sourced calibration failed: {e}. Falling back to default."))
+
+            try:
+                provider_name = self.db_manager.get_config_value("SELECTED_LLM_PROVIDER")
+                provider_key_map = {
+                    "Gemini": "GEMINI_CONTEXT_LIMIT", "ChatGPT": "OPENAI_CONTEXT_LIMIT",
+                    "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Any Other": "ENTERPRISE_CONTEXT_LIMIT"
+                }
+                default_key = provider_key_map.get(provider_name)
+                if default_key:
+                    default_value = self.db_manager.get_config_value(default_key)
+                    if default_value:
+                        self.db_manager.set_config_value("CONTEXT_WINDOW_CHAR_LIMIT", default_value)
+                        success_msg = f"Used pre-configured default limit: {int(default_value):,} characters."
+                        logging.info(success_msg)
+                        if progress_callback:
+                            progress_callback(("SUCCESS", success_msg))
+                        return True, default_value
+
+                # If all else fails, raise the original error
+                raise e
+
+            except Exception as final_e:
+                error_msg = f"Auto-calibration and fallback failed: {final_e}"
+                logging.error(error_msg, exc_info=True)
+                if progress_callback:
+                    progress_callback(("ERROR", error_msg))
+                return False, error_msg
+
     def _create_llm_service(self) -> LLMService | None:
         """
         Factory method to create the appropriate LLM service adapter based on
