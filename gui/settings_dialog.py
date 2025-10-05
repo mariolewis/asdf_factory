@@ -435,7 +435,9 @@ class SettingsDialog(QDialog):
         if self.is_calibrating_on_save:
             self.is_calibrating_on_save = False # Reset flag
             if success:
-                self.accept() # Close the dialog automatically
+                QMessageBox.information(self, "Calibration Complete",
+                            "Auto-calibration is complete and all settings have been saved.")
+                self.accept()
 
     def _handle_calibration_error(self, error_tuple):
         """Handles a system error from the calibration worker."""
