@@ -79,7 +79,7 @@
          <item>
           <widget class="QLabel" name="welcomeLabel">
            <property name="text">
-            <string>Welcome to ASDF. Please create a New Project or Load an Archived Project to begin.</string>
+            <string>Welcome to ASDF. Please create a New Project or Open an Existing Project to begin.</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>

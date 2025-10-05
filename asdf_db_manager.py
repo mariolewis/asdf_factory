@@ -193,7 +193,7 @@ class ASDFDBManager:
 
     def get_all_active_projects(self) -> list:
         """Retrieves all project records from the Projects table."""
-        return self._execute_query("SELECT * FROM Projects ORDER BY project_name ASC", fetch="all")
+        return self._execute_query("SELECT * FROM Projects ORDER BY creation_timestamp DESC", fetch="all")
 
     def delete_project_by_id(self, project_id: str):
         self._execute_query("DELETE FROM Projects WHERE project_id = ?", (project_id,))

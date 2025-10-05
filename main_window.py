@@ -52,6 +52,7 @@ from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.worker import Worker
 from gui.import_issue_dialog import ImportIssueDialog
 from agents.agent_integration_pmt import IntegrationAgentPMT
+from gui.delivery_assessment_page import DeliveryAssessmentPage
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -150,6 +151,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.sprint_validation_page)
         self.sprint_review_page = SprintReviewPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.sprint_review_page)
+        self.delivery_assessment_page = DeliveryAssessmentPage(self)
+        self.ui.mainContentArea.addWidget(self.delivery_assessment_page)
         self.intake_assessment_page = IntakeAssessmentPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.intake_assessment_page)
 
@@ -339,6 +342,8 @@ class ASDFMainWindow(QMainWindow):
         self.decision_page.option1_selected.connect(self.on_decision_option1)
         self.decision_page.option2_selected.connect(self.on_decision_option2)
         self.decision_page.option3_selected.connect(self.on_decision_option3)
+        self.delivery_assessment_page.assessment_approved.connect(self.on_assessment_approved)
+        self.delivery_assessment_page.project_cancelled.connect(self.on_close_project)
         self.ui.projectFilesTreeView.customContextMenuRequested.connect(self.on_file_tree_context_menu)
         self.documents_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.reports_page.back_to_workflow.connect(self.on_back_to_workflow)
@@ -1013,55 +1018,12 @@ class ASDFMainWindow(QMainWindow):
                  self.project_complete_page.set_project_name(self.orchestrator.project_name)
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
-        # Add this entire block back into the method
-        elif current_phase_name == "AWAITING_RISK_ASSESSMENT_APPROVAL":
-            # This block handles showing the risk assessment report.
-            page_to_show = self.decision_page
+        elif current_phase_name == "AWAITING_DELIVERY_ASSESSMENT_APPROVAL":
+            page_to_show = self.delivery_assessment_page
             task_data = self.orchestrator.task_awaiting_approval or {}
 
-            # Check for an error first
-            error = task_data.get("error")
-            if error:
-                QMessageBox.critical(self, "Error", f"Failed to generate specification draft or risk analysis:\n{error}")
-                self.orchestrator.set_phase("SPEC_ELABORATION") # Go back to allow retry
-                return
-
-            # Correctly parse the nested analysis and risk data from the task
-            complexity_data = task_data.get("complexity_analysis", {}) or {}
-            risk_data = task_data.get("risk_assessment", {}) or {}
-
-            # Build the detailed HTML string for display
-            html_parts = []
-            html_parts.append("<h3>Complexity Analysis</h3>")
-            for key, value in complexity_data.items():
-                title = key.replace('_', ' ').title()
-                rating = value.get('rating', 'N/A')
-                justification = value.get('justification', 'No details provided.')
-                html_parts.append(f"<p><b>{title}:</b> {rating}<br/><i>{justification}</i></p>")
-
-            html_parts.append("<hr><h3>Risk Assessment</h3>")
-            html_parts.append(f"<p><b>Overall Risk Level:</b> {risk_data.get('overall_risk_level', 'N/A')}</p>")
-            html_parts.append(f"<p><b>Summary:</b> {risk_data.get('summary', 'No summary provided.')}</p>")
-
-            recommendations = risk_data.get('recommendations', [])
-            if recommendations:
-                html_parts.append("<p><b>Recommendations:</b></p><ul>")
-                for rec in recommendations:
-                    html_parts.append(f"<li>{rec}</li>")
-                html_parts.append("</ul>")
-
-            details_text = "".join(html_parts)
-
-            page_to_show.configure(
-                header="Project Complexity & Risk Assessment",
-                instruction="The AI has analyzed the project scope. Please review and approve to proceed.",
-                details=details_text,
-                option1_text="Accept Project & Continue to Spec Review",
-                option2_text="Cancel Project"
-            )
-            # Connect the buttons to the correct new orchestrator methods
-            page_to_show.option1_selected.connect(self.on_risk_assessment_approved)
-            page_to_show.option2_selected.connect(self.on_close_project)
+            # The page's logic now handles parsing and display
+            page_to_show.populate_data(task_data)
             self.ui.mainContentArea.setCurrentWidget(page_to_show)
 
         elif current_phase_name == "AWAITING_INTEGRATION_CONFIRMATION":
@@ -1258,10 +1220,15 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator.close_and_save_project()
         self.update_ui_after_state_change()
 
-    def on_risk_assessment_approved(self):
-        """Handles the PM's approval of the risk assessment and proceeds."""
+    def on_assessment_approved(self):
+        """Handles the PM's approval of the delivery assessment and proceeds."""
         self.orchestrator.handle_risk_assessment_approval()
         self.update_ui_after_state_change()
+
+    # def on_risk_assessment_approved(self):
+    #    """Handles the PM's approval of the risk assessment and proceeds."""
+    #    self.orchestrator.handle_risk_assessment_approval()
+    #    self.update_ui_after_state_change()
 
     def on_load_project(self):
         self.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")

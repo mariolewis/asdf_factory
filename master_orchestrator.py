@@ -73,7 +73,8 @@ class FactoryPhase(Enum):
     SPEC_ELABORATION = auto()
     GENERATING_UX_UI_SPEC_DRAFT = auto()
     GENERATING_APP_SPEC_AND_RISK_ANALYSIS = auto()
-    AWAITING_RISK_ASSESSMENT_APPROVAL = auto()
+    # AWAITING_RISK_ASSESSMENT_APPROVAL = auto()
+    AWAITING_DELIVERY_ASSESSMENT_APPROVAL = auto()
     AWAITING_SPEC_REFINEMENT_SUBMISSION = auto()
     AWAITING_SPEC_FINAL_APPROVAL = auto()
     TECHNICAL_SPECIFICATION = auto()
@@ -230,7 +231,8 @@ class MasterOrchestrator:
         FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
         FactoryPhase.SPEC_ELABORATION: "Application Specification",
         FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS: "Generating App Spec & Risk Analysis",
-        FactoryPhase.AWAITING_RISK_ASSESSMENT_APPROVAL: "Project Complexity & Risk Assessment",
+        # FactoryPhase.AWAITING_RISK_ASSESSMENT_APPROVAL: "Project Complexity & Risk Assessment",
+        FactoryPhase.AWAITING_DELIVERY_ASSESSMENT_APPROVAL: "Delivery Assessment",
         FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION: "Review Application Specification Draft",
         FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL: "Refine Application Specification",
         FactoryPhase.TECHNICAL_SPECIFICATION: "Technical Specification",
@@ -1221,29 +1223,32 @@ class MasterOrchestrator:
             # 1. Consolidate all requirement sources into a single input document
             consolidated_requirements = self._consolidate_specification_inputs()
 
-            # 2. Generate the raw spec content from the consolidated document
+            # 2. NEW: Calculate objective metrics before calling the LLM
+            effort_metrics = self._calculate_asdf_effort_metrics(consolidated_requirements)
+
+            # 3. Generate the raw spec content from the consolidated document
             spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
             app_spec_draft_content = spec_agent.expand_brief_description(consolidated_requirements)
 
-            # 3. Add the standard document header to the draft
+            # 4. Add the standard document header to the draft
             full_app_spec_draft = self.prepend_standard_header(
                 document_content=app_spec_draft_content,
                 document_type="Application Specification"
             )
 
-            # 4. Analyze the generated draft for complexity and risk
+            # 5. Analyze the generated draft for complexity and risk, now with metrics
             scoping_agent = ProjectScopingAgent(self.llm_service)
-            analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content)
+            analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content, effort_metrics) # Pass metrics here
             if "error" in analysis_result:
                 raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
 
-            # 5. Store BOTH results for the next steps and set the new phase
+            # 6. Store BOTH results for the next steps and set the new phase
             self.task_awaiting_approval = {
                 "generated_spec_draft": full_app_spec_draft,
                 "complexity_analysis": analysis_result.get("complexity_analysis"),
                 "risk_assessment": analysis_result.get("risk_assessment")
             }
-            self.set_phase("AWAITING_RISK_ASSESSMENT_APPROVAL")
+            self.set_phase("AWAITING_DELIVERY_ASSESSMENT_APPROVAL")
 
         except Exception as e:
             logging.error(f"Background task for spec/risk generation failed: {e}", exc_info=True)
@@ -4401,6 +4406,78 @@ class MasterOrchestrator:
                 logging.error("Failed to parse JSON blueprint from ux_spec_text in DB.")
                 return None
         return None
+
+    def _calculate_asdf_effort_metrics(self, spec_text: str) -> dict:
+        """
+        Performs a non-LLM, heuristic analysis on a spec text to generate
+        objective metrics that anchor the ProjectScopingAgent's analysis.
+        """
+        logging.info("Calculating ASDF Effort metrics for spec text...")
+        metrics = {
+            "context_pressure_score": len(spec_text),
+            "component_density_score": 0,
+            "ui_score": 0,
+            "backend_score": 0
+        }
+
+        # Use more specific phrases to avoid ambiguity
+        component_keywords = [
+            # UI Components
+            "screen", "view", "page", "window", "form", "dialog", "dashboard",
+            "input field", "text field", "button", "dropdown",
+            # API Components
+            "api endpoint", "rest endpoint", "graphql query", "microservice",
+            # Data Components
+            "database table", "data model", "schema", "data pipeline", "etl job",
+            # Logical Components
+            "service", "module", "component", "class", "function", "worker",
+            "algorithm", "engine",
+            # AI/ML Components
+            "ml model", "prediction service", "training pipeline",
+            # Security Components
+            "authentication service", "authorization rule"
+        ]
+        ui_keywords = [
+            # Core & Paradigms
+            "gui", "ui", "user interface", "front-end", "view",
+            # Desktop & Web
+            "window", "form", "dialog", "desktop", "wpf", "pyside6", "qt", "web page",
+            "website", "react", "angular", "vue", "html", "css",
+            # Mobile
+            "mobile app", "android", "ios", "swift", "kotlin", "screen", "activity",
+            # Components
+            "button", "grid", "table", "chart", "graph", "menu", "dashboard", "report",
+            "field", "input box", "text field", "input field", "dropdown", "combo box",
+            # Digital & AI
+            "chatbot", "voice interface", "virtual assistant", "visualization",
+            "digital twin", "ar", "vr", "augmented reality", "virtual reality"
+        ]
+        backend_keywords = [
+            # Core Backend
+            "backend", "server", "api", "database", "algorithm",
+            # Data & AI
+            "sql", "database", "data pipeline", "etl", "query", "schema",
+            "machine learning", "ml model", "data science", "analytics", "prediction",
+            # Web Services
+            "rest", "graphql", "microservice", "endpoint", "lambda", "function", "serverless",
+            # Architecture & Security
+            "architecture", "authentication", "authorization", "cache", "message queue",
+            "encryption", "security", "firewall", "iam",
+            # Cloud Computing
+            "cloud", "aws", "azure", "gcp", "docker", "kubernetes", "container",
+            "vm", "virtual machine"
+        ]
+
+        lower_spec = spec_text.lower()
+        for keyword in component_keywords:
+            metrics["component_density_score"] += lower_spec.count(keyword)
+        for keyword in ui_keywords:
+            metrics["ui_score"] += lower_spec.count(keyword)
+        for keyword in backend_keywords:
+            metrics["backend_score"] += lower_spec.count(keyword)
+
+        logging.info(f"ASDF Effort Metrics calculated: {metrics}")
+        return metrics
 
     def _consolidate_specification_inputs(self) -> str:
         """

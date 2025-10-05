@@ -252,6 +252,21 @@ QProgressBar::chunk {
     border-radius: 3px;
 }
 
+/* ---- Styling for Delivery Assessment Gauges ---- */
+QProgressBar[level="Low"]::chunk {
+    background-color: #6A8759; /* Green */
+}
+QProgressBar[level="Medium"]::chunk {
+    background-color: #FFC66D; /* Yellow/Orange */
+}
+QProgressBar[level="Medium"] {
+    color: #1E1E1E; /* Dark text for better contrast on amber background */
+}
+QProgressBar[level="High"]::chunk,
+QProgressBar[level="Very Large"]::chunk {
+    background-color: #CC7832; /* Orange/Red */
+}
+
 /* ---- Dynamic Content Panels ---- */
 QWidget[class="contentPanel"] {
     background-color: transparent;

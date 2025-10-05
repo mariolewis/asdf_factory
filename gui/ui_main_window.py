@@ -265,7 +265,7 @@ class Ui_MainWindow(object):
         self.actionToggleProjectPanel.setText(QCoreApplication.translate("MainWindow", u"Toggle Project Panel", None))
         self.actionToggleNotificationPanel.setText(QCoreApplication.translate("MainWindow", u"Toggle Notification Panel", None))
         self.projectNavigationTabs.setTabText(self.projectNavigationTabs.indexOf(self.filesTab), QCoreApplication.translate("MainWindow", u"Files", None))
-        self.welcomeLabel.setText(QCoreApplication.translate("MainWindow", u"Welcome to ASDF. Please create a New Project or Load an Archived Project to begin.", None))
+        self.welcomeLabel.setText(QCoreApplication.translate("MainWindow", u"Welcome to ASDF. Please create a New Project or Open an Existing Project to begin.", None))
         self.phaseLabel.setText(QCoreApplication.translate("MainWindow", u"This is where the UI for a specific project phase will be rendered.", None))
         self.menuFile.setTitle(QCoreApplication.translate("MainWindow", u"&File", None))
         self.menuEdit.setTitle(QCoreApplication.translate("MainWindow", u"&Edit", None))

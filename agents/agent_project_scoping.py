@@ -31,22 +31,30 @@ class ProjectScopingAgent:
             raise ValueError("llm_service is required for the ProjectScopingAgent.")
         self.llm_service = llm_service
 
-    def analyze_complexity(self, spec_text: str) -> dict:
+    def analyze_complexity(self, spec_text: str, effort_metrics: dict) -> dict:
         """
-        Performs a detailed complexity and risk analysis on the specification text.
+        Performs a detailed complexity and risk analysis on the specification text,
+        anchored by objective metrics to forecast "ASDF Effort".
         Returns a structured dictionary with the full analysis.
         """
         import re
 
-        logging.info("ProjectScopingAgent: Analyzing specification for complexity and risk...")
+        logging.info("ProjectScopingAgent: Analyzing specification for ASDF Effort...")
+
+        # Format the objective metrics for the prompt
+        metrics_str = (
+            f"- Context Pressure Score (Character Count): {effort_metrics.get('context_pressure_score', 0):,}\\n"
+            f"- Component Density Score (Keyword Count): {effort_metrics.get('component_density_score', 0)}\\n"
+            f"- UI-to-Backend Keyword Ratio: {effort_metrics.get('ui_score', 0)} to {effort_metrics.get('backend_score', 0)}"
+        )
 
         prompt = textwrap.dedent(f"""
-            You are an expert project manager and senior systems architect. Your task is to perform a detailed complexity and risk analysis of the following software specification.
+            You are the ASDF's internal Resource Forecaster. Your task is to analyze the provided specification and objective metrics to assess the operational effort required by the ASDF to build this project. Your ratings MUST be based on the rubric below.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **Decomposed Analysis:** You must provide a two-part analysis: a `complexity_analysis` and a `risk_assessment`.
-            3.  **JSON Schema:** The JSON object MUST strictly adhere to the following schema:
+            2.  **Analyze and Compare:** First, analyze the specification. Then, compare its complexity to the **Objective Metrics** and the **Calibration Rubric** to determine your ratings.
+            3.  **JSON Schema:** The JSON object MUST strictly adhere to the following schema, including all specified keys:
                 {{
                   "complexity_analysis": {{
                     "feature_scope": {{"rating": "...", "justification": "..."}},
@@ -61,10 +69,29 @@ class ProjectScopingAgent:
                     "recommendations": ["..."]
                   }}
                 }}
-            4.  **Ratings:** All `rating` keys and the `overall_risk_level` key must use one of these values: "Low", "Medium", "High", or "Very Large". The `token_consumption_outlook` must be "Low", "Medium", or "High".
-            5.  **Justification & Summary:** The `justification` and `summary` values must be concise, single-sentence or single-paragraph explanations.
-            6.  **Recommendations:** The `recommendations` value must be an array of strings. If the risk is high, recommend increasing the 'Context Window Character Limit' setting.
-            7.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
+            4.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object.
+
+            **--- Objective Metrics (Non-LLM Analysis) ---**
+            {metrics_str}
+
+            **--- Calibration Rubric ---**
+            - **Feature Scope:**
+              - "Low": A simple project, likely completable in one sprint (Component Density < 15).
+              - "Medium": A standard project requiring a few sprints or a moderate number of components (Component Density 15-50).
+              - "High": A major project spanning numerous sprints with high component complexity (Component Density > 50).
+            - **Data Schema:**
+              - "Low": Stateless or involves only a few simple, disconnected data entities.
+              - "Medium": Requires a relational state with several interconnected tables or data models.
+              - "High": Involves complex data transformations, non-relational data, or high-volume processing.
+            - **UI/UX:**
+              - "Low": A non-GUI application (CLI, service) or a UI with 1-3 basic screens.
+              - "Medium": A standard GUI application with multiple screens and standard user interactions.
+              - "High": A highly interactive GUI with custom components, real-time updates, or complex state management.
+            - **Integrations:**
+              - "Low": The project is self-contained.
+              - "Medium": Requires integrating with 1-2 external APIs or services.
+              - "High": Primarily an integration hub connecting multiple complex systems.
+            - **Overall Risk Level:** Base this on the highest rating from the categories above, giving extra weight to a high Context Pressure Score. A Context Pressure Score over 1,000,000 characters should significantly increase the risk level.
 
             ---
             SPECIFICATION TEXT:
@@ -74,7 +101,8 @@ class ProjectScopingAgent:
             JSON OUTPUT:
         """)
 
-        for attempt in range(3): # Try up to 3 times
+        # The retry loop from the original implementation is preserved
+        for attempt in range(3):
             try:
                 response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
                 json_match = re.search(r"\{.*\}", response_text, re.DOTALL)
@@ -83,18 +111,23 @@ class ProjectScopingAgent:
 
                 json_str = json_match.group(0)
                 result = json.loads(json_str)
-                logging.info(f"Successfully received and parsed complexity and risk analysis on attempt {attempt + 1}.")
+
+                # --- THIS IS THE FIX ---
+                # Validate that the parsed JSON has the required structure before returning.
+                if "complexity_analysis" not in result or "risk_assessment" not in result:
+                    raise ValueError("LLM response was valid JSON but missed required keys ('complexity_analysis' or 'risk_assessment').")
+                # --- END OF FIX ---
+
+                logging.info(f"Successfully received and parsed ASDF Effort analysis on attempt {attempt + 1}.")
                 return result
 
-            except json.JSONDecodeError as e:
-                logging.warning(f"Attempt {attempt + 1}: Failed to parse LLM response. Error: {e}. Retrying...")
-                # Add a correction instruction to the prompt for the next attempt
-                prompt += f"\n\n--- PREVIOUS ATTEMPT FAILED ---\nYour last response was not valid JSON due to the following error: {e}. You MUST correct the format and return a single, valid JSON object."
-                continue # Go to the next iteration of the loop
+            except (json.JSONDecodeError, ValueError) as e:
+                logging.warning(f"Attempt {attempt + 1}: Failed to parse or validate LLM response. Error: {e}. Retrying...")
+                prompt += f"\\n\\n--- PREVIOUS ATTEMPT FAILED ---\\nYour last response was not valid or complete due to the following error: {e}. You MUST correct the format and return a single, valid JSON object with all required keys."
+                continue
 
-        # If all retries fail
         logging.error("ProjectScopingAgent failed to parse LLM response after multiple attempts.")
-        return {
+        return {{
             "error": "Failed to get a valid analysis from the AI model after multiple retries.",
-            "details": "The LLM provided a consistently malformed JSON response."
-        }
+            "details": "The LLM provided a consistently malformed or incomplete JSON response."
+        }}
