@@ -1223,12 +1223,12 @@ class MasterOrchestrator:
             # 1. Consolidate all requirement sources into a single input document
             consolidated_requirements = self._consolidate_specification_inputs()
 
-            # 2. NEW: Calculate objective metrics before calling the LLM
-            effort_metrics = self._calculate_asdf_effort_metrics(consolidated_requirements)
-
-            # 3. Generate the raw spec content from the consolidated document
+            # 2. Generate the raw spec content from the consolidated document
             spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
             app_spec_draft_content = spec_agent.expand_brief_description(consolidated_requirements)
+
+            # 3. Calculate objective metrics ON THE FULL DRAFT, not the initial brief.
+            effort_metrics = self._calculate_asdf_effort_metrics(app_spec_draft_content)
 
             # 4. Add the standard document header to the draft
             full_app_spec_draft = self.prepend_standard_header(
@@ -1236,13 +1236,17 @@ class MasterOrchestrator:
                 document_type="Application Specification"
             )
 
-            # 5. Analyze the generated draft for complexity and risk, now with metrics
+            # 5. Read the dynamic context limit from the database before calling the agent.
+            limit_str = self.db_manager.get_config_value("CONTEXT_WINDOW_CHAR_LIMIT") or "1000000"
+            context_limit = int(limit_str)
+
+            # 6. Analyze the generated draft for complexity and risk, now with correct metrics
             scoping_agent = ProjectScopingAgent(self.llm_service)
-            analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content, effort_metrics) # Pass metrics here
+            analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content, effort_metrics, context_limit)
             if "error" in analysis_result:
                 raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
 
-            # 6. Store BOTH results for the next steps and set the new phase
+            # 7. Store BOTH results for the next steps and set the new phase
             self.task_awaiting_approval = {
                 "generated_spec_draft": full_app_spec_draft,
                 "complexity_analysis": analysis_result.get("complexity_analysis"),

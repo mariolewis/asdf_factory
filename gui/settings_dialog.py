@@ -122,8 +122,8 @@ class SettingsDialog(QDialog):
         self.factory_behavior_tab = QWidget()
         self.max_debug_spin_box = QSpinBox()
         self.max_debug_spin_box.setRange(1, 10)
-        self.context_limit_display = QLineEdit()
-        self.context_limit_display.setReadOnly(True)
+        self.context_limit_input = QLineEdit()
+        self.context_limit_input.setReadOnly(False)
         self.calibrate_button = QPushButton("Auto-Calibrate Now")
         self.logging_combo_box = QComboBox()
         self.logging_combo_box.addItems(["Standard", "Detailed", "Debug"])
@@ -201,7 +201,7 @@ class SettingsDialog(QDialog):
         factory_tab_layout = QFormLayout(self.factory_behavior_tab)
         factory_tab_layout.addRow("Max Debug Attempts:", self.max_debug_spin_box)
         context_limit_layout = QHBoxLayout()
-        context_limit_layout.addWidget(self.context_limit_display)
+        context_limit_layout.addWidget(self.context_limit_input)
         context_limit_layout.addWidget(self.calibrate_button)
         factory_tab_layout.addRow("Context Window Limit:", context_limit_layout)
         self.calibrate_button.setToolTip("Queries the selected LLM to determine and set its optimal context limit with a safety margin.")
@@ -360,7 +360,7 @@ class SettingsDialog(QDialog):
         self.custom_fast_model_input.setText(get_val("CUSTOM_FAST_MODEL"))
 
         self.max_debug_spin_box.setValue(int(get_val("MAX_DEBUG_ATTEMPTS", 2)))
-        self.context_limit_display.setText(get_val("CONTEXT_WINDOW_CHAR_LIMIT", "2500000"))
+        self.context_limit_input.setText(get_val("CONTEXT_WINDOW_CHAR_LIMIT", "2500000"))
         self.logging_combo_box.setCurrentText(get_val("LOGGING_LEVEL", "Standard"))
         self.project_path_input.setText(get_val("DEFAULT_PROJECT_PATH"))
         self.archive_path_input.setText(get_val("DEFAULT_ARCHIVE_PATH"))
@@ -426,7 +426,7 @@ class SettingsDialog(QDialog):
         QApplication.restoreOverrideCursor()
         success, message = result_tuple
         if success:
-            self.context_limit_display.setText(message)
+            self.context_limit_input.setText(message)
             if not self.is_calibrating_on_save:
                 QMessageBox.information(self, "Success", f"Auto-calibration complete. Context limit has been set to {message} characters.")
         else:
@@ -469,6 +469,7 @@ class SettingsDialog(QDialog):
                 "CUSTOM_REASONING_MODEL": self.custom_reasoning_model_input.text(),
                 "CUSTOM_FAST_MODEL": self.custom_fast_model_input.text(),
                 "MAX_DEBUG_ATTEMPTS": str(self.max_debug_spin_box.value()),
+                "CONTEXT_WINDOW_CHAR_LIMIT": self.context_limit_input.text(),
                 "LOGGING_LEVEL": self.logging_combo_box.currentText(),
                 "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
                 "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text(),
