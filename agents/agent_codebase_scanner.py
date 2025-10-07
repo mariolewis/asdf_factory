@@ -5,6 +5,7 @@ import time
 import hashlib
 import threading
 import uuid
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from llm_service import LLMService
@@ -34,12 +35,32 @@ class CodebaseScannerAgent:
         Scans a project directory, processes each file, and saves the summary,
         emitting structured progress updates.
         """
+        logging.info(f"--- CodebaseScannerAgent: scan_project starting ---")
+        logging.info(f"Received root_path_str for scanning: '{root_path_str}'")
+
         root_path = Path(root_path_str)
         source_extensions = ['.py', '.js', '.ts', '.html', '.css', '.scss', '.java', '.kt', '.cs', '.go', '.rs', '.php', '.rb', '.swift', '.ui']
 
-        all_files = [p for p in root_path.rglob('*') if p.is_file() and p.suffix.lower() in source_extensions]
+        all_files = []
+        try:
+            if not os.path.exists(root_path_str):
+                error_msg = f"The provided directory does not exist: {root_path_str}"
+                logging.error(error_msg)
+                progress_callback(("ERROR", error_msg))
+                return False
+
+            for dirpath, dirnames, filenames in os.walk(root_path_str):
+                for filename in filenames:
+                    # Construct a Path object for robust suffix checking and path manipulation
+                    file_path = Path(dirpath) / filename
+                    if file_path.suffix.lower() in source_extensions:
+                        all_files.append(file_path)
+        except Exception as e:
+            logging.error(f"An unexpected error occurred during os.walk: {e}", exc_info=True)
+            return False
+
         total_files = len(all_files)
-        logging.info(f"Found {total_files} source files to analyze.")
+        logging.info(f"Found {total_files} source files to analyze using os.walk.")
         progress_callback(("SCANNING", {"total_files": total_files}))
 
         for i, file_path in enumerate(all_files):
@@ -54,7 +75,6 @@ class CodebaseScannerAgent:
 
             relative_path_str = str(file_path.relative_to(root_path)).replace('\\', '/')
 
-            # Emit the correctly structured data
             progress_callback(("SUMMARIZING", {"total": total_files, "current": i + 1, "filename": relative_path_str}))
 
             existing_artifact = self.db_manager.get_artifact_by_path(project_id, relative_path_str)

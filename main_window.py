@@ -1237,8 +1237,8 @@ class ASDFMainWindow(QMainWindow):
         if repo_path:
             # Use the folder name as the project name
             project_name = Path(repo_path).name
-            # This prepares the project in memory
-            self.orchestrator.start_new_project(project_name)
+            # Call the new, correct orchestrator method for brownfield projects
+            self.orchestrator.start_brownfield_project(project_name, repo_path)
             self._reset_all_pages_for_new_project()
             # This configures the EnvSetupPage for the BROWNFIELD flow
             self.env_setup_page.prepare_for_brownfield(repo_path)

@@ -612,6 +612,23 @@ class MasterOrchestrator:
         self.set_phase("ENV_SETUP_TARGET_APP")
         return str(suggested_root)
 
+    def start_brownfield_project(self, project_name: str, project_path: str):
+        """
+        Prepares an existing (Brownfield) project in memory without modification.
+        """
+        if self.project_id and self.is_project_dirty:
+            logging.warning(f"An active, modified project '{self.project_name}' was found. Performing a safety export.")
+            self.stop_and_export_project()
+
+        # Directly use the provided path and name without sanitization or modification
+        self.project_id = f"proj_{uuid.uuid4().hex[:8]}"
+        self.project_name = project_name
+        self.project_root_path = project_path
+        self.is_project_dirty = True
+
+        logging.info(f"Initialized brownfield project '{self.project_name}' in memory from path '{project_path}'.")
+        self.set_phase("ENV_SETUP_TARGET_APP")
+
     def handle_brownfield_maintain_path(self):
         """
         Kicks off the asynchronous backlog generation process. It first deletes
