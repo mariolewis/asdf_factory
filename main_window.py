@@ -187,13 +187,17 @@ class ASDFMainWindow(QMainWindow):
 
     def on_directory_updated(self, parent_index, first, last):
         """
-        Slot to auto-expand a directory when a new item is added to it.
+        Slot to auto-expand a directory when new items are added, and also
+        to expand any newly created subdirectories.
         """
-        # The 'first' argument is the row number of the new item within its parent.
+        # Always expand the parent directory where items were just inserted.
+        if parent_index.isValid():
+            QTimer.singleShot(50, lambda: self.ui.projectFilesTreeView.expand(parent_index))
+
+        # Also, if the new item is itself a directory, expand it as well.
         new_item_index = self.file_system_model.index(first, 0, parent_index)
         if new_item_index.isValid() and self.file_system_model.isDir(new_item_index):
-            # Use a timer to ensure the view has processed the insertion before we expand
-            QTimer.singleShot(50, lambda: self.ui.projectFilesTreeView.expand(new_item_index))
+            QTimer.singleShot(100, lambda: self.ui.projectFilesTreeView.expand(new_item_index))
 
     def _create_menus_and_toolbar(self):
         """Programmatically creates dynamic menus and toolbar actions."""

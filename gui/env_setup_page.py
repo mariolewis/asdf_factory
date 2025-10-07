@@ -64,6 +64,7 @@ class EnvSetupPage(QWidget):
         self.ui.projectPathLineEdit.clear()
         self.ui.projectPathLineEdit.setReadOnly(False)
         self.ui.confirmPathButton.setVisible(True)
+        self.ui.confirmPathButton.setEnabled(True)
         self.ui.vcsChoiceWidget.setVisible(False)
         self.ui.vcsLine.setVisible(False)
 
@@ -125,6 +126,7 @@ class EnvSetupPage(QWidget):
             )
 
             # If it's not already a git repo, initialize it.
+            repo_message = ""
             if not (project_path / ".git").is_dir():
                 subprocess.run(['git', 'init'], cwd=project_path, check=True, capture_output=True, text=True)
                 gitignore_path = project_path / ".gitignore"
@@ -135,41 +137,87 @@ class EnvSetupPage(QWidget):
                 gitignore_path.write_text(gitignore_content, encoding='utf-8')
                 subprocess.run(['git', 'add', '.gitignore'], cwd=project_path, check=True)
                 subprocess.run(['git', 'commit', '-m', 'Initial commit: Add .gitignore'], cwd=project_path, check=True)
-                QMessageBox.information(self, "Success", "Successfully initialized new Git repository.")
+                repo_message = "Successfully initialized new Git repository."
             else:
-                QMessageBox.information(self, "Success", "Confirmed existing Git repository.")
+                repo_message = "Confirmed existing Git repository."
 
             self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "version_control_enabled", 1)
 
+            # --- CONDITIONAL LOGIC FOR GREENFIELD VS BROWNFIELD ---
             if self.is_brownfield:
-                self.orchestrator.set_phase("ANALYZING_CODEBASE")
-            else:
-                self.orchestrator.set_phase("SPEC_ELABORATION")
+                # Proactively create the docs folder to solve the tree-view bug
+                (project_path / "docs").mkdir(exist_ok=True)
 
-            self.setup_complete.emit()
+                # Show the confirmation dialog for analysis
+                reply = QMessageBox.question(self, "Confirm Analysis",
+                                             f"{repo_message}\n\nThe system will now proceed with a deep analysis of the codebase. This may take some time.\n\nDo you wish to proceed?",
+                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                             QMessageBox.StandardButton.Yes)
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.orchestrator.set_phase("ANALYZING_CODEBASE")
+                    self.setup_complete.emit()
+                else:
+                    # User cancelled. Reset the project state and UI.
+                    self.orchestrator.reset()
+                    self.prepare_for_new_project()
+                    self.setup_complete.emit()
+            else:  # Greenfield workflow
+                QMessageBox.information(self, "Success", repo_message)
+                self.orchestrator.set_phase("SPEC_ELABORATION")
+                self.setup_complete.emit()
 
         except Exception as e:
             logging.error(f"Failed during Git setup: {e}")
             QMessageBox.critical(self, "Error", f"An unexpected error occurred during Git setup:\n{e}")
+            # Also reset on error
+            self.orchestrator.reset()
+            self.prepare_for_new_project()
+            self.setup_complete.emit()
 
     def on_local_workspace_and_proceed_clicked(self):
         """Handles proceeding without Git and moves to the next phase."""
         project_path_str = self.ui.projectPathLineEdit.text().strip()
+        project_path = Path(project_path_str)
 
-        # Finalize the project record in the database
-        self.orchestrator.finalize_project_creation(
-            project_id=self.orchestrator.project_id,
-            project_name=self.orchestrator.project_name,
-            project_root=project_path_str
-        )
+        try:
+            # Finalize the project record in the database
+            self.orchestrator.finalize_project_creation(
+                project_id=self.orchestrator.project_id,
+                project_name=self.orchestrator.project_name,
+                project_root=project_path_str
+            )
 
-        self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "version_control_enabled", 0)
+            self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "version_control_enabled", 0)
 
-        QMessageBox.information(self, "Local Workspace", "Proceeding without Git. You can initialize a repository manually later if needed.")
+            # --- CONDITIONAL LOGIC FOR GREENFIELD VS BROWNFIELD ---
+            if self.is_brownfield:
+                # Proactively create the docs folder
+                (project_path / "docs").mkdir(exist_ok=True)
 
-        if self.is_brownfield:
-            self.orchestrator.set_phase("ANALYZING_CODEBASE")
-        else:
-            self.orchestrator.set_phase("SPEC_ELABORATION")
+                # Show the confirmation dialog for analysis
+                reply = QMessageBox.question(self, "Confirm Analysis",
+                                             "Local workspace confirmed.\n\nThe system will now proceed with a deep analysis of the codebase. This may take some time.\n\nDo you wish to proceed?",
+                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                                             QMessageBox.StandardButton.Yes)
 
-        self.setup_complete.emit()
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.orchestrator.set_phase("ANALYZING_CODEBASE")
+                    self.setup_complete.emit()
+                else:
+                    # User cancelled. Reset the project state and UI.
+                    self.orchestrator.reset()
+                    self.prepare_for_new_project()
+                    self.setup_complete.emit()
+            else:  # Greenfield workflow
+                QMessageBox.information(self, "Local Workspace", "Proceeding without Git. You can initialize a repository manually later if needed.")
+                self.orchestrator.set_phase("SPEC_ELABORATION")
+                self.setup_complete.emit()
+
+        except Exception as e:
+            logging.error(f"Failed during local workspace setup: {e}")
+            QMessageBox.critical(self, "Error", f"An unexpected error occurred during setup:\n{e}")
+            # Also reset on error
+            self.orchestrator.reset()
+            self.prepare_for_new_project()
+            self.setup_complete.emit()
