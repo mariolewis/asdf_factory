@@ -2,7 +2,7 @@
 
 import sys
 from pathlib import Path
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt
 import logging
 
@@ -84,7 +84,7 @@ if __name__ == "__main__":
             raise FileNotFoundError(f"Stylesheet not found at: {style_file}")
 
         with open(style_file, "r") as f:
-            window.setStyleSheet(f.read())
+            app.setStyleSheet(f.read())
             logging.info("Successfully loaded global stylesheet.")
 
     except Exception as e:

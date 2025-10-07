@@ -12,6 +12,7 @@ from gui.raise_request_dialog import RaiseRequestDialog
 from gui.cr_details_dialog import CRDetailsDialog
 from gui.worker import Worker
 from gui.utils import format_timestamp_for_display
+from master_orchestrator import FactoryPhase
 
 # Note: The EditItemDialog is now handled by the more capable RaiseRequestDialog in edit mode.
 
@@ -100,10 +101,19 @@ class CRManagementPage(QWidget):
         self.tech_preview_action.triggered.connect(self.on_generate_tech_preview_clicked)
         self.import_action.triggered.connect(self.import_from_tool.emit)
         self.sync_action.triggered.connect(self.on_sync_clicked)
+        self.ui.backButton.clicked.connect(self.on_back_clicked)
 
     def prepare_for_display(self):
-        # self.staged_sprint_items.clear()
+        """
+        Updates the backlog view and dynamically shows or hides the 'Back' button
+        based on the previous workflow phase.
+        """
         self.update_backlog_view()
+
+        # Show the back button only if we navigated here from the dashboard.
+        prev_phase = getattr(self.window(), 'previous_phase', FactoryPhase.IDLE)
+        is_from_dashboard = (prev_phase == FactoryPhase.AWAITING_BROWNFIELD_STRATEGY)
+        self.ui.backButton.setVisible(is_from_dashboard)
 
     def update_backlog_view(self):
         selection_model = self.ui.crTreeView.selectionModel()
@@ -156,10 +166,17 @@ class CRManagementPage(QWidget):
                 for cell_item in [num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item]:
                     cell_item.setBackground(amber_color)
 
+            # gui/cr_management_page.py
+
             # Set colors
-            if item_data['status'] in status_colors: status_item.setForeground(status_colors[item_data['status']])
-            if priority in priority_colors: priority_item.setForeground(priority_colors[priority])
-            if complexity in complexity_colors: complexity_item.setForeground(complexity_colors[complexity])
+            if item_data['status'] == 'EXISTING':
+                muted_color = QColor("#888888") # Muted Text color from Design System
+                for cell_item in [num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item]:
+                    cell_item.setForeground(muted_color)
+            else:
+                if item_data['status'] in status_colors: status_item.setForeground(status_colors[item_data['status']])
+                if priority in priority_colors: priority_item.setForeground(priority_colors[priority])
+                if complexity in complexity_colors: complexity_item.setForeground(complexity_colors[complexity])
 
             # Add Tooltips
             for cell_item in [num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item]:
@@ -197,6 +214,8 @@ class CRManagementPage(QWidget):
             self.orchestrator.manually_update_cr_status(cr_id, new_status)
             self.update_backlog_view() # Refresh the UI to show the change
 
+    # In gui/cr_management_page.py
+
     def show_context_menu(self, position):
         """Creates and shows a context menu on right-click."""
         index = self.ui.crTreeView.indexAt(position)
@@ -206,26 +225,28 @@ class CRManagementPage(QWidget):
             item, item_data = self._get_selected_item_and_data()
             if item_data:
                 item_type = item_data.get("request_type")
-
                 item_status = item_data.get("status")
                 cr_id = item_data.get("cr_id")
 
-                is_eligible_for_sprint = item_status in ["TO_DO", "IMPACT_ANALYZED"]
-                is_staged_for_sprint = cr_id in self.staged_sprint_items
+                is_actionable = item_status != 'EXISTING'
 
-                add_sprint_action = QAction("Add to Sprint Scope", self)
-                add_sprint_action.triggered.connect(self.on_add_to_sprint_scope)
-                add_sprint_action.setEnabled(is_eligible_for_sprint and not is_staged_for_sprint)
-                menu.addAction(add_sprint_action)
+                # --- Sprint Actions (only for actionable items) ---
+                if is_actionable:
+                    is_eligible_for_sprint = item_status in ["TO_DO", "IMPACT_ANALYZED"]
+                    is_staged_for_sprint = cr_id in self.staged_sprint_items
 
-                remove_sprint_action = QAction("Remove from Sprint Scope", self)
-                remove_sprint_action.triggered.connect(self.on_remove_from_sprint_scope)
-                remove_sprint_action.setEnabled(is_staged_for_sprint)
-                menu.addAction(remove_sprint_action)
+                    add_sprint_action = QAction("Add to Sprint Scope", self)
+                    add_sprint_action.triggered.connect(self.on_add_to_sprint_scope)
+                    add_sprint_action.setEnabled(is_eligible_for_sprint and not is_staged_for_sprint)
+                    menu.addAction(add_sprint_action)
 
-                menu.addSeparator()
+                    remove_sprint_action = QAction("Remove from Sprint Scope", self)
+                    remove_sprint_action.triggered.connect(self.on_remove_from_sprint_scope)
+                    remove_sprint_action.setEnabled(is_staged_for_sprint)
+                    menu.addAction(remove_sprint_action)
+                    menu.addSeparator()
 
-                # Contextual "Add" actions
+                # --- Add Child Actions (always enabled) ---
                 if item_type == "EPIC":
                     add_feature_action = QAction("Add Feature to this Epic...", self)
                     add_feature_action.triggered.connect(lambda: self.on_add_item_clicked("FEATURE"))
@@ -235,36 +256,31 @@ class CRManagementPage(QWidget):
                     add_story_action.triggered.connect(lambda: self.on_add_item_clicked("BACKLOG_ITEM"))
                     menu.addAction(add_story_action)
 
-                menu.addSeparator()
-
-                # Manual status change for Bugs or Blocked Items
-                if item_type == "BUG_REPORT" or item_status == "BLOCKED":
-                    status_menu = QMenu("Change Status", self)
-                    set_completed_action = QAction("Set as Completed", self)
-                    set_completed_action.triggered.connect(lambda: self.on_change_status_clicked("COMPLETED"))
-                    status_menu.addAction(set_completed_action)
-
-                    set_cancelled_action = QAction("Set as Cancelled", self)
-                    set_cancelled_action.triggered.connect(lambda: self.on_change_status_clicked("CANCELLED"))
-                    status_menu.addAction(set_cancelled_action)
-
-                    # Only enable for BLOCKED items (or any bug)
-                    if item_status != "BLOCKED" and item_type != "BUG_REPORT":
-                        status_menu.setEnabled(False)
-
-                    menu.addMenu(status_menu)
+                if item_type in ["EPIC", "FEATURE"]:
                     menu.addSeparator()
 
-                # Standard actions for any selected item
-                edit_action = QAction("Edit Item...", self)
-                edit_action.triggered.connect(self.on_edit_clicked)
-                menu.addAction(edit_action)
+                # --- Modification Actions (only for actionable items) ---
+                if is_actionable:
+                    if item_type == "BUG_REPORT" or item_status == "BLOCKED":
+                        status_menu = QMenu("Change Status", self)
+                        set_completed_action = QAction("Set as Completed", self)
+                        set_completed_action.triggered.connect(lambda: self.on_change_status_clicked("COMPLETED"))
+                        status_menu.addAction(set_completed_action)
 
-                delete_action = QAction("Delete Selected Item(s)", self)
-                delete_action.triggered.connect(self.on_delete_item)
-                menu.addAction(delete_action)
+                        set_cancelled_action = QAction("Set as Cancelled", self)
+                        set_cancelled_action.triggered.connect(lambda: self.on_change_status_clicked("CANCELLED"))
+                        status_menu.addAction(set_cancelled_action)
+                        menu.addMenu(status_menu)
+                        menu.addSeparator()
+
+                    edit_action = QAction("Edit Item...", self)
+                    edit_action.triggered.connect(self.on_edit_clicked)
+                    menu.addAction(edit_action)
+
+                    delete_action = QAction("Delete Selected Item(s)", self)
+                    delete_action.triggered.connect(self.on_delete_item)
+                    menu.addAction(delete_action)
         else:
-            # Action for when clicking on empty space
             add_epic_action = QAction("Add New Epic...", self)
             add_epic_action.triggered.connect(lambda: self.on_add_item_clicked("EPIC"))
             menu.addAction(add_epic_action)
@@ -522,63 +538,72 @@ class CRManagementPage(QWidget):
         self.request_ui_refresh.emit()
 
     def _on_selection_changed(self):
+        """
+        Updates the enabled/disabled state of all action buttons based on the
+        current selection in the tree view and the overall sprint status.
+        """
         has_items = self.model.rowCount() > 0
         self.ui.reorderButton.setEnabled(has_items)
 
-        # --- SPRINT PROTECTION LOGIC (CORRECTED) ---
+        # --- Sprint Action Button Logic ---
         is_sprint_active = self.orchestrator.is_sprint_active()
-
         if is_sprint_active:
             self.ui.primaryActionButton.setEnabled(False)
             self.ui.primaryActionButton.setToolTip("Cannot plan a new sprint while another is in progress.")
         else:
-            # Check if any items are staged to enable the button
             self.ui.primaryActionButton.setEnabled(bool(self.staged_sprint_items))
             self.ui.primaryActionButton.setToolTip("Plan a new sprint with the staged items.")
-        # --- END OF SPRINT PROTECTION LOGIC ---
 
+        # --- More Actions Menu Logic ---
         selection_model = self.ui.crTreeView.selectionModel()
         has_selection = selection_model.hasSelection()
 
-        # Control the "More Actions..." menu
-        self.ui.moreActionsButton.setEnabled(has_selection)
+        # The "More Actions" button itself is always enabled to allow access to "Import".
+        self.ui.moreActionsButton.setEnabled(True)
+        # The "Import" action is always enabled.
+        self.import_action.setEnabled(True)
+
+        # By default, disable all selection-dependent actions.
+        self.edit_action.setEnabled(False)
+        self.delete_action.setEnabled(False)
+        self.analyze_action.setEnabled(False)
+        self.tech_preview_action.setEnabled(False)
+        self.sync_action.setEnabled(False)
+        self.implement_action.setEnabled(False)
+
         if not has_selection:
-            for action in [self.edit_action, self.delete_action, self.analyze_action, self.tech_preview_action, self.sync_action]:
-                action.setEnabled(False)
-            return
+            return # No more logic needed if nothing is selected.
 
-        # Enable actions that work on multiple selections
-        self.delete_action.setEnabled(True)
-
-        # Logic for single-selection actions
-        if len(selection_model.selectedRows()) == 1:
-            item, data = self._get_selected_item_and_data()
-            if data:
-                item_status = data.get("status", "")
-                self.edit_action.setEnabled(True)
-                can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED", "BLOCKED"]
-                self.analyze_action.setEnabled(can_analyze)
-                self.tech_preview_action.setEnabled(False) # Obsolete
-            else: # Should not happen, but for safety
-                self.edit_action.setEnabled(False)
-                self.analyze_action.setEnabled(False)
-                self.tech_preview_action.setEnabled(False)
-        else:
-            # Disable single-selection actions if multiple items are selected
-            self.edit_action.setEnabled(False)
-            self.analyze_action.setEnabled(False)
-            self.tech_preview_action.setEnabled(False)
-
-        # Logic for sync action (works on multiple selections)
+        # Logic for actions that require at least ONE item to be selected
+        can_delete = False
         can_sync = False
         for index in selection_model.selectedRows():
             num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
             if num_item:
                 data = num_item.data(Qt.UserRole)
+                if data and data.get('status') != 'EXISTING':
+                    can_delete = True
                 if data and not data.get('external_id'):
                     can_sync = True
-                    break
+        self.delete_action.setEnabled(can_delete)
         self.sync_action.setEnabled(can_sync)
+
+        # Logic for actions that require exactly ONE item to be selected
+        if len(selection_model.selectedRows()) == 1:
+            item, data = self._get_selected_item_and_data()
+            if data and data.get('status') != 'EXISTING':
+                item_status = data.get("status", "")
+                self.edit_action.setEnabled(True)
+
+                can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED", "BLOCKED", "TO_DO"]
+                self.analyze_action.setEnabled(can_analyze)
+
+                # "Implement" is only available after analysis is complete.
+                can_implement = item_status in ["IMPACT_ANALYZED", "TECHNICAL_PREVIEW_COMPLETE"]
+                self.implement_action.setEnabled(can_implement)
+
+                # "Generate Technical Preview" is available once analysis is done.
+                self.tech_preview_action.setEnabled(item_status == "IMPACT_ANALYZED")
 
     def on_save_backlog_clicked(self):
         """Handles the user's request to save the backlog to an XLSX file."""
@@ -629,3 +654,8 @@ class CRManagementPage(QWidget):
             QMessageBox.information(self, "Success", f"Successfully saved backlog to:\n{message}")
         else:
             QMessageBox.critical(self, "Error", f"Failed to save backlog: {message}")
+
+    def on_back_clicked(self):
+        """Returns the UI to the brownfield project dashboard."""
+        self.orchestrator.set_phase("AWAITING_BROWNFIELD_STRATEGY")
+        self.request_ui_refresh.emit()

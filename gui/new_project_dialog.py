@@ -23,11 +23,17 @@ class NewProjectDialog(QDialog):
         """Connects the dialog's buttons to their handler slots."""
         # Connect the "Create from a New Specification" button to accept the dialog.
         self.ui.fromSpecButton.clicked.connect(self.accept)
+        self.ui.fromCodebaseButton.clicked.connect(self.on_codebase_clicked)
         # The QDialogButtonBox's "Cancel" button is auto-connected to reject()
         self.ui.buttonBox.rejected.connect(self.reject)
 
+    def on_codebase_clicked(self):
+        """A custom slot to set a result property before accepting."""
+        self.result = "codebase"
+        self.accept()
+
     def setup_initial_state(self):
         """Sets the initial state of the dialog's widgets."""
-        # The "Work with an Existing Codebase" button is disabled as it is a future feature.
-        self.ui.fromCodebaseButton.setEnabled(False) #
-        self.ui.fromCodebaseButton.setToolTip("This feature will be enabled in a future version.")
+        self.result = "spec" # Default result
+        self.ui.fromCodebaseButton.setEnabled(True) #
+        # self.ui.fromCodebaseButton.setToolTip("This feature will be enabled in a future version.")

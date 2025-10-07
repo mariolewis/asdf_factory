@@ -90,6 +90,56 @@ class PlanningAgent_AppTarget:
             error_response = [{"error": "Failed to generate a valid backlog.", "details": str(e)}]
             return json.dumps(error_response)
 
+    def generate_reference_backlog_from_specs(self, final_spec_text, tech_spec_text):
+        """
+        Parses specs to generate a two-level (Epic -> Feature) reference model
+        of an existing codebase for the backlog.
+        """
+        logging.info("PlanningAgent: Generating two-level reference backlog from specs...")
+
+        prompt = textwrap.dedent(f"""
+            You are an expert agile project manager. Your task is to analyze the following application and technical specifications of an EXISTING application and decompose them into a hierarchical reference model of Epics and Features.
+
+            **MANDATORY INSTRUCTIONS:**
+            1.  Read the specifications to understand the application's major functional areas.
+            2.  Identify high-level capabilities and define them as **Epics**.
+            3.  For each Epic, identify the specific functionalities and define them as **Features**.
+            4.  **DO NOT** generate User Stories or Backlog Items. The goal is to create a high-level map of what already exists.
+            5.  Provide a concise `title` and a one-sentence `description` for each Epic and Feature.
+            6.  Your entire response **MUST** be a single, raw JSON array of objects. Do not include any other text, notes, or markdown formatting.
+
+            **JSON Structure:**
+            ```json
+            [
+              {{
+                "title": "Epic Title",
+                "description": "A high-level description of the epic.",
+                "features": [
+                  {{
+                    "title": "Feature Title",
+                    "description": "A description of a specific feature within the epic."
+                  }}
+                ]
+              }}
+            ]
+            ```
+
+            **--- Application Specification ---**
+            {final_spec_text}
+
+            **--- Technical Specification ---**
+            {tech_spec_text}
+
+            **--- JSON Backlog Output ---**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text
+        except Exception as e:
+            logging.error(f"Failed to generate reference backlog: {e}")
+            return json.dumps([{"title": "Error", "description": f"Failed to generate backlog: {e}", "features": []}])
+
     def _summarize_text(self, text: str, document_type: str) -> str:
         """Helper to summarize long texts to fit context windows."""
         # This method is retained for future use as required by the PRD, but is not used by the direct prompt.

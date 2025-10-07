@@ -28,9 +28,11 @@ class Worker(QRunnable):
         self.args = args
         self.kwargs = kwargs
         self.signals = WorkerSignals()
+        self.is_cancelled = False
 
         # Add the progress callback to our kwargs to pass to the function
         self.kwargs['progress_callback'] = self.signals.progress.emit
+        self.kwargs['worker_instance'] = self
 
     def run(self):
         """
@@ -46,3 +48,7 @@ class Worker(QRunnable):
             self.signals.result.emit(result)
         finally:
             self.signals.finished.emit()
+
+    def cancel(self):
+        """Signals the worker to terminate."""
+        self.is_cancelled = True

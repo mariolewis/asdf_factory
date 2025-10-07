@@ -4,6 +4,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional, List
 import json
+import uuid
 from datetime import datetime, timezone
 
 @dataclass
@@ -236,6 +237,38 @@ class ASDFDBManager:
         columns, placeholders = ', '.join(artifact_data.keys()), ', '.join('?' * len(artifact_data))
         self._execute_query(f"INSERT OR REPLACE INTO Artifacts ({columns}) VALUES ({placeholders})", tuple(artifact_data.values()))
 
+    def add_brownfield_artifact(self, artifact_data: dict):
+        """
+        Dedicated method for adding an artifact from the brownfield scanning process.
+        Ensures all mandatory fields including status and timestamp are present.
+        """
+        # Define all columns the brownfield process is expected to provide
+        required_cols = [
+            'artifact_id', 'project_id', 'file_path', 'artifact_name',
+            'artifact_type', 'code_summary', 'file_hash', 'status',
+            'last_modified_timestamp'
+        ]
+
+        # Verify that the input data contains all the required columns
+        if not all(col in artifact_data for col in required_cols):
+            missing = [col for col in required_cols if col not in artifact_data]
+            raise ValueError(f"Missing required fields for brownfield artifact: {', '.join(missing)}")
+
+        placeholders = ', '.join(['?'] * len(required_cols))
+        cols_str = ', '.join(required_cols)
+
+        query = f"INSERT OR REPLACE INTO Artifacts ({cols_str}) VALUES ({placeholders})"
+
+        # Extract values in the correct, guaranteed order
+        values = [artifact_data[col] for col in required_cols]
+
+        try:
+            self._execute_query(query, tuple(values))
+            logging.info(f"Successfully added brownfield artifact: {artifact_data.get('artifact_id')}")
+        except sqlite3.Error as e:
+            logging.error(f"Database query failed for brownfield artifact: {e}\nQuery: {query}")
+            raise e
+
     def delete_all_artifacts_for_project(self, project_id: str):
         self._execute_query("DELETE FROM Artifacts WHERE project_id = ?", (project_id,))
 
@@ -345,6 +378,33 @@ class ASDFDBManager:
         )
         return cursor.lastrowid
 
+    def add_brownfield_change_request(self, cr_data: dict) -> int:
+        """
+        Adds a change request from a dictionary. This version is robust and
+        dynamically builds the query based on the provided data keys.
+        It correctly maps the logical 'cr_id' from the brownfield process
+        to the 'external_id' database column and returns the new integer cr_id.
+        """
+        # Map the logical ID from brownfield scan to the correct DB column.
+        if 'cr_id' in cr_data:
+            cr_data['external_id'] = cr_data.pop('cr_id')
+
+        if 'project_id' not in cr_data:
+            raise ValueError("cr_data for a brownfield item must contain 'project_id'.")
+
+        # Dynamically build the query from the keys in the provided dictionary.
+        columns = ', '.join(cr_data.keys())
+        placeholders = ', '.join('?' * len(cr_data))
+        query = f"INSERT INTO ChangeRequestRegister ({columns}) VALUES ({placeholders})"
+
+        try:
+            cursor = self._execute_query(query, tuple(cr_data.values()))
+            logging.info(f"Successfully added brownfield change request with external_id: {cr_data.get('external_id')}")
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            logging.error(f"Database query failed for brownfield CR: {e}")
+            raise e
+
     def add_bug_report(self, project_id: str, description: str, severity: str, complexity: str = None) -> int:
         timestamp = datetime.now(timezone.utc).isoformat()
         max_order_row = self._execute_query("SELECT MAX(display_order) FROM ChangeRequestRegister WHERE project_id = ?", (project_id,), fetch="one")
@@ -361,6 +421,23 @@ class ASDFDBManager:
 
     def delete_all_change_requests_for_project(self, project_id: str):
         self._execute_query("DELETE FROM ChangeRequestRegister WHERE project_id = ?", (project_id,))
+
+    def delete_change_requests_by_status(self, project_id: str, statuses: list[str]):
+        """
+        Deletes all ChangeRequestRegister records for a project that match a
+        given list of statuses.
+        """
+        if not statuses:
+            return
+        placeholders = ', '.join('?' for _ in statuses)
+        query = f"DELETE FROM ChangeRequestRegister WHERE project_id = ? AND status IN ({placeholders})"
+        params = (project_id,) + tuple(statuses)
+        try:
+            self._execute_query(query, params)
+            logging.info(f"Deleted CRs with statuses {statuses} for project {project_id}.")
+        except sqlite3.Error as e:
+            logging.error(f"Failed to delete CRs by status: {e}")
+            raise
 
     def bulk_insert_change_requests(self, cr_data: list[dict]):
         if not cr_data: return

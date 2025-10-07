@@ -10,6 +10,8 @@ from pathlib import Path
 import textwrap
 import git
 import hashlib
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QMessageBox, QInputDialog, QLineEdit
 
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_integration_pmt import IntegrationAgentPMT
@@ -56,6 +58,9 @@ class EnvironmentFailureException(Exception):
 class FactoryPhase(Enum):
     """Enumeration for the main factory F-Phases."""
     IDLE = auto()
+    ANALYZING_CODEBASE = auto()
+    AWAITING_BROWNFIELD_STRATEGY = auto()
+    GENERATING_BACKLOG = auto()
     PROJECT_INTAKE_ASSESSMENT = auto()
     BACKLOG_VIEW = auto()
     SPRINT_PLANNING = auto()
@@ -216,6 +221,9 @@ class MasterOrchestrator:
 
     PHASE_DISPLAY_NAMES = {
         FactoryPhase.IDLE: "Idle",
+        FactoryPhase.ANALYZING_CODEBASE: "Analyzing Codebase",
+        FactoryPhase.AWAITING_BROWNFIELD_STRATEGY: "Awaiting Project Strategy",
+        FactoryPhase.GENERATING_BACKLOG: "Generating Project Backlog...",
         FactoryPhase.BACKLOG_VIEW: "Backlog Overview",
         FactoryPhase.SPRINT_PLANNING: "Sprint Planning",
         FactoryPhase.AWAITING_SPRINT_VALIDATION_CHECK: "Validating Sprint Scope",
@@ -603,6 +611,116 @@ class MasterOrchestrator:
         logging.info(f"Initialized new project '{self.project_name}' in memory. Awaiting path confirmation from UI.")
         self.set_phase("ENV_SETUP_TARGET_APP")
         return str(suggested_root)
+
+    def handle_brownfield_maintain_path(self):
+        """
+        Kicks off the asynchronous backlog generation process. It first deletes
+        any existing reference backlog items to prevent duplication before setting
+        the phase to start the generation.
+        """
+        logging.info("PM chose 'Maintain & Enhance' path. Deleting existing reference backlog...")
+        try:
+            self.db_manager.delete_change_requests_by_status(self.project_id, ["EXISTING"])
+            logging.info("Transitioning to backlog generation.")
+            self.set_phase("GENERATING_BACKLOG")
+        except Exception as e:
+            logging.error(f"Failed to handle 'Maintain & Enhance' path: {e}", exc_info=True)
+            QMessageBox.critical(None, "Error", f"An error occurred while preparing to generate the backlog:\n{e}")
+            # Fallback to the dashboard on error
+            self.set_phase("AWAITING_BROWNFIELD_STRATEGY")
+
+    def run_backlog_generation_task(self, progress_callback, worker_instance):
+        """
+        This is the long-running task that generates the reference backlog.
+        It constructs dictionaries to pass to the database manager and correctly
+        links parent-child relationships using their integer primary keys.
+        """
+        try:
+            # 1. Get the necessary specs from the database
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            final_spec_text = project_details['final_spec_text']
+            tech_spec_text = project_details['tech_spec_text']
+
+            if not final_spec_text:
+                logging.warning("Cannot generate backlog; final spec text is missing.")
+                self.set_phase("BACKLOG_VIEW")
+                return
+
+            # 2. Call the Planning Agent
+            from agents.agent_planning_app_target import PlanningAgent_AppTarget
+            planner_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
+            backlog_json_str = planner_agent.generate_reference_backlog_from_specs(final_spec_text, tech_spec_text)
+            backlog_structure = json.loads(backlog_json_str)
+
+            # 3. Populate the database
+            timestamp = datetime.now(timezone.utc).isoformat()
+            epic_counter = 1
+            for epic in backlog_structure:
+                # Construct the dictionary for the epic
+                epic_data = {
+                    "cr_id": f"E{epic_counter}", # This will be mapped to external_id
+                    "project_id": self.project_id,
+                    "title": epic.get('title'),
+                    "request_type": 'EPIC',
+                    "status": 'EXISTING',
+                    "description": epic.get('description'),
+                    "creation_timestamp": timestamp,
+                    "last_modified_timestamp": timestamp,
+                    "display_order": epic_counter
+                }
+                # Insert the epic and capture its new integer primary key
+                new_epic_pk = self.db_manager.add_brownfield_change_request(epic_data)
+
+                feature_counter = 1
+                for feature in epic.get('features', []):
+                    # Construct the dictionary for the feature
+                    feature_data = {
+                        "cr_id": f"E{epic_counter}.F{feature_counter}", # Mapped to external_id
+                        "project_id": self.project_id,
+                        "title": feature.get('title'),
+                        "request_type": 'FEATURE',
+                        "status": 'EXISTING',
+                        "description": feature.get('description'),
+                        "parent_cr_id": new_epic_pk, # Use the integer PK of the parent
+                        "creation_timestamp": timestamp,
+                        "last_modified_timestamp": timestamp,
+                        "display_order": feature_counter
+                    }
+                    self.db_manager.add_brownfield_change_request(feature_data)
+                    feature_counter += 1
+                epic_counter += 1
+
+            self.db_manager.update_project_field(self.project_id, "is_backlog_generated", 1)
+            logging.info("Reference backlog generation complete.")
+
+        except Exception as e:
+            logging.error(f"Failed to generate reference backlog: {e}", exc_info=True)
+            QTimer.singleShot(0, lambda: QMessageBox.critical(None, "Error", f"An error occurred while generating the backlog:\n{e}"))
+
+        finally:
+            # 4. Transition to the backlog view regardless of success
+            self.set_phase("BACKLOG_VIEW")
+
+    def cancel_and_cleanup_analysis(self):
+        """Cancels an in-progress analysis and deletes all created artifacts."""
+        if not self.project_id:
+            logging.warning("Attempted to cancel analysis, but no project is active.")
+            return
+
+        logging.info(f"Cancelling analysis for project {self.project_id} and cleaning up artifacts.")
+        try:
+            self.db_manager.delete_all_artifacts_for_project(self.project_id)
+            # We don't delete the project itself, just the artifacts from the partial scan.
+        except Exception as e:
+            logging.error(f"An error occurred during artifact cleanup: {e}")
+
+    def handle_brownfield_quickfix_path(self):
+        """
+        Handles the PM's choice to navigate to the backlog from the dashboard
+        to add new items like quick fixes or features.
+        """
+        logging.info("PM chose 'Quick Fix / Go to Backlog' path. Transitioning to BACKLOG_VIEW.")
+        self.set_phase("BACKLOG_VIEW")
 
     def finalize_project_creation(self, project_id: str, project_name: str, project_root: str):
         """
@@ -2044,12 +2162,14 @@ class MasterOrchestrator:
         self.is_project_dirty = True
         self._save_current_state()
 
-    def handle_proceed_action(self, progress_callback=None):
+    def handle_proceed_action(self, **kwargs):
         """
-        Handles the logic for the Genesis Pipeline, now with a separate 'fix mode'
-        track and correct debug counter reset logic.
+        Handles the logic for the Genesis Pipeline. Its signature is now robust
+        to accept any keyword arguments from the Worker class.
         """
+        progress_callback = kwargs.get('progress_callback')
         self.is_task_processing = True
+
         # --- FIX MODE LOGIC ---
         if self.is_in_fix_mode:
             logging.info("--- In Fix Mode: Executing from fix plan. ---")
@@ -2059,7 +2179,7 @@ class MasterOrchestrator:
                 self.fix_plan = None
                 self.fix_plan_cursor = 0
                 # Re-enter the loop to re-attempt the original task that prompted the fix.
-                return self.handle_proceed_action(progress_callback=progress_callback)
+                return self.handle_proceed_action(**kwargs)
             else:
                 task = self.fix_plan[self.fix_plan_cursor]
                 component_name = task.get('component_name', 'Unnamed Fix Task')
@@ -2079,13 +2199,11 @@ class MasterOrchestrator:
                     logging.warning("Halting fix plan due to an unrecoverable environment failure.")
                     return "Environment failure during fix. Escalated to PM."
                 except Exception as e:
-                    # This block is updated
                     if progress_callback:
                         progress_callback(("ERROR", f"Fix task failed for {component_name}. Initiating debug protocol..."))
                     logging.error(f"A task within the fix plan failed for {component_name}. Error: {e}")
                     self.escalate_for_manual_debug(str(e))
                     return f"Error during fix execution: {e}"
-        # --- END OF FIX MODE LOGIC ---
 
         # --- REGULAR PLAN LOGIC ---
         if self.current_phase not in [FactoryPhase.GENESIS, FactoryPhase.SPRINT_IN_PROGRESS]:
@@ -2128,7 +2246,6 @@ class MasterOrchestrator:
             return "Step complete."
 
         except Exception as e:
-            # This block is updated
             if progress_callback:
                 progress_callback(("ERROR", f"Task failed for {component_name}. Initiating debug protocol..."))
             logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}", exc_info=True)
@@ -4005,32 +4122,27 @@ class MasterOrchestrator:
             self.set_phase("BACKLOG_VIEW")
             raise # Re-raise to be caught by the worker's error handler
 
-    def initiate_sprint_planning(self, selected_cr_ids: list, **kwargs):
+    def initiate_sprint_planning(self, selected_items_or_ids: list, **kwargs):
         """
-        Prepares the context for the sprint workflow, starting with the
-        pre-execution validation checks.
+        Prepares the context for the sprint workflow. It can accept a list of
+        cr_ids (standard workflow) or a list of item dictionaries (for Quick Fix).
         """
-        logging.info(f"Initiating sprint planning for {len(selected_cr_ids)} items.")
+        logging.info(f"Initiating sprint planning for {len(selected_items_or_ids)} items.")
         try:
-            # Note: Stale analysis logic for Git projects will be integrated here
-            # by the new validation task that this method now triggers.
-            full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
-            # Create a flat map for easy lookup of the enriched data
-            flat_backlog = {}
-            def flatten_hierarchy(items):
-                for item in items:
-                    flat_backlog[item['cr_id']] = item
-                    if "features" in item:
-                        flatten_hierarchy(item["features"])
-                    if "user_stories" in item:
-                        flatten_hierarchy(item["user_stories"])
-            flatten_hierarchy(full_backlog_with_ids)
-            # Get the full data for the selected items
-            selected_items = [flat_backlog[cr_id] for cr_id in selected_cr_ids if cr_id in flat_backlog]
+            selected_items = []
+            if selected_items_or_ids and isinstance(selected_items_or_ids[0], dict):
+                # Path for Quick Fix: a list of item dictionaries is passed directly.
+                selected_items = selected_items_or_ids
+            else:
+                # Existing path: a list of cr_ids is passed, requiring lookup.
+                full_backlog_with_ids = self._get_backlog_with_hierarchical_numbers()
+                flat_backlog = {item['cr_id']: item for item in self._flatten_hierarchy(full_backlog_with_ids)}
+                selected_items = [flat_backlog[cr_id] for cr_id in selected_items_or_ids if cr_id in flat_backlog]
+
             self.task_awaiting_approval = {
                 "selected_sprint_items": selected_items
             }
-            # Instead of going to SPRINT_PLANNING, we start the validation check first.
+            # This correctly transitions to the asynchronous validation phase.
             self.set_phase("AWAITING_SPRINT_VALIDATION_CHECK")
         except Exception as e:
             logging.error(f"Failed during sprint initiation: {e}", exc_info=True)

@@ -13,6 +13,7 @@ from master_orchestrator import MasterOrchestrator
 class EnvSetupPage(QWidget):
     """
     The logic handler for the Environment Setup page (env_setup_page.ui).
+    Now handles both greenfield and brownfield project setup.
     """
     setup_complete = Signal()
 
@@ -21,22 +22,48 @@ class EnvSetupPage(QWidget):
         self.orchestrator = orchestrator
         self.ui = Ui_EnvSetupPage()
         self.ui.setupUi(self)
-
-        # Initially hide the version control choice
-        self.ui.vcsChoiceWidget.setVisible(False)
-        self.ui.vcsLine.setVisible(False)
+        self.is_brownfield = False
 
         self.connect_signals()
+        self.prepare_for_new_project() # Set initial state
 
-    def set_initial_path(self, path: str):
-        """Receives the suggested path from the main window."""
+    def prepare_for_greenfield(self, path: str):
+        """Prepares the UI for a new (greenfield) project."""
+        self.is_brownfield = False
         self.ui.projectPathLineEdit.setText(path)
+        self.ui.projectPathLineEdit.setReadOnly(False)
+        self.ui.confirmPathButton.setVisible(True)
+        self.ui.vcsChoiceWidget.setVisible(False)
+        self.ui.vcsLine.setVisible(False)
+        self.ui.headerLabel.setText("New Project Setup")
+        self.ui.instructionLabel.setText("Define the root folder for the new target application.")
+
+    def prepare_for_brownfield(self, path: str):
+        """Prepares the UI for an existing (brownfield) project."""
+        self.is_brownfield = True
+        project_path = Path(path)
+        self.ui.projectPathLineEdit.setText(str(project_path))
+        self.ui.projectPathLineEdit.setReadOnly(True)
+        self.ui.confirmPathButton.setVisible(False)
+        self.ui.vcsChoiceWidget.setVisible(True)
+        self.ui.vcsLine.setVisible(True)
+        self.ui.headerLabel.setText("Onboard Existing Project")
+        self.ui.instructionLabel.setText(f"The following existing project folder will be onboarded: {path}")
+
+        # Update VCS button text based on whether a .git folder exists
+        if (project_path / ".git").is_dir():
+            self.ui.initGitButton.setText("Use Existing Git Repository && Proceed")
+        else:
+            self.ui.initGitButton.setText("Initialize New Git Repository && Proceed")
+
+        self.ui.localWorkspaceButton.setText("Use as Local Workspace && Proceed")
 
     def prepare_for_new_project(self):
         """Resets the page to its initial UI state."""
-        logging.info("Resetting EnvSetupPage for a new project.")
-        self.ui.projectPathLineEdit.setEnabled(True)
-        self.ui.confirmPathButton.setEnabled(True)
+        self.is_brownfield = False
+        self.ui.projectPathLineEdit.clear()
+        self.ui.projectPathLineEdit.setReadOnly(False)
+        self.ui.confirmPathButton.setVisible(True)
         self.ui.vcsChoiceWidget.setVisible(False)
         self.ui.vcsLine.setVisible(False)
 
@@ -59,7 +86,7 @@ class EnvSetupPage(QWidget):
         return False
 
     def on_confirm_path_clicked(self):
-        """Creates directories and saves the confirmed path to the database."""
+        """Creates directories for a NEW project and shows VCS choice."""
         path_input = self.ui.projectPathLineEdit.text().strip()
         if not path_input:
             QMessageBox.warning(self, "Input Required", "Please enter a path for the project folder.")
@@ -69,24 +96,11 @@ class EnvSetupPage(QWidget):
             project_path = Path(path_input).resolve()
 
             if self._check_for_brownfield_project(str(project_path)):
-                QMessageBox.critical(self, "Project Exists", "The selected folder appears to contain files or an existing project. Please choose a new or empty folder.")
+                QMessageBox.critical(self, "Project Exists", "The selected folder appears to contain files or an existing project. Please choose a new or empty folder for a greenfield project.")
                 return
 
-            # Create the project directory structure now.
-            docs_dir = project_path / "docs"
-            uploads_dir = docs_dir / "uploads"
             project_path.mkdir(parents=True, exist_ok=True)
-            docs_dir.mkdir(exist_ok=True)
-            uploads_dir.mkdir(exist_ok=True)
-
-            # Finalize the project creation in the database for the first time.
-            self.orchestrator.finalize_project_creation(
-                project_id=self.orchestrator.project_id,
-                project_name=self.orchestrator.project_name,
-                project_root=str(project_path)
-            )
-
-            QMessageBox.information(self, "Path Confirmed", f"Project folder created and set to:\n{project_path}")
+            (project_path / "docs" / "uploads").mkdir(parents=True, exist_ok=True)
 
             self.ui.projectPathLineEdit.setEnabled(False)
             self.ui.confirmPathButton.setEnabled(False)
@@ -98,41 +112,64 @@ class EnvSetupPage(QWidget):
             QMessageBox.critical(self, "Error", f"An error occurred while confirming the path:\n{e}")
 
     def on_init_git_and_proceed_clicked(self):
-        """Handles the logic for the 'Initialize Git Repository' button."""
-        project_path = self.orchestrator.project_root_path
-        if not project_path:
-            QMessageBox.critical(self, "Error", "Project path is not set. Please confirm the project folder first.")
-            return
+        """Handles Git initialization/confirmation and proceeds to the next phase."""
+        project_path_str = self.ui.projectPathLineEdit.text().strip()
+        project_path = Path(project_path_str)
 
         try:
-            subprocess.run(['git', 'init'], cwd=project_path, check=True, capture_output=True, text=True)
-            gitignore_path = Path(project_path) / ".gitignore"
-            gitignore_content = (
-                "# Environments\n.env\n.venv\nvenv/\nenv/\n\n"
-                "# IDE / Editor specific\n.vscode/\n.idea/\n"
+            # Finalize the project record in the database
+            self.orchestrator.finalize_project_creation(
+                project_id=self.orchestrator.project_id,
+                project_name=self.orchestrator.project_name,
+                project_root=project_path_str
             )
-            gitignore_path.write_text(gitignore_content, encoding='utf-8')
-            subprocess.run(['git', 'add', '.gitignore'], cwd=project_path, check=True)
-            subprocess.run(['git', 'commit', '-m', 'Initial commit: Add .gitignore'], cwd=project_path, check=True)
 
-            QMessageBox.information(self, "Success", "Success: Successfully initialized Git repository.")
+            # If it's not already a git repo, initialize it.
+            if not (project_path / ".git").is_dir():
+                subprocess.run(['git', 'init'], cwd=project_path, check=True, capture_output=True, text=True)
+                gitignore_path = project_path / ".gitignore"
+                gitignore_content = (
+                    "# Environments\n.env\n.venv\nvenv/\nenv/\n\n"
+                    "# IDE / Editor specific\n.vscode/\n.idea/\n"
+                )
+                gitignore_path.write_text(gitignore_content, encoding='utf-8')
+                subprocess.run(['git', 'add', '.gitignore'], cwd=project_path, check=True)
+                subprocess.run(['git', 'commit', '-m', 'Initial commit: Add .gitignore'], cwd=project_path, check=True)
+                QMessageBox.information(self, "Success", "Successfully initialized new Git repository.")
+            else:
+                QMessageBox.information(self, "Success", "Confirmed existing Git repository.")
 
-            # This is a version-controlled project
             self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "version_control_enabled", 1)
 
-            self.orchestrator.set_phase("SPEC_ELABORATION")
+            if self.is_brownfield:
+                self.orchestrator.set_phase("ANALYZING_CODEBASE")
+            else:
+                self.orchestrator.set_phase("SPEC_ELABORATION")
+
             self.setup_complete.emit()
 
         except Exception as e:
-            logging.error(f"Failed to initialize Git repository: {e}")
-            QMessageBox.critical(self, "Error", f"An unexpected error occurred:\n{e}")
+            logging.error(f"Failed during Git setup: {e}")
+            QMessageBox.critical(self, "Error", f"An unexpected error occurred during Git setup:\n{e}")
 
     def on_local_workspace_and_proceed_clicked(self):
-        """Handles the logic for the 'Local Workspace' button."""
-        QMessageBox.information(self, "Local Workspace", "Proceeding without Git. You can initialize a repository manually later if needed.")
+        """Handles proceeding without Git and moves to the next phase."""
+        project_path_str = self.ui.projectPathLineEdit.text().strip()
 
-        # This is NOT a version-controlled project
+        # Finalize the project record in the database
+        self.orchestrator.finalize_project_creation(
+            project_id=self.orchestrator.project_id,
+            project_name=self.orchestrator.project_name,
+            project_root=project_path_str
+        )
+
         self.orchestrator.db_manager.update_project_field(self.orchestrator.project_id, "version_control_enabled", 0)
 
-        self.orchestrator.set_phase("SPEC_ELABORATION")
+        QMessageBox.information(self, "Local Workspace", "Proceeding without Git. You can initialize a repository manually later if needed.")
+
+        if self.is_brownfield:
+            self.orchestrator.set_phase("ANALYZING_CODEBASE")
+        else:
+            self.orchestrator.set_phase("SPEC_ELABORATION")
+
         self.setup_complete.emit()

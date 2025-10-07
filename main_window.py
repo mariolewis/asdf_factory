@@ -53,6 +53,8 @@ from gui.worker import Worker
 from gui.import_issue_dialog import ImportIssueDialog
 from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.delivery_assessment_page import DeliveryAssessmentPage
+from gui.codebase_analysis_page import CodebaseAnalysisPage
+from gui.project_dashboard_page import ProjectDashboardPage
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -153,6 +155,10 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.sprint_review_page)
         self.delivery_assessment_page = DeliveryAssessmentPage(self)
         self.ui.mainContentArea.addWidget(self.delivery_assessment_page)
+        self.codebase_analysis_page = CodebaseAnalysisPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.codebase_analysis_page)
+        self.project_dashboard_page = ProjectDashboardPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.project_dashboard_page)
         self.intake_assessment_page = IntakeAssessmentPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.intake_assessment_page)
 
@@ -328,6 +334,10 @@ class ASDFMainWindow(QMainWindow):
             if hasattr(page, 'ux_spec_complete'): page.ux_spec_complete.connect(self.update_ui_after_state_change)
 
         self.dockerization_page.dockerization_complete.connect(self.update_ui_after_state_change)
+
+        self.codebase_analysis_page.analysis_complete.connect(self.update_ui_after_state_change)
+        self.project_dashboard_page.maintain_selected.connect(self.on_brownfield_maintain_selected)
+        self.project_dashboard_page.quickfix_selected.connect(self.on_brownfield_quickfix_selected)
 
         self.intake_assessment_page.full_lifecycle_selected.connect(self.on_intake_full_lifecycle_selected)
         self.intake_assessment_page.direct_to_development_selected.connect(self.on_intake_direct_to_dev_selected)
@@ -519,7 +529,7 @@ class ASDFMainWindow(QMainWindow):
             self.ui.actionManage_CRs_Bugs.setToolTip("The project backlog must be generated before it can be managed.")
 
         if project_root and Path(project_root).exists():
-            if self.current_tree_root_path != project_root:
+            if self.current_tree_root_path != project_root or self.orchestrator.current_phase == FactoryPhase.AWAITING_BROWNFIELD_STRATEGY:
                 self.current_tree_root_path = project_root
                 root_path_obj = Path(project_root)
                 self.file_system_model.setRootPath("")
@@ -820,7 +830,25 @@ class ASDFMainWindow(QMainWindow):
             except TypeError:
                 pass # Still catch TypeError for other potential issues
 
-        if current_phase_name in page_display_map:
+        if current_phase_name == "ANALYZING_CODEBASE":
+            self.show_persistent_status("Analyzing codebase...")
+            page_to_show = self.codebase_analysis_page
+            if hasattr(page_to_show, 'prepare_for_display'):
+                page_to_show.prepare_for_display()
+            self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
+        elif current_phase_name == "AWAITING_BROWNFIELD_STRATEGY":
+            page_to_show = self.project_dashboard_page
+            if hasattr(page_to_show, 'prepare_for_display'):
+                page_to_show.prepare_for_display()
+            self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
+        elif current_phase_name == "GENERATING_BACKLOG":
+            self.show_persistent_status("Generating project backlog...")
+            self.ui.mainContentArea.setCurrentWidget(self.project_dashboard_page) # Stay on the dashboard
+            QTimer.singleShot(100, self._task_generate_backlog) # Start task async
+
+        elif current_phase_name in page_display_map:
             page_to_show = page_display_map[current_phase_name]
             if hasattr(page_to_show, 'prepare_for_display'):
                 page_to_show.prepare_for_display()
@@ -1185,24 +1213,56 @@ class ASDFMainWindow(QMainWindow):
             self.persistent_status_widget = None
 
     def on_new_project(self):
-        # First, show the new workflow selection dialog
+        """Handles the 'New Project' dialog and routes to the correct workflow."""
         dialog = NewProjectDialog(self)
         if dialog.exec():
-            # If the user chose "Create from a New Specification" (dialog was accepted),
-            # then proceed with the original workflow of asking for a project name.
-            project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
-            if ok and project_name:
-                # The orchestrator now returns the suggested path
-                suggested_path = self.orchestrator.start_new_project(project_name)
+            # Check the custom result property we set in the dialog
+            if getattr(dialog, 'result', 'spec') == 'codebase':
+                self.on_start_brownfield_project()
+            else: # Default is to create from spec (greenfield)
+                project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
+                if ok and project_name:
+                    suggested_path = self.orchestrator.start_new_project(project_name)
+                    self._reset_all_pages_for_new_project()
+                    self.env_setup_page.prepare_for_greenfield(suggested_path)
+                    self.update_ui_after_state_change()
 
-                # This is the new line that fixes the state bug
-                self._reset_all_pages_for_new_project()
+    def on_start_brownfield_project(self):
+        """Gets a directory from the user and prepares the EnvSetupPage for the brownfield workflow."""
+        repo_path = QFileDialog.getExistingDirectory(self, "Select Existing Project Folder")
+        if repo_path:
+            # Use the folder name as the project name
+            project_name = Path(repo_path).name
+            # This prepares the project in memory
+            self.orchestrator.start_new_project(project_name)
+            self._reset_all_pages_for_new_project()
+            # This configures the EnvSetupPage for the BROWNFIELD flow
+            self.env_setup_page.prepare_for_brownfield(repo_path)
+            self.update_ui_after_state_change()
 
-                # We now explicitly tell the setup page what path to display
-                self.env_setup_page.set_initial_path(suggested_path)
+    def on_brownfield_maintain_selected(self):
+        """Handles the PM's choice to enter the Maintain & Enhance path."""
+        self.previous_phase = self.orchestrator.current_phase
+        self.orchestrator.handle_brownfield_maintain_path()
+        self.update_ui_after_state_change()
 
-                # This call will now show the page with the pre-populated path
-                self.update_ui_after_state_change()
+    def on_brownfield_quickfix_selected(self):
+        """Handles the PM's choice to enter the Quick Fix path."""
+        self.orchestrator.handle_brownfield_quickfix_path()
+        # The orchestrator will trigger a dialog, then set the phase,
+        # so the UI update is handled after the user provides input.
+        self.update_ui_after_state_change()
+
+    # In gui/main_window.py, inside the ASDFMainWindow class
+
+    def _task_generate_backlog(self):
+        """Wrapper to run the orchestrator's backlog generation in a background thread."""
+        worker = Worker(self.orchestrator.run_backlog_generation_task)
+        # When the worker is done, it will have set the phase to BACKLOG_VIEW,
+        # so we just need to trigger a UI refresh.
+        worker.signals.finished.connect(self.update_ui_after_state_change)
+        worker.signals.finished.connect(self.clear_persistent_status)
+        self.threadpool.start(worker)
 
     def on_open_project(self):
         """Handles the new 'Open Project' action to show recent/active projects."""

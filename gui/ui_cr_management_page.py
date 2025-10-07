@@ -54,7 +54,12 @@ class Ui_CRManagementPage(object):
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.horizontalSpacer = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.backButton = QPushButton(CRManagementPage)
+        self.backButton.setObjectName(u"backButton")
+
+        self.horizontalLayout.addWidget(self.backButton)
+
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer)
 
@@ -139,8 +144,9 @@ class Ui_CRManagementPage(object):
         CRManagementPage.setWindowTitle(QCoreApplication.translate("CRManagementPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("CRManagementPage", u"Project Backlog", None))
         self.instructionLabel.setText(QCoreApplication.translate("CRManagementPage", u"Manage the project hierarchy. Double-click to edit an item. Right-click an item to add children or delete.", None))
+        self.backButton.setText(QCoreApplication.translate("CRManagementPage", u"< Back", None))
         self.addNewItemButton.setText(QCoreApplication.translate("CRManagementPage", u"Add New Item...", None))
-        self.saveBacklogButton.setText(QCoreApplication.translate("CRManagementPage", u"Save Backlog...", None))
+        self.saveBacklogButton.setText(QCoreApplication.translate("CRManagementPage", u"Export Backlog to .xlsx...", None))
         self.reorderButton.setText(QCoreApplication.translate("CRManagementPage", u"Reorder Backlog", None))
         self.primaryActionButton.setText(QCoreApplication.translate("CRManagementPage", u"Plan Sprint", None))
         self.moreActionsButton.setText(QCoreApplication.translate("CRManagementPage", u"More Actions...", None))
