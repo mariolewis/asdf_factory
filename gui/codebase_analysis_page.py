@@ -102,9 +102,9 @@ class CodebaseAnalysisPage(QWidget):
                 filename = data.get("filename", "")
                 progress_percent = int((current / total) * 100) if total > 0 else 0
                 self.ui.progressBar.setValue(progress_percent)
-                status_text = f"Summarizing file {current} of {total}..."
+                status_text = f"Processing file {current} of {total}..."
                 self.ui.statusLabel.setText(status_text)
-                self.ui.logOutputTextEdit.append(f"({current}/{total}) Summarizing {filename}...")
+                self.ui.logOutputTextEdit.append(f"({current}/{total}) Processing {filename}...")
                 if main_window: main_window.statusBar().showMessage(status_text)
 
             elif status_type == "SYNTHESIZING":
