@@ -2046,8 +2046,8 @@ class MasterOrchestrator:
 
     def handle_backlog_generation(self, **kwargs):
         """
-        Generates the initial project backlog from the specifications and sets
-        the project's backlog generation flag to True on success.
+        Generates the initial project backlog, now conditionally providing UX and DB
+        specs to the planning agent for richer context.
         """
         if not self.project_id:
             logging.error("Cannot generate backlog; no active project.")
@@ -2056,20 +2056,33 @@ class MasterOrchestrator:
         try:
             logging.info("Starting initial backlog generation...")
             db = self.db_manager
-            project_details = db.get_project_by_id(self.project_id)
+            project_details_row = db.get_project_by_id(self.project_id)
+            if not project_details_row:
+                raise Exception("Could not retrieve project details from the database.")
+
+            # Convert sqlite3.Row to a dict to safely use .get()
+            project_details = dict(project_details_row)
 
             from agents.agent_planning_app_target import PlanningAgent_AppTarget
             planning_agent = PlanningAgent_AppTarget(self.llm_service, db)
 
-            cleaned_tech_spec = self._strip_environment_setup_from_spec(project_details['tech_spec_text'])
+            # Conditionally gather all available specifications
+            final_spec = project_details.get('final_spec_text')
+            tech_spec = project_details.get('tech_spec_text')
+            ux_spec = project_details.get('ux_spec_text')
+            db_spec = project_details.get('db_schema_spec_text')
+
+            cleaned_tech_spec = self._strip_environment_setup_from_spec(tech_spec) if tech_spec else ""
+
             backlog_items_json = planning_agent.generate_backlog_items(
-                final_spec_text=project_details['final_spec_text'],
-                tech_spec_text=cleaned_tech_spec
+                final_spec_text=final_spec,
+                tech_spec_text=cleaned_tech_spec,
+                ux_spec_text=ux_spec,
+                db_schema_spec_text=db_spec
             )
 
             self.task_awaiting_approval = {"generated_backlog_items": backlog_items_json}
 
-            # Set the flag to True now that the backlog exists
             db.update_project_field(self.project_id, "is_backlog_generated", 1)
             logging.info(f"Successfully generated backlog and set 'is_backlog_generated' flag for project {self.project_id}.")
 
@@ -2078,7 +2091,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to generate project backlog: {e}", exc_info=True)
             self.task_awaiting_approval = {"error": str(e)}
-            # Fallback to the gateway on error so the user can retry
             self.set_phase("AWAITING_BACKLOG_GATEWAY_DECISION")
 
     def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
@@ -4325,13 +4337,19 @@ class MasterOrchestrator:
         """
         Builds a context package for a set of sprint items and then generates a
         detailed, step-by-step implementation plan by calling the planning agent.
-        This version includes parent cr_ids for traceability.
+        This version now conditionally includes UX and DB specs for enhanced context.
         """
         logging.info(f"Generating implementation plan for {len(sprint_items)} sprint items.")
         try:
             db = self.db_manager
-            project_details = db.get_project_by_id(self.project_id)
-            project_root_path = Path(project_details['project_root_folder'])
+            project_details_row = db.get_project_by_id(self.project_id)
+            if not project_details_row:
+                raise Exception("Could not retrieve project details.")
+
+            # Convert sqlite3.Row to a dict to safely use .get()
+            project_details = dict(project_details_row)
+
+            project_root_path = Path(project_details.get('project_root_folder'))
 
             all_impacted_ids = set()
             analysis_agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
@@ -4346,7 +4364,7 @@ class MasterOrchestrator:
                 else:
                     analysis_result = analysis_agent.run_full_analysis(
                         change_request_desc=item['description'],
-                        final_spec_text=project_details['final_spec_text'],
+                        final_spec_text=project_details.get('final_spec_text'),
                         rowd_json=rowd_json_for_analysis
                     )
                     impacted_ids = analysis_result.get("impacted_artifact_ids", []) if analysis_result else []
@@ -4362,9 +4380,13 @@ class MasterOrchestrator:
                 if artifact_record and artifact_record['file_path']:
                     source_path = project_root_path / artifact_record['file_path']
                     if source_path.exists():
-                        source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8')
+                        source_code_files[artifact_record['file_path']] = source_path.read_text(encoding='utf-8', errors='ignore')
 
-            core_docs = {"final_spec_text": project_details['final_spec_text']}
+            # Gather all available specs using the safe .get() method on the dictionary
+            core_docs = {"final_spec_text": project_details.get('final_spec_text')}
+            ux_spec = project_details.get('ux_spec_text')
+            db_spec = project_details.get('db_schema_spec_text')
+
             self.context_package_summary = self._build_and_validate_context_package(core_docs, source_code_files)
             if self.context_package_summary.get("error"):
                 raise Exception(f"Context Builder Error: {self.context_package_summary['error']}")
@@ -4375,10 +4397,12 @@ class MasterOrchestrator:
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
             new_plan_str = planner_agent.create_refactoring_plan(
                 change_request_desc=combined_description,
-                final_spec_text=project_details['final_spec_text'],
-                tech_spec_text=project_details['tech_spec_text'],
+                final_spec_text=project_details.get('final_spec_text'),
+                tech_spec_text=project_details.get('tech_spec_text'),
                 rowd_json=rowd_json,
-                source_code_context=self.context_package_summary["source_code"]
+                source_code_context=self.context_package_summary["source_code"],
+                ux_spec_text=ux_spec,
+                db_schema_spec_text=db_spec
             )
 
             response_data = json.loads(new_plan_str)

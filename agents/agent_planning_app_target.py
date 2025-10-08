@@ -22,72 +22,75 @@ class PlanningAgent_AppTarget:
         self.db_manager = db_manager
         logging.info("PlanningAgent_AppTarget initialized.")
 
-    def generate_backlog_items(self, final_spec_text: str, tech_spec_text: str) -> str:
+    def generate_backlog_items(self, final_spec_text: str, tech_spec_text: str, ux_spec_text: str | None = None, db_schema_spec_text: str | None = None) -> str:
         """
-        Analyzes an application specification and a technical specification
-        to deconstruct them into a structured list of backlog items with
-        suggested priority and complexity.
+        Analyzes specifications to deconstruct them into a structured list of
+        backlog items, prioritizing UX specs when available.
         """
-        logging.info("PlanningAgent: Generating initial backlog items from specification...")
+        logging.info("PlanningAgent: Generating initial backlog items from specifications...")
+
+        ux_spec_context = ""
+        if ux_spec_text:
+            ux_spec_context = f"""
+        **--- INPUT 1: UX/UI Specification (Primary Source for Features) ---**
+        {ux_spec_text}
+        --- End of UX/UI Specification ---
+        """
+
+        db_spec_context = ""
+        if db_schema_spec_text:
+            db_spec_context = f"""
+        **--- INPUT 4: Database Schema Specification (for Context) ---**
+        {db_schema_spec_text}
+        --- End of Database Schema Specification ---
+        """
 
         prompt = textwrap.dedent(f"""
-            You are an expert Agile Business Analyst with deep technical knowledge. Your task is to create a valuable, customer-focused project backlog in a nested JSON format, based on the provided specifications. Your primary goal is to define work that delivers features to the end-user of the application.
+            You are an expert Agile Business Analyst with deep technical knowledge. Your task is to create a valuable, customer-focused project backlog in a nested JSON format, based on the provided specifications.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Trivial Project Check:** Before all other steps, you MUST assess if the project is a "trivial" or "Hello World" style application (e.g., a single script, one simple function). **If the project is trivial, you MUST generate a backlog with only ONE Epic containing ONE Feature and ONE Backlog Item.** This rule overrides all other instructions about granularity.
+            1.  **Input Prioritization:** You MUST prioritize the provided specifications in this order:
+                - **Primary Source:** If the "UX/UI Specification" is provided, it is the PRIMARY source for creating user-facing Epics, Features, and User Stories.
+                - **Secondary Source:** Use the "Application Specification" for any non-GUI business logic, background processes, or API requirements not covered in the UX spec.
+                - **Context Only:** Use the "Technical" and "Database Schema" specifications ONLY for contextual understanding to help you assess technical feasibility and complexity. Do NOT create backlog items directly from them.
 
-            2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]` where each root object represents an **Epic**. Do not include any text or markdown formatting outside of the raw JSON array itself.
+            2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]` where each root object represents an **Epic**.
+            3.  **Focus on Customer Value:** The backlog MUST focus exclusively on features and functionalities that will be present in the final, deployed application for the end-user.
+            4.  **STRICTLY FORBIDDEN ITEMS:** You MUST NOT create backlog items for development setup, environment configuration, CI/CD pipelines, or any other task related to the *process* of building the software.
+            5.  **INVEST Criteria for User Stories:** Every "BACKLOG_ITEM" (User Story) object MUST adhere to the INVEST framework (Independent, Negotiable, Valuable, Estimable, Small, Testable).
+            6.  **Nested JSON Schema:** You MUST adhere to the following nested structure:
+                - Each **Epic object** must have keys: `"type": "EPIC"`, `"title"`, `"description"`, and `"features": []`.
+                - Each **Feature object** must have keys: `"type": "FEATURE"`, `"title"`, `"description"`, and `"user_stories": []`.
+                - Each **User Story object** (`BACKLOG_ITEM`) must have keys: `"type": "BACKLOG_ITEM"`, `"title"`, `"description"`, `"priority"` ("High", "Medium", or "Low"), and `"complexity"` ("Small", "Medium", or "Large").
 
-            3.  **Focus on Customer Value:** The backlog you create MUST focus exclusively on features and functionalities that will be present in the final, deployed application for the end-user.
+            {ux_spec_context}
 
-            4.  **STRICTLY FORBIDDEN ITEMS:** You MUST NOT create backlog items for development setup, environment configuration, CI/CD pipelines, QA processes, creating test plans, tool setup, or any other task related to the *process* of building the software. These are not customer-facing features.
-
-            5.  **User Persona Rules:**
-                * First, you MUST check the provided specifications for a section detailing "User Personas". If personas are defined, all User Stories MUST be written from their perspective.
-                * If and only if no personas are defined, infer the end-user from the application's context.
-                * You are STRICTLY FORBIDDEN from creating user stories from the perspective of a "developer," "QA analyst," "DevOps engineer," or any other role involved in the software's construction.
-
-            6.  **INVEST Criteria for User Stories:** Every "BACKLOG_ITEM" (User Story) object you create MUST adhere to the INVEST framework:
-                * **I**ndependent: Can it be developed without depending on other stories in the same sprint?
-                * **N**egotiable: Is there room to discuss and refine the details? (The description should allow for this).
-                * **V**aluable: Does it deliver clear value to an end-user?
-                * **E**stimable: Is it clear enough to be estimated?
-                * **S**mall: Can it be completed within a single sprint?
-                * **T**estable: Can it be verified with acceptance criteria?
-                Your generated stories must reflect these principles in their title and description.
-
-            7.  **Use of Technical Specification:** Use the Technical Specification *only* to inform the technical breakdown and feasibility of user-facing features described in the Application Specification. Do not create backlog items directly from tooling, libraries, or infrastructure mentioned in the tech spec.
-
-            8.  **Nested JSON Schema:** You MUST adhere to the following nested structure:
-                * Each **Epic object** must have keys: `"type": "EPIC"`, `"title"`, `"description"`, and `"features": []`.
-                * Each **Feature object** must have keys: `"type": "FEATURE"`, `"title"`, `"description"`, and `"user_stories": []`.
-                * Each **User Story object** (`BACKLOG_ITEM`) must have keys: `"type": "BACKLOG_ITEM"`, `"title"`, `"description"`, `"priority"` ("High", "Medium", or "Low"), and `"complexity"` ("Small", "Medium", or "Large").
-
-            **--- INPUT 1: Application Specification (The "What") ---**
+            **--- INPUT 2: Application Specification (The "What" for non-GUI logic) ---**
             {final_spec_text}
             --- End of Application Specification ---
 
-            **--- INPUT 2: Technical Specification (The "How" for context) ---**
+            **--- INPUT 3: Technical Specification (The "How" for context) ---**
             {tech_spec_text}
             --- End of Technical Specification ---
+
+            {db_spec_context}
 
             **--- Generated Backlog (JSON Array Output) ---**
         """)
 
         try:
             response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
-            # Robustly find and extract the JSON array block using regex
             json_match = re.search(r'\[.*\]', response_json_str, re.DOTALL)
             if not json_match:
                 raise ValueError("LLM response did not contain a valid JSON array.")
 
             cleaned_response = json_match.group(0)
-            parsed_json = json.loads(cleaned_response) # Full validation
+            parsed_json = json.loads(cleaned_response)
             logging.info(f"Successfully generated {len(parsed_json)} backlog items.")
             return cleaned_response
         except Exception as e:
             logging.error(f"Failed to generate backlog items: {e}")
-            error_response = [{"error": "Failed to generate a valid backlog.", "details": str(e)}]
+            error_response = [{{"error": "Failed to generate a valid backlog.", "details": str(e)}}]
             return json.dumps(error_response)
 
     def generate_reference_backlog_from_specs(self, final_spec_text, tech_spec_text):
