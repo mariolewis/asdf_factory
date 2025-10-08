@@ -2,6 +2,7 @@
 
 import logging
 import textwrap
+import os
 from pathlib import Path
 from llm_service import LLMService
 from asdf_db_manager import ASDFDBManager
@@ -23,9 +24,113 @@ class SpecSynthesisAgent:
         self.report_generator = ReportGeneratorAgent()
         logging.info("SpecSynthesisAgent initialized.")
 
+    def _detect_database_usage(self, project_root: Path) -> tuple[str | None, dict]:
+        """
+        Detects database usage in a project using a three-stage funnel.
+
+        Args:
+            project_root (Path): The root path of the project to scan.
+
+        Returns:
+            A tuple containing the stage of detection ('SCHEMA_FILE', 'KEYWORD')
+            or None, and a dictionary mapping file paths to their content.
+        """
+        logging.info("Starting 3-stage database usage detection...")
+
+        # [cite_start]Stage 1: High-Certainty File Analysis [cite: 196]
+        logging.info("DB Detection Stage 1: Searching for high-certainty schema files...")
+        schema_files = []
+        for ext in ['*.sql']:
+            schema_files.extend(project_root.rglob(ext))
+
+        if schema_files:
+            logging.info(f"DB Detection Stage 1: Found {len(schema_files)} dedicated schema file(s).")
+            file_content = {str(p.relative_to(project_root)): p.read_text(encoding='utf-8', errors='ignore') for p in schema_files}
+            return "SCHEMA_FILE", file_content
+
+        # [cite_start]Stage 2: Keyword Heuristic Analysis [cite: 199]
+        logging.info("DB Detection Stage 2: Searching for database keywords in source files...")
+        db_keywords = [
+            'sqlalchemy', 'sqlite3', 'psycopg2', 'mysql.connector',
+            'mongoose', 'sequelize', 'knex', 'typeorm', 'prisma',
+            'system.data.sqlclient', 'entityframeworkcore', 'dapper',
+            'create table', 'select from', 'insert into', 'update set',
+            'database', 'dbconnection', 'sqlconnection', 'jdbctemplate'
+        ]
+        source_extensions = ['.py', '.js', '.ts', '.cs', '.java', '.go', '.rs', '.php', '.rb', '.cpp', '.c', '.swift', '.kt', '.m', '.scala']
+        candidate_files = {}
+
+        for dirpath, _, filenames in os.walk(project_root):
+            for filename in filenames:
+                file_path = Path(dirpath) / filename
+                if file_path.suffix.lower() in source_extensions:
+                    try:
+                        content = file_path.read_text(encoding='utf-8', errors='ignore')
+                        if any(keyword in content.lower() for keyword in db_keywords):
+                            candidate_files[str(file_path.relative_to(project_root))] = content
+                    except Exception as e:
+                        logging.warning(f"Could not read file {file_path} during DB keyword scan: {e}")
+
+        if candidate_files:
+            logging.info(f"DB Detection Stage 2: Found {len(candidate_files)} candidate file(s) with keywords.")
+            # [cite_start]Stage 3 (synthesis) is handled by the caller, which will use the content of these files. [cite: 204, 205]
+            return "KEYWORD", candidate_files
+
+        logging.info("DB Detection Complete: No database usage detected in any stage.")
+        return None, {}
+
+    def _generate_db_schema_spec(self, detection_stage: str, files_content: dict, project_name: str) -> str:
+        """
+        Generates the Database Schema Specification document using an LLM.
+
+        Args:
+            detection_stage (str): The stage that found the database evidence ('SCHEMA_FILE' or 'KEYWORD').
+            files_content (dict): A dictionary mapping file paths to their content.
+            project_name (str): The name of the project.
+
+        Returns:
+            A string containing the generated specification in Markdown.
+        """
+        logging.info(f"Generating Database Schema Specification from {detection_stage} context...")
+
+        context_str = ""
+        for path, content in files_content.items():
+            context_str += f"--- File: {path} ---\n{content}\n\n"
+
+        prompt_focus = ""
+        if detection_stage == 'SCHEMA_FILE':
+            prompt_focus = "The provided context contains .sql files. Your primary task is to parse these files and reverse-engineer the schema into a human-readable Markdown format. List each table with its columns, data types, and any constraints (keys, nullability)."
+        else: # KEYWORD
+            prompt_focus = "The provided context contains various source code files with database-related keywords. Your primary task is to analyze the code (e.g., ORM models, SQL query strings) to infer and synthesize the database schema. List each inferred table with its columns, likely data types, and any relationships you can identify."
+
+        prompt = textwrap.dedent(f"""
+            You are an expert database administrator and technical writer. Your task is to analyze the provided file contents and generate a clear, professional "Database Schema Specification" document in Markdown format.
+
+            **MANDATORY INSTRUCTIONS:**
+            1. **Analyze Context:** Read all the provided file contents to build a holistic understanding of the database structure.
+            2. **Primary Task:** {prompt_focus}
+            3. **Raw Markdown Output:** Your entire response MUST be only the raw content of the Markdown document. Do not include a header, preamble, or any other conversational text.
+
+            **--- Project Name ---**
+            {project_name}
+
+            **--- Relevant File Contents ---**
+            {context_str}
+
+            **--- Draft Database Schema Specification (Markdown) ---**
+        """)
+
+        try:
+            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+            return response_text.strip()
+        except Exception as e:
+            logging.error(f"Failed to generate Database Schema Spec: {e}")
+            return f"### Error\nAn error occurred during Database Schema Specification generation: {e}"
+
     def synthesize_all_specs(self, project_id: str):
         """
-        Orchestrates the generation of all relevant specification documents.
+        Orchestrates the generation of all relevant specification documents,
+        now with conditional logic for UX/UI and Database Schema specs.
         """
         logging.info(f"Starting specification synthesis for project {project_id}.")
 
@@ -49,7 +154,7 @@ class SpecSynthesisAgent:
             for art in all_artifacts if art['code_summary']
         )
 
-        # Generate, save, and update DB for each spec type
+        # Generate, save, and update DB for App and Tech specs (unconditional)
         app_spec = self._generate_spec(summaries_context, "Application", project_name)
         self._save_and_update_spec(project_id, app_spec, "Application Specification", "application_spec", "final_spec_text", docs_dir, project_name)
 
@@ -57,9 +162,22 @@ class SpecSynthesisAgent:
         self._save_and_update_spec(project_id, tech_spec, "Technical Specification", "technical_spec", "tech_spec_text", docs_dir, project_name)
 
         # Conditionally generate UX/UI spec
-        if self._detect_ui_presence(all_artifacts):
+        has_ui = self._detect_ui_presence(all_artifacts, project_root)
+        self.db_manager.update_project_field(project_id, "is_gui_project", 1 if has_ui else 0)
+        if has_ui:
             ux_spec = self._generate_spec(summaries_context, "UX/UI", project_name)
             self._save_and_update_spec(project_id, ux_spec, "UX/UI Specification", "ux_ui_spec", "ux_spec_text", docs_dir, project_name)
+        else:
+            logging.info("Skipping UX/UI Specification generation as no UI components were detected.")
+
+        # Conditionally generate Database Schema spec
+        detection_stage, db_files_content = self._detect_database_usage(project_root)
+        if db_files_content:
+            db_schema_spec = self._generate_db_schema_spec(detection_stage, db_files_content, project_name)
+            self._save_and_update_spec(project_id, db_schema_spec, "Database Schema Specification", "db_schema_spec", "db_schema_spec_text", docs_dir, project_name)
+        else:
+            logging.info("Skipping Database Schema Specification generation as no database usage was detected.")
+
 
         logging.info("Specification synthesis complete.")
         return True
@@ -98,13 +216,76 @@ class SpecSynthesisAgent:
             logging.error(f"Failed to generate {spec_type} Spec: {e}")
             return f"### Error\nAn error occurred during {spec_type} Specification generation: {e}"
 
-    def _detect_ui_presence(self, artifacts: list) -> bool:
-        """Heuristic to detect if a project has a significant UI component."""
+    def _detect_ui_presence(self, all_artifacts: list, project_root: Path) -> bool:
+        """
+        Heuristic to detect if a project has a significant UI component by
+        checking file extensions and file content for UI-related keywords.
+        """
+        logging.info("Starting 2-level UI presence detection...")
+
+        # [cite_start]Level 1: File Type Analysis [cite: 2241]
         ui_extensions = ['.js', '.ts', '.html', '.css', '.scss', '.xaml', '.ui']
-        for art in artifacts:
+        for art in all_artifacts:
             if Path(art['file_path']).suffix.lower() in ui_extensions:
+                logging.info(f"UI Detection Level 1: Found UI file extension in '{art['file_path']}'.")
                 return True
+
+        # [cite_start]Level 2: Content Heuristic Analysis [cite: 2242]
+        logging.info("UI Detection Level 2: Searching for UI keywords in source files...")
+        ui_keywords = [
+            # Python
+            'pyside6', 'pyqt5', 'tkinter', 'kivy', 'wxpython',
+            # JS/TS Frameworks
+            'react', 'angular', 'vue', 'svelte',
+            # .NET
+            'wpf', 'winforms', 'avalonia', 'maui',
+            # Java
+            'javafx', 'swing',
+            # General
+            'user interface', 'gui'
+        ]
+
+        for art in all_artifacts:
+            try:
+                # We need the full path to read the file content
+                file_path = project_root / art['file_path']
+                if file_path.exists() and file_path.is_file():
+                    content = file_path.read_text(encoding='utf-8', errors='ignore')
+                    if any(keyword in content.lower() for keyword in ui_keywords):
+                        logging.info(f"UI Detection Level 2: Found UI keyword in '{art['file_path']}'.")
+                        return True
+            except Exception as e:
+                logging.warning(f"Could not read file {art['file_path']} during UI keyword scan: {e}")
+
+        logging.info("UI Detection Complete: No UI components detected.")
         return False
+
+    def _save_and_update_spec(self, project_id, content, doc_type_name, file_base_name, db_field, docs_dir, project_name):
+        """Helper to prepend header, save files, and update the database for a spec."""
+        # Prepend the generic header
+        full_content_with_header = self.orchestrator.prepend_standard_header(content, doc_type_name)
+
+        # Add a standard preamble for synthesized documents
+        preamble = "Note: This document was automatically generated by the system's codebase analysis. It provides a high-level, synthesized overview for human review and verification."
+        final_content_for_files = f"*{preamble}*\n\n---\n\n" + full_content_with_header
+
+        # Save .md file
+        md_path = docs_dir / f"{file_base_name}.md"
+        md_path.write_text(final_content_for_files, encoding='utf-8')
+        logging.info(f"Saved {doc_type_name} to {md_path}")
+
+        # Save .docx file
+        docx_bytes = self.report_generator.generate_text_document_docx(
+            title=f"{doc_type_name} - {project_name}",
+            content=final_content_for_files
+        )
+        docx_path = docs_dir / f"{file_base_name}.docx"
+        with open(docx_path, 'wb') as f:
+            f.write(docx_bytes.getbuffer())
+        logging.info(f"Saved {doc_type_name} to {docx_path}")
+
+        # Update the database with the content + header for internal AI use
+        self.db_manager.update_project_field(project_id, db_field, full_content_with_header)
 
     def _save_and_update_spec(self, project_id, content, doc_type_name, file_base_name, db_field, docs_dir, project_name):
         """Helper to prepend header, save files, and update the database for a spec."""

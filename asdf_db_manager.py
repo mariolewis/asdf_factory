@@ -75,6 +75,7 @@ class ASDFDBManager:
             target_os TEXT, technology_stack TEXT, project_root_folder TEXT, apex_executable_name TEXT,
             project_brief_path TEXT, complexity_assessment_text TEXT, ux_spec_text TEXT,
             is_gui_project BOOLEAN NOT NULL DEFAULT 0, final_spec_text TEXT, tech_spec_text TEXT,
+            db_schema_spec_text TEXT,
             is_build_automated BOOLEAN NOT NULL DEFAULT 1, build_script_file_name TEXT,
             development_plan_text TEXT, integration_plan_text TEXT,
             ui_test_plan_text TEXT, test_execution_command TEXT, ui_test_execution_command TEXT,
