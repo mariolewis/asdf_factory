@@ -2488,7 +2488,10 @@ class MasterOrchestrator:
             unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
             if progress_callback: progress_callback(("SUCCESS", "... Unit tests generated."))
 
-        if progress_callback: progress_callback(("INFO", f"Writing files, testing, and committing {component_name}..."))
+        if progress_callback:
+            commit_action_text = "and committing" if version_control_enabled else "for"
+            log_message = f"Writing files, running regression tests, {commit_action_text} {component_name}..."
+            progress_callback(("INFO", log_message))
         build_agent = BuildAndCommitAgentAppTarget(str(project_root_path), version_control_enabled=version_control_enabled)
         status, result_message = build_agent.build_and_commit_component(
             task.get("component_file_path"), source_code,
@@ -3697,7 +3700,7 @@ class MasterOrchestrator:
             # Return the application to the idle state
             self.reset()
 
-    def handle_retry_fix_action(self, failure_log: str, progress_callback=None):
+    def handle_retry_fix_action(self, failure_log: str, progress_callback=None, **kwargs):
         """
         Handles the PM's choice to retry an automated fix. This is designed
         to be run in a background thread. It generates a plan and then immediately
@@ -3748,7 +3751,7 @@ class MasterOrchestrator:
             self.escalate_for_manual_debug(str(e))
             raise # Re-raise to be caught by the worker's error handler
 
-    def run_full_test_suite(self, progress_callback=None):
+    def run_full_test_suite(self, progress_callback=None, **kwargs):
         """
         Triggers a full run of the project's automated test suite.
 
@@ -4118,7 +4121,7 @@ class MasterOrchestrator:
             self.task_awaiting_approval = None # Clear the pending task
             self.set_phase("BACKLOG_VIEW")
 
-    def rerun_stale_sprint_analysis(self, stale_item_ids: list, progress_callback=None):
+    def rerun_stale_sprint_analysis(self, stale_item_ids: list, progress_callback=None, **kwargs):
         """
         Runs full analysis on a list of stale items and then re-initiates
         the sprint planning process. Designed for a background worker.
@@ -5604,7 +5607,7 @@ class MasterOrchestrator:
             # We don't want to halt the main flow if learning capture fails.
             logging.warning(f"Could not capture learning entry for spec clarification: {e}")
 
-    def start_test_environment_setup(self, progress_callback=None):
+    def start_test_environment_setup(self, progress_callback=None, **kwargs):
         """
         Calls both the dev and test advisor agents to get a consolidated list
         of environment setup tasks.

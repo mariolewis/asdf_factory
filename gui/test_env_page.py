@@ -2,6 +2,7 @@
 
 import logging
 import markdown
+import re
 from pathlib import Path
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox,
                                QWidget, QMessageBox, QLabel, QScrollArea)
@@ -157,7 +158,10 @@ class TestEnvPage(QWidget):
             instructions = QTextEdit()
             instructions.setReadOnly(True)
             # Use setMarkdown to render the formatted text from the agent as rich text.
-            instructions.setMarkdown(task.get('instructions'))
+            instruction_text = task.get('instructions', '')
+            # Replace H1/H2 markdown with simple bolding to prevent large fonts
+            instruction_text = re.sub(r'^\s*#{1,2}\s*(.*)', r'<b>\1</b>', instruction_text, flags=re.MULTILINE)
+            instructions.setMarkdown(instruction_text)
 
             layout.addWidget(header)
             layout.addWidget(instructions, 1)
@@ -296,15 +300,33 @@ class TestEnvPage(QWidget):
             self._set_ui_busy(False)
 
     def _task_get_test_command(self, **kwargs):
+        """
+        Gets the test command, prioritizing a user-saved value from the database
+        before falling back to LLM generation.
+        """
         try:
-            project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
-            tech_spec_text = project_details['tech_spec_text'] if project_details else ""
+            project_details_row = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
+            if not project_details_row:
+                return "pytest" # Fallback
+
+            project_details = dict(project_details_row)
+
+            # First, check for an existing, user-saved command
+            existing_command = project_details.get("test_execution_command")
+            if existing_command and existing_command.strip():
+                logging.info(f"Found existing test command in database: '{existing_command}'")
+                return existing_command
+
+            # If no command exists, proceed with LLM generation
+            tech_spec_text = project_details.get('tech_spec_text', "")
             if self.orchestrator.llm_service and tech_spec_text:
+                logging.info("No existing command found. Generating new test command via LLM.")
                 agent = VerificationAgent_AppTarget(llm_service=self.orchestrator.llm_service)
                 details = agent._get_test_execution_details(tech_spec_text)
                 command = details.get("command") if details else ""
                 return command if command and command.strip() else "pytest"
-            return "pytest"
+
+            return "pytest" # Final fallback
         except Exception as e:
             logging.error(f"Failed to get suggested test command: {e}")
             return "pytest"
