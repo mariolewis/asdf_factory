@@ -102,17 +102,6 @@ class Ui_ProjectDashboardPage(object):
 
         self.gridLayout.addWidget(self.quickFixGuidanceLabel, 1, 1, 1, 1)
 
-        self.modernizeButton = QPushButton(self.pathGroupBox)
-        self.modernizeButton.setObjectName(u"modernizeButton")
-
-        self.gridLayout.addWidget(self.modernizeButton, 2, 0, 1, 1)
-
-        self.modernizeGuidanceLabel = QLabel(self.pathGroupBox)
-        self.modernizeGuidanceLabel.setObjectName(u"modernizeGuidanceLabel")
-        self.modernizeGuidanceLabel.setWordWrap(True)
-
-        self.gridLayout.addWidget(self.modernizeGuidanceLabel, 2, 1, 1, 1)
-
 
         self.verticalLayout.addWidget(self.pathGroupBox)
 
@@ -140,7 +129,5 @@ class Ui_ProjectDashboardPage(object):
         self.maintainGuidanceLabel.setText(QCoreApplication.translate("ProjectDashboardPage", u"Choose this path to manage the project using a formal backlog. This is best for tracking features, planning future sprints, and maintaining a structured overview of all work. You will be taken to the backlog view where you can add new user stories and bug reports.", None))
         self.quickFixButton.setText(QCoreApplication.translate("ProjectDashboardPage", u"Add to Backlog / Quick Fix", None))
         self.quickFixGuidanceLabel.setText(QCoreApplication.translate("ProjectDashboardPage", u"Choose this path to go to the Project Backlog. This is the standard path for adding new bug reports, features, or other work items before planning a new sprint.", None))
-        self.modernizeButton.setText(QCoreApplication.translate("ProjectDashboardPage", u"Modernize or Transform", None))
-        self.modernizeGuidanceLabel.setText(QCoreApplication.translate("ProjectDashboardPage", u"Choose this path for major overhauls, migrations, or when you have a new, formal specification document that describes significant changes to the existing application.", None))
     # retranslateUi
 

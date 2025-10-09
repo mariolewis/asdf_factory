@@ -143,23 +143,6 @@
         </property>
        </widget>
       </item>
-      <item row="2" column="0">
-       <widget class="QPushButton" name="modernizeButton">
-        <property name="text">
-         <string>Modernize or Transform</string>
-        </property>
-       </widget>
-      </item>
-      <item row="2" column="1">
-       <widget class="QLabel" name="modernizeGuidanceLabel">
-        <property name="text">
-         <string>Choose this path for major overhauls, migrations, or when you have a new, formal specification document that describes significant changes to the existing application.</string>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
      </layout>
     </widget>
    </item>

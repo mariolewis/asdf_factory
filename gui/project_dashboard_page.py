@@ -14,7 +14,6 @@ class ProjectDashboardPage(QWidget):
     """
     maintain_selected = Signal()
     quickfix_selected = Signal()
-    modernize_selected = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
@@ -23,13 +22,11 @@ class ProjectDashboardPage(QWidget):
         self.ui.setupUi(self)
 
         self.connect_signals()
-        self.ui.modernizeButton.setEnabled(False) # Disabled as per CR
 
     def connect_signals(self):
         """Connects UI element signals to this widget's public signals."""
         self.ui.maintainButton.clicked.connect(self.on_maintainButton_clicked)
         self.ui.quickFixButton.clicked.connect(self.quickfix_selected.emit)
-        self.ui.modernizeButton.clicked.connect(self.modernize_selected.emit)
 
     def on_maintainButton_clicked(self):
         """
