@@ -1,7 +1,8 @@
 # gui/project_dashboard_page.py
 
 import logging
-from PySide6.QtWidgets import QWidget
+import json
+from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal
 
 from gui.ui_project_dashboard_page import Ui_ProjectDashboardPage
@@ -26,9 +27,40 @@ class ProjectDashboardPage(QWidget):
 
     def connect_signals(self):
         """Connects UI element signals to this widget's public signals."""
-        self.ui.maintainButton.clicked.connect(self.maintain_selected.emit)
+        self.ui.maintainButton.clicked.connect(self.on_maintainButton_clicked)
         self.ui.quickFixButton.clicked.connect(self.quickfix_selected.emit)
         self.ui.modernizeButton.clicked.connect(self.modernize_selected.emit)
+
+    def on_maintainButton_clicked(self):
+        """
+        Auto-connected slot for the 'Maintain & Enhance' button.
+        If a reference backlog already exists, it prompts for confirmation before
+        emitting the maintain_selected signal.
+        """
+        try:
+            db = self.orchestrator.db_manager
+            project_id = self.orchestrator.project_id
+
+            all_crs = db.get_all_change_requests_for_project(project_id)
+            has_existing_items = any(cr['status'] == 'EXISTING' for cr in all_crs)
+
+            proceed = True
+            if has_existing_items:
+                msg_box = QMessageBox(self)
+                msg_box.setIcon(QMessageBox.Warning)
+                msg_box.setText("This action will result in a complete refresh of the backlog items corresponding to the implemented codebase. Continue?")
+                msg_box.setWindowTitle("Confirm Backlog Refresh")
+                msg_box.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+
+                if msg_box.exec() != QMessageBox.Ok:
+                    proceed = False
+
+            if proceed:
+                self.maintain_selected.emit()
+
+        except Exception as e:
+            logging.error(f"Error in on_maintainButton_clicked: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"An unexpected error occurred: {e}")
 
     def prepare_for_display(self):
         """
@@ -46,19 +78,26 @@ class ProjectDashboardPage(QWidget):
                 raise ValueError("No active project ID found.")
 
             db = self.orchestrator.db_manager
-            project_details = db.get_project_by_id(project_id)
-            tech_spec_text = project_details['tech_spec_text'] if project_details else ''
+            project_details_row = db.get_project_by_id(project_id)
+            if not project_details_row:
+                 raise ValueError("Could not retrieve project details.")
 
-            all_artifacts = db.get_all_artifacts_for_project(project_id)
-            file_count = len(all_artifacts)
+            project_details = dict(project_details_row)
 
-            languages = self.orchestrator.detect_technologies_in_spec(tech_spec_text)
-            languages_str = ", ".join(languages) if languages else "Not detected"
-
-            self.ui.languagesValueLabel.setText(languages_str)
+            # Read cached file count
+            file_count = project_details.get('scanned_file_count', 0)
             self.ui.filesValueLabel.setText(str(file_count))
 
-            # Check if a reference backlog exists to enable the other buttons.
+            # Read and parse cached technologies
+            languages_json = project_details.get('detected_technologies')
+            if languages_json:
+                languages = json.loads(languages_json)
+                languages_str = ", ".join(languages) if languages else "Not detected"
+            else:
+                languages_str = "Not yet calculated"
+            self.ui.languagesValueLabel.setText(languages_str)
+
+            # Logic to enable/disable buttons remains the same
             all_crs = db.get_all_change_requests_for_project(project_id)
             has_existing_items = any(cr['status'] == 'EXISTING' for cr in all_crs)
 

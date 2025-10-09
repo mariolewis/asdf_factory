@@ -93,23 +93,29 @@ class PlanningAgent_AppTarget:
             error_response = [{{"error": "Failed to generate a valid backlog.", "details": str(e)}}]
             return json.dumps(error_response)
 
-    def generate_reference_backlog_from_specs(self, final_spec_text, tech_spec_text):
+    def generate_reference_backlog_from_specs(self, final_spec_text, tech_spec_text, ux_spec_text=None):
         """
         Parses specs to generate a two-level (Epic -> Feature) reference model
         of an existing codebase for the backlog.
         """
         logging.info("PlanningAgent: Generating two-level reference backlog from specs...")
 
+        ux_spec_context = ""
+        if ux_spec_text:
+            ux_spec_context = f"""
+            **--- UX/UI Specification (Primary Source) ---**
+            {ux_spec_text}
+            """
+
         prompt = textwrap.dedent(f"""
-            You are an expert agile project manager. Your task is to analyze the following application and technical specifications of an EXISTING application and decompose them into a hierarchical reference model of Epics and Features.
+            You are an expert agile project manager. Your task is to analyze the following specifications of an EXISTING application and decompose them into a hierarchical reference model of Epics and Features.
 
             **MANDATORY INSTRUCTIONS:**
-            1.  Read the specifications to understand the application's major functional areas.
-            2.  Identify high-level capabilities and define them as **Epics**.
-            3.  For each Epic, identify the specific functionalities and define them as **Features**.
-            4.  **DO NOT** generate User Stories or Backlog Items. The goal is to create a high-level map of what already exists.
-            5.  Provide a concise `title` and a one-sentence `description` for each Epic and Feature.
-            6.  Your entire response **MUST** be a single, raw JSON array of objects. Do not include any other text, notes, or markdown formatting.
+            1.  **Prioritize Inputs:** If the UX/UI Specification is provided, you MUST use it as the primary source for defining user-facing Epics and Features. Use the Application Specification for non-GUI logic and the Technical Specification only for context.
+            2.  **Identify Epics & Features:** Identify high-level capabilities as **Epics** and their specific functionalities as **Features**.
+            3.  **DO NOT** generate User Stories or Backlog Items. The goal is a high-level map of what exists.
+            4.  **Provide Descriptions:** Provide a concise `title` and a one-sentence `description` for each Epic and Feature.
+            5.  **JSON Output:** Your entire response **MUST** be a single, raw JSON array of objects. Do not include any other text, notes, or markdown formatting.
 
             **JSON Structure:**
             ```json
@@ -127,10 +133,12 @@ class PlanningAgent_AppTarget:
             ]
             ```
 
-            **--- Application Specification ---**
+            {ux_spec_context}
+
+            **--- Application Specification (Secondary Source) ---**
             {final_spec_text}
 
-            **--- Technical Specification ---**
+            **--- Technical Specification (Context Only) ---**
             {tech_spec_text}
 
             **--- JSON Backlog Output ---**
@@ -138,7 +146,15 @@ class PlanningAgent_AppTarget:
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            return response_text
+            # Robustly find and extract the JSON array from the LLM's response
+            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+            if not json_match:
+                raise ValueError("LLM response did not contain a valid JSON array.")
+
+            cleaned_response = json_match.group(0)
+            # Final validation check
+            json.loads(cleaned_response)
+            return cleaned_response
         except Exception as e:
             logging.error(f"Failed to generate reference backlog: {e}")
             return json.dumps([{"title": "Error", "description": f"Failed to generate backlog: {e}", "features": []}])

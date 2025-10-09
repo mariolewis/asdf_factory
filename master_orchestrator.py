@@ -657,6 +657,7 @@ class MasterOrchestrator:
             project_details = self.db_manager.get_project_by_id(self.project_id)
             final_spec_text = project_details['final_spec_text']
             tech_spec_text = project_details['tech_spec_text']
+            ux_spec_text = project_details['ux_spec_text']
 
             if not final_spec_text:
                 logging.warning("Cannot generate backlog; final spec text is missing.")
@@ -666,7 +667,7 @@ class MasterOrchestrator:
             # 2. Call the Planning Agent
             from agents.agent_planning_app_target import PlanningAgent_AppTarget
             planner_agent = PlanningAgent_AppTarget(self.llm_service, self.db_manager)
-            backlog_json_str = planner_agent.generate_reference_backlog_from_specs(final_spec_text, tech_spec_text)
+            backlog_json_str = planner_agent.generate_reference_backlog_from_specs(final_spec_text, tech_spec_text, ux_spec_text)
             backlog_structure = json.loads(backlog_json_str)
 
             # 3. Populate the database
@@ -675,7 +676,7 @@ class MasterOrchestrator:
             for epic in backlog_structure:
                 # Construct the dictionary for the epic
                 epic_data = {
-                    "cr_id": f"E{epic_counter}", # This will be mapped to external_id
+                    # "cr_id": f"E{epic_counter}", # This will be mapped to external_id
                     "project_id": self.project_id,
                     "title": epic.get('title'),
                     "request_type": 'EPIC',
@@ -692,7 +693,7 @@ class MasterOrchestrator:
                 for feature in epic.get('features', []):
                     # Construct the dictionary for the feature
                     feature_data = {
-                        "cr_id": f"E{epic_counter}.F{feature_counter}", # Mapped to external_id
+                        # "cr_id": f"E{epic_counter}.F{feature_counter}", # Mapped to external_id
                         "project_id": self.project_id,
                         "title": feature.get('title'),
                         "request_type": 'FEATURE',
@@ -709,6 +710,7 @@ class MasterOrchestrator:
 
             self.db_manager.update_project_field(self.project_id, "is_backlog_generated", 1)
             logging.info("Reference backlog generation complete.")
+            self.update_dashboard_metrics()
 
         except Exception as e:
             logging.error(f"Failed to generate reference backlog: {e}", exc_info=True)
@@ -717,6 +719,34 @@ class MasterOrchestrator:
         finally:
             # 4. Transition to the backlog view regardless of success
             self.set_phase("BACKLOG_VIEW")
+
+    def update_dashboard_metrics(self):
+        """
+        Calculates and saves the dashboard metrics (file count, technologies)
+        to the database. This should be called after a reference backlog is generated.
+        """
+        logging.info("Updating dashboard metrics in the database...")
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details:
+                raise Exception("Could not find project details to update metrics.")
+
+            # Calculate file count from RoWD
+            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
+            file_count = len(all_artifacts)
+            db.update_project_field(self.project_id, "scanned_file_count", file_count)
+
+            # Detect and save technologies
+            tech_spec_text = project_details['tech_spec_text'] or ''
+            languages = self.detect_technologies_in_spec(tech_spec_text)
+            db.update_project_field(self.project_id, "detected_technologies", json.dumps(languages))
+
+            logging.info(f"Successfully updated dashboard metrics: {file_count} files, {len(languages)} technologies.")
+
+        except Exception as e:
+            # We log the error but don't crash the parent process.
+            logging.error(f"Failed to update dashboard metrics: {e}", exc_info=True)
 
     def cancel_and_cleanup_analysis(self):
         """Cancels an in-progress analysis and deletes all created artifacts."""

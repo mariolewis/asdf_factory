@@ -194,6 +194,7 @@ class CodebaseAnalysisPage(QWidget):
             progress_callback(("SYNTHESIZING", {}))
             synthesis_agent = SpecSynthesisAgent(orchestrator=self.orchestrator)
             synthesis_agent.synthesize_all_specs(project_id)
+            self.orchestrator.update_dashboard_metrics()
 
             # Step 3: Set the next phase for the main window to pick up.
             self.orchestrator.set_phase("AWAITING_BROWNFIELD_STRATEGY")

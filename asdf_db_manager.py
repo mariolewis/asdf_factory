@@ -81,7 +81,9 @@ class ASDFDBManager:
             ui_test_plan_text TEXT, test_execution_command TEXT, ui_test_execution_command TEXT,
             integration_settings TEXT,
             version_control_enabled BOOLEAN NOT NULL DEFAULT 0,
-            is_backlog_generated BOOLEAN NOT NULL DEFAULT 0
+            is_backlog_generated BOOLEAN NOT NULL DEFAULT 0,
+            detected_technologies TEXT,
+            scanned_file_count INTEGER DEFAULT 0
         );"""
         self._execute_query(create_projects_table)
 
