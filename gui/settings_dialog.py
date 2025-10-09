@@ -449,10 +449,28 @@ class SettingsDialog(QDialog):
         QMessageBox.critical(self, "Error", error_msg)
 
     def save_settings_and_accept(self):
-        """Saves all settings, automatically calibrates on provider change, and accepts."""
-        logging.info("Saving settings from dialog...")
+        """
+        Checks for an LLM provider change, warns the user, and then saves all
+        settings if the user confirms or if no provider change was made.
+        """
+        logging.info("Attempting to save settings from dialog...")
+        db_manager = self.orchestrator.db_manager
+        new_provider = self.provider_combo_box.currentText()
+        provider_changed = new_provider != self.initial_provider
 
-        provider_changed = self.provider_combo_box.currentText() != self.initial_provider
+        if provider_changed:
+            reply = QMessageBox.question(self, "Confirm LLM Change",
+                                        "Changing the LLM could yield unpredictable results in projects that have remaining work to be completed!",
+                                        QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
+                                        QMessageBox.StandardButton.Cancel)
+
+            if reply == QMessageBox.StandardButton.Cancel:
+                # User cancelled. Revert the combo box and stop, leaving the dialog open.
+                self.provider_combo_box.setCurrentText(self.initial_provider)
+                return
+
+        # If we reach here, either the provider wasn't changed, or the user confirmed the change.
+        # Now, we can safely save everything.
 
         try:
             settings_to_save = {
@@ -481,7 +499,6 @@ class SettingsDialog(QDialog):
                 "INTEGRATION_API_TOKEN": self.jira_token_input.text()
             }
 
-            db_manager = self.orchestrator.db_manager
             for key, value in settings_to_save.items():
                 db_manager.set_config_value(key, value)
 
@@ -494,9 +511,8 @@ class SettingsDialog(QDialog):
                                         "LLM Provider has been changed. The system will now auto-calibrate the context window limit. Please wait...")
                 self.on_calibrate_clicked()
             else:
-                self.accept()
+                self.accept() # Close the dialog if no calibration is needed.
 
         except Exception as e:
             logging.error(f"Failed to save settings: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to save settings:\n{e}")
-            # Do not reject, allow user to fix the issue.
