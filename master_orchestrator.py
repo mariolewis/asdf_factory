@@ -1363,7 +1363,7 @@ class MasterOrchestrator:
             app_spec_draft_content = spec_agent.expand_brief_description(consolidated_requirements)
 
             # 3. Calculate objective metrics ON THE FULL DRAFT, not the initial brief.
-            effort_metrics = self._calculate_asdf_effort_metrics(app_spec_draft_content)
+            # effort_metrics = self._calculate_asdf_effort_metrics(app_spec_draft_content)
 
             # 4. Add the standard document header to the draft
             full_app_spec_draft = self.prepend_standard_header(
@@ -1377,7 +1377,7 @@ class MasterOrchestrator:
 
             # 6. Analyze the generated draft for complexity and risk, now with correct metrics
             scoping_agent = ProjectScopingAgent(self.llm_service)
-            analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content, effort_metrics, context_limit)
+            analysis_result = scoping_agent.analyze_complexity(app_spec_draft_content)
             if "error" in analysis_result:
                 raise Exception(f"Failed to analyze project complexity: {analysis_result.get('details')}")
 

@@ -31,7 +31,7 @@ class ProjectScopingAgent:
             raise ValueError("llm_service is required for the ProjectScopingAgent.")
         self.llm_service = llm_service
 
-    def analyze_complexity(self, spec_text: str, effort_metrics: dict, context_char_limit: int) -> dict:
+    def analyze_complexity(self, spec_text: str) -> dict:
         """
         Performs a detailed complexity and risk analysis on the specification text,
         anchored by objective metrics to forecast "ASDF Effort".
@@ -44,22 +44,24 @@ class ProjectScopingAgent:
 
         logging.info("ProjectScopingAgent: Analyzing specification for ASDF Effort...")
 
-        # Format the objective metrics for the prompt
-        metrics_str = (
-            f"- Context Pressure Score (Character Count): {effort_metrics.get('context_pressure_score', 0):,}\\n"
-            f"- Component Density Score (Keyword Count): {effort_metrics.get('component_density_score', 0)}\\n"
-            f"- UI-to-Backend Keyword Ratio: {effort_metrics.get('ui_score', 0)} to {effort_metrics.get('backend_score', 0)}"
-        )
 
+        # After (REPLACE the old prompt with this new one)
         prompt = textwrap.dedent(f"""
-            You are the ASDF's internal Resource Forecaster. Your task is to perform a two-part analysis on the provided specification to produce a realistic and consistent Delivery Assessment.
+            You are the ASDF's internal Resource Forecaster. Your task is to perform a holistic analysis on the provided specification to produce a realistic and consistent Delivery Assessment.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **Two-Step Analysis:** You will perform two distinct evaluations in order:
-                a.  **Part 1: Complexity Analysis:** First, analyze the inherent complexity of the project. You MUST follow the Calibration Rubric below, using the objective scores provided to determine your ratings for Feature Scope and UI/UX.
-                b.  **Part 2: Risk Assessment:** After completing the complexity analysis, separately assess the overall delivery risk based on BOTH the project's size (Context Pressure) AND its inherent complexity.
-            3.  **JSON Schema:** The JSON object MUST strictly adhere to the following schema:
+            2.  **Analyze Holistically:** You MUST read the entire specification text to inform all of your ratings.
+            3.  **Qualitative Rubric:** You MUST use the following qualitative guidelines to determine your ratings for the `complexity_analysis`:
+                - **`feature_scope`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". A simple utility is "Low". A standard multi-feature app is "Medium". A large system with distinct modules is "High". An enterprise-scale system (e.g., ERP) is "Very Large".
+                - **`data_schema`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". A few simple tables is "Low". A standard relational schema is "Medium". A schema with complex joins or non-relational data is "High". A distributed, high-throughput, or extremely complex domain model is "Very Large".
+                - **`ui_ux`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". A simple CLI/form-based UI is "Low". A standard multi-screen CRUD application is "Medium". A highly interactive dashboard with real-time data is "High". A system with specialized graphical editors or novel interaction paradigms is "Very Large".
+                - **`integrations`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". No external calls is "Low". A few standard REST APIs is "Medium". Multiple disparate systems or legacy platforms is "High". Integration with hardware, proprietary protocols, or a large microservice mesh is "Very Large".
+            4. **Risk Assessment Logic:** After the complexity analysis, you MUST determine the `overall_risk_level` using this two-step logic:
+                a. **Baseline Risk from Size:** Determine a baseline risk (Low, Medium, High, Critical) based on the sheer length and density of the specification text.
+                b. **Adjust Risk for Complexity:** You MUST increase the final `overall_risk_level` above the baseline if your `complexity_analysis` reveals significant inherent difficulty (e.g., two or more "High" ratings).
+            5. **JSON Schema & Summary:** Adhere to the required JSON schema and write a non-technical summary for the PM.
+            6.  **JSON Schema:** The JSON object MUST strictly adhere to the following schema:
                 {{
                 "complexity_analysis": {{
                     "feature_scope": {{"rating": "...", "justification": "..."}},
@@ -74,36 +76,6 @@ class ProjectScopingAgent:
                     "recommendations": ["..."]
                 }}
                 }}
-            4.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object.
-
-            **--- Objective Metrics (Non-LLM Analysis) ---**
-            {metrics_str}
-            System's Context Character Limit: {context_char_limit:,}
-
-            **--- Calibration Rubric (For Part 1: Complexity Analysis) ---**
-            - **Rule for Feature Scope:** Your rating for "feature_scope" MUST be based directly on the "Component Density Score".
-            - Score < 15 = "Low"
-            - Score 15-50 = "Medium"
-            - Score > 50 = "High"
-            - **Rule for UI/UX:** Your rating for "ui_ux" MUST be primarily based on the "UI-to-Backend Keyword Ratio".
-            - If the ratio has a UI score of 0, the rating must be "Low".
-            - If the UI score is greater than the Backend score, the rating must be at least "Medium".
-            - If the UI score is more than double the Backend score OR the specification explicitly calls for a "highly interactive" or "custom" interface, the rating must be "High".
-            - **Rule for Data Schema & Integrations:** Your ratings for these must be based on your analysis of the specification text.
-
-            **--- Risk Assessment Logic (For Part 2: Risk Assessment) ---**
-            - **Step A: Determine Baseline Risk from Size.** Calculate a baseline risk level (Low, Medium, High, Critical) by comparing the "Context Pressure Score" to the "System's Context Character Limit".
-            - Score > 85% of limit = "Critical"
-            - Score > 60% of limit = "High"
-            - Score > 30% of limit = "Medium"
-            - Otherwise = "Low"
-            - **Step B: Adjust Risk based on Complexity.** You MUST increase the final "overall_risk_level" above the baseline if the Complexity Analysis shows significant inherent difficulty (e.g., two or more "High" ratings).
-            - **Step C: Write the Summary for a Non-Technical PM.** Your summary MUST be written for a Product Manager who does not know what "Context Pressure" or "LLM context windows" are.
-            - **DO NOT** use technical jargon.
-            - **DO** use an analogy (e.g., project blueprint vs. system's workbench size) to explain the risk.
-            - **DO** focus on the practical implications.
-            - **DO NOT** reference specific requirement numbers or details not present in the original brief.
-
             ---
             SPECIFICATION TEXT:
             {spec_text}
@@ -134,7 +106,7 @@ class ProjectScopingAgent:
                 continue
 
         logging.error("ProjectScopingAgent failed to parse LLM response after multiple attempts.")
-        return {{
+        return {
             "error": "Failed to get a valid analysis from the AI model after multiple retries.",
             "details": "The LLM provided a consistently malformed or incomplete JSON response."
-        }}
+        }

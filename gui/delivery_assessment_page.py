@@ -41,22 +41,22 @@ class DeliveryAssessmentPage(QWidget):
             "Low": ("High", "#6A8759"),      # Green
             "Medium": ("Medium", "#FFC66D"),    # Yellow
             "High": ("Low", "#CC7832"),      # Orange/Red
-            "Very Large": ("Low", "#CC7832") # Orange/Red
+            "Critical": ("Very Low", "#CC7832") # Orange/Red
         }
 
         # Maps agent ratings to specific gauge values and descriptive labels
         GAUGE_CONFIG = {
             "feature_scope": {
-                "Low": (33, "Small"), "Medium": (66, "Medium"), "High": (100, "Large"), "Very Large": (100, "Very Large")
+                "Low": (25, "Small"), "Medium": (50, "Medium"), "High": (75, "Large"), "Very Large": (100, "Very Large")
             },
             "data_schema": {
-                "Low": (33, "Simple"), "Medium": (66, "Moderate"), "High": (100, "Complex"), "Very Large": (100, "Very Complex")
+                "Low": (25, "Simple"), "Medium": (50, "Moderate"), "High": (75, "Complex"), "Very Large": (100, "Very Complex")
             },
             "ui_ux": {
-                "Low": (33, "Simple"), "Medium": (66, "Moderate"), "High": (100, "Complex"), "Very Large": (100, "Very Complex")
+                "Low": (25, "Simple"), "Medium": (50, "Moderate"), "High": (75, "Complex"), "Very Large": (100, "Very Complex")
             },
             "integrations": {
-                "Low": (33, "Low"), "Medium": (66, "Medium"), "High": (100, "High"), "Very Large": (100, "Very High")
+                "Low": (25, "Low"), "Medium": (50, "Medium"), "High": (75, "High"), "Very Large": (100, "Very High")
             }
         }
 
