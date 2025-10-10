@@ -1319,12 +1319,25 @@ class ASDFMainWindow(QMainWindow):
         dialog = SettingsDialog(self.orchestrator, self)
         dialog.populate_fields()
 
-        # This conditional check is the fix. The code below will now only
-        # run if the user clicks "Save" (dialog is accepted).
         if dialog.exec():
-            # Re-run the check and update the UI after the dialog is closed
+            # This block runs after the user clicks "Save" and the dialog closes.
             self._check_mandatory_settings()
             self.update_ui_after_state_change()
+
+            if getattr(dialog, 'provider_changed', False):
+                reply = QMessageBox.question(self, "Confirm LLM Change",
+                                            "Changing the LLM provider requires a connection test and may trigger auto-calibration. This could yield unpredictable results in ongoing projects. Proceed?",
+                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                                            QMessageBox.StandardButton.Yes)
+
+                if reply == QMessageBox.StandardButton.Yes:
+                    self.setEnabled(False) # Disable main window
+                    worker = Worker(self._task_connect_and_calibrate)
+                    worker.signals.progress.connect(self._on_calibration_progress)
+                    worker.signals.result.connect(self._handle_calibration_complete)
+                    worker.signals.error.connect(self._on_background_task_error)
+                    worker.signals.finished.connect(self._on_calibration_finished)
+                    self.threadpool.start(worker)
 
     def on_show_project_settings(self):
         """Opens the project-specific settings dialog."""
@@ -1678,6 +1691,87 @@ class ASDFMainWindow(QMainWindow):
         error_msg = f"An unexpected error occurred while running tests:\n{error_tuple[1]}"
         QMessageBox.critical(self, "Error", error_msg)
 
+    def _on_calibration_progress(self, progress_data):
+        """Updates the main window's status bar with progress from the worker."""
+        if isinstance(progress_data, tuple) and len(progress_data) == 2:
+            status, message = progress_data
+            self.statusBar().showMessage(message)
+
+    def _on_calibration_finished(self):
+        """Re-enables the main window and clears the status bar."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+
+    def _task_connect_and_calibrate(self, **kwargs):
+        """Background worker task for connection test and calibration."""
+        progress_callback = kwargs.get('progress_callback')
+        # Step 1: Connection Test
+        progress_callback(("INFO", "Attempting to connect to the new LLM provider..."))
+        self.orchestrator._llm_service = None
+        try:
+            _ = self.orchestrator.llm_service
+            progress_callback(("SUCCESS", "Connection successful. Starting auto-calibration..."))
+        except Exception as e:
+            return ("CONNECTION_FAILURE", str(e))
+
+        # Step 2: Auto-Calibration
+        success, message = self.orchestrator.run_auto_calibration(progress_callback=progress_callback)
+        if success:
+            return ("SUCCESS", message)
+        else:
+            return ("CALIBRATION_FAILURE", message)
+
+    def _handle_calibration_complete(self, result_tuple):
+        """Handles the final result of the calibration worker."""
+        self.setEnabled(True)
+        status, message = result_tuple
+        if status == "SUCCESS":
+            QMessageBox.information(self, "Success", f"Auto-calibration complete. Context limit has been set to {int(message):,} characters.")
+        elif status == "CONNECTION_FAILURE":
+            QMessageBox.critical(self, "Connection Failed", f"Failed to connect to the new LLM provider. Please check your settings.\n\nDetails: {message}")
+        elif status == "CALIBRATION_FAILURE":
+            QMessageBox.warning(self, "Calibration Failed", f"Connection succeeded, but auto-calibration failed:\n{message}")
+        # Refresh settings data in case the user re-opens the dialog
+        self._check_mandatory_settings()
+
+    def _task_connect_and_calibrate(self, **kwargs):
+        """Background worker task for connection test and calibration."""
+        progress_callback = kwargs.get('progress_callback')
+        # Step 1: Connection Test
+        progress_callback(("INFO", "Attempting to connect to the new LLM provider..."))
+        self.orchestrator._llm_service = None
+        try:
+            _ = self.orchestrator.llm_service
+            progress_callback(("SUCCESS", "Connection successful. Starting auto-calibration..."))
+        except Exception as e:
+            return ("CONNECTION_FAILURE", str(e))
+
+        # Step 2: Auto-Calibration
+        success, message = self.orchestrator.run_auto_calibration(progress_callback=progress_callback)
+        if success:
+            return ("SUCCESS", message)
+        else:
+            return ("CALIBRATION_FAILURE", message)
+
+    def _on_calibration_progress(self, progress_data):
+        """Updates the main window's status bar with progress from the worker."""
+        if isinstance(progress_data, tuple) and len(progress_data) == 2:
+            status, message = progress_data
+            self.statusBar().showMessage(message)
+
+    def _handle_calibration_complete(self, result_tuple):
+        """Handles the final result of the calibration worker."""
+        self.setEnabled(True)
+        status, message = result_tuple
+        if status == "SUCCESS":
+            QMessageBox.information(self, "Success", f"Auto-calibration complete. Context limit has been set to {int(message):,} characters.")
+        elif status == "CONNECTION_FAILURE":
+            QMessageBox.critical(self, "Connection Failed", f"Failed to connect to the new LLM provider. Please check your settings.\n\nDetails: {message}")
+        elif status == "CALIBRATION_FAILURE":
+            QMessageBox.warning(self, "Calibration Failed", f"Connection succeeded, but auto-calibration failed:\n{message}")
+        # Refresh the settings dialog's data in case the user re-opens it
+        self._check_mandatory_settings()
+
     def on_raise_cr(self):
         """Delegates the action to the dedicated handler in the CR Management page."""
         self.cr_management_page.on_add_item_clicked()
@@ -1822,3 +1916,4 @@ class ASDFMainWindow(QMainWindow):
             msg_box.setDetailedText(details.strip())
 
         QTimer.singleShot(100, lambda: msg_box.exec())
+

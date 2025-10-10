@@ -5,7 +5,9 @@ import json
 import re
 from datetime import datetime, timezone
 from enum import Enum, auto
-from llm_service import LLMService
+from llm_service import (LLMService, GeminiAdapter, OpenAIAdapter,
+                         AnthropicAdapter, GrokAdapter, DeepseekAdapter, LlamaAdapter,
+                         LocalPhi3Adapter, CustomEndpointAdapter)
 from pathlib import Path
 import textwrap
 import git
@@ -6053,12 +6055,17 @@ class MasterOrchestrator:
             """)
 
             if progress_callback:
-                progress_callback(("INFO", "Querying LLM via web search for max context window..."))
+                progress_callback(("INFO", "Determining appropriate character context window..."))
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 
             if response_text.strip().startswith("Error:"):
                 raise Exception(f"LLM service returned an error during calibration: {response_text}")
+
+            if "Error:" in response_text:
+                logging.error(f"Auto-calibration failed: LLM returned an error. Response: {response_text}")
+                # Return a failure tuple instead of raising an exception that gets caught by the fallback
+                return False, response_text
 
             # Extract all digits from the response, ignoring commas or other text
             numeric_string = re.sub(r'[^\d]', '', response_text)
@@ -6081,7 +6088,7 @@ class MasterOrchestrator:
                 progress_callback(("SUCCESS", success_msg))
             return True, str(safe_char_limit)
 
-        except Exception as e:
+        except (json.JSONDecodeError, ValueError) as e:
             logging.warning(f"Web-sourced auto-calibration failed: {e}. Attempting to fall back to pre-configured default.")
             if progress_callback:
                 progress_callback(("WARNING", f"Web-sourced calibration failed: {e}. Falling back to default."))
@@ -6090,7 +6097,9 @@ class MasterOrchestrator:
                 provider_name = self.db_manager.get_config_value("SELECTED_LLM_PROVIDER")
                 provider_key_map = {
                     "Gemini": "GEMINI_CONTEXT_LIMIT", "ChatGPT": "OPENAI_CONTEXT_LIMIT",
-                    "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Grok": "GROK_CONTEXT_LIMIT",
+                    "Deepseek": "DEEPSEEK_CONTEXT_LIMIT", "Llama": "LLAMA_CONTEXT_LIMIT",
+                    "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
                     "Any Other": "ENTERPRISE_CONTEXT_LIMIT"
                 }
                 default_key = provider_key_map.get(provider_name)
@@ -6131,8 +6140,8 @@ class MasterOrchestrator:
             reasoning_model = db.get_config_value("GEMINI_REASONING_MODEL")
             fast_model = db.get_config_value("GEMINI_FAST_MODEL")
             if not api_key:
-                logging.warning("Gemini is selected, but GEMINI_API_KEY is not set.")
-                return None
+                raise ValueError("Gemini is selected, but the connection attempt failed.")
+                # return None
             return GeminiAdapter(api_key, reasoning_model, fast_model)
 
         elif provider_name_from_db == "ChatGPT":
@@ -6140,8 +6149,8 @@ class MasterOrchestrator:
             reasoning_model = db.get_config_value("OPENAI_REASONING_MODEL")
             fast_model = db.get_config_value("OPENAI_FAST_MODEL")
             if not api_key:
-                logging.warning("ChatGPT (OpenAI) is selected, but OPENAI_API_KEY is not set.")
-                return None
+                raise ValueError("ChatGPT (OpenAI) is selected, but the connection attempt failed.")
+                # return None
             return OpenAIAdapter(api_key, reasoning_model, fast_model)
 
         elif provider_name_from_db == "Claude":
@@ -6149,9 +6158,36 @@ class MasterOrchestrator:
             reasoning_model = db.get_config_value("ANTHROPIC_REASONING_MODEL")
             fast_model = db.get_config_value("ANTHROPIC_FAST_MODEL")
             if not api_key:
-                logging.warning("Claude (Anthropic) is selected, but ANTHROPIC_API_KEY is not set.")
-                return None
+                raise ValueError("Claude (Anthropic) is selected, but the connection attempt failed.")
+                # return None
             return AnthropicAdapter(api_key, reasoning_model, fast_model)
+
+        elif provider_name_from_db == "Grok":
+            api_key = db.get_config_value("GROK_API_KEY")
+            reasoning_model = db.get_config_value("GROK_REASONING_MODEL")
+            fast_model = db.get_config_value("GROK_FAST_MODEL")
+            if not api_key:
+                raise ValueError("Grok is selected, but the connection attempt failed.")
+                # return None
+            return GrokAdapter(api_key, reasoning_model, fast_model)
+
+        elif provider_name_from_db == "Deepseek":
+            api_key = db.get_config_value("DEEPSEEK_API_KEY")
+            reasoning_model = db.get_config_value("DEEPSEEK_REASONING_MODEL")
+            fast_model = db.get_config_value("DEEPSEEK_FAST_MODEL")
+            if not api_key:
+                raise ValueError("Deepseek is selected, but the connection attempt failed.")
+                # return None
+            return DeepseekAdapter(api_key, reasoning_model, fast_model)
+
+        elif provider_name_from_db == "Llama":
+            api_key = db.get_config_value("LLAMA_API_KEY")
+            reasoning_model = db.get_config_value("LLAMA_REASONING_MODEL")
+            fast_model = db.get_config_value("LLAMA_FAST_MODEL")
+            if not api_key:
+                raise ValueError("Llama is selected, but the connection attempt failed.")
+                # return None
+            return LlamaAdapter(api_key, reasoning_model, fast_model)
 
         elif provider_name_from_db == "Phi-3 (Local)":
             return LocalPhi3Adapter()
@@ -6162,8 +6198,8 @@ class MasterOrchestrator:
             reasoning_model = db.get_config_value("CUSTOM_REASONING_MODEL")
             fast_model = db.get_config_value("CUSTOM_FAST_MODEL")
             if not all([base_url, api_key, reasoning_model, fast_model]):
-                logging.warning("Any Other provider selected, but one or more required settings are missing.")
-                return None
+                raise ValueError("Other provider selected, but one or more required settings are missing.")
+                # return None
             return CustomEndpointAdapter(base_url, api_key, reasoning_model, fast_model)
 
         else:

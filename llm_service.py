@@ -109,6 +109,102 @@ class AnthropicAdapter(LLMService):
             logging.error(f"Anthropic API call failed: {e}")
             return f"Error: The call to the Anthropic API failed. Details: {e}"
 
+class GrokAdapter(LLMService):
+    """
+    Concrete implementation of the LLMService for Grok models via the Groq API.
+    """
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
+        import openai
+        if not api_key:
+            raise ValueError("API key is required for the GrokAdapter.")
+        self.client = openai.OpenAI(
+            api_key=api_key,
+            base_url="https://api.groq.com/openai/v1",
+        )
+        self.reasoning_model = reasoning_model_name
+        self.fast_model = fast_model_name
+        logging.info(f"GrokAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
+
+    def generate_text(self, prompt: str, task_complexity: str) -> str:
+        try:
+            model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
+            completion = self.client.chat.completions.create(
+                model=model_to_use,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=600
+            )
+            response_text = completion.choices[0].message.content
+            if not response_text:
+                raise ValueError("The Grok model returned an empty response.")
+            return response_text.strip()
+        except Exception as e:
+            logging.error(f"Grok API call failed: {e}")
+            return f"Error: The call to the Grok API failed. Details: {e}"
+
+class DeepseekAdapter(LLMService):
+    """
+    Concrete implementation of the LLMService for Deepseek models.
+    """
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
+        import openai
+        if not api_key:
+            raise ValueError("API key is required for the DeepseekAdapter.")
+        self.client = openai.OpenAI(
+            api_key=api_key,
+            base_url="https://api.deepseek.com/v1",
+        )
+        self.reasoning_model = reasoning_model_name
+        self.fast_model = fast_model_name
+        logging.info(f"DeepseekAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
+
+    def generate_text(self, prompt: str, task_complexity: str) -> str:
+        try:
+            model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
+            completion = self.client.chat.completions.create(
+                model=model_to_use,
+                messages=[{"role": "user", "content": prompt}],
+                timeout=600
+            )
+            response_text = completion.choices[0].message.content
+            if not response_text:
+                raise ValueError("The Deepseek model returned an empty response.")
+            return response_text.strip()
+        except Exception as e:
+            logging.error(f"Deepseek API call failed: {e}")
+            return f"Error: The call to the Deepseek API failed. Details: {e}"
+
+class LlamaAdapter(LLMService):
+    """
+    Concrete implementation of the LLMService for Meta's Llama models via Replicate.
+    """
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
+        import replicate
+        if not api_key:
+            raise ValueError("API key is required for the LlamaAdapter (Replicate).")
+        self.client = replicate.Client(api_token=api_key)
+        self.reasoning_model = reasoning_model_name
+        self.fast_model = fast_model_name
+        logging.info(f"LlamaAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
+
+    def generate_text(self, prompt: str, task_complexity: str) -> str:
+        try:
+            model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
+
+            output_iterator = self.client.run(
+                model_to_use,
+                input={"prompt": prompt}
+            )
+
+            response_parts = [str(part) for part in output_iterator]
+            response_text = "".join(response_parts)
+
+            if not response_text:
+                raise ValueError("The Llama (Replicate) model returned an empty response.")
+            return response_text.strip()
+        except Exception as e:
+            logging.error(f"Llama (Replicate) API call failed: {e}")
+            return f"Error: The call to the Llama (Replicate) API failed. Details: {e}"
+
 class LocalPhi3Adapter(LLMService):
     """
     Concrete implementation of the LLMService for a local Phi-3 model via Ollama.

@@ -4,7 +4,7 @@ import logging
 import shutil
 import os
 from pathlib import Path
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThreadPool, QTimer
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
@@ -71,6 +71,7 @@ class SettingsDialog(QDialog):
         self.threadpool = QThreadPool()
         self.initial_provider = ""
         self.is_calibrating_on_save = False
+        self.provider_changed = False
 
         self.setWindowTitle("ASDF Settings")
         self.setMinimumSize(600, 500)
@@ -88,7 +89,7 @@ class SettingsDialog(QDialog):
         # --- LLM Providers Tab Widgets ---
         self.llm_providers_tab = QWidget()
         self.provider_combo_box = QComboBox()
-        self.provider_combo_box.addItems(["Gemini", "ChatGPT", "Claude", "Phi-3 (Local)", "Any Other"])
+        self.provider_combo_box.addItems(["Gemini", "ChatGPT", "Claude", "Grok", "Deepseek", "Llama", "Phi-3 (Local)", "Any Other"])
         self.provider_stacked_widget = QStackedWidget()
 
         self.gemini_page = QWidget()
@@ -117,6 +118,24 @@ class SettingsDialog(QDialog):
         self.custom_endpoint_api_key_input.setEchoMode(QLineEdit.Password)
         self.custom_reasoning_model_input = QLineEdit()
         self.custom_fast_model_input = QLineEdit()
+
+        self.grok_page = QWidget()
+        self.grok_api_key_input = QLineEdit()
+        self.grok_api_key_input.setEchoMode(QLineEdit.Password)
+        self.grok_reasoning_model_input = QLineEdit()
+        self.grok_fast_model_input = QLineEdit()
+
+        self.deepseek_page = QWidget()
+        self.deepseek_api_key_input = QLineEdit()
+        self.deepseek_api_key_input.setEchoMode(QLineEdit.Password)
+        self.deepseek_reasoning_model_input = QLineEdit()
+        self.deepseek_fast_model_input = QLineEdit()
+
+        self.llama_page = QWidget()
+        self.llama_api_key_input = QLineEdit()
+        self.llama_api_key_input.setEchoMode(QLineEdit.Password)
+        self.llama_reasoning_model_input = QLineEdit()
+        self.llama_fast_model_input = QLineEdit()
 
         # --- Factory Behavior Tab Widgets ---
         self.factory_behavior_tab = QWidget()
@@ -195,6 +214,24 @@ class SettingsDialog(QDialog):
         anyother_layout.addRow("Fast Model:", self.custom_fast_model_input)
         self.provider_stacked_widget.addWidget(self.anyother_page)
 
+        grok_layout = QFormLayout(self.grok_page)
+        grok_layout.addRow("Grok API Key:", self.grok_api_key_input)
+        grok_layout.addRow("Reasoning Model:", self.grok_reasoning_model_input)
+        grok_layout.addRow("Fast Model:", self.grok_fast_model_input)
+        self.provider_stacked_widget.addWidget(self.grok_page)
+
+        deepseek_layout = QFormLayout(self.deepseek_page)
+        deepseek_layout.addRow("Deepseek API Key:", self.deepseek_api_key_input)
+        deepseek_layout.addRow("Reasoning Model:", self.deepseek_reasoning_model_input)
+        deepseek_layout.addRow("Fast Model:", self.deepseek_fast_model_input)
+        self.provider_stacked_widget.addWidget(self.deepseek_page)
+
+        llama_layout = QFormLayout(self.llama_page)
+        llama_layout.addRow("Llama API Key (Replicate):", self.llama_api_key_input)
+        llama_layout.addRow("Reasoning Model:", self.llama_reasoning_model_input)
+        llama_layout.addRow("Fast Model:", self.llama_fast_model_input)
+        self.provider_stacked_widget.addWidget(self.llama_page)
+
         llm_tab_layout.addWidget(self.provider_stacked_widget)
         llm_tab_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
 
@@ -239,10 +276,10 @@ class SettingsDialog(QDialog):
 
         integrations_main_layout.addWidget(self.integrations_stacked_widget)
 
-        self.tab_widget.addTab(self.integrations_tab, "Integrations")
-        self.tab_widget.addTab(self.templates_tab, "Templates")
-        self.tab_widget.addTab(self.llm_providers_tab, "LLM Providers")
         self.tab_widget.addTab(self.factory_behavior_tab, "Factory Behavior")
+        self.tab_widget.addTab(self.llm_providers_tab, "LLM Providers")
+        self.tab_widget.addTab(self.templates_tab, "Templates")
+        self.tab_widget.addTab(self.integrations_tab, "Integrations")
 
         self.main_layout.addWidget(self.tab_widget)
         self.main_layout.addWidget(self.button_box)
@@ -358,6 +395,15 @@ class SettingsDialog(QDialog):
         self.custom_endpoint_api_key_input.setText(get_val("CUSTOM_ENDPOINT_API_KEY"))
         self.custom_reasoning_model_input.setText(get_val("CUSTOM_REASONING_MODEL"))
         self.custom_fast_model_input.setText(get_val("CUSTOM_FAST_MODEL"))
+        self.grok_api_key_input.setText(get_val("GROK_API_KEY"))
+        self.grok_reasoning_model_input.setText(get_val("GROK_REASONING_MODEL"))
+        self.grok_fast_model_input.setText(get_val("GROK_FAST_MODEL"))
+        self.deepseek_api_key_input.setText(get_val("DEEPSEEK_API_KEY"))
+        self.deepseek_reasoning_model_input.setText(get_val("DEEPSEEK_REASONING_MODEL"))
+        self.deepseek_fast_model_input.setText(get_val("DEEPSEEK_FAST_MODEL"))
+        self.llama_api_key_input.setText(get_val("LLAMA_API_KEY"))
+        self.llama_reasoning_model_input.setText(get_val("LLAMA_REASONING_MODEL"))
+        self.llama_fast_model_input.setText(get_val("LLAMA_FAST_MODEL"))
 
         self.max_debug_spin_box.setValue(int(get_val("MAX_DEBUG_ATTEMPTS", 2)))
         self.context_limit_input.setText(get_val("CONTEXT_WINDOW_CHAR_LIMIT", "2500000"))
@@ -393,7 +439,9 @@ class SettingsDialog(QDialog):
         provider_name = self.provider_combo_box.currentText()
         page_map = {
             "Gemini": self.gemini_page, "ChatGPT": self.chatgpt_page,
-            "Claude": self.claude_page, "Phi-3 (Local)": self.phi3local_page,
+            "Claude": self.claude_page, "Grok": self.grok_page,
+            "Deepseek": self.deepseek_page, "Llama": self.llama_page,
+            "Phi-3 (Local)": self.phi3local_page,
             "Any Other": self.anyother_page
         }
         page_to_show = page_map.get(provider_name)
@@ -448,31 +496,23 @@ class SettingsDialog(QDialog):
         error_msg = f"An unexpected error occurred during calibration:\n{error_tuple[1]}"
         QMessageBox.critical(self, "Error", error_msg)
 
+    def _on_calibration_finished(self):
+        """Re-enables the main window and clears the status bar."""
+        self.setEnabled(True)
+        self.statusBar().clearMessage()
+
     def save_settings_and_accept(self):
         """
-        Checks for an LLM provider change, warns the user, and then saves all
-        settings if the user confirms or if no provider change was made.
+        Saves all settings to the database, sets a flag if the provider
+        changed, and then accepts (closes) the dialog immediately.
         """
         logging.info("Attempting to save settings from dialog...")
         db_manager = self.orchestrator.db_manager
         new_provider = self.provider_combo_box.currentText()
-        provider_changed = new_provider != self.initial_provider
-
-        if provider_changed:
-            reply = QMessageBox.question(self, "Confirm LLM Change",
-                                        "Changing the LLM could yield unpredictable results in projects that have remaining work to be completed!",
-                                        QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel,
-                                        QMessageBox.StandardButton.Cancel)
-
-            if reply == QMessageBox.StandardButton.Cancel:
-                # User cancelled. Revert the combo box and stop, leaving the dialog open.
-                self.provider_combo_box.setCurrentText(self.initial_provider)
-                return
-
-        # If we reach here, either the provider wasn't changed, or the user confirmed the change.
-        # Now, we can safely save everything.
+        self.provider_changed = new_provider != self.initial_provider
 
         try:
+            # The full settings_to_save dictionary remains the same as before
             settings_to_save = {
                 "SELECTED_LLM_PROVIDER": self.provider_combo_box.currentText(),
                 "GEMINI_API_KEY": self.gemini_api_key_input.text(),
@@ -484,6 +524,15 @@ class SettingsDialog(QDialog):
                 "ANTHROPIC_API_KEY": self.anthropic_api_key_input.text(),
                 "ANTHROPIC_REASONING_MODEL": self.anthropic_reasoning_model_input.text(),
                 "ANTHROPIC_FAST_MODEL": self.anthropic_fast_model_input.text(),
+                "GROK_API_KEY": self.grok_api_key_input.text(),
+                "GROK_REASONING_MODEL": self.grok_reasoning_model_input.text(),
+                "GROK_FAST_MODEL": self.grok_fast_model_input.text(),
+                "DEEPSEEK_API_KEY": self.deepseek_api_key_input.text(),
+                "DEEPSEEK_REASONING_MODEL": self.deepseek_reasoning_model_input.text(),
+                "DEEPSEEK_FAST_MODEL": self.deepseek_fast_model_input.text(),
+                "LLAMA_API_KEY": self.llama_api_key_input.text(),
+                "LLAMA_REASONING_MODEL": self.llama_reasoning_model_input.text(),
+                "LLAMA_FAST_MODEL": self.llama_fast_model_input.text(),
                 "CUSTOM_ENDPOINT_URL": self.custom_endpoint_url_input.text(),
                 "CUSTOM_ENDPOINT_API_KEY": self.custom_endpoint_api_key_input.text(),
                 "CUSTOM_REASONING_MODEL": self.custom_reasoning_model_input.text(),
@@ -498,21 +547,11 @@ class SettingsDialog(QDialog):
                 "INTEGRATION_USERNAME": self.jira_username_input.text(),
                 "INTEGRATION_API_TOKEN": self.jira_token_input.text()
             }
-
             for key, value in settings_to_save.items():
                 db_manager.set_config_value(key, value)
-
             self.orchestrator._llm_service = None
             logging.info("Settings saved. LLM service will be re-initialized on next use.")
-
-            if provider_changed:
-                self.is_calibrating_on_save = True
-                QMessageBox.information(self, "Provider Changed",
-                                        "LLM Provider has been changed. The system will now auto-calibrate the context window limit. Please wait...")
-                self.on_calibrate_clicked()
-            else:
-                self.accept() # Close the dialog if no calibration is needed.
-
+            self.accept()
         except Exception as e:
             logging.error(f"Failed to save settings: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to save settings:\n{e}")
