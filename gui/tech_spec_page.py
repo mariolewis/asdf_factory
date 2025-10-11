@@ -222,9 +222,11 @@ class TechSpecPage(QWidget):
 
         self.refinement_iteration_count += 1
 
-    def _handle_generation_result(self, tech_spec_draft):
+    def _handle_generation_result(self, result_tuple):
         try:
+            tech_spec_draft, ai_analysis = result_tuple
             self.tech_spec_draft = tech_spec_draft
+            self.ai_analysis = ai_analysis
             is_error = tech_spec_draft.strip().startswith("Error:") or tech_spec_draft.strip().startswith("### Error")
 
             if is_error:
@@ -244,10 +246,12 @@ class TechSpecPage(QWidget):
                 self.retry_count = 0
                 self.ui.pauseProjectButton.setVisible(False)
                 self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
+                self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
                 self.ui.approveButton.setText("Approve Technical Specification")
 
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.ui.reviewTabWidget.setCurrentIndex(0) # Ensure focus is on the draft
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -267,11 +271,14 @@ class TechSpecPage(QWidget):
 
     def _handle_refinement_result(self, result_tuple):
         try:
-            # result_tuple = ("Error: This is a simulated refinement failure.", "")
             new_draft, new_analysis = result_tuple
             self.tech_spec_draft = new_draft
             self.ai_analysis = new_analysis
             is_error = new_draft.strip().startswith("Error:") or new_draft.strip().startswith("### Error")
+
+            # Make the destination tab visible BEFORE setting content
+            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
+            self.ui.reviewTabWidget.setCurrentIndex(0)
 
             if is_error:
                 self.review_is_error_state = True
@@ -291,8 +298,6 @@ class TechSpecPage(QWidget):
                 self.ui.approveButton.setText("Approve Technical Specification")
 
             self.ui.feedbackTextEdit.clear()
-            self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
-            self.ui.reviewTabWidget.setCurrentIndex(0)
             self.state_changed.emit()
         finally:
             self._set_ui_busy(False)
@@ -344,13 +349,16 @@ class TechSpecPage(QWidget):
         db = self.orchestrator.db_manager
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         final_spec_text = project_details['final_spec_text']
-        logging.debug(f"DATA RETRIEVAL: Content read from DB for agent input: {final_spec_text[:200]}...")
         if not final_spec_text:
             raise Exception("Could not retrieve the application specification.")
+
         agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
         draft_content = agent.propose_stack(final_spec_text, target_os, template_content=template_content, pm_guidelines=pm_guidelines)
         full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
-        return full_draft
+
+        # Now, immediately analyze the new draft
+        ai_analysis = agent.analyze_draft(full_draft, iteration_count=1, previous_analysis="")
+        return full_draft, ai_analysis
 
     def _task_validate_and_generate(self, guidelines, uploaded_files, target_os, **kwargs):
         """Background task for the full PM-led workflow."""
@@ -372,7 +380,18 @@ class TechSpecPage(QWidget):
         validation_result = agent.validate_guidelines(full_guidelines, final_spec_text)
 
         if validation_result.get("compatible"):
-            return self._task_propose_stack(target_os, full_guidelines)
+            # This now calls the original generation logic and then immediately runs analysis.
+            agent = TechStackProposalAgent(llm_service=self.orchestrator.llm_service)
+            db = self.orchestrator.db_manager
+            project_details = db.get_project_by_id(self.orchestrator.project_id)
+            final_spec_text = project_details['final_spec_text']
+            template_content = self._get_template_content("Default Technical Specification")
+
+            draft_content = agent.propose_stack(final_spec_text, target_os, template_content=template_content, pm_guidelines=full_guidelines)
+            full_draft = self.orchestrator.prepend_standard_header(draft_content, "Technical Specification")
+
+            ai_analysis = agent.analyze_draft(full_draft, iteration_count=1, previous_analysis="")
+            return full_draft, ai_analysis
         else:
             validation_result["user_guidelines"] = full_guidelines
             return validation_result
