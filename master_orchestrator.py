@@ -85,6 +85,8 @@ class FactoryPhase(Enum):
     AWAITING_SPEC_REFINEMENT_SUBMISSION = auto()
     AWAITING_SPEC_FINAL_APPROVAL = auto()
     TECHNICAL_SPECIFICATION = auto()
+    AWAITING_TECH_SPEC_GUIDELINES = auto()
+    AWAITING_TECH_SPEC_RECTIFICATION = auto()
     TEST_ENVIRONMENT_SETUP = auto()
     BUILD_SCRIPT_SETUP = auto()
     DOCKERIZATION_SETUP = auto()
@@ -1038,7 +1040,7 @@ class MasterOrchestrator:
         }
         self.set_phase("AWAITING_TECH_SPEC_RECTIFICATION")
 
-    def handle_tech_spec_refinement(self, current_draft: str, pm_feedback: str, target_os: str, iteration_count: int, ai_issues_text: str):
+    def handle_tech_spec_refinement(self, current_draft: str, pm_feedback: str, target_os: str, iteration_count: int, ai_issues_text: str, template_content: str | None = None):
         """
         Handles the iterative refinement loop for the technical specification.
         """
@@ -1049,7 +1051,7 @@ class MasterOrchestrator:
         final_spec_text = project_details['final_spec_text'] if project_details else ""
 
         pure_content = self._strip_header_from_document(current_draft)
-        refined_content = agent.refine_stack(pure_content, pm_feedback, target_os, final_spec_text, ai_issues_text)
+        refined_content = agent.refine_stack(pure_content, pm_feedback, target_os, final_spec_text, ai_issues_text, template_content=template_content)
 
         clean_refined_body = self._strip_header_from_document(refined_content)
         refined_draft_with_header = self.prepend_standard_header(clean_refined_body, "Technical Specification")
@@ -1390,12 +1392,24 @@ class MasterOrchestrator:
             # 1. Consolidate all requirement sources into a single input document
             consolidated_requirements = self._consolidate_specification_inputs()
 
-            # 2. Generate the raw spec content from the consolidated document
-            spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
-            app_spec_draft_content = spec_agent.expand_brief_description(consolidated_requirements)
+            # 2. Load the default template for this document type, if it exists.
+            template_content = None
+            try:
+                template_record = self.db_manager.get_template_by_name("Default Application Specification")
+                if template_record:
+                    template_path = Path(template_record['file_path'])
+                    if template_path.exists():
+                        template_content = template_path.read_text(encoding='utf-8')
+                        logging.info("Found and loaded 'Default Application Specification' template.")
+            except Exception as e:
+                logging.warning(f"Could not load default Application Spec template: {e}")
 
-            # 3. Calculate objective metrics ON THE FULL DRAFT, not the initial brief.
-            # effort_metrics = self._calculate_asdf_effort_metrics(app_spec_draft_content)
+            # 3. Generate the raw spec content from the consolidated document, now using the template.
+            spec_agent = SpecClarificationAgent(self.llm_service, self.db_manager)
+            app_spec_draft_content = spec_agent.expand_brief_description(
+                brief_description=consolidated_requirements,
+                template_content=template_content
+            )
 
             # 4. Add the standard document header to the draft
             full_app_spec_draft = self.prepend_standard_header(
@@ -1448,7 +1462,7 @@ class MasterOrchestrator:
         # We just need to change the phase so the UI knows to display it.
         self.set_phase("AWAITING_SPEC_REFINEMENT_SUBMISSION")
 
-    def handle_spec_refinement_submission(self, current_draft: str, pm_feedback: str):
+    def handle_spec_refinement_submission(self, current_draft: str, pm_feedback: str, template_content: str | None = None):
         """
         Called when the user submits feedback. This triggers the refinement and
         analysis, then transitions to the 3-tab view.
@@ -1464,7 +1478,7 @@ class MasterOrchestrator:
         pure_content = self._strip_header_from_document(current_draft)
 
         # Refine the spec based on feedback using the pure content
-        refined_content = spec_agent.refine_specification(pure_content, "", pm_feedback)
+        refined_content = spec_agent.refine_specification(pure_content, "", pm_feedback, template_content=template_content)
 
         # Prepend a fresh, updated header to the refined content
         refined_draft_with_header = self.prepend_standard_header(refined_content, "Application Specification")

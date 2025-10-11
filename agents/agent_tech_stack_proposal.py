@@ -129,11 +129,21 @@ class TechStackProposalAgent:
             logging.error(f"TechStackProposalAgent API call failed: {e}")
             return f"Error: An unexpected error occurred while generating the tech stack proposal: {e}"
 
-    def refine_stack(self, current_draft: str, pm_feedback: str, target_os: str, functional_spec_text: str, ai_issues_text: str) -> str:
+    def refine_stack(self, current_draft: str, pm_feedback: str, target_os: str, functional_spec_text: str, ai_issues_text: str, template_content: str | None = None) -> str:
         """
         Refines an existing technical specification draft based on PM feedback.
         """
         logging.info(f"TechStackProposalAgent: Refining tech spec for OS: {target_os}...")
+
+        template_instruction = ""
+        if template_content:
+            template_instruction = textwrap.dedent(f"""
+            **CRITICAL TEMPLATE INSTRUCTION:**
+            The original draft was based on a template. Your refined output MUST also strictly and exactly follow the structure, headings, and formatting of that same template.
+            --- TEMPLATE START ---
+            {template_content}
+            --- TEMPLATE END ---
+            """)
 
         prompt = textwrap.dedent(f"""
             You are a senior Solutions Architect revising a document. Your task is to refine the body of a Technical Specification based on a list of identified issues and specific feedback from a Product Manager.
@@ -142,6 +152,8 @@ class TechStackProposalAgent:
             1.  **Refine Body Only**: The text you receive is the body of a document. Your task is to incorporate the PM's clarifications to resolve the identified issues.
             2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw, refined text of the document's body. Do NOT add a header, preamble, or any conversational text.
             3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting (e.g., '##' for main headings, '###' for sub-headings, and '*' for list items). Paragraphs MUST be separated by a full blank line.
+
+            {template_instruction}
 
             **--- CONTEXT: Full Application Specification ---**
             {functional_spec_text}

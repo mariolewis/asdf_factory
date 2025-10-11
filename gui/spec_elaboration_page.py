@@ -1,6 +1,7 @@
 # gui/spec_elaboration_page.py
 
 import logging
+from pathlib import Path
 import json
 import re
 from datetime import datetime
@@ -84,6 +85,20 @@ class SpecElaborationPage(QWidget):
         self.ui.submitForAnalysisButton.clicked.connect(self.run_refinement_and_analysis_task)
         self.ui.pmReviewTextEdit.textChanged.connect(self.on_draft_changed)
         self.ui.specDraftTextEdit.textChanged.connect(self.on_draft_changed)
+
+    def _get_template_content(self, template_name: str) -> str | None:
+        """A helper to load a specific template from the database."""
+        template_content = None
+        try:
+            template_record = self.orchestrator.db_manager.get_template_by_name(template_name)
+            if template_record:
+                template_path = Path(template_record['file_path'])
+                if template_path.exists():
+                    template_content = template_path.read_text(encoding='utf-8')
+                    logging.info(f"Found and loaded '{template_name}' template.")
+        except Exception as e:
+            logging.warning(f"Could not load '{template_name}' template: {e}")
+        return template_content
 
     def on_draft_changed(self):
         """Saves the current text content to the orchestrator's active draft variable."""
@@ -401,7 +416,8 @@ class SpecElaborationPage(QWidget):
 
     def _task_refine_and_analyze(self, current_draft, pm_feedback, **kwargs):
         """Background worker task that calls the orchestrator for refinement and issue analysis."""
-        self.orchestrator.handle_spec_refinement_submission(current_draft, pm_feedback)
+        template_content = self._get_template_content("Default Application Specification")
+        self.orchestrator.handle_spec_refinement_submission(current_draft, pm_feedback, template_content=template_content)
         return True # Indicate success
 
     def _handle_refinement_and_analysis_result(self, success):

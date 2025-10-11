@@ -378,5 +378,11 @@ class TechSpecPage(QWidget):
 
     def _task_refine_spec(self, current_draft, feedback, target_os, iteration_count, ai_issues, **kwargs):
         """Background worker task that calls the orchestrator to handle the full refinement loop."""
-        self.orchestrator.handle_tech_spec_refinement(current_draft, feedback, target_os, iteration_count, ai_issues)
-        return True
+        template_content = self._get_template_content("Default Technical Specification")
+        self.orchestrator.handle_tech_spec_refinement(current_draft, feedback, target_os, iteration_count, ai_issues, template_content=template_content)
+
+        # Retrieve the results that the orchestrator just prepared
+        task_data = self.orchestrator.task_awaiting_approval or {}
+        new_draft = task_data.get("draft_spec_from_guidelines", "Error: Draft not found.")
+        new_analysis = task_data.get("ai_analysis", "Error: Analysis not found.")
+        return new_draft, new_analysis

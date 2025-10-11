@@ -201,14 +201,24 @@ class SpecClarificationAgent:
             logging.error(f"LLM service call failed during issue identification: {e}")
             raise
 
-    def refine_specification(self, current_draft_text: str, issues_found: str, pm_clarification: str, is_gui_project: bool = False) -> str:
+    def refine_specification(self, current_draft_text: str, issues_found: str, pm_clarification: str, is_gui_project: bool = False, template_content: str | None = None) -> str:
         """
         Refines the specification draft based on PM feedback.
         """
         fallback_instruction = ""
         if is_gui_project:
-            fallback_instruction = textwrap.dedent("""
+            fallback_instruction = textwrap.dedent(f"""
             **IMPORTANT:** This is a GUI application. Ensure your revised output includes a complete section titled "UI Layout & Style Guide" based on all available information.
+            """)
+
+        template_instruction = ""
+        if template_content:
+            template_instruction = textwrap.dedent(f"""
+            **CRITICAL TEMPLATE INSTRUCTION:**
+            The original draft was based on a template. Your refined output MUST also strictly and exactly follow the structure, headings, and formatting of that same template.
+            --- TEMPLATE START ---
+            {template_content}
+            --- TEMPLATE END ---
             """)
 
         prompt = textwrap.dedent(f"""
@@ -218,6 +228,9 @@ class SpecClarificationAgent:
             1.  **Refine Body Only**: The text you receive is only the body of a document. Your task is to incorporate the PM's clarifications to resolve the identified issues.
             2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw, refined text of the document's body. Do not add a header, preamble, introduction, or any conversational text.
             3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting (e.g., '##' for headings).
+
+            {fallback_instruction}
+            {template_instruction}
 
             **--- INPUT 1: Current Draft Body ---**
             ```markdown
