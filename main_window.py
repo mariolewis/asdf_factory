@@ -862,11 +862,9 @@ class ASDFMainWindow(QMainWindow):
             self.decision_page.configure(
                 header="Specification Phase Complete",
                 instruction="All required project specifications have been finalized. The next major step is to generate the initial project backlog from these documents.",
-                details="Select an option below to continue.",
                 option1_text="Generate Project Backlog Now",
                 option2_text="Pause Project & Continue Later"
             )
-            # Note: The on_gateway_generate_backlog and on_gateway_pause_project methods will be created in the next step.
             self.decision_page.option1_selected.connect(self.on_gateway_generate_backlog)
             self.decision_page.option2_selected.connect(self.on_gateway_pause_project)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
