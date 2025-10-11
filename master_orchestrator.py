@@ -1053,6 +1053,7 @@ class MasterOrchestrator:
         pure_content = self._strip_header_from_document(current_draft)
         refined_content = agent.refine_stack(pure_content, pm_feedback, target_os, final_spec_text, ai_issues_text, template_content=template_content)
 
+        # unescaped_content = html.unescape(refined_content)
         clean_refined_body = self._strip_header_from_document(refined_content)
         refined_draft_with_header = self.prepend_standard_header(clean_refined_body, "Technical Specification")
 
@@ -4755,21 +4756,31 @@ class MasterOrchestrator:
     def _strip_header_from_document(self, document_content: str) -> str:
         """
         A helper method to reliably remove the ASDF-standard plain text header
-        from a document, returning only the raw content.
+        from a document, returning only the raw content. This version uses a
+        regular expression to be more resilient to whitespace or encoding issues.
         """
         if not document_content:
             return ""
 
-        # The correct separator is 50 hyphens followed by two newlines.
-        separator = f"{'-' * 50}\n\n"
+        # Regex to find the header block:
+        # - Starts with "PROJECT NUMBER:"
+        # - Ends with a line of 50+ hyphens, followed by newlines
+        # - re.DOTALL allows '.' to match newlines
+        # - re.IGNORECASE makes the search case-insensitive
+        header_pattern = re.compile(
+            r"^\s*PROJECT NUMBER:.*?-{50,}\s*\n",
+            re.DOTALL | re.IGNORECASE
+        )
 
-        parts = document_content.split(separator, 1)
-        if len(parts) > 1:
-            # The content is the second part after the split
-            return parts[1]
+        # Replace the first match of the header pattern with an empty string
+        stripped_content = re.sub(header_pattern, '', document_content, count=1)
 
-        # Return original text if separator is not found
-        return document_content
+        # If the content length is the same, the pattern didn't match.
+        if len(stripped_content) == len(document_content):
+            logging.warning("_strip_header_from_document: Header pattern not found. Returning original content.")
+            return document_content
+        else:
+            return stripped_content.lstrip() # Remove any leading whitespace
 
     def _commit_document(self, file_path: Path, commit_message: str):
         """A helper method to stage and commit a single document, but only if version control is enabled."""
