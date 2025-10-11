@@ -176,7 +176,7 @@ class SpecClarificationAgent:
             {convergence_directive}
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **STRICT MARKDOWN FORMATTING:** Your entire response must be in raw Markdown. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with a '*' character. Paragraphs MUST be separated by a full blank line. This is mandatory.
+            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
             2.  Identify any ambiguities, contradictions, underspecified features, or missing information.
             3.  For each issue you identify, you MUST propose 1-2 concrete potential solutions or clarifying options for the Product Manager to consider.
             4.  Structure your response as a numbered list. For each item, clearly state the "Issue" and then provide the "Proposed Solutions".

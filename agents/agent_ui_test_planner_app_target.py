@@ -53,6 +53,7 @@ class UITestPlannerAgent_AppTarget:
             3.  **Table Columns:** The table MUST have the columns: "Test Case ID", "Feature", "Test Scenario", "Steps to Reproduce", "Expected Result", and a blank "Actual Result" column for the user to fill in.
             4.  **Comprehensive Coverage:** Your test cases must cover all user-facing features, screens, and components described in the UX/UI Specification. Use the other specifications for additional context on business logic and technical constraints.
             5.  **Clarity:** Provide clear, numbered steps that a non-technical user can follow.
+            6.  **STRICT MARKDOWN FORMATTING:** For any content within the table cells that requires a list (like "Steps to Reproduce"), each item MUST start on a new line with a number and a space (e.g., "1. First step.").
 
             **--- INPUT 1: UX/UI Specification (Primary Source) ---**
             ```

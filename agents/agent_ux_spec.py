@@ -54,7 +54,7 @@ class UX_Spec_Agent:
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze Holistically:** Analyze the provided Project Brief and User Personas to understand the application's goals and target audience.
-            2.  **Markdown Format:** The entire output must be a well-structured Markdown document.
+            2.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
             3.  **Required Sections (if no template is provided):** If no template is given, you MUST generate a document containing the following sections, using the exact heading names provided:
                 - `## 1. User Personas`
                 - `## 2. Epics`

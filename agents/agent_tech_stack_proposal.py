@@ -97,6 +97,8 @@ class TechStackProposalAgent:
             **CRITICAL INSTRUCTIONS:** - Your entire response MUST be only the raw Markdown content of the document's BODY.
             - Do NOT add a header, preamble, introduction, or any conversational text.
 
+            **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+
             {template_instruction}
 
             **--- Mandatory Analysis and Scoping Instructions ---**
