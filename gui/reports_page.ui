@@ -86,7 +86,7 @@
    <item>
     <widget class="QGroupBox" name="crBugGroupBox">
      <property name="title">
-      <string>Change &amp; Bug Register</string>
+      <string>Change &amp;&amp; Bug Register</string>
      </property>
      <layout class="QVBoxLayout" name="verticalLayout_3">
       <item>

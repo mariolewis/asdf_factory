@@ -115,7 +115,7 @@
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title">
-      <string>&amp;File</string>
+      <string>&amp;&amp;File</string>
     </property>
     <addaction name="actionNew_Project"/>
     <addaction name="actionOpen_Project"/>
@@ -129,7 +129,7 @@
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
-     <string>&amp;Edit</string>
+     <string>&amp;&amp;Edit</string>
     </property>
     <addaction name="actionUndo"/>
     <addaction name="actionRedo"/>
@@ -141,14 +141,14 @@
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
-     <string>&amp;View</string>
+     <string>&amp;&amp;View</string>
     </property>
     <addaction name="actionToggleProjectPanel"/>
     <addaction name="actionToggleNotificationPanel"/>
    </widget>
    <widget class="QMenu" name="menuProject">
     <property name="title">
-     <string>&amp;Project</string>
+     <string>&amp;&amp;Project</string>
     </property>
     <addaction name="actionManage_CRs_Bugs"/>
     <addaction name="actionView_Documents"/>
@@ -156,20 +156,20 @@
    </widget>
    <widget class="QMenu" name="menuRun">
     <property name="title">
-     <string>&amp;Run</string>
+     <string>&amp;&amp;Run</string>
     </property>
     <addaction name="actionProceed"/>
     <addaction name="actionRun_Tests"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
-     <string>&amp;Help</string>
+     <string>&amp;&amp;Help</string>
     </property>
     <addaction name="actionAbout_ASDF"/>
    </widget>
    <widget class="QMenu" name="menuDebug">
     <property name="title">
-     <string>&amp;Debug</string>
+     <string>&amp;&amp;Debug</string>
     </property>
    </widget>
    <addaction name="menuFile"/>
@@ -299,27 +299,27 @@
    </action>
   <action name="actionUndo">
    <property name="text">
-    <string>&amp;Undo</string>
+    <string>&amp;&amp;Undo</string>
    </property>
   </action>
   <action name="actionRedo">
    <property name="text">
-    <string>&amp;Redo</string>
+    <string>&amp;&amp;Redo</string>
    </property>
   </action>
   <action name="actionCut">
    <property name="text">
-    <string>Cu&amp;t</string>
+    <string>Cu&amp;&amp;t</string>
    </property>
   </action>
   <action name="actionCopy">
    <property name="text">
-    <string>&amp;Copy</string>
+    <string>&amp;&amp;Copy</string>
    </property>
   </action>
   <action name="actionPaste">
    <property name="text">
-    <string>&amp;Paste</string>
+    <string>&amp;&amp;Paste</string>
    </property>
   </action>
   <action name="actiontemp">

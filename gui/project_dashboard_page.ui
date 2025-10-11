@@ -112,7 +112,7 @@
       <item row="0" column="0">
        <widget class="QPushButton" name="maintainButton">
         <property name="text">
-         <string>Maintain &amp; Enhance</string>
+         <string>Maintain &amp;&amp; Enhance</string>
         </property>
        </widget>
       </item>

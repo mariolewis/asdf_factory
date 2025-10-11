@@ -161,7 +161,7 @@
      <item>
       <widget class="QPushButton" name="approveButton">
        <property name="text">
-        <string>Acknowledge &amp; Proceed to Spec Review</string>
+        <string>Acknowledge &amp;&amp; Proceed to Spec Review</string>
        </property>
       </widget>
      </item>

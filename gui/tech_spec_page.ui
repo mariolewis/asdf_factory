@@ -29,7 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>Technical Specification &amp; Architecture</string>
+      <string>Technical Specification &amp;&amp; Architecture</string>
      </property>
     </widget>
    </item>
@@ -165,7 +165,7 @@
          <item>
           <widget class="QPushButton" name="generateFromGuidelinesButton">
            <property name="text">
-            <string>Analyze &amp; Generate Draft</string>
+            <string>Analyze &amp;&amp; Generate Draft</string>
            </property>
           </widget>
          </item>
@@ -196,7 +196,7 @@
          </widget>
          <widget class="QWidget" name="aiAnalysisTab">
           <attribute name="title">
-           <string>AI Analysis &amp; Suggestions</string>
+           <string>AI Analysis &amp;&amp; Suggestions</string>
           </attribute>
           <layout class="QVBoxLayout" name="verticalLayout_8">
            <item>
@@ -210,7 +210,7 @@
          </widget>
          <widget class="QWidget" name="feedbackTab">
           <attribute name="title">
-           <string>Your Feedback &amp; Refinements</string>
+           <string>Your Feedback &amp;&amp; Refinements</string>
           </attribute>
           <layout class="QVBoxLayout" name="verticalLayout_10">
            <item>
@@ -249,7 +249,7 @@
         <item>
         <widget class="QPushButton" name="refineButton">
         <property name="text">
-            <string>Submit Feedback &amp;&amp; Refine</string>
+            <string>Submit Feedback &amp;&amp;&amp;&amp; Refine</string>
         </property>
         </widget>
         </item>

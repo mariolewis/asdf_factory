@@ -135,14 +135,14 @@
          <item>
           <widget class="QPushButton" name="refineButton">
            <property name="text">
-            <string>Submit Feedback &amp; Refine</string>
+            <string>Submit Feedback &amp;&amp; Refine</string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QPushButton" name="approveButton">
            <property name="text">
-            <string>Approve Plan &amp; Proceed to Development</string>
+            <string>Approve Plan &amp;&amp; Proceed to Development</string>
            </property>
           </widget>
          </item>

@@ -155,7 +155,7 @@
          <item>
           <widget class="QPushButton" name="generateFromGuidelinesButton">
            <property name="text">
-            <string>Analyze Guidelines &amp; Generate Draft</string>
+            <string>Analyze Guidelines &amp;&amp; Generate Draft</string>
            </property>
           </widget>
          </item>
@@ -186,7 +186,7 @@
          </widget>
          <widget class="QWidget" name="aiAnalysisTab">
           <attribute name="title">
-           <string>AI Analysis &amp; Suggestions</string>
+           <string>AI Analysis &amp;&amp; Suggestions</string>
           </attribute>
           <layout class="QVBoxLayout" name="verticalLayout_8">
            <item>
@@ -239,7 +239,7 @@
          <item>
           <widget class="QPushButton" name="refineButton">
            <property name="text">
-            <string>Submit Feedback &amp; Refine</string>
+            <string>Submit Feedback &amp;&amp; Refine</string>
            </property>
           </widget>
          </item>

@@ -136,7 +136,7 @@ class Ui_ReportsPage(object):
         self.instructionLabel.setText(QCoreApplication.translate("ReportsPage", u"Review and export high-level reports for the active project.", None))
         self.progressSummaryGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Development Progress Summary", None))
         self.exportProgressButton.setText(QCoreApplication.translate("ReportsPage", u"Export Summary to .docx", None))
-        self.crBugGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Change & Bug Register", None))
+        self.crBugGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Change && Bug Register", None))
         self.filterLabel.setText(QCoreApplication.translate("ReportsPage", u"Filter by Status:", None))
         self.crFilterComboBox.setItemText(0, QCoreApplication.translate("ReportsPage", u"Pending", None))
         self.crFilterComboBox.setItemText(1, QCoreApplication.translate("ReportsPage", u"Closed", None))

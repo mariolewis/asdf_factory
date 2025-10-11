@@ -128,12 +128,12 @@ class Ui_UXSpecPage(object):
 
     def retranslateUi(self, UXSpecPage):
         UXSpecPage.setWindowTitle(QCoreApplication.translate("UXSpecPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("UXSpecPage", u"User Experience & Interface Design", None))
+        self.headerLabel.setText(QCoreApplication.translate("UXSpecPage", u"User Experience && Interface Design", None))
         self.reviewInstructionLabel.setText(QCoreApplication.translate("UXSpecPage", u"Below is the consolidated UX/UI Specification draft, including personas, user journeys, and a style guide. Please review it, make any direct edits, and provide general feedback for refinement below.", None))
         self.infoLabel.setText(QCoreApplication.translate("UXSpecPage", u"Tip: You can edit this draft directly. Please apply final modifications here. For general feedback or questions that require an AI response, please use the text box below.", None))
         self.feedbackLabel.setText(QCoreApplication.translate("UXSpecPage", u"Feedback for Refinement (Optional):", None))
         self.pauseProjectButton.setText(QCoreApplication.translate("UXSpecPage", u"Pause Project", None))
-        self.refineButton.setText(QCoreApplication.translate("UXSpecPage", u"Submit Feedback && Refine", None))
+        self.refineButton.setText(QCoreApplication.translate("UXSpecPage", u"Submit Feedback &&&& Refine", None))
         self.approveButton.setText(QCoreApplication.translate("UXSpecPage", u"Approve Specification", None))
         self.processingLabel.setText(QCoreApplication.translate("UXSpecPage", u"Processing... Please wait.", None))
     # retranslateUi

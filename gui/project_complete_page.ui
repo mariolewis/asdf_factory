@@ -65,7 +65,7 @@
      <item>
       <widget class="QPushButton" name="exportButton">
        <property name="text">
-        <string>Finish &amp;&amp; Export Project</string>
+        <string>Finish &amp;&amp;&amp;&amp; Export Project</string>
        </property>
       </widget>
      </item>

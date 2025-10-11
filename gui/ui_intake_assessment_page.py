@@ -103,7 +103,7 @@ class Ui_IntakeAssessmentPage(object):
 
     def retranslateUi(self, IntakeAssessmentPage):
         IntakeAssessmentPage.setWindowTitle(QCoreApplication.translate("IntakeAssessmentPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("IntakeAssessmentPage", u"Project Input Analysis & Recommendation", None))
+        self.headerLabel.setText(QCoreApplication.translate("IntakeAssessmentPage", u"Project Input Analysis && Recommendation", None))
         self.instructionLabel.setText(QCoreApplication.translate("IntakeAssessmentPage", u"The system has analyzed your project brief. Review the summary and assessment below, then choose the desired workflow for this project.", None))
         self.summaryHeaderLabel.setText(QCoreApplication.translate("IntakeAssessmentPage", u"<b>AI Summary of Inputs</b>", None))
         self.assessmentHeaderLabel.setText(QCoreApplication.translate("IntakeAssessmentPage", u"<b>Completeness Assessment</b>", None))
