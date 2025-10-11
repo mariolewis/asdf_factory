@@ -130,7 +130,7 @@ class SpecSynthesisAgent:
     def synthesize_all_specs(self, project_id: str):
         """
         Orchestrates the generation of all relevant specification documents,
-        now with conditional logic for UX/UI and Database Schema specs.
+        now with conditional logic for UX/UI and Database Schema specs, and template support.
         """
         logging.info(f"Starting specification synthesis for project {project_id}.")
 
@@ -148,29 +148,45 @@ class SpecSynthesisAgent:
             logging.warning("No artifacts found to synthesize specs from.")
             return
 
-        # Consolidate all summaries into a single context block
         summaries_context = "\n\n---\n\n".join(
             f"File: {art['file_path']}\nSummary:\n{art['code_summary']}"
             for art in all_artifacts if art['code_summary']
         )
 
-        # Generate, save, and update DB for App and Tech specs (unconditional)
-        app_spec = self._generate_spec(summaries_context, "Application", project_name)
+        # Helper function to load a template
+        def get_template(template_name):
+            try:
+                template_record = self.db_manager.get_template_by_name(template_name)
+                if template_record:
+                    template_path = Path(template_record['file_path'])
+                    if template_path.exists():
+                        logging.info(f"Found and loaded '{template_name}' template for brownfield generation.")
+                        return template_path.read_text(encoding='utf-8')
+            except Exception as e:
+                logging.warning(f"Could not load template '{template_name}': {e}")
+            return None
+
+        # Generate App Spec with template
+        app_spec_template = get_template("Default Application Specification")
+        app_spec = self._generate_spec(summaries_context, "Application", project_name, template_content=app_spec_template)
         self._save_and_update_spec(project_id, app_spec, "Application Specification", "application_spec", "final_spec_text", docs_dir, project_name)
 
-        tech_spec = self._generate_spec(summaries_context, "Technical", project_name)
+        # Generate Tech Spec with template
+        tech_spec_template = get_template("Default Technical Specification")
+        tech_spec = self._generate_spec(summaries_context, "Technical", project_name, template_content=tech_spec_template)
         self._save_and_update_spec(project_id, tech_spec, "Technical Specification", "technical_spec", "tech_spec_text", docs_dir, project_name)
 
-        # Conditionally generate UX/UI spec
+        # Conditionally generate UX/UI spec with template
         has_ui = self._detect_ui_presence(all_artifacts, project_root)
         self.db_manager.update_project_field(project_id, "is_gui_project", 1 if has_ui else 0)
         if has_ui:
-            ux_spec = self._generate_spec(summaries_context, "UX/UI", project_name)
+            ux_spec_template = get_template("Default UX/UI Specification")
+            ux_spec = self._generate_spec(summaries_context, "UX/UI", project_name, template_content=ux_spec_template)
             self._save_and_update_spec(project_id, ux_spec, "UX/UI Specification", "ux_ui_spec", "ux_spec_text", docs_dir, project_name)
         else:
             logging.info("Skipping UX/UI Specification generation as no UI components were detected.")
 
-        # Conditionally generate Database Schema spec
+        # Conditionally generate Database Schema spec (no template for this one)
         detection_stage, db_files_content = self._detect_database_usage(project_root)
         if db_files_content:
             db_schema_spec = self._generate_db_schema_spec(detection_stage, db_files_content, project_name)
@@ -178,13 +194,22 @@ class SpecSynthesisAgent:
         else:
             logging.info("Skipping Database Schema Specification generation as no database usage was detected.")
 
-
         logging.info("Specification synthesis complete.")
         return True
 
-    def _generate_spec(self, summaries_context: str, spec_type: str, project_name: str) -> str:
-        """Generic method to generate a specific type of specification."""
+    def _generate_spec(self, summaries_context: str, spec_type: str, project_name: str, template_content: str | None = None) -> str:
+        """Generic method to generate a specific type of specification, now with template support."""
         logging.info(f"Generating draft {spec_type} Specification...")
+
+        template_instruction = ""
+        if template_content:
+            template_instruction = textwrap.dedent(f"""
+            **CRITICAL TEMPLATE INSTRUCTION:**
+            Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template. Populate the sections of the template with content synthesized from the code summaries.
+            --- TEMPLATE START ---
+            {template_content}
+            --- TEMPLATE END ---
+            """)
 
         prompt_details = {
             "Application": "Focus on user-facing features, functionality, and user stories.",
@@ -199,6 +224,8 @@ class SpecSynthesisAgent:
             1. **Analyze Summaries:** Read all the provided file summaries to build a holistic understanding of the codebase.
             2. **Synthesize Document:** Write a structured specification document in Markdown format. {prompt_details.get(spec_type, "")}
             3. **Raw Markdown Output:** Your entire response MUST be only the raw content of the Markdown document. Do not include a header, preamble, or any other conversational text.
+
+            {template_instruction}
 
             **--- Project Name ---**
             {project_name}
