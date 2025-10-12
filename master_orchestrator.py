@@ -111,6 +111,7 @@ class FactoryPhase(Enum):
     VIEWING_DOCUMENTS = auto()
     VIEWING_REPORTS = auto()
     VIEWING_PROJECT_HISTORY = auto()
+    VIEWING_SPRINT_HISTORY = auto()
     AWAITING_CONTEXT_REESTABLISHMENT = auto()
     AWAITING_PM_TRIAGE_INPUT = auto()
     AWAITING_REASSESSMENT_CONFIRMATION = auto()
@@ -272,6 +273,7 @@ class MasterOrchestrator:
         FactoryPhase.VIEWING_DOCUMENTS: "Viewing Project Documents",
         FactoryPhase.VIEWING_REPORTS: "Viewing Project Reports",
         FactoryPhase.VIEWING_PROJECT_HISTORY: "Select and Load Archived Project",
+        FactoryPhase.VIEWING_SPRINT_HISTORY: "Viewing Sprint History",
         FactoryPhase.AWAITING_CONTEXT_REESTABLISHMENT: "Re-establishing Project Context",
         FactoryPhase.AWAITING_PM_TRIAGE_INPUT: "Interactive Triage - Awaiting Input",
         FactoryPhase.AWAITING_REASSESSMENT_CONFIRMATION: "LLM Re-assessment Confirmation",

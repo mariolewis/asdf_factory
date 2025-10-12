@@ -509,6 +509,11 @@ class ASDFDBManager:
         query = "SELECT * FROM Sprints WHERE project_id = ? ORDER BY start_timestamp DESC LIMIT 1"
         return self._execute_query(query, (project_id,), fetch="one")
 
+    def get_all_sprints_for_project(self, project_id: str) -> list:
+        """Retrieves all sprint records for a project, sorted from newest to oldest."""
+        query = "SELECT * FROM Sprints WHERE project_id = ? ORDER BY start_timestamp DESC"
+        return self._execute_query(query, (project_id,), fetch="all")
+
     def delete_sprint_links(self, sprint_id: str):
         """Deletes all item links for a given sprint from SprintItems."""
         query = "DELETE FROM SprintItems WHERE sprint_id = ?"

@@ -44,6 +44,7 @@ from gui.project_complete_page import ProjectCompletePage
 from gui.sprint_planning_page import SprintPlanningPage
 from gui.sprint_validation_page import SprintValidationPage
 from gui.sprint_review_page import SprintReviewPage
+from gui.sprint_history_page import SprintHistoryPage
 from gui.project_settings_dialog import ProjectSettingsDialog
 from gui.cr_management_page import CRManagementPage
 from gui.ux_spec_page import UXSpecPage
@@ -153,6 +154,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.sprint_validation_page)
         self.sprint_review_page = SprintReviewPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.sprint_review_page)
+        self.sprint_history_page = SprintHistoryPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.sprint_history_page)
         self.delivery_assessment_page = DeliveryAssessmentPage(self)
         self.ui.mainContentArea.addWidget(self.delivery_assessment_page)
         self.codebase_analysis_page = CodebaseAnalysisPage(self.orchestrator, self)
@@ -263,6 +266,9 @@ class ASDFMainWindow(QMainWindow):
         self.actionProject_Settings = QAction("Project Settings...", self)
         self.ui.menuProject.addAction(self.actionProject_Settings)
 
+        self.actionView_Sprint_History = QAction("View Sprint History...", self)
+        self.ui.menuProject.addAction(self.actionView_Sprint_History)
+
         # Debug menu setup
         for phase in FactoryPhase:
             if phase.name == "IDLE": continue
@@ -305,6 +311,7 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionView_Documents.triggered.connect(self.on_view_documents)
         self.ui.actionView_Reports.triggered.connect(self.on_view_reports)
         self.actionProject_Settings.triggered.connect(self.on_show_project_settings)
+        self.actionView_Sprint_History.triggered.connect(self.on_view_sprint_history)
 
         # Run Menu & Top Toolbar Actions
         self.ui.actionProceed.triggered.connect(self.on_proceed)
@@ -361,6 +368,7 @@ class ASDFMainWindow(QMainWindow):
         self.ui.projectFilesTreeView.customContextMenuRequested.connect(self.on_file_tree_context_menu)
         self.documents_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.reports_page.back_to_workflow.connect(self.on_back_to_workflow)
+        self.sprint_history_page.back_to_workflow.connect(self.on_back_to_workflow)
         self.manual_ui_testing_page.go_to_documents.connect(self.on_view_documents)
         self.manual_ui_testing_page.testing_complete.connect(self.update_ui_after_state_change)
         self.project_complete_page.export_project.connect(self.on_stop_export_project)
@@ -818,6 +826,7 @@ class ASDFMainWindow(QMainWindow):
         "AWAITING_PREFLIGHT_RESOLUTION": self.preflight_check_page,
         "VIEWING_DOCUMENTS": self.documents_page,
         "VIEWING_REPORTS": self.reports_page,
+        "VIEWING_SPRINT_HISTORY": self.sprint_history_page,
         "MANUAL_UI_TESTING": self.manual_ui_testing_page,
         "PROJECT_COMPLETED": self.project_complete_page,
         "UX_UI_DESIGN": self.ux_spec_page,
@@ -1816,10 +1825,18 @@ class ASDFMainWindow(QMainWindow):
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to view its reports.")
             return
-        # --- THIS IS THE FIX ---
         self.previous_phase = self.orchestrator.current_phase
-        # --- END OF FIX ---
         self.orchestrator.set_phase("VIEWING_REPORTS")
+        self.update_ui_after_state_change()
+
+    def on_view_sprint_history(self):
+        """Switches to the Sprint History page."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "Please load a project to view its sprint history.")
+            return
+
+        self.previous_phase = self.orchestrator.current_phase
+        self.orchestrator.set_phase("VIEWING_SPRINT_HISTORY")
         self.update_ui_after_state_change()
 
     def on_file_tree_context_menu(self, point):
