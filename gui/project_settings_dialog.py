@@ -47,6 +47,7 @@ class ProjectSettingsDialog(QDialog):
 
         # --- Populate Test Command Settings ---
         self.ui.backendTestCommandLineEdit.setText(settings.get("test_execution_command", ""))
+        self.ui.integrationTestCommandLineEdit.setText(settings.get("integration_test_command", ""))
         self.ui.uiTestCommandLineEdit.setText(settings.get("ui_test_execution_command", ""))
 
     def get_data(self) -> dict:
@@ -56,6 +57,7 @@ class ProjectSettingsDialog(QDialog):
         all_settings = {
             # --- Test Command Settings ---
             "test_execution_command": self.ui.backendTestCommandLineEdit.text().strip(),
+            "integration_test_command": self.ui.integrationTestCommandLineEdit.text().strip(),
             "ui_test_execution_command": self.ui.uiTestCommandLineEdit.text().strip(),
             # --- Integration Settings ---
             "provider": provider

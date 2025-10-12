@@ -209,8 +209,7 @@ class ASDFMainWindow(QMainWindow):
 
         # Add custom icons to top toolbar actions
         self.ui.actionProceed.setIcon(QIcon(str(icons_path / "proceed.png")))
-        self.ui.actionRun_Tests.setIcon(QIcon(str(icons_path / "run_tests.png")))
-        # The other top toolbar actions will remain without icons for now
+        # NOTE: The old actionRun_Tests is removed from the toolbar later, so we don't set its icon here.
 
         # Create QToolButtons with custom icons for the Vertical Action Bar
         self.button_group_sidebar = QButtonGroup(self)
@@ -261,6 +260,30 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionManage_CRs_Bugs.setIcon(icon)
         self.ui.menuProject.addAction(self.ui.actionManage_CRs_Bugs)
         self.ui.toolBar.addAction(self.ui.actionManage_CRs_Bugs)
+
+        # --- Testing Submenu & Toolbar Button ---
+        self.menuTesting = QMenu("Testing", self)
+        self.actionRunBackendRegression = QAction("Run Backend Regression Tests", self)
+        self.actionRunBackendIntegration = QAction("Run Backend Integration Tests", self)
+        self.actionInitiateManualUI = QAction("Initiate Manual UI Testing", self)
+        self.actionInitiateAutomatedUI = QAction("Initiate Automated UI Testing", self)
+
+        self.menuTesting.addAction(self.actionRunBackendRegression)
+        self.menuTesting.addAction(self.actionRunBackendIntegration)
+        self.menuTesting.addSeparator()
+        self.menuTesting.addAction(self.actionInitiateManualUI)
+        self.menuTesting.addAction(self.actionInitiateAutomatedUI)
+
+        self.ui.menuProject.addMenu(self.menuTesting)
+        self.ui.menuProject.addSeparator()
+
+        self.ui.toolBar.removeAction(self.ui.actionRun_Tests) # Remove the old direct action
+        self.test_tool_button = QToolButton(self)
+        self.test_tool_button.setIcon(QIcon(str(icons_path / "run_tests.png")))
+        self.test_tool_button.setToolTip("Run Tests")
+        self.test_tool_button.setMenu(self.menuTesting)
+        self.test_tool_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        self.ui.toolBar.addWidget(self.test_tool_button)
 
         # --- Project Settings Menu Action ---
         self.actionProject_Settings = QAction("Project Settings...", self)
@@ -315,7 +338,13 @@ class ASDFMainWindow(QMainWindow):
 
         # Run Menu & Top Toolbar Actions
         self.ui.actionProceed.triggered.connect(self.on_proceed)
-        self.ui.actionRun_Tests.triggered.connect(self.on_run_tests)
+
+        # Testing Actions
+        self.actionRunBackendRegression.triggered.connect(self.on_run_backend_regression)
+        self.actionRunBackendIntegration.triggered.connect(self.on_run_backend_integration)
+        self.actionInitiateManualUI.triggered.connect(self.on_initiate_manual_ui)
+        self.actionInitiateAutomatedUI.triggered.connect(self.on_initiate_automated_ui)
+
         self.ui.actionReport_Bug.triggered.connect(self.on_report_bug)
 
         # Help Menu
@@ -522,6 +551,8 @@ class ASDFMainWindow(QMainWindow):
         display_phase_name = self.orchestrator.PHASE_DISPLAY_NAMES.get(current_phase_enum, current_phase_enum.name)
         git_branch = self.orchestrator.get_current_git_branch()
         self.actionProject_Settings.setEnabled(is_project_active)
+        self.menuTesting.setEnabled(is_project_active)
+        self.test_tool_button.setEnabled(is_project_active)
 
         self.status_project_label.setText(f"Project: {project_name}")
         self.status_phase_label.setText(f"Phase: {display_phase_name}")
@@ -531,6 +562,26 @@ class ASDFMainWindow(QMainWindow):
 
         # --- Backlog Manager Button & File Tree Logic ---
         project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id) if is_project_active else None
+
+        # Conditionally enable UI testing options
+        is_sprint_active = self.orchestrator.is_sprint_active()
+        is_gui = is_project_active and bool(project_details and project_details['is_gui_project'] == 1)
+        is_auto_ui_configured = is_gui and bool(project_details and project_details['ui_test_execution_command'])
+
+        self.actionInitiateManualUI.setEnabled(is_gui and not is_sprint_active)
+        self.actionInitiateAutomatedUI.setEnabled(is_auto_ui_configured and not is_sprint_active)
+
+        if is_sprint_active:
+            self.actionInitiateManualUI.setToolTip("Cannot start on-demand testing while a sprint is in progress.")
+            self.actionInitiateAutomatedUI.setToolTip("Cannot start on-demand testing while a sprint is in progress.")
+        elif not is_gui:
+            self.actionInitiateManualUI.setToolTip("This action is only available for GUI projects.")
+            self.actionInitiateAutomatedUI.setToolTip("This action is only available for GUI projects.")
+        elif not is_auto_ui_configured:
+            self.actionInitiateAutomatedUI.setToolTip("Configure the 'Automated UI Test Command' in Project Settings to enable this action.")
+        else:
+            self.actionInitiateManualUI.setToolTip("Generate a plan for manual UI testing.")
+            self.actionInitiateAutomatedUI.setToolTip("Generate and run automated UI tests.")
         project_root = project_details['project_root_folder'] if project_details and project_details['project_root_folder'] else ""
 
         is_backlog_ready = is_project_active and bool(project_details and project_details['is_backlog_generated'])
@@ -1654,19 +1705,56 @@ class ASDFMainWindow(QMainWindow):
         else:
             QMessageBox.information(self, "Action Not Applicable", "The 'Proceed' action is not applicable in the current phase.")
 
-    def on_run_tests(self):
-        """Runs the full test suite for the active project in a background thread."""
+    def on_run_backend_regression(self):
+        """Runs the backend regression test suite."""
+        self._run_test_suite("regression", "Running backend regression test suite...")
+
+    def on_run_backend_integration(self):
+        """Runs the backend integration test suite."""
+        self._run_test_suite("integration", "Running backend integration test suite...")
+
+    def on_initiate_manual_ui(self):
+        """Initiates the on-demand manual UI testing workflow."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "Please load a project to run tests.")
+            return
+
+        # The orchestrator now performs the check and returns a status
+        success = self.orchestrator.initiate_on_demand_manual_testing()
+
+        if success:
+            self.update_ui_after_state_change()
+        else:
+            QMessageBox.information(self, "Action Not Available",
+                                    "Cannot initiate UI testing because no code has been generated for this project yet. "
+                                    "Please complete at least one development sprint first.")
+
+    def on_initiate_automated_ui(self):
+        """Placeholder for initiating automated UI testing."""
+        QMessageBox.information(self, "Not Implemented", "On-demand automated UI testing will be implemented in a future update.")
+
+    def _run_test_suite(self, test_type: str, status_message: str):
+        """Generic helper to run a test suite in a background thread."""
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to run tests.")
             return
 
-        self.setEnabled(False)
-        self.statusBar().showMessage("Running full test suite...")
+        db = self.orchestrator.db_manager
+        project_details = db.get_project_by_id(self.orchestrator.project_id)
+        command_key = "integration_test_command" if test_type == "integration" else "test_execution_command"
+        command = project_details[command_key]
 
-        # We will create the 'run_full_test_suite' method in the orchestrator next.
-        worker = Worker(self.orchestrator.run_full_test_suite)
+        if not command:
+            QMessageBox.warning(self, "Not Configured", f"The command for '{test_type}' tests is not configured in Project Settings.")
+            return
+
+        self.setEnabled(False)
+        self.statusBar().showMessage(status_message)
+
+        worker = Worker(self.orchestrator.run_full_test_suite, test_type=test_type)
         worker.signals.result.connect(self._handle_test_run_result)
         worker.signals.error.connect(self._handle_test_run_error)
+        worker.signals.finished.connect(self._on_background_task_finished) # Use the existing robust handler
         self.threadpool.start(worker)
 
     def _handle_test_run_result(self, result):

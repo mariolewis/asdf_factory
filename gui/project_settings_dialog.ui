@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>500</width>
-    <height>250</height>
+    <width>550</width>
+    <height>400</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -25,170 +25,170 @@
     </widget>
    </item>
    <item>
-    <widget class="QGroupBox" name="integrationsGroupBox">
-     <property name="title">
-      <string>Integrations</string>
+    <widget class="QTabWidget" name="tabWidget">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
-     <layout class="QVBoxLayout" name="verticalLayout_2">
-      <item>
-       <layout class="QFormLayout" name="formLayout">
-        <item row="0" column="0">
-         <widget class="QLabel" name="providerLabel">
-          <property name="text">
-           <string>Integration Provider:</string>
-          </property>
-         </widget>
-        </item>
-        <item row="0" column="1">
-         <widget class="QComboBox" name="providerComboBox">
-          <item>
+     <widget class="QWidget" name="integrationsTab">
+      <attribute name="title">
+       <string>Integrations</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_2">
+       <item>
+        <layout class="QFormLayout" name="formLayout">
+         <item row="0" column="0">
+          <widget class="QLabel" name="providerLabel">
            <property name="text">
-            <string>None</string>
+            <string>Integration Provider:</string>
            </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>Jira</string>
-           </property>
-          </item>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QComboBox" name="providerComboBox">
+           <item>
+            <property name="text">
+             <string>None</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Jira</string>
+            </property>
+           </item>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QStackedWidget" name="providerStackedWidget">
+         <property name="currentIndex">
+          <number>1</number>
+         </property>
+         <widget class="QWidget" name="noProviderPage">
+          <layout class="QVBoxLayout" name="verticalLayout_3">
+           <item>
+            <widget class="QLabel" name="noProviderLabel">
+             <property name="text">
+              <string>No integration provider selected for this project.</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
          </widget>
-        </item>
-       </layout>
-      </item>
-      <item>
-       <widget class="QStackedWidget" name="providerStackedWidget">
-        <property name="currentIndex">
-         <number>1</number>
-        </property>
-        <widget class="QWidget" name="noProviderPage">
-         <layout class="QVBoxLayout" name="verticalLayout_3">
-          <item>
-           <widget class="QLabel" name="noProviderLabel">
-            <property name="text">
-             <string>No integration provider selected for this project.</string>
-            </property>
-           </widget>
-          </item>
-         </layout>
+         <widget class="QWidget" name="jiraPage">
+          <layout class="QFormLayout" name="formLayout_2">
+           <item row="0" column="0">
+            <widget class="QLabel" name="projectKeyLabel">
+             <property name="text">
+              <string>Jira Project Key:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QLineEdit" name="projectKeyLineEdit">
+             <property name="toolTip">
+              <string>The short code for your project in Jira (e.g., ASDF, PROJ).</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QLabel" name="epicTypeIdLabel">
+             <property name="text">
+              <string>Jira Epic Type ID:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QLineEdit" name="epicTypeIdLineEdit"/>
+           </item>
+           <item row="2" column="0">
+            <widget class="QLabel" name="storyTypeIdLabel">
+             <property name="text">
+              <string>Jira Story Type ID:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="1">
+            <widget class="QLineEdit" name="storyTypeIdLineEdit"/>
+           </item>
+           <item row="3" column="0">
+            <widget class="QLabel" name="taskTypeIdLabel">
+             <property name="text">
+              <string>Jira Task Type ID:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="0">
+            <widget class="QLabel" name="bugTypeIdLabel">
+             <property name="text">
+              <string>Jira Bug Type ID:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="4" column="1">
+            <widget class="QLineEdit" name="bugTypeIdLineEdit"/>
+           </item>
+           <item row="5" column="0">
+            <widget class="QLabel" name="changeRequestTypeIdLabel">
+             <property name="text">
+              <string>Jira Change Request Type ID:</string>
+             </property>
+            </widget>
+           </item>
+           <item row="5" column="1">
+            <widget class="QLineEdit" name="changeRequestTypeIdLineEdit">
+             <property name="toolTip">
+              <string>Optional: The ID for a custom 'Change Request' issue type.</string>
+             </property>
+            </widget>
+           </item>
+           <item row="3" column="1">
+            <widget class="QLineEdit" name="taskTypeIdLineEdit"/>
+           </item>
+          </layout>
+         </widget>
         </widget>
-        <widget class="QWidget" name="jiraPage">
-         <layout class="QFormLayout" name="formLayout_2">
-          <item row="0" column="0">
-           <widget class="QLabel" name="projectKeyLabel">
-            <property name="text">
-             <string>Jira Project Key:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="0" column="1">
-           <widget class="QLineEdit" name="projectKeyLineEdit">
-            <property name="toolTip">
-             <string>The short code for your project in Jira (e.g., ASDF, PROJ).</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="0">
-           <widget class="QLabel" name="epicTypeIdLabel">
-            <property name="text">
-             <string>Jira Epic Type ID:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="1" column="1">
-           <widget class="QLineEdit" name="epicTypeIdLineEdit"/>
-          </item>
-          <item row="2" column="0">
-           <widget class="QLabel" name="storyTypeIdLabel">
-            <property name="text">
-             <string>Jira Story Type ID:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="2" column="1">
-           <widget class="QLineEdit" name="storyTypeIdLineEdit"/>
-          </item>
-          <item row="3" column="0">
-           <widget class="QLabel" name="taskTypeIdLabel">
-            <property name="text">
-             <string>Jira Task Type ID:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="0">
-           <widget class="QLabel" name="bugTypeIdLabel">
-            <property name="text">
-             <string>Jira Bug Type ID:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="4" column="1">
-           <widget class="QLineEdit" name="bugTypeIdLineEdit"/>
-          </item>
-          <item row="5" column="0">
-           <widget class="QLabel" name="changeRequestTypeIdLabel">
-            <property name="text">
-             <string>Jira Change Request Type ID:</string>
-            </property>
-           </widget>
-          </item>
-          <item row="5" column="1">
-           <widget class="QLineEdit" name="changeRequestTypeIdLineEdit">
-            <property name="toolTip">
-             <string>Optional: The ID for a custom 'Change Request' issue type.</string>
-            </property>
-           </widget>
-          </item>
-          <item row="3" column="1">
-           <widget class="QLineEdit" name="taskTypeIdLineEdit"/>
-          </item>
-         </layout>
-        </widget>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="testCommandsGroupBox">
-    <property name="title">
-    <string>Test Command Configuration</string>
-    </property>
-    <layout class="QFormLayout" name="formLayout_3">
-    <item row="0" column="0">
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="commandsTab">
+      <attribute name="title">
+       <string>Test Commands</string>
+      </attribute>
+      <layout class="QFormLayout" name="formLayout_3">
+       <item row="0" column="0">
         <widget class="QLabel" name="backendTestCommandLabel">
-        <property name="text">
-        <string>Backend Test Command:</string>
-        </property>
+         <property name="text">
+          <string>Backend Regression Test Command:</string>
+         </property>
         </widget>
-    </item>
-    <item row="0" column="1">
+       </item>
+       <item row="0" column="1">
         <widget class="QLineEdit" name="backendTestCommandLineEdit"/>
-    </item>
-    <item row="1" column="0">
-        <widget class="QLabel" name="uiTestCommandLabel">
-        <property name="text">
-        <string>Automated UI Test Command:</string>
-        </property>
+       </item>
+       <item row="1" column="0">
+        <widget class="QLabel" name="integrationTestCommandLabel">
+         <property name="text">
+          <string>Backend Integration Test Command (Optional):</string>
+         </property>
         </widget>
-    </item>
-    <item row="1" column="1">
+       </item>
+       <item row="1" column="1">
+        <widget class="QLineEdit" name="integrationTestCommandLineEdit"/>
+       </item>
+       <item row="2" column="0">
+        <widget class="QLabel" name="uiTestCommandLabel">
+         <property name="text">
+          <string>Automated UI Test Command (Optional):</string>
+         </property>
+        </widget>
+       </item>
+       <item row="2" column="1">
         <widget class="QLineEdit" name="uiTestCommandLineEdit"/>
-    </item>
-    </layout>
+       </item>
+      </layout>
+     </widget>
     </widget>
-    </item>
-   <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">

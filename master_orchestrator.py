@@ -151,6 +151,7 @@ class MasterOrchestrator:
         self.active_spec_draft = None
         self.active_sprint_id = None
         self.post_fix_reverification_path = None
+        self.is_on_demand_test_cycle = False
         logging.info("MasterOrchestrator instance created.")
 
     def reset(self):
@@ -1726,10 +1727,13 @@ class MasterOrchestrator:
 
         # Extract and save direct-column values first
         backend_cmd = settings_dict.pop("test_execution_command", None)
+        integration_cmd = settings_dict.pop("integration_test_command", None)
         ui_cmd = settings_dict.pop("ui_test_execution_command", None)
 
         if backend_cmd is not None:
             db.update_project_field(self.project_id, "test_execution_command", backend_cmd)
+        if integration_cmd is not None:
+            db.update_project_field(self.project_id, "integration_test_command", integration_cmd)
         if ui_cmd is not None:
             db.update_project_field(self.project_id, "ui_test_execution_command", ui_cmd)
 
@@ -2394,7 +2398,7 @@ class MasterOrchestrator:
             logging.warning(f"Received unknown UI test decision: {decision}")
             self.set_phase("SPRINT_REVIEW") # Default to a safe state
 
-    def _generate_manual_ui_test_plan_phase(self, progress_callback=None):
+    def _generate_manual_ui_test_plan_phase(self, progress_callback=None, **kwargs):
         """
         Generates and saves all artifacts for the manual UI test plan.
         This is designed to be run in a background worker.
@@ -2938,6 +2942,7 @@ class MasterOrchestrator:
     def handle_ui_test_result_upload(self, test_result_content: str):
         """
         Orchestrates the evaluation of an uploaded UI test results file.
+        Now context-aware for on-demand vs. end-of-sprint cycles.
         """
         if not self.project_id:
             logging.error("Cannot handle test result upload; no active project.")
@@ -2948,7 +2953,6 @@ class MasterOrchestrator:
             if not self.llm_service:
                 raise Exception("Cannot evaluate test results: LLM Service is not configured.")
 
-            # The project state is about to be changed, so we mark it as dirty.
             self.is_project_dirty = True
 
             eval_agent = TestResultEvaluationAgent_AppTarget(llm_service=self.llm_service)
@@ -2956,8 +2960,16 @@ class MasterOrchestrator:
 
             if "ALL_TESTS_PASSED" in failure_summary:
                 logging.info("UI test result evaluation complete: All tests passed.")
-                # If everything passes, we can consider the project complete and idle.
-                self.set_phase("SPRINT_REVIEW")
+                # If on-demand, return to previous workflow. Otherwise, proceed to sprint review.
+                if self.is_on_demand_test_cycle:
+                    main_window = self.get_main_window_instance()
+                    if main_window and main_window.previous_phase:
+                        self.set_phase(main_window.previous_phase.name)
+                    else:
+                        self.set_phase("BACKLOG_VIEW") # Safe fallback
+                    self.is_on_demand_test_cycle = False
+                else:
+                    self.set_phase("SPRINT_REVIEW")
             else:
                 logging.warning("UI test result evaluation complete: Failures detected.")
                 self.escalate_for_manual_debug(failure_summary, is_functional_bug=True)
@@ -3800,9 +3812,12 @@ class MasterOrchestrator:
             self.escalate_for_manual_debug(str(e))
             raise # Re-raise to be caught by the worker's error handler
 
-    def run_full_test_suite(self, progress_callback=None, **kwargs):
+    def run_full_test_suite(self, test_type: str = "regression", progress_callback=None, **kwargs):
         """
         Triggers a full run of the project's automated test suite.
+
+        Args:
+            test_type (str): The type of test to run ("regression" or "integration").
 
         Returns:
             A tuple (success: bool, output: str) with the test results.
@@ -3816,7 +3831,11 @@ class MasterOrchestrator:
             raise Exception("Cannot run tests: Project details not found.")
 
         project_root = project_details['project_root_folder']
-        test_command = project_details['test_execution_command']
+
+        if test_type == "integration":
+            test_command = project_details['integration_test_command']
+        else: # Default to regression
+            test_command = project_details['test_execution_command']
 
         # This new line retrieves the required setting
         version_control_enabled = project_details['version_control_enabled'] == 1
@@ -4298,6 +4317,49 @@ class MasterOrchestrator:
             logging.error(f"Failed to update sprint statuses during finalization: {e}")
             # Re-raise to notify the UI that something went wrong
             raise
+
+    def initiate_on_demand_manual_testing(self, **kwargs) -> bool:
+        """
+        Initiates the on-demand manual UI testing workflow, first checking
+        if a sprint is active or if any code exists to be tested.
+
+        Returns:
+            bool: True if the workflow was started, False if not.
+        """
+        if not self.project_id:
+            logging.warning("Cannot initiate manual testing; no active project.")
+            return False
+
+        # Guardrail: Do not allow if a sprint is already in progress.
+        if self.is_sprint_active():
+            logging.warning("Attempted to start on-demand testing while a sprint is active. Action blocked.")
+            return False
+
+        # Guardrail: Check if any code artifacts exist in the RoWD.
+        all_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+        if not all_artifacts:
+            logging.warning("Cannot initiate UI testing; no code has been generated for this project yet.")
+            return False
+
+        logging.info("PM initiated on-demand manual UI testing workflow.")
+        main_window = self.get_main_window_instance()
+        if main_window:
+            main_window.previous_phase = self.current_phase
+
+        # Set a persistent flag in the resumable state
+        self.task_awaiting_approval = {"is_on_demand_test_cycle": True}
+        self._save_current_state()
+
+        self.set_phase("GENERATING_MANUAL_TEST_PLAN")
+        return True
+
+    def get_main_window_instance(self):
+        """Helper to find the ASDFMainWindow instance."""
+        from PySide6.QtWidgets import QApplication
+        for widget in QApplication.topLevelWidgets():
+            if 'ASDFMainWindow' in str(type(widget)):
+                return widget
+        return None
 
     def run_doc_update_and_finalize_sprint(self, progress_callback=None):
         """

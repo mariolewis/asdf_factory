@@ -16,15 +16,15 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
 from PySide6.QtWidgets import (QAbstractButton, QApplication, QComboBox, QDialog,
-    QDialogButtonBox, QFormLayout, QGroupBox, QLabel,
-    QLineEdit, QSizePolicy, QSpacerItem, QStackedWidget,
-    QVBoxLayout, QWidget)
+    QDialogButtonBox, QFormLayout, QLabel, QLineEdit,
+    QSizePolicy, QStackedWidget, QTabWidget, QVBoxLayout,
+    QWidget)
 
 class Ui_ProjectSettingsDialog(object):
     def setupUi(self, ProjectSettingsDialog):
         if not ProjectSettingsDialog.objectName():
             ProjectSettingsDialog.setObjectName(u"ProjectSettingsDialog")
-        ProjectSettingsDialog.resize(500, 250)
+        ProjectSettingsDialog.resize(550, 400)
         ProjectSettingsDialog.setModal(True)
         self.verticalLayout = QVBoxLayout(ProjectSettingsDialog)
         self.verticalLayout.setObjectName(u"verticalLayout")
@@ -33,18 +33,20 @@ class Ui_ProjectSettingsDialog(object):
 
         self.verticalLayout.addWidget(self.headerLabel)
 
-        self.integrationsGroupBox = QGroupBox(ProjectSettingsDialog)
-        self.integrationsGroupBox.setObjectName(u"integrationsGroupBox")
-        self.verticalLayout_2 = QVBoxLayout(self.integrationsGroupBox)
+        self.tabWidget = QTabWidget(ProjectSettingsDialog)
+        self.tabWidget.setObjectName(u"tabWidget")
+        self.integrationsTab = QWidget()
+        self.integrationsTab.setObjectName(u"integrationsTab")
+        self.verticalLayout_2 = QVBoxLayout(self.integrationsTab)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
         self.formLayout = QFormLayout()
         self.formLayout.setObjectName(u"formLayout")
-        self.providerLabel = QLabel(self.integrationsGroupBox)
+        self.providerLabel = QLabel(self.integrationsTab)
         self.providerLabel.setObjectName(u"providerLabel")
 
         self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.providerLabel)
 
-        self.providerComboBox = QComboBox(self.integrationsGroupBox)
+        self.providerComboBox = QComboBox(self.integrationsTab)
         self.providerComboBox.addItem("")
         self.providerComboBox.addItem("")
         self.providerComboBox.setObjectName(u"providerComboBox")
@@ -54,7 +56,7 @@ class Ui_ProjectSettingsDialog(object):
 
         self.verticalLayout_2.addLayout(self.formLayout)
 
-        self.providerStackedWidget = QStackedWidget(self.integrationsGroupBox)
+        self.providerStackedWidget = QStackedWidget(self.integrationsTab)
         self.providerStackedWidget.setObjectName(u"providerStackedWidget")
         self.noProviderPage = QWidget()
         self.noProviderPage.setObjectName(u"noProviderPage")
@@ -134,39 +136,44 @@ class Ui_ProjectSettingsDialog(object):
 
         self.verticalLayout_2.addWidget(self.providerStackedWidget)
 
-
-        self.verticalLayout.addWidget(self.integrationsGroupBox)
-
-        self.testCommandsGroupBox = QGroupBox(ProjectSettingsDialog)
-        self.testCommandsGroupBox.setObjectName(u"testCommandsGroupBox")
-        self.formLayout_3 = QFormLayout(self.testCommandsGroupBox)
+        self.tabWidget.addTab(self.integrationsTab, "")
+        self.commandsTab = QWidget()
+        self.commandsTab.setObjectName(u"commandsTab")
+        self.formLayout_3 = QFormLayout(self.commandsTab)
         self.formLayout_3.setObjectName(u"formLayout_3")
-        self.backendTestCommandLabel = QLabel(self.testCommandsGroupBox)
+        self.backendTestCommandLabel = QLabel(self.commandsTab)
         self.backendTestCommandLabel.setObjectName(u"backendTestCommandLabel")
 
         self.formLayout_3.setWidget(0, QFormLayout.ItemRole.LabelRole, self.backendTestCommandLabel)
 
-        self.backendTestCommandLineEdit = QLineEdit(self.testCommandsGroupBox)
+        self.backendTestCommandLineEdit = QLineEdit(self.commandsTab)
         self.backendTestCommandLineEdit.setObjectName(u"backendTestCommandLineEdit")
 
         self.formLayout_3.setWidget(0, QFormLayout.ItemRole.FieldRole, self.backendTestCommandLineEdit)
 
-        self.uiTestCommandLabel = QLabel(self.testCommandsGroupBox)
+        self.integrationTestCommandLabel = QLabel(self.commandsTab)
+        self.integrationTestCommandLabel.setObjectName(u"integrationTestCommandLabel")
+
+        self.formLayout_3.setWidget(1, QFormLayout.ItemRole.LabelRole, self.integrationTestCommandLabel)
+
+        self.integrationTestCommandLineEdit = QLineEdit(self.commandsTab)
+        self.integrationTestCommandLineEdit.setObjectName(u"integrationTestCommandLineEdit")
+
+        self.formLayout_3.setWidget(1, QFormLayout.ItemRole.FieldRole, self.integrationTestCommandLineEdit)
+
+        self.uiTestCommandLabel = QLabel(self.commandsTab)
         self.uiTestCommandLabel.setObjectName(u"uiTestCommandLabel")
 
-        self.formLayout_3.setWidget(1, QFormLayout.ItemRole.LabelRole, self.uiTestCommandLabel)
+        self.formLayout_3.setWidget(2, QFormLayout.ItemRole.LabelRole, self.uiTestCommandLabel)
 
-        self.uiTestCommandLineEdit = QLineEdit(self.testCommandsGroupBox)
+        self.uiTestCommandLineEdit = QLineEdit(self.commandsTab)
         self.uiTestCommandLineEdit.setObjectName(u"uiTestCommandLineEdit")
 
-        self.formLayout_3.setWidget(1, QFormLayout.ItemRole.FieldRole, self.uiTestCommandLineEdit)
+        self.formLayout_3.setWidget(2, QFormLayout.ItemRole.FieldRole, self.uiTestCommandLineEdit)
 
+        self.tabWidget.addTab(self.commandsTab, "")
 
-        self.verticalLayout.addWidget(self.testCommandsGroupBox)
-
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-
-        self.verticalLayout.addItem(self.verticalSpacer)
+        self.verticalLayout.addWidget(self.tabWidget)
 
         self.buttonBox = QDialogButtonBox(ProjectSettingsDialog)
         self.buttonBox.setObjectName(u"buttonBox")
@@ -180,6 +187,7 @@ class Ui_ProjectSettingsDialog(object):
         self.buttonBox.accepted.connect(ProjectSettingsDialog.accept)
         self.buttonBox.rejected.connect(ProjectSettingsDialog.reject)
 
+        self.tabWidget.setCurrentIndex(0)
         self.providerStackedWidget.setCurrentIndex(1)
 
 
@@ -189,7 +197,6 @@ class Ui_ProjectSettingsDialog(object):
     def retranslateUi(self, ProjectSettingsDialog):
         ProjectSettingsDialog.setWindowTitle(QCoreApplication.translate("ProjectSettingsDialog", u"Project Settings", None))
         self.headerLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Project-Specific Settings", None))
-        self.integrationsGroupBox.setTitle(QCoreApplication.translate("ProjectSettingsDialog", u"Integrations", None))
         self.providerLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Integration Provider:", None))
         self.providerComboBox.setItemText(0, QCoreApplication.translate("ProjectSettingsDialog", u"None", None))
         self.providerComboBox.setItemText(1, QCoreApplication.translate("ProjectSettingsDialog", u"Jira", None))
@@ -207,8 +214,10 @@ class Ui_ProjectSettingsDialog(object):
 #if QT_CONFIG(tooltip)
         self.changeRequestTypeIdLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"Optional: The ID for a custom 'Change Request' issue type.", None))
 #endif // QT_CONFIG(tooltip)
-        self.testCommandsGroupBox.setTitle(QCoreApplication.translate("ProjectSettingsDialog", u"Test Command Configuration", None))
-        self.backendTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Backend Test Command:", None))
-        self.uiTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Automated UI Test Command:", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.integrationsTab), QCoreApplication.translate("ProjectSettingsDialog", u"Integrations", None))
+        self.backendTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Backend Regression Test Command:", None))
+        self.integrationTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Backend Integration Test Command (Optional):", None))
+        self.uiTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Automated UI Test Command (Optional):", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.commandsTab), QCoreApplication.translate("ProjectSettingsDialog", u"Test Commands", None))
     # retranslateUi
 

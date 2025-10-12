@@ -79,7 +79,7 @@ class ASDFDBManager:
             is_build_automated BOOLEAN NOT NULL DEFAULT 1, build_script_file_name TEXT,
             development_plan_text TEXT, integration_plan_text TEXT,
             ui_test_plan_text TEXT, test_execution_command TEXT, ui_test_execution_command TEXT,
-            integration_settings TEXT,
+            integration_test_command TEXT, integration_settings TEXT,
             version_control_enabled BOOLEAN NOT NULL DEFAULT 0,
             is_backlog_generated BOOLEAN NOT NULL DEFAULT 0,
             detected_technologies TEXT,
