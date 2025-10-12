@@ -79,7 +79,7 @@
          <item>
           <widget class="QLabel" name="welcomeLabel">
            <property name="text">
-            <string>Welcome to ASDF. Please create a New Project or Open an Existing Project to begin.</string>
+            <string>Welcome to ASDF. Please create a New Project or Import an Archived Project to begin.</string>
            </property>
            <property name="alignment">
             <set>Qt::AlignCenter</set>
@@ -115,7 +115,7 @@
    </property>
    <widget class="QMenu" name="menuFile">
     <property name="title">
-      <string>&amp;&amp;File</string>
+      <string>&amp;File</string>
     </property>
     <addaction name="actionNew_Project"/>
     <addaction name="actionOpen_Project"/>
@@ -129,7 +129,7 @@
    </widget>
    <widget class="QMenu" name="menuEdit">
     <property name="title">
-     <string>&amp;&amp;Edit</string>
+     <string>&amp;Edit</string>
     </property>
     <addaction name="actionUndo"/>
     <addaction name="actionRedo"/>
@@ -141,14 +141,14 @@
    </widget>
    <widget class="QMenu" name="menuView">
     <property name="title">
-     <string>&amp;&amp;View</string>
+     <string>&amp;View</string>
     </property>
     <addaction name="actionToggleProjectPanel"/>
     <addaction name="actionToggleNotificationPanel"/>
    </widget>
    <widget class="QMenu" name="menuProject">
     <property name="title">
-     <string>&amp;&amp;Project</string>
+     <string>&amp;Project</string>
     </property>
     <addaction name="actionManage_CRs_Bugs"/>
     <addaction name="actionView_Documents"/>
@@ -156,20 +156,20 @@
    </widget>
    <widget class="QMenu" name="menuRun">
     <property name="title">
-     <string>&amp;&amp;Run</string>
+     <string>&amp;Run</string>
     </property>
     <addaction name="actionProceed"/>
     <addaction name="actionRun_Tests"/>
    </widget>
    <widget class="QMenu" name="menuHelp">
     <property name="title">
-     <string>&amp;&amp;Help</string>
+     <string>&amp;Help</string>
     </property>
     <addaction name="actionAbout_ASDF"/>
    </widget>
    <widget class="QMenu" name="menuDebug">
     <property name="title">
-     <string>&amp;&amp;Debug</string>
+     <string>&amp;Debug</string>
     </property>
    </widget>
    <addaction name="menuFile"/>
@@ -299,27 +299,27 @@
    </action>
   <action name="actionUndo">
    <property name="text">
-    <string>&amp;&amp;Undo</string>
+    <string>&amp;Undo</string>
    </property>
   </action>
   <action name="actionRedo">
    <property name="text">
-    <string>&amp;&amp;Redo</string>
+    <string>&amp;Redo</string>
    </property>
   </action>
   <action name="actionCut">
    <property name="text">
-    <string>Cu&amp;&amp;t</string>
+    <string>Cu&amp;t</string>
    </property>
   </action>
   <action name="actionCopy">
    <property name="text">
-    <string>&amp;&amp;Copy</string>
+    <string>&amp;Copy</string>
    </property>
   </action>
   <action name="actionPaste">
    <property name="text">
-    <string>&amp;&amp;Paste</string>
+    <string>&amp;Paste</string>
    </property>
   </action>
   <action name="actiontemp">

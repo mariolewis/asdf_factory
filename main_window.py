@@ -217,7 +217,7 @@ class ASDFMainWindow(QMainWindow):
         self.button_group_sidebar.setExclusive(True)
 
         self.button_view_explorer = QToolButton()
-        self.button_view_explorer.setToolTip("Show Project Explorer")
+        self.button_view_explorer.setToolTip("Show Project Files")
         self.button_view_explorer.setIcon(QIcon(str(icons_path / "explorer.png")))
         self.button_view_explorer.setCheckable(True)
         self.button_view_explorer.setChecked(True)
@@ -554,7 +554,7 @@ class ASDFMainWindow(QMainWindow):
         else:
             self.ui.projectFilesTreeView.setVisible(False)
             self.treeViewInfoLabel.setVisible(True)
-            self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or import an archive.")
+            self.treeViewInfoLabel.setText("No active project.\n\nPlease create a new project or open an existing project.")
 
     def on_cr_edit_action(self, cr_id: int):
         """Handles the signal to edit an item by opening a pre-populated dialog."""
