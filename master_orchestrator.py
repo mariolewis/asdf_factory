@@ -96,6 +96,7 @@ class FactoryPhase(Enum):
     GENESIS = auto()
     AWAITING_INTEGRATION_CONFIRMATION = auto()
     INTEGRATION_AND_VERIFICATION = auto()
+    ON_DEMAND_AUTOMATED_UI_TESTS = auto()
     AWAITING_INTEGRATION_RESOLUTION = auto()
     MANUAL_UI_TESTING = auto()
     GENERATING_MANUAL_TEST_PLAN = auto()
@@ -4026,6 +4027,91 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Automated UI testing phase failed: {e}", exc_info=True)
             self.escalate_for_manual_debug(f"A system error occurred during Front-end Testing:\n{e}", is_phase_failure_override=True)
+
+    def run_on_demand_automated_ui_test(self, return_phase: str, progress_callback=None, worker_instance=None):
+        """
+        Orchestrates a self-contained, on-demand automated UI testing workflow.
+        This is a dedicated method, separate from the sprint lifecycle.
+        """
+        logging.info("Starting ON-DEMAND automated UI testing phase...")
+        if progress_callback: progress_callback(("INFO", "Starting on-demand automated Front-end Testing phase..."))
+
+        try:
+            db = self.db_manager
+            project_details = db.get_project_by_id(self.project_id)
+            if not project_details: raise Exception("Project details not found.")
+            project_root = Path(project_details['project_root_folder'])
+
+            if progress_callback: progress_callback(("INFO", "Generating UI test scripts and plan..."))
+            # For on-demand tests, we pass an empty list for sprint items as none are formally scoped.
+            sprint_items = []
+            sprint_items_json = json.dumps([dict(row) for row in sprint_items])
+            ux_blueprint_json = project_details['ux_spec_text'] or '{}'
+
+            from agents.agent_automated_ui_test_script import AutomatedUITestScriptAgent
+            script_agent = AutomatedUITestScriptAgent(self.llm_service)
+            script_code, plan_json = script_agent.generate_scripts(sprint_items_json, ux_blueprint_json, project_details['project_root_folder'])
+
+            if not script_code or not plan_json:
+                if progress_callback: progress_callback(("ERROR", "AI failed to generate test scripts or a valid plan."))
+                self.task_awaiting_approval = {"error": "The Automated UI Test Script Agent failed to generate a valid script or test plan."}
+                self.set_phase("AWAITING_SCRIPT_FAILURE_RESOLUTION")
+                return
+
+            if progress_callback: progress_callback(("SUCCESS", "Scripts generated. Executing automated Front-end tests..."))
+            ui_test_command = project_details['ui_test_execution_command']
+            if not ui_test_command:
+                raise Exception("Cannot run automated UI tests: The UI Test Execution Command is not configured for this project.")
+
+            from agents.agent_verification_app_target import VerificationAgent_AppTarget
+            verification_agent = VerificationAgent_AppTarget(self.llm_service)
+            status, raw_output = verification_agent.run_all_tests(project_details['project_root_folder'], ui_test_command)
+
+            if status == 'ENVIRONMENT_FAILURE':
+                if progress_callback: progress_callback(("ERROR", "Front-end test execution failed due to an environment error."))
+                self.escalate_for_manual_debug(raw_output, is_env_failure=True, is_phase_failure_override=True)
+                return
+
+            if progress_callback: progress_callback(("INFO", "Parsing test results..."))
+            from agents.agent_automated_test_result_parser import AutomatedTestResultParserAgent
+            parser_agent = AutomatedTestResultParserAgent(self.llm_service)
+            parsed_result = parser_agent.parse_results(raw_output)
+
+            if progress_callback: progress_callback(("INFO", "Formatting final test report..."))
+            from agents.agent_test_report_formatting import TestReportFormattingAgent
+            report_formatter = TestReportFormattingAgent(self.llm_service)
+            report_markdown = report_formatter.format_report(plan_json, raw_output)
+
+            if progress_callback: progress_callback(("INFO", "Saving test report to file..."))
+            from agents.agent_report_generator import ReportGeneratorAgent
+            report_generator = ReportGeneratorAgent()
+            final_report_with_header = self.prepend_standard_header(report_markdown, "On-Demand Automated Front-end Test Report")
+
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"On-Demand Automated Front-end Test Report - {self.project_name}",
+                content=final_report_with_header
+            )
+
+            reports_dir = project_root / "docs" / "test_reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            report_path = reports_dir / f"on_demand_fe_test_report_{timestamp}.docx"
+
+            with open(report_path, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+            self._commit_document(report_path, f"docs: Add on-demand automated front-end test report")
+
+            if parsed_result.get("success"):
+                if progress_callback: progress_callback(("SUCCESS", "All on-demand automated Front-end tests passed. Report saved."))
+                self.set_phase(return_phase)
+                logging.info(f"On-demand test complete. Returning to phase: {return_phase}")
+            else:
+                if progress_callback: progress_callback(("ERROR", "One or more on-demand Front-end tests failed. Report saved."))
+                self.escalate_for_manual_debug(parsed_result.get("summary", "No summary available."), is_functional_bug=True, is_phase_failure_override=True)
+
+        except Exception as e:
+            logging.error(f"On-demand automated UI testing phase failed: {e}", exc_info=True)
+            self.escalate_for_manual_debug(f"A system error occurred during On-Demand Front-end Testing:\n{e}", is_phase_failure_override=True)
 
     def handle_complete_with_failures(self):
         """

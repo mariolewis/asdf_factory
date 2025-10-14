@@ -52,10 +52,11 @@ from gui.backlog_ratification_page import BacklogRatificationPage
 from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.worker import Worker
 from gui.import_issue_dialog import ImportIssueDialog
-from agents.agent_integration_pmt import IntegrationAgentPMT
+from gui.on_demand_task_page import OnDemandTaskPage
 from gui.delivery_assessment_page import DeliveryAssessmentPage
 from gui.codebase_analysis_page import CodebaseAnalysisPage
 from gui.project_dashboard_page import ProjectDashboardPage
+from agents.agent_integration_pmt import IntegrationAgentPMT
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -164,6 +165,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.project_dashboard_page)
         self.intake_assessment_page = IntakeAssessmentPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.intake_assessment_page)
+        self.on_demand_task_page = OnDemandTaskPage(self)
+        self.ui.mainContentArea.addWidget(self.on_demand_task_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -350,13 +353,13 @@ class ASDFMainWindow(QMainWindow):
         # Help Menu
         self.ui.actionAbout_ASDF.triggered.connect(self.on_about)
 
-        # --- CORRECTED: Vertical Action Bar Connections ---
+        # --- Vertical Action Bar Connections ---
         self.button_view_explorer.clicked.connect(self.on_view_explorer)
         self.button_raise_request.clicked.connect(self.on_raise_cr)
         self.button_view_reports.clicked.connect(self.on_view_reports)
         self.button_view_documents.clicked.connect(self.on_view_documents)
-        # --- End of Corrected Section ---
         self.button_view_sprint.clicked.connect(self.on_view_sprint)
+        self.on_demand_task_page.return_requested.connect(self.on_back_to_workflow)
 
         # Connect signals that trigger a FULL UI refresh and page transition
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page, self.ux_spec_page]:
@@ -567,9 +570,10 @@ class ASDFMainWindow(QMainWindow):
         is_sprint_active = self.orchestrator.is_sprint_active()
         is_gui = is_project_active and bool(project_details and project_details['is_gui_project'] == 1)
         is_auto_ui_configured = is_gui and bool(project_details and project_details['ui_test_execution_command'])
+        has_code_artifacts = is_project_active and bool(self.orchestrator.db_manager.get_all_artifacts_for_project(self.orchestrator.project_id))
 
         self.actionInitiateManualUI.setEnabled(is_gui and not is_sprint_active)
-        self.actionInitiateAutomatedUI.setEnabled(is_auto_ui_configured and not is_sprint_active)
+        self.actionInitiateAutomatedUI.setEnabled(is_auto_ui_configured and not is_sprint_active and has_code_artifacts)
 
         if is_sprint_active:
             self.actionInitiateManualUI.setToolTip("Cannot start on-demand testing while a sprint is in progress.")
@@ -577,6 +581,11 @@ class ASDFMainWindow(QMainWindow):
         elif not is_gui:
             self.actionInitiateManualUI.setToolTip("This action is only available for GUI projects.")
             self.actionInitiateAutomatedUI.setToolTip("This action is only available for GUI projects.")
+
+        elif not has_code_artifacts:
+            self.actionInitiateManualUI.setToolTip("Cannot start testing until at least one code artifact exists.")
+            self.actionInitiateAutomatedUI.setToolTip("Cannot start testing until at least one code artifact exists.")
+
         elif not is_auto_ui_configured:
             self.actionInitiateAutomatedUI.setToolTip("Configure the 'Automated UI Test Command' in Project Settings to enable this action.")
         else:
@@ -1036,6 +1045,19 @@ class ASDFMainWindow(QMainWindow):
             worker.signals.result.connect(self.genesis_page._handle_development_result)
             worker.signals.error.connect(self.genesis_page._on_task_error)
             worker.signals.finished.connect(self.genesis_page._on_task_finished)
+            self.threadpool.start(worker)
+
+        elif current_phase_name == "ON_DEMAND_AUTOMATED_UI_TESTS":
+            task_details = self.orchestrator.task_awaiting_approval or {}
+            return_phase = task_details.get("return_phase", "BACKLOG_VIEW")
+
+            self.on_demand_task_page.reset_display("On-Demand: Automated UI Testing", f"Return to {return_phase.replace('_', ' ').title()}")
+            self.ui.mainContentArea.setCurrentWidget(self.on_demand_task_page)
+
+            worker = Worker(self.orchestrator.run_on_demand_automated_ui_test, return_phase=return_phase)
+            worker.signals.progress.connect(self.on_demand_task_page.on_progress_update)
+            worker.signals.error.connect(self._on_background_task_error)
+            worker.signals.finished.connect(self.on_demand_task_page.on_task_finished)
             self.threadpool.start(worker)
 
         elif current_phase_name == "POST_SPRINT_DOC_UPDATE":
@@ -1730,8 +1752,16 @@ class ASDFMainWindow(QMainWindow):
                                     "Please complete at least one development sprint first.")
 
     def on_initiate_automated_ui(self):
-        """Placeholder for initiating automated UI testing."""
-        QMessageBox.information(self, "Not Implemented", "On-demand automated UI testing will be implemented in a future update.")
+        """Initiates the on-demand automated UI testing workflow."""
+        if not self.orchestrator.project_id:
+            QMessageBox.warning(self, "No Project", "Please load a project to run tests.")
+            return
+
+        # Store the current phase so we can return to it
+        self.previous_phase = self.orchestrator.current_phase
+        self.orchestrator.task_awaiting_approval = {"return_phase": self.previous_phase.name}
+        self.orchestrator.set_phase("ON_DEMAND_AUTOMATED_UI_TESTS")
+        self.update_ui_after_state_change()
 
     def _run_test_suite(self, test_type: str, status_message: str):
         """Generic helper to run a test suite in a background thread."""
