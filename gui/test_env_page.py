@@ -191,7 +191,7 @@ class TestEnvPage(QWidget):
         if header_label:
             header_label.setText(header_text)
 
-        self.ui.doneButton.setText("Finish && Proceed" if self.current_step_index == len(self.setup_tasks) - 1 else "Done, Next Step")
+        self.ui.doneButton.setText("Finish & Proceed" if self.current_step_index == len(self.setup_tasks) - 1 else "Done, Next Step")
         self.ui.previousButton.setEnabled(self.current_step_index > 0)
 
     def on_previous_clicked(self):

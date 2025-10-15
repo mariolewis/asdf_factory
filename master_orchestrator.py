@@ -1311,7 +1311,7 @@ class MasterOrchestrator:
             # Store the generated markdown
             self.active_ux_spec['style_guide'] = style_guide_md
 
-            logging.info("Successfully generated and stored the Theming && Style Guide.")
+            logging.info("Successfully generated and stored the Theming & Style Guide.")
 
             # Clear any previous error messages
             if 'error' in self.active_ux_spec:
@@ -1968,7 +1968,7 @@ class MasterOrchestrator:
         try:
             # Save the raw data to the database as before
             self.db_manager.update_project_field(self.project_id, "complexity_assessment_text", assessment_json_str)
-            logging.info(f"Successfully saved Complexity && Risk Assessment to database for project {self.project_id}")
+            logging.info(f"Successfully saved Complexity & Risk Assessment to database for project {self.project_id}")
 
             project_details = self.db_manager.get_project_by_id(self.project_id)
             if project_details and project_details['project_root_folder']:
@@ -2852,9 +2852,9 @@ class MasterOrchestrator:
         Executes the full Integration and UI Testing workflow, including planning,
         execution, and final test plan generation in both .md and .docx formats.
         """
-        logging.info("Starting Phase: Automated Integration && Verification.")
+        logging.info("Starting Phase: Automated Integration & Verification.")
         if progress_callback:
-            progress_callback("Starting Phase: Automated Integration && Verification.")
+            progress_callback("Starting Phase: Automated Integration & Verification.")
 
         try:
             db = self.db_manager

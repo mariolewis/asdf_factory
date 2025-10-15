@@ -52,11 +52,11 @@ class EnvSetupPage(QWidget):
 
         # Update VCS button text based on whether a .git folder exists
         if (project_path / ".git").is_dir():
-            self.ui.initGitButton.setText("Use Existing Git Repository && Proceed")
+            self.ui.initGitButton.setText("Use Existing Git Repository & Proceed")
         else:
-            self.ui.initGitButton.setText("Initialize New Git Repository && Proceed")
+            self.ui.initGitButton.setText("Initialize New Git Repository & Proceed")
 
-        self.ui.localWorkspaceButton.setText("Use as Local Workspace && Proceed")
+        self.ui.localWorkspaceButton.setText("Use as Local Workspace & Proceed")
 
     def prepare_for_new_project(self):
         """Resets the page to its initial UI state."""

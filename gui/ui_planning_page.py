@@ -132,7 +132,7 @@ class Ui_PlanningPage(object):
         self.generateButton.setText(QCoreApplication.translate("PlanningPage", u"Generate Development Plan", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("PlanningPage", u"Review Development Plan", None))
         self.feedbackLabel.setText(QCoreApplication.translate("PlanningPage", u"Provide feedback for refinement (optional):", None))
-        self.refineButton.setText(QCoreApplication.translate("PlanningPage", u"Submit Feedback && Refine", None))
-        self.approveButton.setText(QCoreApplication.translate("PlanningPage", u"Approve Plan && Proceed to Development", None))
+        self.refineButton.setText(QCoreApplication.translate("PlanningPage", u"Submit Feedback & Refine", None))
+        self.approveButton.setText(QCoreApplication.translate("PlanningPage", u"Approve Plan & Proceed to Development", None))
     # retranslateUi
 

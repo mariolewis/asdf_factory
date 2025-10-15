@@ -1198,7 +1198,7 @@ class ASDFMainWindow(QMainWindow):
                 instruction="Components with known issues were detected.",
                 details=details_text,
                 option1_text="Proceed Anyway",
-                option2_text="Stop && Export Project"
+                option2_text="Stop & Export Project"
             )
             self.decision_page.option1_selected.connect(self.on_integration_confirmed)
             self.decision_page.option2_selected.connect(self.on_stop_export_project)
@@ -1255,7 +1255,7 @@ class ASDFMainWindow(QMainWindow):
                     instruction="The process is paused. Please resolve the environment issue.",
                     details=f"The factory has encountered an unrecoverable ENVIRONMENT error:<br><br>--- ERROR LOG ---{formatted_log}",
                     option1_text="I have fixed the issue, Retry",
-                    option2_text="Stop && Export Project"
+                    option2_text="Stop & Export Project"
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_stop_export_project)
@@ -1280,7 +1280,7 @@ class ASDFMainWindow(QMainWindow):
                     details=f"The automated debug procedure could not resolve the following issue:<br><br>{formatted_log}",
                     option1_text="Retry Automated Fix",
                     option2_text="Pause for Manual Fix & Investigate",
-                    option3_text="Skip Task && Log as Backlog Item" if not is_phase_failure else None
+                    option3_text="Skip Task & Log as Backlog Item" if not is_phase_failure else None
                 )
                 self.decision_page.option1_selected.connect(self.on_decision_option1)
                 self.decision_page.option2_selected.connect(self.on_decision_option2)
@@ -1310,7 +1310,7 @@ class ASDFMainWindow(QMainWindow):
                 instruction="A high-risk change requires your explicit approval before execution.",
                 details=details_text,
                 option1_text="Execute Change Automatically",
-                option2_text="I Will Apply Manually && Skip"
+                option2_text="I Will Apply Manually & Skip"
             )
             self.decision_page.option1_selected.connect(self.on_declarative_execute_auto)
             self.decision_page.option2_selected.connect(self.on_declarative_execute_manual)

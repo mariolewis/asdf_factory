@@ -85,13 +85,13 @@ class VerificationAgent_AppTarget:
             full_command = ""
             if sys.platform == "win32":
                 if win_venv_activate.exists():
-                    full_command = f'call "{win_venv_activate}" && {test_command_str}'
+                    full_command = f'call "{win_venv_activate}" & {test_command_str}'
                 else:
                     full_command = test_command_str
                 command_to_run = f'cmd /c "{full_command}"'
             else:  # Linux/macOS
                 if nix_venv_activate.exists():
-                    full_command = f'source "{nix_venv_activate}" && {test_command_str}'
+                    full_command = f'source "{nix_venv_activate}" & {test_command_str}'
                 else:
                     full_command = test_command_str
                 command_to_run = f'bash -c "{full_command}"'

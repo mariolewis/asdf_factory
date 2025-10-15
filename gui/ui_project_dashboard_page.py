@@ -125,7 +125,7 @@ class Ui_ProjectDashboardPage(object):
         self.filesLabel.setText(QCoreApplication.translate("ProjectDashboardPage", u"Source Files Scanned:", None))
         self.filesValueLabel.setText(QCoreApplication.translate("ProjectDashboardPage", u"Calculating...", None))
         self.pathGroupBox.setTitle(QCoreApplication.translate("ProjectDashboardPage", u"Choose Your Path", None))
-        self.maintainButton.setText(QCoreApplication.translate("ProjectDashboardPage", u"Maintain && Enhance", None))
+        self.maintainButton.setText(QCoreApplication.translate("ProjectDashboardPage", u"Maintain & Enhance", None))
         self.maintainGuidanceLabel.setText(QCoreApplication.translate("ProjectDashboardPage", u"Choose this path to manage the project using a formal backlog. This is best for tracking features, planning future sprints, and maintaining a structured overview of all work. You will be taken to the backlog view where you can add new user stories and bug reports.", None))
         self.quickFixButton.setText(QCoreApplication.translate("ProjectDashboardPage", u"Add to Backlog / Quick Fix", None))
         self.quickFixGuidanceLabel.setText(QCoreApplication.translate("ProjectDashboardPage", u"Choose this path to go to the Project Backlog. This is the standard path for adding new bug reports, features, or other work items before planning a new sprint.", None))
