@@ -73,6 +73,6 @@ class Ui_ProjectCompletePage(object):
         ProjectCompletePage.setWindowTitle(QCoreApplication.translate("ProjectCompletePage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("ProjectCompletePage", u"Project Complete", None))
         self.projectNameLabel.setText(QCoreApplication.translate("ProjectCompletePage", u"Project 'Project Name' has been completed successfully.", None))
-        self.exportButton.setText(QCoreApplication.translate("ProjectCompletePage", u"Finish && Export Project", None))
+        self.exportButton.setText(QCoreApplication.translate("ProjectCompletePage", u"Finish &&&& Export Project", None))
     # retranslateUi
 

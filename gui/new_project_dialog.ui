@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>200</height>
+    <width>650</width>
+    <height>300</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,59 +17,137 @@
    <bool>true</bool>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>16</number>
+   </property>
    <item>
-    <widget class="QLabel" name="instructionLabel">
+    <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>How would you like to create the new project?</string>
-     </property>
-     <property name="alignment">
-      <set>Qt::AlignCenter</set>
+      <string>Create New Project</string>
      </property>
     </widget>
    </item>
    <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
+    <widget class="QLabel" name="instructionLabel">
+     <property name="text">
+      <string>Choose a workflow to begin your project.</string>
      </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
+    </widget>
    </item>
    <item>
     <layout class="QHBoxLayout" name="horizontalLayout">
+     <property name="spacing">
+      <number>24</number>
+     </property>
      <item>
-      <widget class="QPushButton" name="fromSpecButton">
-       <property name="text">
-        <string>Create from a New Specification</string>
+      <widget class="QGroupBox" name="greenfieldCard">
+       <property name="title">
+        <string/>
        </property>
+       <layout class="QVBoxLayout" name="verticalLayout_2">
+        <property name="spacing">
+         <number>16</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="greenfieldTitleLabel">
+          <property name="text">
+           <string>New Project (Greenfield)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="greenfieldDescLabel">
+          <property name="text">
+           <string>Create a new software application from a textual brief or specification document.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacer">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_2">
+          <item>
+           <spacer name="horizontalSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="createGreenfieldButton">
+            <property name="text">
+             <string>Create...</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="fromCodebaseButton">
-       <property name="text">
-        <string>Work with an Existing Codebase</string>
+      <widget class="QGroupBox" name="brownfieldCard">
+       <property name="title">
+        <string/>
        </property>
+       <layout class="QVBoxLayout" name="verticalLayout_3">
+        <property name="spacing">
+         <number>16</number>
+        </property>
+        <item>
+         <widget class="QLabel" name="brownfieldTitleLabel">
+          <property name="text">
+           <string>Onboard Project (Brownfield)</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QLabel" name="brownfieldDescLabel">
+          <property name="text">
+           <string>Analyze an existing local codebase to reverse-engineer specifications and create a backlog.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="verticalSpacer_2">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+         </spacer>
+        </item>
+        <item>
+         <layout class="QHBoxLayout" name="horizontalLayout_3">
+          <item>
+           <spacer name="horizontalSpacer_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QPushButton" name="onboardBrownfieldButton">
+            <property name="text">
+             <string>Onboard...</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </item>
+       </layout>
       </widget>
      </item>
     </layout>
-   </item>
-   <item>
-    <spacer name="verticalSpacer_2">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
    </item>
    <item>
     <widget class="QDialogButtonBox" name="buttonBox">
@@ -80,7 +158,7 @@
       <set>QDialogButtonBox::Cancel</set>
      </property>
      <property name="centerButtons">
-      <bool>true</bool>
+      <bool>false</bool>
      </property>
     </widget>
    </item>

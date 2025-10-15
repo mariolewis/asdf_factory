@@ -151,6 +151,6 @@ class Ui_DeliveryAssessmentPage(object):
         self.uiuxLabel.setText(QCoreApplication.translate("DeliveryAssessmentPage", u"UI/UX:", None))
         self.integrationsLabel.setText(QCoreApplication.translate("DeliveryAssessmentPage", u"Integrations:", None))
         self.cancelButton.setText(QCoreApplication.translate("DeliveryAssessmentPage", u"Cancel Project", None))
-        self.approveButton.setText(QCoreApplication.translate("DeliveryAssessmentPage", u"Acknowledge & Proceed to Spec Review", None))
+        self.approveButton.setText(QCoreApplication.translate("DeliveryAssessmentPage", u"Acknowledge && Proceed to Spec Review", None))
     # retranslateUi
 
