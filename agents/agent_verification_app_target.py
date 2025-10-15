@@ -4,6 +4,7 @@ import logging
 import subprocess
 import textwrap
 import json
+import sys
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
 from llm_service import LLMService
@@ -78,8 +79,24 @@ class VerificationAgent_AppTarget:
         logging.info(f"Executing verification command: '{test_command_str}'")
 
         try:
-            # Use shell=True for Windows compatibility with commands like 'pytest'
-            # that might be in the PATH but not direct executables.
+            win_venv_activate = project_root / "venv" / "Scripts" / "activate.bat"
+            nix_venv_activate = project_root / "venv" / "bin" / "activate"
+
+            full_command = ""
+            if sys.platform == "win32":
+                if win_venv_activate.exists():
+                    full_command = f'call "{win_venv_activate}" && {test_command_str}'
+                else:
+                    full_command = test_command_str
+                command_to_run = f'cmd /c "{full_command}"'
+            else:  # Linux/macOS
+                if nix_venv_activate.exists():
+                    full_command = f'source "{nix_venv_activate}" && {test_command_str}'
+                else:
+                    full_command = test_command_str
+                command_to_run = f'bash -c "{full_command}"'
+
+            logging.info(f"Executing full insulated command: '{command_to_run}'")
             result = subprocess.run(
                 test_command_str,
                 shell=True,
@@ -90,13 +107,9 @@ class VerificationAgent_AppTarget:
             )
             output = result.stdout + "\n" + result.stderr
 
-            # --- THIS IS THE FIX ---
-            # Check for common "command not found" messages to identify an Environment Failure.
-            # 127 is a common exit code for "command not found" on Linux/macOS.
             if result.returncode == 127 or "is not recognized" in output or "command not found" in output:
                 logging.error(f"Environment Failure: Test command '{test_command_str}' not found.")
                 return 'ENVIRONMENT_FAILURE', output
-            # --- END OF FIX ---
 
             logging.info(f"Verification execution finished with exit code: {result.returncode}")
 

@@ -52,11 +52,11 @@ from gui.backlog_ratification_page import BacklogRatificationPage
 from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.worker import Worker
 from gui.import_issue_dialog import ImportIssueDialog
-from gui.on_demand_task_page import OnDemandTaskPage
+from agents.agent_integration_pmt import IntegrationAgentPMT
 from gui.delivery_assessment_page import DeliveryAssessmentPage
 from gui.codebase_analysis_page import CodebaseAnalysisPage
 from gui.project_dashboard_page import ProjectDashboardPage
-from agents.agent_integration_pmt import IntegrationAgentPMT
+from gui.sprint_integration_test_page import SprintIntegrationTestPage
 
 class ASDFMainWindow(QMainWindow):
     """
@@ -157,6 +157,8 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.sprint_review_page)
         self.sprint_history_page = SprintHistoryPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.sprint_history_page)
+        self.sprint_integration_test_page = SprintIntegrationTestPage(self.orchestrator, self)
+        self.ui.mainContentArea.addWidget(self.sprint_integration_test_page)
         self.delivery_assessment_page = DeliveryAssessmentPage(self)
         self.ui.mainContentArea.addWidget(self.delivery_assessment_page)
         self.codebase_analysis_page = CodebaseAnalysisPage(self.orchestrator, self)
@@ -165,8 +167,6 @@ class ASDFMainWindow(QMainWindow):
         self.ui.mainContentArea.addWidget(self.project_dashboard_page)
         self.intake_assessment_page = IntakeAssessmentPage(self.orchestrator, self)
         self.ui.mainContentArea.addWidget(self.intake_assessment_page)
-        self.on_demand_task_page = OnDemandTaskPage(self)
-        self.ui.mainContentArea.addWidget(self.on_demand_task_page)
 
     def _setup_file_tree(self):
         """Initializes the file system model and view."""
@@ -353,13 +353,13 @@ class ASDFMainWindow(QMainWindow):
         # Help Menu
         self.ui.actionAbout_ASDF.triggered.connect(self.on_about)
 
-        # --- Vertical Action Bar Connections ---
+        # --- CORRECTED: Vertical Action Bar Connections ---
         self.button_view_explorer.clicked.connect(self.on_view_explorer)
         self.button_raise_request.clicked.connect(self.on_raise_cr)
         self.button_view_reports.clicked.connect(self.on_view_reports)
         self.button_view_documents.clicked.connect(self.on_view_documents)
+        # --- End of Corrected Section ---
         self.button_view_sprint.clicked.connect(self.on_view_sprint)
-        self.on_demand_task_page.return_requested.connect(self.on_back_to_workflow)
 
         # Connect signals that trigger a FULL UI refresh and page transition
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page, self.ux_spec_page]:
@@ -418,6 +418,11 @@ class ASDFMainWindow(QMainWindow):
         self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
         self.sprint_planning_page.sprint_started.connect(self.on_start_sprint)
         self.sprint_review_page.return_to_backlog.connect(self.on_return_to_backlog)
+
+        # --- Sprint Integration Test Connections ---
+        self.sprint_integration_test_page.run_test_clicked.connect(self.on_sprint_integration_run)
+        self.sprint_integration_test_page.skip_clicked.connect(self.on_sprint_integration_skip)
+        self.sprint_integration_test_page.pause_clicked.connect(self.on_sprint_integration_pause)
 
         # --- Sprint Validation Connections ---
         self.sprint_validation_page.proceed_to_planning.connect(self.on_validation_proceed)
@@ -570,10 +575,9 @@ class ASDFMainWindow(QMainWindow):
         is_sprint_active = self.orchestrator.is_sprint_active()
         is_gui = is_project_active and bool(project_details and project_details['is_gui_project'] == 1)
         is_auto_ui_configured = is_gui and bool(project_details and project_details['ui_test_execution_command'])
-        has_code_artifacts = is_project_active and bool(self.orchestrator.db_manager.get_all_artifacts_for_project(self.orchestrator.project_id))
 
         self.actionInitiateManualUI.setEnabled(is_gui and not is_sprint_active)
-        self.actionInitiateAutomatedUI.setEnabled(is_auto_ui_configured and not is_sprint_active and has_code_artifacts)
+        self.actionInitiateAutomatedUI.setEnabled(is_auto_ui_configured and not is_sprint_active)
 
         if is_sprint_active:
             self.actionInitiateManualUI.setToolTip("Cannot start on-demand testing while a sprint is in progress.")
@@ -581,11 +585,6 @@ class ASDFMainWindow(QMainWindow):
         elif not is_gui:
             self.actionInitiateManualUI.setToolTip("This action is only available for GUI projects.")
             self.actionInitiateAutomatedUI.setToolTip("This action is only available for GUI projects.")
-
-        elif not has_code_artifacts:
-            self.actionInitiateManualUI.setToolTip("Cannot start testing until at least one code artifact exists.")
-            self.actionInitiateAutomatedUI.setToolTip("Cannot start testing until at least one code artifact exists.")
-
         elif not is_auto_ui_configured:
             self.actionInitiateAutomatedUI.setToolTip("Configure the 'Automated UI Test Command' in Project Settings to enable this action.")
         else:
@@ -944,6 +943,66 @@ class ASDFMainWindow(QMainWindow):
             self.intake_assessment_page.configure(assessment_data)
             self.ui.mainContentArea.setCurrentWidget(self.intake_assessment_page)
 
+        elif current_phase_name == "AWAITING_SPRINT_INTEGRATION_TEST_DECISION":
+            # Correctly use the Genesis page for the processing UI
+            status_message = "Generating sprint-specific integration test..."
+            self.genesis_page.update_processing_display(simple_status_message=status_message)
+            self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+            self.genesis_page.ui.logOutputTextEdit.clear()
+            self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
+
+            # The worker logic remains the same, but we add robust error handling
+            worker = Worker(self.orchestrator._run_sprint_integration_test_generation, progress_callback=self.genesis_page.on_progress_update)
+            worker.signals.progress.connect(self.genesis_page.on_progress_update)
+            worker.signals.result.connect(self.genesis_page._handle_development_result)
+            worker.signals.error.connect(self.genesis_page._on_task_error)
+            worker.signals.finished.connect(self.genesis_page._on_task_finished)
+            self.threadpool.start(worker)
+
+        elif current_phase_name == "AWAITING_INTEGRATION_TEST_RESULT_ACK":
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            status = task_data.get("sprint_test_status", "UNKNOWN")
+            output = task_data.get("sprint_test_output", "No output captured.")
+
+            header = "Integration Test Passed" if status == "SUCCESS" else "Integration Test Failed"
+            instruction = "Review the test output below and click 'Continue' to proceed to the next step."
+
+            # Format the output for better readability in the details section
+            formatted_output = f"<pre style='color: #FFFFFF; background-color: #333333; padding: 10px; border-radius: 5px;'>{output}</pre>"
+
+            self.decision_page.configure(
+                header=header,
+                instruction=instruction,
+                details=formatted_output,
+                option1_text="Continue",
+                option2_text=None, # Hide the other buttons
+                option3_text=None
+            )
+            # Connect the button to the new handler in the orchestrator
+            self.decision_page.option1_selected.connect(self.on_sprint_test_result_ack)
+            self.ui.mainContentArea.setCurrentWidget(self.decision_page)
+
+        elif current_phase_name == "AWAITING_SPRINT_INTEGRATION_TEST_APPROVAL":
+            page_to_show = self.sprint_integration_test_page
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            script_path = task_data.get("sprint_integ_script_path", "N/A")
+            command = task_data.get("sprint_integ_command", "")
+            page_to_show.configure(script_path, command)
+            self.ui.mainContentArea.setCurrentWidget(page_to_show)
+
+        elif current_phase_name == "SPRINT_INTEGRATION_TEST_EXECUTION":
+            self.genesis_page.update_processing_display(simple_status_message="Running Sprint Integration Test...")
+            self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+            self.genesis_page.ui.logOutputTextEdit.clear()
+            self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
+
+            worker = Worker(self.orchestrator._task_run_sprint_integration_test, progress_callback=self.genesis_page.on_progress_update)
+            worker.signals.progress.connect(self.genesis_page.on_progress_update)
+            worker.signals.result.connect(self.genesis_page._handle_development_result)
+            worker.signals.error.connect(self.genesis_page._on_task_error)
+            worker.signals.finished.connect(self._on_background_task_finished)
+            self.threadpool.start(worker)
+
         elif current_phase_name == "AWAITING_UI_TEST_DECISION":
             self.statusBar().clearMessage()
             # Find this entire block and replace it
@@ -1045,19 +1104,6 @@ class ASDFMainWindow(QMainWindow):
             worker.signals.result.connect(self.genesis_page._handle_development_result)
             worker.signals.error.connect(self.genesis_page._on_task_error)
             worker.signals.finished.connect(self.genesis_page._on_task_finished)
-            self.threadpool.start(worker)
-
-        elif current_phase_name == "ON_DEMAND_AUTOMATED_UI_TESTS":
-            task_details = self.orchestrator.task_awaiting_approval or {}
-            return_phase = task_details.get("return_phase", "BACKLOG_VIEW")
-
-            self.on_demand_task_page.reset_display("On-Demand: Automated UI Testing", f"Return to {return_phase.replace('_', ' ').title()}")
-            self.ui.mainContentArea.setCurrentWidget(self.on_demand_task_page)
-
-            worker = Worker(self.orchestrator.run_on_demand_automated_ui_test, return_phase=return_phase)
-            worker.signals.progress.connect(self.on_demand_task_page.on_progress_update)
-            worker.signals.error.connect(self._on_background_task_error)
-            worker.signals.finished.connect(self.on_demand_task_page.on_task_finished)
             self.threadpool.start(worker)
 
         elif current_phase_name == "POST_SPRINT_DOC_UPDATE":
@@ -1490,6 +1536,27 @@ class ASDFMainWindow(QMainWindow):
         self.orchestrator.handle_complete_with_failures()
         self.update_ui_after_state_change()
 
+    def on_sprint_integration_run(self, command: str):
+        """Handles the user's choice to run the sprint integration test."""
+        self.orchestrator.handle_sprint_integration_test_decision("RUN", command)
+        self.update_ui_after_state_change()
+
+    def on_sprint_integration_skip(self):
+        """Handles the user's choice to skip the sprint integration test."""
+        self.orchestrator.handle_sprint_integration_test_decision("SKIP")
+        self.update_ui_after_state_change()
+
+    def on_sprint_integration_pause(self):
+        """Handles the user's choice to pause for manual review."""
+        self.orchestrator.handle_sprint_integration_test_decision("PAUSE")
+        # The orchestrator will save state and reset, so we trigger a UI update to reflect the idle state.
+        self.update_ui_after_state_change()
+
+    def on_sprint_test_result_ack(self):
+        """Handles the user clicking 'Continue' on the test results page."""
+        self.orchestrator.handle_sprint_test_result_ack()
+        self.update_ui_after_state_change()
+
     def on_gateway_generate_backlog(self):
         """Handles the user's choice to generate the project backlog."""
         self.setEnabled(False)
@@ -1752,16 +1819,8 @@ class ASDFMainWindow(QMainWindow):
                                     "Please complete at least one development sprint first.")
 
     def on_initiate_automated_ui(self):
-        """Initiates the on-demand automated UI testing workflow."""
-        if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please load a project to run tests.")
-            return
-
-        # Store the current phase so we can return to it
-        self.previous_phase = self.orchestrator.current_phase
-        self.orchestrator.task_awaiting_approval = {"return_phase": self.previous_phase.name}
-        self.orchestrator.set_phase("ON_DEMAND_AUTOMATED_UI_TESTS")
-        self.update_ui_after_state_change()
+        """Placeholder for initiating automated UI testing."""
+        QMessageBox.information(self, "Not Implemented", "On-demand automated UI testing will be implemented in a future update.")
 
     def _run_test_suite(self, test_type: str, status_message: str):
         """Generic helper to run a test suite in a background thread."""

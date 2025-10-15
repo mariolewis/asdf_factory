@@ -52,6 +52,7 @@ from agents.agent_test_report_formatting import TestReportFormattingAgent
 from gui.utils import format_timestamp_for_display
 from agents.agent_dev_environment_advisor import DevEnvironmentAdvisorAgent
 from agents.agent_project_intake_advisor import ProjectIntakeAdvisorAgent
+from agents.agent_sprint_integration_test import SprintIntegrationTestAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -70,6 +71,10 @@ class FactoryPhase(Enum):
     AWAITING_SPRINT_VALIDATION_APPROVAL = auto()
     SPRINT_IN_PROGRESS = auto()
     SPRINT_REVIEW = auto()
+    AWAITING_SPRINT_INTEGRATION_TEST_DECISION = auto()
+    AWAITING_SPRINT_INTEGRATION_TEST_APPROVAL = auto()
+    SPRINT_INTEGRATION_TEST_EXECUTION = auto()
+    AWAITING_INTEGRATION_TEST_RESULT_ACK = auto()
     POST_SPRINT_DOC_UPDATE = auto()
     BACKLOG_RATIFICATION = auto()
     VIEWING_ACTIVE_PROJECTS = auto()
@@ -237,6 +242,10 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_SPRINT_VALIDATION_APPROVAL: "Sprint Validation Report",
         FactoryPhase.SPRINT_IN_PROGRESS: "Sprint in Progress",
         FactoryPhase.SPRINT_REVIEW: "Sprint Review",
+        FactoryPhase.AWAITING_SPRINT_INTEGRATION_TEST_DECISION: "Generating Sprint Integration Test",
+        FactoryPhase.AWAITING_SPRINT_INTEGRATION_TEST_APPROVAL: "Sprint Integration Test Checkpoint",
+        FactoryPhase.SPRINT_INTEGRATION_TEST_EXECUTION: "Running Sprint Integration Test",
+        FactoryPhase.AWAITING_INTEGRATION_TEST_RESULT_ACK: "Sprint Integration Test Results",
         FactoryPhase.POST_SPRINT_DOC_UPDATE: "Finalizing Sprint",
         FactoryPhase.BACKLOG_RATIFICATION: "Backlog Ratification",
         FactoryPhase.VIEWING_ACTIVE_PROJECTS: "Open Project",
@@ -3392,7 +3401,12 @@ class MasterOrchestrator:
 
                 # Load the details first
                 details = json.loads(self.resumable_state['state_details'])
-                self.task_awaiting_approval = details.get("task_awaiting_approval")
+                if "task_awaiting_approval" in details:
+                    # Handles the existing format (e.g., from a manual pause)
+                    self.task_awaiting_approval = details.get("task_awaiting_approval")
+                else:
+                    # Handles our test case's format without breaking the old way
+                    self.task_awaiting_approval = details
 
                 # Check for our special condition
                 if self.task_awaiting_approval and self.task_awaiting_approval.get("resuming_from_manual_fix"):
@@ -3924,10 +3938,7 @@ class MasterOrchestrator:
 
                 # Set the next phase based on project type
                 project_details = self.db_manager.get_project_by_id(self.project_id)
-                if project_details and project_details['is_gui_project']:
-                    self.set_phase("AWAITING_UI_TEST_DECISION")
-                else:
-                    self.set_phase("SPRINT_REVIEW")
+                self.set_phase("AWAITING_SPRINT_INTEGRATION_TEST_DECISION")
                 return True # Return simple success
             else:
                 logging.error("Final backend regression test suite FAILED. Report saved. Escalating to PM.")
@@ -3941,6 +3952,105 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"An unexpected error occurred during final sprint verification: {e}", exc_info=True)
             self.escalate_for_manual_debug(f"A system error occurred during Backend Testing:\n{e}", is_phase_failure_override=True)
+
+    def _run_sprint_integration_test_generation(self, progress_callback=None, **kwargs):
+        """
+        Background task to generate the sprint-specific integration test and command.
+        """
+        self.task_awaiting_approval = {}
+        logging.info("Starting sprint-specific integration test generation...")
+        try:
+            agent = SprintIntegrationTestAgent(self.llm_service, self.db_manager)
+            sprint_id = self.active_sprint_id
+            if not sprint_id:
+                raise ValueError("Could not determine the active sprint ID for test generation.")
+
+            if progress_callback: progress_callback(("INFO", "Generating integration test script and command..."))
+
+            result = agent.generate_test(self.project_id, sprint_id)
+
+            if result:
+                script_path, command = result
+                self.task_awaiting_approval['sprint_integ_script_path'] = script_path
+                self.task_awaiting_approval['sprint_integ_command'] = command
+                self.set_phase("AWAITING_SPRINT_INTEGRATION_TEST_APPROVAL")
+            else:
+                logging.warning("SprintIntegrationTestAgent failed to generate a test. Skipping this step.")
+                self.set_phase("AWAITING_UI_TEST_DECISION") # Skip to next step on failure
+
+        except Exception as e:
+            logging.error(f"Failed during sprint integration test generation: {e}", exc_info=True)
+            # Fallback to the next major phase on error
+            self.set_phase("AWAITING_UI_TEST_DECISION")
+
+    def handle_sprint_integration_test_decision(self, decision: str, command: str = None):
+        """
+        Handles the PM's decision from the sprint integration test checkpoint.
+        """
+        logging.info(f"PM made sprint integration test decision: {decision}")
+        if decision == "SKIP":
+            self.set_phase("AWAITING_UI_TEST_DECISION")
+        elif decision == "PAUSE":
+            self._pause_sprint_for_manual_fix()
+        elif decision == "RUN":
+            if not command:
+                logging.error("Run decision received, but no command was provided.")
+                self.set_phase("AWAITING_UI_TEST_DECISION") # Fail safely
+                return
+            self.task_awaiting_approval['sprint_integ_command_to_run'] = command
+            self.set_phase("SPRINT_INTEGRATION_TEST_EXECUTION")
+        else:
+            logging.warning(f"Received unknown sprint integration test decision: {decision}")
+            self.set_phase("AWAITING_UI_TEST_DECISION") # Default to a safe state
+
+    def _task_run_sprint_integration_test(self, progress_callback=None, **kwargs):
+        """
+        Background worker task that executes the test and transitions to a results page.
+        """
+        if progress_callback: progress_callback(("INFO", "Preparing to execute sprint integration test..."))
+        command = self.task_awaiting_approval.get("sprint_integ_command_to_run")
+        project_root = self.db_manager.get_project_by_id(self.project_id)['project_root_folder']
+
+        agent = VerificationAgent_AppTarget(self.llm_service)
+        if progress_callback: progress_callback(("INFO", f"Executing command: {command}"))
+        status, output = agent.run_all_tests(project_root, command)
+        if progress_callback: progress_callback(("INFO", f"Execution finished with status: {status}"))
+
+        # Generate and save the report regardless of outcome
+        try:
+            report_generator = ReportGeneratorAgent()
+            report_markdown = f"# Sprint Integration Test Report\n\n**Command Executed:** `{command}`\n\n**Status:** {status}\n\n## Test Runner Output\n\n```\n{output}\n```"
+            docx_bytes = report_generator.generate_text_document_docx(
+                title=f"Sprint Integration Test Report - {self.project_name}",
+                content=report_markdown
+            )
+            reports_dir = Path(project_root) / "docs" / "test_reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            report_path = reports_dir / f"sprint_integration_test_report_{timestamp}.docx"
+            with open(report_path, 'wb') as f:
+                f.write(docx_bytes.getbuffer())
+            self._commit_document(report_path, f"docs: Add sprint integration test report for sprint {self.active_sprint_id}")
+        except Exception as e:
+            logging.error(f"Failed to generate and save sprint integration test report: {e}")
+
+        # THIS IS THE FIX: Save results and transition to the new checkpoint
+        self.task_awaiting_approval['sprint_test_status'] = status
+        self.task_awaiting_approval['sprint_test_output'] = output
+        self.set_phase("AWAITING_INTEGRATION_TEST_RESULT_ACK")
+
+        return status # The worker still needs a return value
+
+    def handle_sprint_test_result_ack(self):
+        """
+        Handles the user's acknowledgement of the sprint test results and proceeds.
+        """
+        status = self.task_awaiting_approval.get("sprint_test_status", "FAILURE")
+        if status == 'SUCCESS':
+            self.set_phase("AWAITING_UI_TEST_DECISION")
+        else:
+            output = self.task_awaiting_approval.get("sprint_test_output", "No output available.")
+            self.escalate_for_manual_debug(output, is_phase_failure_override=True)
 
     def _run_automated_ui_test_phase(self, progress_callback=None):
         """
@@ -4447,7 +4557,7 @@ class MasterOrchestrator:
                 return widget
         return None
 
-    def run_doc_update_and_finalize_sprint(self, progress_callback=None):
+    def run_doc_update_and_finalize_sprint(self, progress_callback=None, **kwargs):
         """
         A single method for a background worker that runs the doc update,
         then finalizes the sprint state.
