@@ -5,6 +5,10 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt
 import logging
+import matplotlib.pyplot as plt
+import matplotlib
+# Configure matplotlib to use a non-interactive backend for thread safety
+matplotlib.use('Agg')
 
 from asdf_db_manager import ASDFDBManager
 from master_orchestrator import MasterOrchestrator

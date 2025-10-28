@@ -80,11 +80,6 @@ class Ui_CRManagementPage(object):
 
         self.horizontalLayout_2.addWidget(self.saveBacklogButton)
 
-        self.reorderButton = QPushButton(self.normalModePage)
-        self.reorderButton.setObjectName(u"reorderButton")
-
-        self.horizontalLayout_2.addWidget(self.reorderButton)
-
         self.primaryActionButton = QPushButton(self.normalModePage)
         self.primaryActionButton.setObjectName(u"primaryActionButton")
 
@@ -96,37 +91,6 @@ class Ui_CRManagementPage(object):
         self.horizontalLayout_2.addWidget(self.moreActionsButton)
 
         self.actionButtonStackedWidget.addWidget(self.normalModePage)
-        self.reorderModePage = QWidget()
-        self.reorderModePage.setObjectName(u"reorderModePage")
-        self.horizontalLayout_3 = QHBoxLayout(self.reorderModePage)
-        self.horizontalLayout_3.setObjectName(u"horizontalLayout_3")
-        self.horizontalLayout_3.setContentsMargins(0, 0, 0, 0)
-        self.reorderLabel = QLabel(self.reorderModePage)
-        self.reorderLabel.setObjectName(u"reorderLabel")
-
-        self.horizontalLayout_3.addWidget(self.reorderLabel)
-
-        self.moveUpButton = QPushButton(self.reorderModePage)
-        self.moveUpButton.setObjectName(u"moveUpButton")
-
-        self.horizontalLayout_3.addWidget(self.moveUpButton)
-
-        self.moveDownButton = QPushButton(self.reorderModePage)
-        self.moveDownButton.setObjectName(u"moveDownButton")
-
-        self.horizontalLayout_3.addWidget(self.moveDownButton)
-
-        self.cancelReorderButton = QPushButton(self.reorderModePage)
-        self.cancelReorderButton.setObjectName(u"cancelReorderButton")
-
-        self.horizontalLayout_3.addWidget(self.cancelReorderButton)
-
-        self.saveOrderButton = QPushButton(self.reorderModePage)
-        self.saveOrderButton.setObjectName(u"saveOrderButton")
-
-        self.horizontalLayout_3.addWidget(self.saveOrderButton)
-
-        self.actionButtonStackedWidget.addWidget(self.reorderModePage)
 
         self.horizontalLayout.addWidget(self.actionButtonStackedWidget)
 
@@ -147,13 +111,7 @@ class Ui_CRManagementPage(object):
         self.backButton.setText(QCoreApplication.translate("CRManagementPage", u"< Back", None))
         self.addNewItemButton.setText(QCoreApplication.translate("CRManagementPage", u"Add New Item...", None))
         self.saveBacklogButton.setText(QCoreApplication.translate("CRManagementPage", u"Export Backlog to .xlsx...", None))
-        self.reorderButton.setText(QCoreApplication.translate("CRManagementPage", u"Reorder Backlog", None))
         self.primaryActionButton.setText(QCoreApplication.translate("CRManagementPage", u"Plan Sprint", None))
         self.moreActionsButton.setText(QCoreApplication.translate("CRManagementPage", u"More Actions...", None))
-        self.reorderLabel.setText(QCoreApplication.translate("CRManagementPage", u"<b>Reorder Mode Active</b>", None))
-        self.moveUpButton.setText(QCoreApplication.translate("CRManagementPage", u"Move Up", None))
-        self.moveDownButton.setText(QCoreApplication.translate("CRManagementPage", u"Move Down", None))
-        self.cancelReorderButton.setText(QCoreApplication.translate("CRManagementPage", u"Cancel", None))
-        self.saveOrderButton.setText(QCoreApplication.translate("CRManagementPage", u"Save Order", None))
     # retranslateUi
 

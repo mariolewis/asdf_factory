@@ -135,14 +135,14 @@
         <item>
          <widget class="QPushButton" name="localWorkspaceButton">
           <property name="text">
-           <string>Use Local Workspace &amp;&amp;&amp;&amp; Proceed</string>
+           <string>Use Local Workspace &amp;&amp; Proceed</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QPushButton" name="initGitButton">
           <property name="text">
-           <string>Initialize Git Repository &amp;&amp;&amp;&amp; Proceed</string>
+           <string>Initialize Git Repository &amp;&amp; Proceed</string>
           </property>
          </widget>
         </item>

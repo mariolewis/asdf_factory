@@ -263,7 +263,7 @@ class Ui_CodingStandardPage(object):
         self.generateFromGuidelinesButton.setText(QCoreApplication.translate("CodingStandardPage", u"Analyze Guidelines && Generate Draft", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Review Coding Standard for [Technology]", None))
         self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.specDraftTab), QCoreApplication.translate("CodingStandardPage", u"Standard Draft", None))
-        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.aiAnalysisTab), QCoreApplication.translate("CodingStandardPage", u"AI Analysis && Suggestions", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.aiAnalysisTab), QCoreApplication.translate("CodingStandardPage", u"AI Analysis & Suggestions", None))
         self.feedbackLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Provide feedback and clarifications below to have the AI generate a new version.", None))
         self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.feedbackTab), QCoreApplication.translate("CodingStandardPage", u"Your Feedback", None))
         self.cancelButton_2.setText(QCoreApplication.translate("CodingStandardPage", u"Cancel", None))

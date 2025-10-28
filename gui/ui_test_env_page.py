@@ -228,7 +228,7 @@ class Ui_TestEnvPage(object):
 
     def retranslateUi(self, TestEnvPage):
         TestEnvPage.setWindowTitle(QCoreApplication.translate("TestEnvPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("TestEnvPage", u"Development && Test Environment Setup", None))
+        self.headerLabel.setText(QCoreApplication.translate("TestEnvPage", u"Development & Test Environment Setup", None))
         self.standbyLabel.setText(QCoreApplication.translate("TestEnvPage", u"This step generates a setup guide for the project's development and testing environments based on the technical specification. Click 'Start Analysis' to begin.", None))
         self.startButton.setText(QCoreApplication.translate("TestEnvPage", u"Start Analysis", None))
         self.checklistHeaderLabel.setText(QCoreApplication.translate("TestEnvPage", u"Please follow the steps below to set up the environment:", None))
@@ -236,11 +236,11 @@ class Ui_TestEnvPage(object):
         self.previousButton.setText(QCoreApplication.translate("TestEnvPage", u"< Previous Step", None))
         self.doneButton.setText(QCoreApplication.translate("TestEnvPage", u"Done, Next Step", None))
         self.helpButton.setText(QCoreApplication.translate("TestEnvPage", u"I Need Help", None))
-        self.ignoreButton.setText(QCoreApplication.translate("TestEnvPage", u"Ignore &&&& Continue", None))
+        self.ignoreButton.setText(QCoreApplication.translate("TestEnvPage", u"Ignore && Continue", None))
         self.finalizeLabel.setText(QCoreApplication.translate("TestEnvPage", u"All setup steps have been actioned. Please confirm the final commands that will be used to run the project's automated tests.", None))
         self.backendCommandLabel.setText(QCoreApplication.translate("TestEnvPage", u"Backend Test Command:", None))
         self.uiCommandLabel.setText(QCoreApplication.translate("TestEnvPage", u"Automated UI Test Command (Optional):", None))
-        self.finalizeButton.setText(QCoreApplication.translate("TestEnvPage", u"Finalize Setup &&&& Proceed", None))
+        self.finalizeButton.setText(QCoreApplication.translate("TestEnvPage", u"Finalize Setup && Proceed", None))
         self.manualBuildScriptLabel.setText(QCoreApplication.translate("TestEnvPage", u"<b>Action Required</b><br>You previously chose to create the build script manually. Please enter the exact filename of the script you created (e.g., requirements.txt, build.gradle). This is required for the test environment setup.", None))
         self.confirmBuildScriptButton.setText(QCoreApplication.translate("TestEnvPage", u"Confirm Filename and Continue", None))
     # retranslateUi

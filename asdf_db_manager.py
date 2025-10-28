@@ -163,13 +163,6 @@ class ASDFDBManager:
         create_factory_config_table = "CREATE TABLE IF NOT EXISTS FactoryConfig ( key TEXT PRIMARY KEY, value TEXT, description TEXT );"
         self._execute_query(create_factory_config_table)
 
-        create_factory_knowledge_base_table = """
-        CREATE TABLE IF NOT EXISTS FactoryKnowledgeBase (
-            entry_id INTEGER PRIMARY KEY AUTOINCREMENT, context TEXT NOT NULL, problem TEXT NOT NULL,
-            solution TEXT NOT NULL, tags TEXT, creation_timestamp TEXT NOT NULL
-        );"""
-        self._execute_query(create_factory_knowledge_base_table)
-
         create_project_history_table = """
         CREATE TABLE IF NOT EXISTS ProjectHistory (
             history_id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL,
@@ -223,6 +216,65 @@ class ASDFDBManager:
             (project_id, file_path),
             fetch="one"
         )
+
+    def get_artifacts_by_micro_spec_ids(self, project_id: str, micro_spec_ids: list[str]) -> list:
+        """
+        Retrieves all artifacts for a project matching any of the provided micro_spec_ids.
+
+        Args:
+            project_id (str): The ID of the project.
+            micro_spec_ids (list[str]): A list of micro_spec_id strings to search for.
+
+        Returns:
+            A list of artifact records (as sqlite3.Row objects). Returns empty list on error
+            or if no matches are found.
+        """
+        logging.debug(f"Fetching artifacts by micro_spec_ids for project {project_id}")
+        if not micro_spec_ids:
+            logging.debug("No micro_spec_ids provided, returning empty list.")
+            return []
+
+        try:
+            # Create the correct number of placeholders for the IN clause
+            placeholders = ', '.join('?' * len(micro_spec_ids))
+            query = f"SELECT * FROM Artifacts WHERE project_id = ? AND micro_spec_id IN ({placeholders})"
+
+            # Combine project_id with the list of micro_spec_ids for parameters
+            params = (project_id,) + tuple(micro_spec_ids)
+
+            logging.debug(f"Executing query: {query} with {len(params)} params")
+            results = self._execute_query(query, params, fetch="all")
+            logging.debug(f"Found {len(results)} artifacts matching micro_spec_ids.")
+            return results
+        except Exception as e:
+            logging.error(f"Failed to retrieve artifacts by micro_spec_ids for project {project_id}: {e}", exc_info=True)
+            return [] # Return empty list on error
+
+    def get_backlog_status_summary(self, project_id: str) -> dict:
+        """
+        Counts backlog items (excluding Epics/Features) grouped by status.
+        """
+        query = """
+        SELECT status, COUNT(*) as count
+        FROM ChangeRequestRegister
+        WHERE project_id = ? AND request_type NOT IN ('Epic', 'Feature') AND status IS NOT NULL AND status != ''
+        GROUP BY status;
+        """
+        rows = self._execute_query(query, (project_id,), fetch="all")
+        return {row['status']: row['count'] for row in rows}
+
+    def get_component_test_status_summary(self, project_id: str) -> dict:
+        """
+        Counts code components (from Artifacts) grouped by unit_test_status.
+        """
+        query = """
+        SELECT unit_test_status, COUNT(*) as count
+        FROM Artifacts
+        WHERE project_id = ? AND artifact_type = 'code' AND unit_test_status IS NOT NULL
+        GROUP BY unit_test_status;
+        """
+        rows = self._execute_query(query, (project_id,), fetch="all")
+        return {row['unit_test_status']: row['count'] for row in rows}
 
     def get_component_counts_by_status(self, project_id: str) -> dict[str, int]:
         rows = self._execute_query("SELECT status, COUNT(*) FROM Artifacts WHERE project_id = ? GROUP BY status", (project_id,), fetch="all")
@@ -369,6 +421,40 @@ class ASDFDBManager:
             (parent_cr_id,),
             fetch="all"
         )
+
+    def update_cr_type(self, cr_id: int, new_type: str):
+        """
+        Updates the request_type of a single change request item.
+        """
+        sql = """
+        UPDATE ChangeRequestRegister
+        SET request_type = ?
+        WHERE cr_id = ?
+        """
+        try:
+            # Use _execute_query directly as it handles commit for updates
+            self._execute_query(sql, (new_type, cr_id))
+            logging.info(f"Updated cr_id {cr_id} to new type {new_type}")
+        except sqlite3.Error as e:
+            logging.error(f"Failed to update request_type for cr_id {cr_id}: {e}")
+            raise
+
+    def update_child_types(self, parent_cr_id: int, new_child_type: str):
+        """
+        Updates the request_type of all direct children of a given parent CR.
+        """
+        sql = """
+        UPDATE ChangeRequestRegister
+        SET request_type = ?
+        WHERE parent_cr_id = ?
+        """
+        try:
+            # Use _execute_query directly
+            self._execute_query(sql, (new_child_type, parent_cr_id))
+            logging.info(f"Updated children of parent_cr_id {parent_cr_id} to new type {new_child_type}")
+        except sqlite3.Error as e:
+            logging.error(f"Failed to update child request_types for parent_cr_id {parent_cr_id}: {e}")
+            raise
 
     def add_change_request(self, project_id: str, title: str, description: str, request_type: str = 'BACKLOG_ITEM', status: str = 'CHANGE_REQUEST', external_id: str = None, priority: str = None, complexity: str = None, parent_cr_id: int = None, impact_rating: str = None) -> int:
         timestamp = datetime.now(timezone.utc).isoformat()
@@ -526,6 +612,45 @@ class ASDFDBManager:
         self._execute_query(query, (sprint_id,))
         logging.info(f"Deleted sprint record for sprint {sprint_id}.")
 
+    def get_all_plan_jsons_for_project(self, project_id: str) -> dict:
+        """
+        Retrieves the main development plan and all sprint plans for a project.
+
+        Args:
+            project_id (str): The ID of the project.
+
+        Returns:
+            A dictionary containing 'dev_plan' (str or None) and
+            'sprint_plans' (list of str). Returns empty dict if project not found.
+        """
+        logging.debug(f"Fetching all plan JSONs for project_id: {project_id}")
+        plans = {'dev_plan': None, 'sprint_plans': []}
+        try:
+            # Fetch the main development plan
+            project_row = self._execute_query(
+                "SELECT development_plan_text FROM Projects WHERE project_id = ?",
+                (project_id,),
+                fetch="one"
+            )
+            if project_row:
+                plans['dev_plan'] = project_row['development_plan_text']
+
+            # Fetch all sprint plans
+            sprint_rows = self._execute_query(
+                "SELECT sprint_plan_json FROM Sprints WHERE project_id = ? ORDER BY start_timestamp ASC",
+                (project_id,),
+                fetch="all"
+            )
+            if sprint_rows:
+                plans['sprint_plans'] = [row['sprint_plan_json'] for row in sprint_rows if row['sprint_plan_json']]
+
+            logging.debug(f"Found dev_plan: {'Yes' if plans['dev_plan'] else 'No'}, Found {len(plans['sprint_plans'])} sprint plans.")
+            return plans
+        except Exception as e:
+            logging.error(f"Failed to retrieve plan JSONs for project {project_id}: {e}", exc_info=True)
+            # Return empty structure on error to avoid crashing the caller
+            return {'dev_plan': None, 'sprint_plans': []}
+
     def batch_update_cr_order(self, order_mapping: list[tuple[int, int]]):
         """
         Updates the display_order for multiple CRs in a single transaction.
@@ -592,15 +717,6 @@ class ASDFDBManager:
     def delete_orchestration_state_for_project(self, project_id: str):
         self._execute_query("DELETE FROM OrchestrationState WHERE project_id = ?", (project_id,))
 
-    def add_kb_entry(self, context: str, problem: str, solution: str, tags: str, timestamp: str):
-        self._execute_query("INSERT INTO FactoryKnowledgeBase (context, problem, solution, tags, creation_timestamp) VALUES (?, ?, ?, ?, ?)", (context, problem, solution, tags, timestamp))
-
-    def query_kb_by_tags(self, tags: list[str]) -> list[sqlite3.Row]:
-        if not tags: return []
-        likes, params = ' OR '.join(['tags LIKE ?' for _ in tags]), [f'%{tag}%' for tag in tags]
-        return self._execute_query(f"SELECT * FROM FactoryKnowledgeBase WHERE {likes}", tuple(params), fetch="all")
-
-    # The following methods from the original file need to be added back in, refactored.
     def update_cr_impact_analysis(self, cr_id: int, rating: str, details: str, artifact_ids: list[str]):
         ids_json = json.dumps(artifact_ids)
         timestamp = datetime.now(timezone.utc).isoformat()

@@ -130,10 +130,10 @@ class SpecElaborationPage(QWidget):
         elif current_phase == FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS:
             # STATE 2: Trigger background task to generate draft and risk analysis.
             self.ui.headerLabel.setText("Application Specification Generation")
-            self.window().statusBar().showMessage("Generating initial draft and analyzing project risk...")
+            self.window().statusBar().showMessage("Generating initial draft and assessing execution risk...")
             self.window().setEnabled(False) # Disable main window during processing
             self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
-            self.ui.processingLabel.setText("Generating initial draft and analyzing project risk...")
+            self.ui.processingLabel.setText("Generating initial draft and assessing execution risk...")
 
             task_data = self.orchestrator.task_awaiting_approval or {}
             initial_brief = task_data.get("pending_brief")

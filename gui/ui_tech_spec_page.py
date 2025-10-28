@@ -276,7 +276,7 @@ class Ui_TechSpecPage(object):
 
     def retranslateUi(self, TechSpecPage):
         TechSpecPage.setWindowTitle(QCoreApplication.translate("TechSpecPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("TechSpecPage", u"Technical Specification && Architecture", None))
+        self.headerLabel.setText(QCoreApplication.translate("TechSpecPage", u"Technical Specification & Architecture", None))
         self.instructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"First, choose how to create the Technical Specification document.", None))
         self.proposeStackButton.setText(QCoreApplication.translate("TechSpecPage", u"Let ASDF Propose a Tech Stack", None))
         self.pmDefineButton.setText(QCoreApplication.translate("TechSpecPage", u"I Will Provide Technology Guidelines", None))
@@ -287,11 +287,11 @@ class Ui_TechSpecPage(object):
         self.generateFromGuidelinesButton.setText(QCoreApplication.translate("TechSpecPage", u"Analyze && Generate Draft", None))
         self.reviewHeaderLabel.setText(QCoreApplication.translate("TechSpecPage", u"Review Technical Specification", None))
         self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.specDraftTab), QCoreApplication.translate("TechSpecPage", u"Specification Draft", None))
-        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.aiAnalysisTab), QCoreApplication.translate("TechSpecPage", u"AI Analysis && Suggestions", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.aiAnalysisTab), QCoreApplication.translate("TechSpecPage", u"AI Analysis & Suggestions", None))
         self.feedbackLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide feedback and clarifications below to have the AI generate a new version of the draft.", None))
-        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.feedbackTab), QCoreApplication.translate("TechSpecPage", u"Your Feedback && Refinements", None))
+        self.reviewTabWidget.setTabText(self.reviewTabWidget.indexOf(self.feedbackTab), QCoreApplication.translate("TechSpecPage", u"Your Feedback & Refinements", None))
         self.pauseProjectButton.setText(QCoreApplication.translate("TechSpecPage", u"Pause Project", None))
-        self.refineButton.setText(QCoreApplication.translate("TechSpecPage", u"Submit Feedback &&&& Refine", None))
+        self.refineButton.setText(QCoreApplication.translate("TechSpecPage", u"Submit Feedback && Refine", None))
         self.approveButton.setText(QCoreApplication.translate("TechSpecPage", u"Approve Technical Specification", None))
         self.processingLabel.setText(QCoreApplication.translate("TechSpecPage", u"Processing... Please wait.", None))
         self.osLabel.setText(QCoreApplication.translate("TechSpecPage", u"Please select the target Operating System for the application.", None))

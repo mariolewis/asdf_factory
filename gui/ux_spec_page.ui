@@ -29,7 +29,7 @@
    <item>
     <widget class="QLabel" name="headerLabel">
      <property name="text">
-      <string>User Experience &amp;&amp; Interface Design</string>
+      <string>User Experience &amp; Interface Design</string>
      </property>
     </widget>
    </item>
@@ -103,7 +103,7 @@
             <item>
             <widget class="QPushButton" name="refineButton">
             <property name="text">
-                <string>Submit Feedback &amp;&amp;&amp;&amp; Refine</string>
+                <string>Submit Feedback &amp;&amp; Refine</string>
             </property>
             </widget>
             </item>

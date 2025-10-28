@@ -39,7 +39,6 @@ from agents.agent_code_review import CodeReviewAgent
 from agents.agent_ui_test_planner_app_target import UITestPlannerAgent_AppTarget
 from agents.agent_test_result_evaluation_app_target import TestResultEvaluationAgent_AppTarget
 from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
-from agents.agent_learning_capture import LearningCaptureAgent
 from agents.agent_impact_analysis_app_target import ImpactAnalysisAgent_AppTarget
 from agents.agent_test_environment_advisor import TestEnvironmentAdvisorAgent
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
@@ -53,6 +52,7 @@ from gui.utils import format_timestamp_for_display
 from agents.agent_dev_environment_advisor import DevEnvironmentAdvisorAgent
 from agents.agent_project_intake_advisor import ProjectIntakeAdvisorAgent
 from agents.agent_sprint_integration_test import SprintIntegrationTestAgent
+from agents.agent_traceability_report import RequirementTraceabilityAgent
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -1756,6 +1756,131 @@ class MasterOrchestrator:
             logging.error(f"Failed to save project settings: {e}")
             raise
 
+    def get_traceability_report_data(self, project_id: str) -> list:
+        """
+        Orchestrates the generation of the requirements traceability report data.
+
+        Args:
+            project_id (str): The ID of the project for which to generate the report.
+
+        Returns:
+            A list of dictionaries representing the traceability links,
+            or an empty list on error.
+        """
+        logging.info(f"Orchestrator: Getting traceability report data for project {project_id}")
+        if not project_id or project_id != self.project_id:
+            logging.error("Invalid project_id provided to get_traceability_report_data.")
+            return []
+
+        try:
+            # Instantiate the new agent
+            agent = RequirementTraceabilityAgent(self.db_manager, self)
+
+            # Call the agent's core method to generate the data
+            trace_data = agent.generate_trace_data(project_id)
+
+            logging.info(f"Successfully retrieved {len(trace_data)} traceability records.")
+            return trace_data
+
+        except Exception as e:
+            logging.error(f"Failed to get traceability report data for project {project_id}: {e}", exc_info=True)
+            return [] # Return empty list on failure
+
+    def get_health_snapshot_data(self) -> dict:
+        """Gathers data for the health snapshot from the DAO."""
+        if not self.project_id:
+            return {}
+        try:
+            backlog_summary = self.db_manager.get_backlog_status_summary(self.project_id)
+            test_summary = self.db_manager.get_component_test_status_summary(self.project_id)
+            return {
+                'backlog_summary': backlog_summary,
+                'test_summary': test_summary
+            }
+        except Exception as e:
+            logging.error(f"Failed to get health snapshot data: {e}", exc_info=True)
+            return {}
+
+    def get_project_reports_dir(self) -> Path:
+        """
+        Gets the path to the project's 'docs/test_reports' directory, creating it if necessary.
+        """
+        if not self.project_id:
+            raise Exception("Cannot get reports directory; no active project.")
+
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        if not project_details or not project_details['project_root_folder']:
+            raise Exception("Cannot get reports directory; project root folder not found.")
+
+        project_root = Path(project_details['project_root_folder'])
+        reports_dir = project_root / "docs" / "project_reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        return reports_dir
+
+    def generate_health_snapshot_report(self, **kwargs) -> str:
+        """
+        Orchestrates the generation of the Project Health Snapshot .docx file.
+        Returns the path to the generated file, or an error string.
+        """
+        if not self.project_id or not self.project_name:
+            return "Error: No active project."
+
+        try:
+            snapshot_data = self.get_health_snapshot_data()
+            if not snapshot_data.get('backlog_summary') and not snapshot_data.get('test_summary'):
+                logging.warning("No data found for health snapshot. Generating report with 'No Data' entries.")
+                # We proceed, the agent method handles empty dicts
+
+            agent = ReportGeneratorAgent()
+            docx_bytes_io = agent.generate_health_snapshot_docx(self.project_name, snapshot_data)
+
+            # Save the file
+            report_filename = f"{self.project_name}_Health_Snapshot.docx"
+            save_path = self.get_project_reports_dir() / report_filename
+
+            with open(save_path, 'wb') as f:
+                f.write(docx_bytes_io.getbuffer())
+
+            logging.info(f"Health Snapshot report saved to: {save_path}")
+            return str(save_path)
+        except Exception as e:
+            logging.error(f"Failed to generate health snapshot report: {e}", exc_info=True)
+            return f"Error: {e}"
+
+    def generate_traceability_matrix_report(self, **kwargs) -> str:
+        """
+        Orchestrates the generation of the .xlsx Traceability Matrix.
+        Returns the path to the generated file, or an error string.
+        """
+        if not self.project_id or not self.project_name:
+            return "Error: No active project."
+
+        try:
+            # 1. Reuse the data-gathering logic we already built for the .docx report
+            trace_data = self.get_traceability_report_data(self.project_id)
+
+            if not trace_data:
+                logging.info("No traceability data found to generate .xlsx matrix.")
+                # We proceed, the agent method handles empty lists
+
+            # 2. Call the new agent method to generate the .xlsx
+            agent = ReportGeneratorAgent()
+            xlsx_bytes_io = agent.generate_traceability_xlsx(trace_data, self.project_name)
+
+            # 3. Save the file
+            report_filename = f"{self.project_name}_Backlog_Traceability_Report.xlsx"
+            save_path = self.get_project_reports_dir() / report_filename
+
+            with open(save_path, 'wb') as f:
+                f.write(xlsx_bytes_io.getbuffer())
+
+            logging.info(f"Traceability Matrix .xlsx report saved to: {save_path}")
+            return str(save_path)
+        except Exception as e:
+            logging.error(f"Failed to generate traceability matrix report: {e}", exc_info=True)
+            return f"Error: {e}"
+
     def handle_import_from_tool(self, import_data: dict) -> list:
         """
         Handles fetching and filtering issues from an external tool.
@@ -1977,12 +2102,12 @@ class MasterOrchestrator:
                 docs_dir.mkdir(exist_ok=True)
 
                 # Save the raw JSON file for system use
-                # assessment_file_path_json = docs_dir / "complexity_and_risk_assessment.json"
+                # assessment_file_path_json = docs_dir / "automated_delivery_risk_assessment.json"
                 # assessment_file_path_json.write_text(assessment_json_str, encoding="utf-8")
                 # self._commit_document(assessment_file_path_json, "docs: Add Complexity and Risk Assessment (JSON)")
 
                 # Generate and save the formatted .docx report
-                assessment_file_path_docx = docs_dir / "complexity_and_risk_assessment.docx"
+                assessment_file_path_docx = docs_dir / "automated_delivery_risk_assessment.docx"
                 report_generator = ReportGeneratorAgent()
                 assessment_data = json.loads(assessment_json_str)
                 docx_bytes = report_generator.generate_assessment_docx(assessment_data, self.project_name)
@@ -3390,6 +3515,88 @@ class MasterOrchestrator:
             logging.error(f"Failed to save new CR order: {e}")
             # Optionally, signal back to the UI that there was an error
 
+    def handle_backlog_item_moved(self, moved_cr_id: int, new_parent_cr_id: int | None, new_row: int):
+        """
+        Handles the re-parenting and re-ordering of a backlog item after a
+        successful drag-and-drop operation. Updates parent_id, display_order,
+        and request_type based on the new hierarchy.
+        """
+        logging.info(f"Handling moved backlog item. CR_ID: {moved_cr_id}, New Parent_ID: {new_parent_cr_id}, New Row: {new_row}") #
+        try:
+            db = self.db_manager
+            moved_item = db.get_cr_by_id(moved_cr_id) #
+            if not moved_item:
+                logging.error(f"Cannot process move: Moved item CR-{moved_cr_id} not found.")
+                return
+
+            original_type = moved_item['request_type'] #
+            new_request_type = original_type # Default to original type
+
+            # Determine the type of the new parent
+            new_parent_type = None
+            if new_parent_cr_id is not None:
+                new_parent_item = db.get_cr_by_id(new_parent_cr_id) #
+                if new_parent_item:
+                    new_parent_type = new_parent_item['request_type'] #
+                else:
+                    logging.warning(f"Could not find new parent item CR-{new_parent_cr_id}. Assuming root drop.")
+                    new_parent_cr_id = None # Correct the ID if parent not found
+
+            # --- Type Promotion Logic ---
+            if new_parent_type is None: # Dropped at root level
+                if original_type == 'FEATURE':
+                    new_request_type = 'EPIC'
+            elif new_parent_type == 'EPIC': # Dropped onto an Epic
+                if original_type in ['BACKLOG_ITEM', 'BUG_REPORT']: # Should not happen with validation, but handle defensively
+                     new_request_type = 'FEATURE'
+                elif original_type == 'EPIC': # Cannot drop Epic onto Epic
+                    logging.warning(f"Invalid move: Cannot make EPIC {moved_cr_id} child of EPIC {new_parent_cr_id}. Type not changed.")
+                    new_request_type = 'EPIC'
+                else: # Feature onto Epic is valid, type remains FEATURE
+                    new_request_type = 'FEATURE'
+            elif new_parent_type == 'FEATURE': # Dropped onto a Feature
+                if original_type == 'EPIC': # Cannot drop Epic onto Feature
+                    logging.warning(f"Invalid move: Cannot make EPIC {moved_cr_id} child of FEATURE {new_parent_cr_id}. Type not changed.")
+                    new_request_type = 'EPIC'
+                elif original_type == 'FEATURE': # Cannot drop Feature onto Feature
+                     logging.warning(f"Invalid move: Cannot make FEATURE {moved_cr_id} child of FEATURE {new_parent_cr_id}. Type not changed.")
+                     new_request_type = 'FEATURE'
+                else: # Item or Bug onto Feature is valid
+                    new_request_type = original_type # Keep as BACKLOG_ITEM or BUG_REPORT
+
+            # Update the type of the moved item if it changed
+            if new_request_type != original_type:
+                db.update_cr_type(moved_cr_id, new_request_type) #
+
+                # If the item became an EPIC, promote its direct children to FEATURE
+                if new_request_type == 'EPIC':
+                    db.update_child_types(moved_cr_id, 'FEATURE') #
+
+            # --- Re-ordering Logic (remains the same) ---
+            db.update_cr_field(moved_cr_id, 'parent_cr_id', new_parent_cr_id) #
+
+            if new_parent_cr_id is None:
+                siblings = db.get_top_level_items_for_project(self.project_id) #
+            else:
+                siblings = db.get_children_of_cr(new_parent_cr_id) #
+
+            sibling_ids = [s['cr_id'] for s in siblings] #
+            if moved_cr_id in sibling_ids: sibling_ids.remove(moved_cr_id) #
+
+            if new_row < 0 or new_row > len(sibling_ids): sibling_ids.append(moved_cr_id) #
+            else: sibling_ids.insert(new_row, moved_cr_id) #
+
+            order_mapping = [(i + 1, cr_id) for i, cr_id in enumerate(sibling_ids)] #
+            db.batch_update_cr_order(order_mapping) #
+
+            logging.info(f"Successfully processed move for {moved_cr_id}. New type: {new_request_type}. Re-ordered {len(order_mapping)} siblings.") #
+            self.is_project_dirty = True
+
+        except Exception as e:
+            logging.error(f"Failed to handle backlog item move: {e}", exc_info=True) #
+            # Re-raise the exception so the UI layer knows it failed and can refresh
+            raise
+
     def resume_project(self):
         """
         Resumes a project using the detailed state loaded into self.resumable_state.
@@ -3564,16 +3771,6 @@ class MasterOrchestrator:
             fix_plan = json.loads(fix_plan_str)
             if not fix_plan:
                  raise Exception("FixPlannerAgent returned an empty plan.")
-
-            # Step 3: Capture this successful interaction as a learning moment.
-            learning_agent = LearningCaptureAgent(self.db_manager)
-            tags = self._extract_tags_from_text(hypothesis)
-            learning_agent.add_learning_entry(
-                context=f"During interactive triage (Tier 3) for project: {self.project_name}",
-                problem=pm_error_description,
-                solution=fix_plan_str,
-                tags=tags
-            )
 
             # Load the new fix plan and transition to Genesis to execute it.
             self.active_plan = fix_plan
@@ -5868,15 +6065,6 @@ class MasterOrchestrator:
             if not fix_plan:
                  raise Exception("FixPlannerAgent returned an empty plan.")
 
-            learning_agent = LearningCaptureAgent(self.db_manager)
-            tags = self._extract_tags_from_text(hypothesis)
-            learning_agent.add_learning_entry(
-                context=f"During interactive triage (Tier 3) for project: {self.project_name}",
-                problem=pm_error_description,
-                solution=fix_plan_str,
-                tags=tags
-            )
-
             self.active_plan = fix_plan
             self.active_plan_cursor = 0
             self.set_phase("GENESIS")
@@ -5885,44 +6073,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Tier 3 interactive triage failed. Error: {e}")
             self.set_phase("DEBUG_PM_ESCALATION")
-
-    def _extract_tags_from_text(self, text: str) -> list[str]:
-        """A simple helper to extract potential search tags from text."""
-        # Find capitalized words or words in quotes that might be features or nouns
-        keywords = re.findall(r'\"([^"]+)\"|\b[A-Z][a-zA-Z]{3,}\b', text)
-        # Flatten list if there are tuples from regex, lowercase, and get unique tags
-        flat_list = []
-        for item in keywords:
-            if isinstance(item, tuple):
-                flat_list.extend(filter(None, item))
-            else:
-                flat_list.append(item)
-        tags = set(kw.lower() for kw in flat_list if len(kw) > 3)
-        return list(tags)[:5] # Limit to 5 tags to keep it focused
-
-    def capture_spec_clarification_learning(self, problem_context: str, solution_text: str, spec_text: str):
-        """
-        Captures a learning moment from a successful specification clarification.
-
-        Args:
-            problem_context (str): The issues/questions the AI raised.
-            solution_text (str): The clarification provided by the PM.
-            spec_text (str): The full specification text for context and tags.
-        """
-        try:
-            agent = LearningCaptureAgent(self.db_manager)
-            tags = self._extract_tags_from_text(spec_text)
-
-            agent.add_learning_entry(
-                context=f"During specification elaboration for project: {self.project_name}",
-                problem=problem_context,
-                solution=solution_text,
-                tags=tags
-            )
-            logging.info("Successfully captured specification clarification as a learning entry.")
-        except Exception as e:
-            # We don't want to halt the main flow if learning capture fails.
-            logging.warning(f"Could not capture learning entry for spec clarification: {e}")
 
     def start_test_environment_setup(self, progress_callback=None, **kwargs):
         """

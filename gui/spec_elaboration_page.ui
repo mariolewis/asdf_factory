@@ -213,7 +213,7 @@
          <item>
           <widget class="QPushButton" name="confirmAnalysisButton">
            <property name="text">
-            <string>Confirm Assessment &amp;&amp;&amp;&amp; Proceed</string>
+            <string>Confirm Assessment &amp;&amp; Proceed</string>
            </property>
           </widget>
          </item>
@@ -303,7 +303,7 @@
          </widget>
          <widget class="QWidget" name="aiIssuesTab">
           <attribute name="title">
-           <string>AI Analysis &amp;&amp; Issues</string>
+           <string>AI Analysis &amp; Issues</string>
           </attribute>
           <layout class="QVBoxLayout" name="verticalLayout_8">
            <item>
@@ -317,7 +317,7 @@
          </widget>
          <widget class="QWidget" name="feedbackTab">
           <attribute name="title">
-           <string>Your Feedback &amp;&amp; Refinements</string>
+           <string>Your Feedback &amp; Refinements</string>
           </attribute>
           <layout class="QVBoxLayout" name="verticalLayout_10">
            <item>
@@ -349,14 +349,14 @@
          <item>
           <widget class="QPushButton" name="submitFeedbackButton">
            <property name="text">
-            <string>Submit Feedback &amp;&amp;&amp;&amp; Refine Draft</string>
+            <string>Submit Feedback &amp;&amp; Refine Draft</string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QPushButton" name="approveSpecButton">
            <property name="text">
-            <string>Approve Specification &amp;&amp;&amp;&amp; Proceed</string>
+            <string>Approve Specification &amp;&amp; Proceed</string>
            </property>
           </widget>
          </item>

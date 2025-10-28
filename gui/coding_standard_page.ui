@@ -186,7 +186,7 @@
          </widget>
          <widget class="QWidget" name="aiAnalysisTab">
           <attribute name="title">
-           <string>AI Analysis &amp;&amp; Suggestions</string>
+           <string>AI Analysis &amp; Suggestions</string>
           </attribute>
           <layout class="QVBoxLayout" name="verticalLayout_8">
            <item>

@@ -15,10 +15,9 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame,
-    QGroupBox, QHBoxLayout, QHeaderView, QLabel,
-    QPushButton, QSizePolicy, QSpacerItem, QTableView,
-    QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QGroupBox,
+    QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+    QSpacerItem, QVBoxLayout, QWidget)
 
 class Ui_ReportsPage(object):
     def setupUi(self, ReportsPage):
@@ -45,84 +44,85 @@ class Ui_ReportsPage(object):
 
         self.verticalLayout.addWidget(self.instructionLabel)
 
-        self.progressSummaryGroupBox = QGroupBox(ReportsPage)
-        self.progressSummaryGroupBox.setObjectName(u"progressSummaryGroupBox")
-        self.verticalLayout_2 = QVBoxLayout(self.progressSummaryGroupBox)
+        self.reportsGrid = QGridLayout()
+        self.reportsGrid.setObjectName(u"reportsGrid")
+        self.healthSnapshotCard = QGroupBox(ReportsPage)
+        self.healthSnapshotCard.setObjectName(u"healthSnapshotCard")
+        self.verticalLayout_2 = QVBoxLayout(self.healthSnapshotCard)
         self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.progressFormLayout = QFormLayout()
-        self.progressFormLayout.setObjectName(u"progressFormLayout")
+        self.label_2 = QLabel(self.healthSnapshotCard)
+        self.label_2.setObjectName(u"label_2")
+        self.label_2.setWordWrap(True)
 
-        self.verticalLayout_2.addLayout(self.progressFormLayout)
+        self.verticalLayout_2.addWidget(self.label_2)
 
-        self.horizontalLayout_2 = QHBoxLayout()
-        self.horizontalLayout_2.setObjectName(u"horizontalLayout_2")
-        self.horizontalSpacer_2 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.horizontalLayout_2.addItem(self.horizontalSpacer_2)
+        self.verticalLayout_2.addItem(self.verticalSpacer)
 
-        self.exportProgressButton = QPushButton(self.progressSummaryGroupBox)
-        self.exportProgressButton.setObjectName(u"exportProgressButton")
+        self.generateHealthSnapshotButton = QPushButton(self.healthSnapshotCard)
+        self.generateHealthSnapshotButton.setObjectName(u"generateHealthSnapshotButton")
 
-        self.horizontalLayout_2.addWidget(self.exportProgressButton)
-
-
-        self.verticalLayout_2.addLayout(self.horizontalLayout_2)
+        self.verticalLayout_2.addWidget(self.generateHealthSnapshotButton)
 
 
-        self.verticalLayout.addWidget(self.progressSummaryGroupBox)
+        self.reportsGrid.addWidget(self.healthSnapshotCard, 0, 0, 1, 1)
 
-        self.crBugGroupBox = QGroupBox(ReportsPage)
-        self.crBugGroupBox.setObjectName(u"crBugGroupBox")
-        self.verticalLayout_3 = QVBoxLayout(self.crBugGroupBox)
+        self.traceabilityCard = QGroupBox(ReportsPage)
+        self.traceabilityCard.setObjectName(u"traceabilityCard")
+        self.verticalLayout_3 = QVBoxLayout(self.traceabilityCard)
         self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.horizontalLayout = QHBoxLayout()
-        self.horizontalLayout.setObjectName(u"horizontalLayout")
-        self.filterLabel = QLabel(self.crBugGroupBox)
-        self.filterLabel.setObjectName(u"filterLabel")
+        self.label_3 = QLabel(self.traceabilityCard)
+        self.label_3.setObjectName(u"label_3")
+        self.label_3.setWordWrap(True)
 
-        self.horizontalLayout.addWidget(self.filterLabel)
+        self.verticalLayout_3.addWidget(self.label_3)
 
-        self.crFilterComboBox = QComboBox(self.crBugGroupBox)
-        self.crFilterComboBox.addItem("")
-        self.crFilterComboBox.addItem("")
-        self.crFilterComboBox.addItem("")
-        self.crFilterComboBox.setObjectName(u"crFilterComboBox")
+        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.horizontalLayout.addWidget(self.crFilterComboBox)
+        self.verticalLayout_3.addItem(self.verticalSpacer_2)
+
+        self.generateTraceabilityMatrixButton = QPushButton(self.traceabilityCard)
+        self.generateTraceabilityMatrixButton.setObjectName(u"generateTraceabilityMatrixButton")
+
+        self.verticalLayout_3.addWidget(self.generateTraceabilityMatrixButton)
+
+
+        self.reportsGrid.addWidget(self.traceabilityCard, 0, 1, 1, 1)
 
         self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.horizontalLayout.addItem(self.horizontalSpacer)
+        self.reportsGrid.addItem(self.horizontalSpacer, 0, 2, 1, 1)
+
+        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+
+        self.reportsGrid.addItem(self.verticalSpacer_3, 1, 0, 1, 1)
 
 
-        self.verticalLayout_3.addLayout(self.horizontalLayout)
+        self.verticalLayout.addLayout(self.reportsGrid)
 
-        self.crTableView = QTableView(self.crBugGroupBox)
-        self.crTableView.setObjectName(u"crTableView")
+        self.mainVerticalSpacer = QSpacerItem(20, 179, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.verticalLayout_3.addWidget(self.crTableView)
+        self.verticalLayout.addItem(self.mainVerticalSpacer)
 
-        self.horizontalLayout_4 = QHBoxLayout()
-        self.horizontalLayout_4.setObjectName(u"horizontalLayout_4")
-        self.horizontalSpacer_3 = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.horizontalLayout_4.addItem(self.horizontalSpacer_3)
-
-        self.exportCrButton = QPushButton(self.crBugGroupBox)
-        self.exportCrButton.setObjectName(u"exportCrButton")
-
-        self.horizontalLayout_4.addWidget(self.exportCrButton)
-
-
-        self.verticalLayout_3.addLayout(self.horizontalLayout_4)
-
-
-        self.verticalLayout.addWidget(self.crBugGroupBox)
-
+        self.horizontalLayout_back = QHBoxLayout()
+        self.horizontalLayout_back.setObjectName(u"horizontalLayout_back")
         self.backButton = QPushButton(ReportsPage)
         self.backButton.setObjectName(u"backButton")
+        sizePolicy = QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        sizePolicy.setHorizontalStretch(0)
+        sizePolicy.setVerticalStretch(0)
+        sizePolicy.setHeightForWidth(self.backButton.sizePolicy().hasHeightForWidth())
+        self.backButton.setSizePolicy(sizePolicy)
 
-        self.verticalLayout.addWidget(self.backButton)
+        self.horizontalLayout_back.addWidget(self.backButton)
+
+        self.horizontalSpacer_back = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+
+        self.horizontalLayout_back.addItem(self.horizontalSpacer_back)
+
+
+        self.verticalLayout.addLayout(self.horizontalLayout_back)
 
 
         self.retranslateUi(ReportsPage)
@@ -132,17 +132,14 @@ class Ui_ReportsPage(object):
 
     def retranslateUi(self, ReportsPage):
         ReportsPage.setWindowTitle(QCoreApplication.translate("ReportsPage", u"Form", None))
-        self.headerLabel.setText(QCoreApplication.translate("ReportsPage", u"Project Status Reports", None))
-        self.instructionLabel.setText(QCoreApplication.translate("ReportsPage", u"Review and export high-level reports for the active project.", None))
-        self.progressSummaryGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Development Progress Summary", None))
-        self.exportProgressButton.setText(QCoreApplication.translate("ReportsPage", u"Export Summary to .docx", None))
-        self.crBugGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Change && Bug Register", None))
-        self.filterLabel.setText(QCoreApplication.translate("ReportsPage", u"Filter by Status:", None))
-        self.crFilterComboBox.setItemText(0, QCoreApplication.translate("ReportsPage", u"Pending", None))
-        self.crFilterComboBox.setItemText(1, QCoreApplication.translate("ReportsPage", u"Closed", None))
-        self.crFilterComboBox.setItemText(2, QCoreApplication.translate("ReportsPage", u"All", None))
-
-        self.exportCrButton.setText(QCoreApplication.translate("ReportsPage", u"Export This View to .docx", None))
-        self.backButton.setText(QCoreApplication.translate("ReportsPage", u"<-- Back to Main Workflow", None))
+        self.headerLabel.setText(QCoreApplication.translate("ReportsPage", u"Reports Hub", None))
+        self.instructionLabel.setText(QCoreApplication.translate("ReportsPage", u"Generate high-level reports for project analysis and stakeholder updates.", None))
+        self.healthSnapshotCard.setTitle(QCoreApplication.translate("ReportsPage", u"Project Health Snapshot", None))
+        self.label_2.setText(QCoreApplication.translate("ReportsPage", u"A one-page visual summary of backlog completion and code quality. Ideal for stakeholder updates.", None))
+        self.generateHealthSnapshotButton.setText(QCoreApplication.translate("ReportsPage", u"Generate .docx", None))
+        self.traceabilityCard.setTitle(QCoreApplication.translate("ReportsPage", u"Traceability Matrix", None))
+        self.label_3.setText(QCoreApplication.translate("ReportsPage", u"An end-to-end report mapping backlog items to their implemented code artifacts.", None))
+        self.generateTraceabilityMatrixButton.setText(QCoreApplication.translate("ReportsPage", u"Generate .xlsx", None))
+        self.backButton.setText(QCoreApplication.translate("ReportsPage", u"< Back", None))
     # retranslateUi
 

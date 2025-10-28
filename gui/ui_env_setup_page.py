@@ -130,7 +130,7 @@ class Ui_EnvSetupPage(object):
         self.pathLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Target Project Root Folder:", None))
         self.confirmPathButton.setText(QCoreApplication.translate("EnvSetupPage", u"Confirm Project Folder", None))
         self.vcsInstructionLabel.setText(QCoreApplication.translate("EnvSetupPage", u"Next, choose how to manage your project's source code.", None))
-        self.localWorkspaceButton.setText(QCoreApplication.translate("EnvSetupPage", u"Use Local Workspace &&&& Proceed", None))
-        self.initGitButton.setText(QCoreApplication.translate("EnvSetupPage", u"Initialize Git Repository &&&& Proceed", None))
+        self.localWorkspaceButton.setText(QCoreApplication.translate("EnvSetupPage", u"Use Local Workspace && Proceed", None))
+        self.initGitButton.setText(QCoreApplication.translate("EnvSetupPage", u"Initialize Git Repository && Proceed", None))
     # retranslateUi
 

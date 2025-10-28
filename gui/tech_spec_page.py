@@ -192,7 +192,7 @@ class TechSpecPage(QWidget):
         self.last_failed_action = 'generation'
         target_os = self.ui.osComboBox.currentText()
         self._execute_task(self._task_propose_stack, self._handle_generation_result, target_os, None,
-                           status_message="Generating tech stack proposal...")
+                           status_message="Generating tech architecture proposal...")
 
     def run_generate_from_guidelines_task(self):
         """Validates PM guidelines and then generates the tech spec."""

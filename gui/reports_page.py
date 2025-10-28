@@ -1,145 +1,92 @@
 # gui/reports_page.py
-
 import logging
-from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QLabel, QHeaderView
-from PySide6.QtGui import QStandardItemModel, QStandardItem
+from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal
-
 from gui.ui_reports_page import Ui_ReportsPage
 from master_orchestrator import MasterOrchestrator
-from agents.agent_report_generator import ReportGeneratorAgent
+from gui.worker import Worker
+import os # Import os for showing the file
 
 class ReportsPage(QWidget):
     """
-    The logic handler for the Project Reports page.
+    Manages the new "Reports Hub" card-based UI.
+    Each report generation is handled on a background thread.
     """
     back_to_workflow = Signal()
 
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
-        self.orchestrator = orchestrator
-        self.report_generator = ReportGeneratorAgent()
-
         self.ui = Ui_ReportsPage()
         self.ui.setupUi(self)
-
-        self.cr_model = QStandardItemModel(self)
-        self.ui.crTableView.setModel(self.cr_model)
+        self.orchestrator = orchestrator
+        self.worker_thread_pool = self.window().threadpool
 
         self.connect_signals()
 
-    def prepare_for_display(self):
-        """Called by the main window just before this page is shown."""
-        self.update_all_reports()
-
     def connect_signals(self):
-        """Connects widget signals to the appropriate slots."""
-        self.ui.crFilterComboBox.currentIndexChanged.connect(self.update_cr_report)
-        self.ui.exportProgressButton.clicked.connect(self.on_export_progress_clicked)
-        self.ui.exportCrButton.clicked.connect(self.on_export_cr_clicked)
+        """Connects all UI signals to their slots."""
         self.ui.backButton.clicked.connect(self.back_to_workflow.emit)
 
-    def update_all_reports(self):
-        """Updates all report sections for the active project."""
-        self.update_progress_summary()
-        self.update_cr_report()
+        # Connect the Health Snapshot button
+        self.ui.generateHealthSnapshotButton.clicked.connect(
+            lambda: self._on_report_requested(
+                self.ui.generateHealthSnapshotButton,
+                "Generate .docx",
+                self.orchestrator.generate_health_snapshot_report
+            )
+        )
 
-    def clear_layout(self, layout):
-        """Removes all widgets from a layout."""
-        if layout is not None:
-            while layout.count():
-                item = layout.takeAt(0)
-                widget = item.widget()
-                if widget is not None:
-                    widget.deleteLater()
+        # Connect the Traceability Matrix button
+        self.ui.generateTraceabilityMatrixButton.clicked.connect(
+            lambda: self._on_report_requested(
+                self.ui.generateTraceabilityMatrixButton,
+                "Generate .xlsx",
+                self.orchestrator.generate_traceability_matrix_report
+            )
+        )
 
-    def update_progress_summary(self):
-        """Populates the development progress summary section."""
-        self.clear_layout(self.ui.progressFormLayout)
+    def prepare_for_display(self):
+        """Called when the page is shown, resets button states."""
+        logging.debug("Reports Hub prepared for display.")
+        # Reset button states
+        self.ui.generateHealthSnapshotButton.setEnabled(True)
+        self.ui.generateHealthSnapshotButton.setText("Generate .docx")
+        self.ui.generateTraceabilityMatrixButton.setEnabled(True)
+        self.ui.generateTraceabilityMatrixButton.setText("Generate .xlsx")
 
-        project_id = self.orchestrator.project_id
-        if not project_id:
-            self.ui.progressFormLayout.addRow(QLabel("No active project."))
-            return
+    def _on_report_requested(self, button, original_text, generation_function):
+        """
+        Handles the button click to generate a report on a worker thread.
+        """
+        button.setEnabled(False)
+        button.setText("Generating...")
 
-        db = self.orchestrator.db_manager
-        all_artifacts = db.get_all_artifacts_for_project(project_id)
-        status_counts = db.get_component_counts_by_status(project_id)
+        worker = Worker(generation_function)
+        worker.signals.result.connect(
+            lambda path_or_error: self._on_report_success(button, original_text, path_or_error)
+        )
+        worker.signals.error.connect(
+            lambda error_tuple: self._on_report_failure(button, original_text, str(error_tuple[1]))
+        )
+        self.worker_thread_pool.start(worker)
 
-        if not all_artifacts:
-            self.ui.progressFormLayout.addRow(QLabel("No components defined yet."))
-            return
+    def _on_report_success(self, button, original_text, path_or_error: str):
+        """Handles the successful generation of a report."""
+        button.setEnabled(True)
+        button.setText(original_text)
 
-        total_components = len(all_artifacts)
-        self.ui.progressFormLayout.addRow("Total Components Defined:", QLabel(str(total_components)))
+        if path_or_error.startswith("Error:"):
+            logging.error(f"Report generation failed: {path_or_error}")
+            QMessageBox.critical(self, "Export Failed", f"Could not generate the report:\n{path_or_error}")
+        elif os.path.exists(path_or_error):
+            QMessageBox.information(self, "Export Successful", f"Report saved successfully to:\n{path_or_error}")
+        else:
+            logging.error(f"Report generation returned an invalid path: {path_or_error}")
+            QMessageBox.critical(self, "Export Failed", "Report generation returned an empty or invalid path.")
 
-        for status, count in status_counts.items():
-            # THIS IS THE FIX: Handle cases where status might be None in the database
-            display_status = status.replace('_', ' ').title() if status else "Status Not Set"
-            self.ui.progressFormLayout.addRow(f"{display_status}:", QLabel(str(count)))
-
-    def update_cr_report(self):
-        """Populates the Change Requests & Bug Fixes table."""
-        self.cr_model.clear()
-        self.cr_model.setHorizontalHeaderLabels(['ID', 'Type', 'Status', 'Description'])
-
-        project_id = self.orchestrator.project_id
-        if not project_id:
-            return
-
-        filter_type = self.ui.crFilterComboBox.currentText()
-        report_data = self.orchestrator.get_cr_and_bug_report_data(project_id, filter_type)
-
-        for item in report_data:
-            id_item = QStandardItem(str(item.get("id", "N/A")))
-            type_item = QStandardItem(item.get("type", "N/A"))
-            status_item = QStandardItem(item.get("status", "N/A"))
-            desc_item = QStandardItem(item.get("description", "N/A"))
-            self.cr_model.appendRow([id_item, type_item, status_item, desc_item])
-
-        header = self.ui.crTableView.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-
-    def on_export_progress_clicked(self):
-        """Exports the progress summary report."""
-        project_id = self.orchestrator.project_id
-        if not project_id:
-            QMessageBox.warning(self, "No Project", "No active project to report on.")
-            return
-
-        db = self.orchestrator.db_manager
-        all_artifacts = db.get_all_artifacts_for_project(project_id)
-        status_counts = db.get_component_counts_by_status(project_id)
-
-        total_components = len(all_artifacts)
-        project_name = self.orchestrator.project_name
-        default_filename = f"{project_name}_Progress_Summary.docx"
-
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save Progress Summary", default_filename, "Word Documents (*.docx)")
-        if file_path:
-            docx_bytes = self.report_generator.generate_progress_summary_docx(total_components, status_counts)
-            with open(file_path, 'wb') as f:
-                f.write(docx_bytes.getbuffer())
-            QMessageBox.information(self, "Success", f"Successfully exported report to:\n{file_path}")
-
-    def on_export_cr_clicked(self):
-        """Exports the CR & Bug Fixes report."""
-        project_id = self.orchestrator.project_id
-        if not project_id:
-            QMessageBox.warning(self, "No Project", "No active project to report on.")
-            return
-
-        filter_type = self.ui.crFilterComboBox.currentText()
-        report_data = self.orchestrator.get_cr_and_bug_report_data(project_id, filter_type)
-        project_name = self.orchestrator.project_name
-        default_filename = f"{project_name}_CR_Bug_Report.docx"
-
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save CR & Bug Report", default_filename, "Word Documents (*.docx)")
-        if file_path:
-            docx_bytes = self.report_generator.generate_cr_bug_report_docx(report_data, filter_type)
-            with open(file_path, 'wb') as f:
-                f.write(docx_bytes.getbuffer())
-            QMessageBox.information(self, "Success", f"Successfully exported report to:\n{file_path}")
+    def _on_report_failure(self, button, original_text, error_message):
+        """Shows an error message if report generation fails."""
+        button.setEnabled(True)
+        button.setText(original_text)
+        logging.error(f"Report generation failed: {error_message}")
+        QMessageBox.critical(self, "Export Failed", f"Could not generate the report.\nSee logs for details.")

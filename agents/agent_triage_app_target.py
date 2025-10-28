@@ -24,13 +24,6 @@ class TriageAgent_AppTarget:
         self.llm_service = llm_service
         self.db_manager = db_manager
 
-    def _extract_tags_from_error(self, error_logs: str) -> list[str]:
-        """A simple helper to extract potential search tags from error logs."""
-        keywords = re.findall(r'([A-Z]\w*Exception|\b[A-Z]\w*Error\b)', error_logs)
-        files = re.findall(r'(\w+\.py|\w+\.kt)', error_logs)
-        tags = set(kw.lower() for kw in keywords + files)
-        return list(tags)
-
     def parse_stack_trace(self, stack_trace_log: str) -> list[str]:
         """
         Uses an LLM to parse a raw stack trace and extract a list of file paths.
@@ -69,22 +62,6 @@ class TriageAgent_AppTarget:
         """
         Analyzes failure data and returns a root cause hypothesis.
         """
-        logging.info("TriageAgent: Querying Knowledge Base for known solutions.")
-        tags = self._extract_tags_from_error(error_logs)
-        if tags:
-            try:
-                # Corrected: Direct call to the db_manager
-                kb_results = self.db_manager.query_kb_by_tags(tags)
-                if kb_results:
-                    solution = kb_results[0]['solution']
-                    logging.info(f"TriageAgent: Found relevant solution in Knowledge Base (ID: {kb_results[0]['entry_id']}).")
-                    return f"[From Knowledge Base] Hypothesis: The issue matches a previously solved problem. Recommended solution: {solution}"
-            except Exception as e:
-                logging.warning(f"TriageAgent: Failed to query Knowledge Base. Proceeding with LLM analysis. Error: {e}")
-        else:
-            logging.info("TriageAgent: No specific tags extracted from error log for KB query.")
-
-        logging.info("TriageAgent: No solution found in Knowledge Base. Proceeding with LLM analysis.")
         try:
             prompt = f"""
             You are a Senior Software Engineer specializing in debugging complex systems.

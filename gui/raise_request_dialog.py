@@ -11,7 +11,7 @@ class RaiseRequestDialog(QDialog):
     """
     The logic handler for the Raise Request dialog.
     """
-    def __init__(self, parent=None, orchestrator=None, parent_candidates=None, initial_request_type="BACKLOG_ITEM"):
+    def __init__(self, parent=None, orchestrator=None, parent_candidates=None, initial_request_type="BACKLOG_ITEM", initial_parent_id=None): # FIX: Add initial_parent_id
         super().__init__(parent)
         self.orchestrator = orchestrator
         self.parent_candidates = parent_candidates or []
@@ -47,6 +47,18 @@ class RaiseRequestDialog(QDialog):
 
         self.connect_signals()
         self._update_ui_for_type()
+
+        if initial_parent_id is not None:
+            # Find the index in the combobox that corresponds to the initial_parent_id
+            target_index = -1
+            for index, mapped_id in self.parent_id_map.items():
+                if mapped_id == initial_parent_id:
+                    target_index = index
+                    break
+            if target_index != -1:
+                self.ui.parentComboBox.setCurrentIndex(target_index)
+            else:
+                logging.warning(f"RaiseRequestDialog: Could not find index for initial parent ID {initial_parent_id}")
 
     def connect_signals(self):
         """Connects widget signals to the appropriate slots."""

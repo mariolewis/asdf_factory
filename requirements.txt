@@ -9,7 +9,12 @@ PySide6
 markdown
 Pygments
 requests
-openpyxl
 groq
 deepseek
 replicate
+# For visual reports (Charts)
+matplotlib==3.8.0
+# For .docx generation
+python-docx==1.1.0
+# For .xlsx generation
+openpyxl==3.1.2

@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from gui.ui_cr_management_page import Ui_CRManagementPage
+from gui.backlog_item_model import BacklogItemModel
 from master_orchestrator import MasterOrchestrator, FactoryPhase
 from gui.raise_request_dialog import RaiseRequestDialog
 from gui.cr_details_dialog import CRDetailsDialog
@@ -33,13 +34,11 @@ class CRManagementPage(QWidget):
         self.ui.setupUi(self)
         self.threadpool = QThreadPool()
         self.staged_sprint_items = set()
-        self.is_reorder_mode = False
-        self.model = QStandardItemModel(self)
+        self.model = BacklogItemModel(self)
         self.ui.crTreeView.setModel(self.model)
         self._create_more_actions_menu()
         self._configure_tree_view()
         self.connect_signals()
-        self._exit_reorder_mode(refresh=False)
 
     def clear_sprint_staging(self):
         """Public method to allow the main window to clear the staging set."""
@@ -63,8 +62,12 @@ class CRManagementPage(QWidget):
         self.model.setHorizontalHeaderLabels(['#', 'Title', 'Type', 'Status', 'Priority/Severity', 'Complexity', 'Last Modified'])
         self.ui.crTreeView.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.ui.crTreeView.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.ui.crTreeView.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.ui.crTreeView.setContextMenuPolicy(Qt.CustomContextMenu)
         self.ui.crTreeView.setSortingEnabled(False)
+        self.ui.crTreeView.setDragEnabled(True)
+        self.ui.crTreeView.setAcceptDrops(True)
+        self.ui.crTreeView.setDragDropMode(QAbstractItemView.InternalMove)
         self.ui.crTreeView.header().setStretchLastSection(False)
 
         # Set specific widths for columns for better default layout
@@ -85,11 +88,6 @@ class CRManagementPage(QWidget):
     def connect_signals(self):
         self.ui.primaryActionButton.clicked.connect(self.on_primary_action_clicked)
         self.ui.addNewItemButton.clicked.connect(self.on_add_item_clicked)
-        self.ui.reorderButton.clicked.connect(self.on_reorder_clicked)
-        self.ui.cancelReorderButton.clicked.connect(self.on_cancel_reorder_clicked)
-        self.ui.saveOrderButton.clicked.connect(self.on_save_order_clicked)
-        self.ui.moveUpButton.clicked.connect(self.on_move_up_clicked)
-        self.ui.moveDownButton.clicked.connect(self.on_move_down_clicked)
         self.ui.crTreeView.selectionModel().selectionChanged.connect(self._on_selection_changed)
         self.ui.crTreeView.doubleClicked.connect(self.on_item_double_clicked)
         self.ui.crTreeView.customContextMenuRequested.connect(self.show_context_menu)
@@ -102,6 +100,7 @@ class CRManagementPage(QWidget):
         self.import_action.triggered.connect(self.import_from_tool.emit)
         self.sync_action.triggered.connect(self.on_sync_clicked)
         self.ui.backButton.clicked.connect(self.on_back_clicked)
+        self.model.itemsMoved.connect(self.on_items_moved)
 
     def prepare_for_display(self):
         """
@@ -227,6 +226,7 @@ class CRManagementPage(QWidget):
                 item_type = item_data.get("request_type")
                 item_status = item_data.get("status")
                 cr_id = item_data.get("cr_id")
+                parent_cr_id_for_add = cr_id # Store the ID of the right-clicked item
 
                 is_actionable = item_status != 'EXISTING'
 
@@ -249,11 +249,13 @@ class CRManagementPage(QWidget):
                 # --- Add Child Actions (always enabled) ---
                 if item_type == "EPIC":
                     add_feature_action = QAction("Add Feature to this Epic...", self)
-                    add_feature_action.triggered.connect(lambda: self.on_add_item_clicked("FEATURE"))
+                    # FIX: Pass the parent_cr_id
+                    add_feature_action.triggered.connect(lambda checked=False, p_id=parent_cr_id_for_add: self.on_add_item_clicked("FEATURE", p_id))
                     menu.addAction(add_feature_action)
                 elif item_type == "FEATURE":
                     add_story_action = QAction("Add Backlog Item to this Feature...", self)
-                    add_story_action.triggered.connect(lambda: self.on_add_item_clicked("BACKLOG_ITEM"))
+                    # FIX: Pass the parent_cr_id
+                    add_story_action.triggered.connect(lambda checked=False, p_id=parent_cr_id_for_add: self.on_add_item_clicked("BACKLOG_ITEM", p_id))
                     menu.addAction(add_story_action)
 
                 if item_type in ["EPIC", "FEATURE"]:
@@ -280,7 +282,7 @@ class CRManagementPage(QWidget):
                     delete_action = QAction("Delete Selected Item(s)", self)
                     delete_action.triggered.connect(self.on_delete_item)
                     menu.addAction(delete_action)
-        else:
+        else: # Clicked on empty space
             add_epic_action = QAction("Add New Epic...", self)
             add_epic_action.triggered.connect(lambda: self.on_add_item_clicked("EPIC"))
             menu.addAction(add_epic_action)
@@ -337,22 +339,18 @@ class CRManagementPage(QWidget):
         """Handles opening the edit dialog when an item is double-clicked."""
         self.on_edit_clicked()
 
-    def on_add_item_clicked(self, item_type_to_add=None):
+    def on_add_item_clicked(self, item_type_to_add=None, parent_cr_id=None): # FIX: Add parent_cr_id parameter
         """Handles creating a new backlog item by launching a non-blocking dialog."""
         parent_candidates = self.orchestrator._get_backlog_with_hierarchical_numbers()
         initial_type = item_type_to_add if item_type_to_add else "BACKLOG_ITEM"
 
-        # FIX: Make the dialog an instance variable to prevent garbage collection.
-        self.dialog = RaiseRequestDialog(self, orchestrator=self.orchestrator, parent_candidates=parent_candidates, initial_request_type=initial_type)
+        self.dialog = RaiseRequestDialog(self,
+                                        orchestrator=self.orchestrator,
+                                        parent_candidates=parent_candidates,
+                                        initial_request_type=initial_type,
+                                        initial_parent_id=parent_cr_id) # Pass the ID here
 
-        if item_type_to_add:
-            item, data = self._get_selected_item_and_data()
-            if data:
-                parent_id_to_select = data.get("cr_id")
-                for i in range(self.dialog.ui.parentComboBox.count()):
-                    if self.dialog.ui.parentComboBox.itemData(i) == parent_id_to_select:
-                        self.dialog.ui.parentComboBox.setCurrentIndex(i)
-                        break
+        # Logic to select parent if adding via context menu was moved inside the dialog
 
         self.dialog.accepted.connect(self._on_dialog_accepted)
         self.dialog.open()
@@ -446,69 +444,6 @@ class CRManagementPage(QWidget):
         else:
             QMessageBox.information(self, "Already Synced", "All selected items have already been synced to the external tool.")
 
-    def on_reorder_clicked(self):
-        self.is_reorder_mode = True
-        self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.reorderModePage)
-        self.ui.crTreeView.setDragDropMode(QAbstractItemView.InternalMove)
-        self.ui.crTreeView.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.ui.crTreeView.setSortingEnabled(False)
-        self._on_selection_changed()
-
-    def _exit_reorder_mode(self, refresh=True):
-        self.is_reorder_mode = False
-        self.ui.actionButtonStackedWidget.setCurrentWidget(self.ui.normalModePage)
-        self.ui.crTreeView.setDragDropMode(QAbstractItemView.NoDragDrop)
-        self.ui.crTreeView.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self.ui.crTreeView.setSortingEnabled(False) # Keep sorting disabled to preserve order
-        if refresh: self.update_backlog_view()
-
-    def on_cancel_reorder_clicked(self):
-        self._exit_reorder_mode(refresh=True)
-
-    def on_save_order_clicked(self):
-        if not self.is_reorder_mode: return
-        order_mapping = []
-
-        def recurse_and_map(parent_item):
-            for i in range(parent_item.rowCount()):
-                child_item = parent_item.child(i, 0)
-                child_data = child_item.data(Qt.UserRole)
-                order_mapping.append((i + 1, child_data['cr_id']))
-                if child_item.hasChildren():
-                    recurse_and_map(child_item)
-
-        recurse_and_map(self.model.invisibleRootItem())
-        self.orchestrator.handle_save_cr_order(order_mapping)
-        self._exit_reorder_mode(refresh=True)
-        QMessageBox.information(self, "Success", "The new backlog order has been saved.")
-
-    def on_move_up_clicked(self):
-        selection_model = self.ui.crTreeView.selectionModel()
-        if not selection_model.hasSelection(): return
-        index = selection_model.selectedRows()[0]
-        if not index.isValid() or index.row() == 0: return
-        parent_index = index.parent()
-        parent_item = self.model.itemFromIndex(parent_index) if parent_index.isValid() else self.model.invisibleRootItem()
-        row = index.row()
-        row_items = parent_item.takeRow(row)
-        parent_item.insertRow(row - 1, row_items)
-        new_index = self.model.index(row - 1, 0, parent_index)
-        selection_model.select(new_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
-
-    def on_move_down_clicked(self):
-        selection_model = self.ui.crTreeView.selectionModel()
-        if not selection_model.hasSelection(): return
-        index = selection_model.selectedRows()[0]
-        if not index.isValid(): return
-        parent_index = index.parent()
-        parent_item = self.model.itemFromIndex(parent_index) or self.model.invisibleRootItem()
-        row = index.row()
-        if row >= parent_item.rowCount() - 1: return
-        row_items = parent_item.takeRow(row)
-        parent_item.insertRow(row + 1, row_items)
-        new_index = self.model.index(row + 1, 0, parent_index)
-        selection_model.select(new_index, QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows)
-
     def on_primary_action_clicked(self):
         """
         Handles the click event for the "Plan Sprint" button. It uses the
@@ -543,7 +478,6 @@ class CRManagementPage(QWidget):
         current selection in the tree view and the overall sprint status.
         """
         has_items = self.model.rowCount() > 0
-        self.ui.reorderButton.setEnabled(has_items)
 
         # --- Sprint Action Button Logic ---
         is_sprint_active = self.orchestrator.is_sprint_active()
@@ -659,3 +593,44 @@ class CRManagementPage(QWidget):
         """Returns the UI to the brownfield project dashboard."""
         self.orchestrator.set_phase("AWAITING_BROWNFIELD_STRATEGY")
         self.request_ui_refresh.emit()
+
+    def _update_hierarchical_numbers(self):
+        """Traverses the model in-place and updates the text of the hierarchical ID column."""
+        def recurse_and_update(parent_item, prefix=""):
+            for i in range(parent_item.rowCount()):
+                current_prefix = f"{prefix}{i + 1}"
+                # Get the item in the first column (#)
+                num_item = parent_item.child(i, 0)
+                if num_item:
+                    num_item.setText(current_prefix)
+                    # Also update the underlying data for consistency
+                    item_data = num_item.data(Qt.UserRole)
+                    if item_data:
+                        item_data['hierarchical_id'] = current_prefix
+                        num_item.setData(item_data, Qt.UserRole)
+
+                    # Recurse on the item itself (which acts as a parent for its children)
+                    recurse_and_update(num_item, prefix=f"{current_prefix}.")
+
+        recurse_and_update(self.model.invisibleRootItem())
+
+    def on_items_moved(self, moved_cr_id: int, new_parent_cr_id: int | None, new_row: int):
+        """
+        Slot that receives the signal from the custom model when an item is dropped.
+        Calls the orchestrator to handle persisting the changes to the database
+        and then refreshes the view to show potential type changes.
+        """
+        try:
+            # Persist the change (including potential type promotion) in the background.
+            self.orchestrator.handle_backlog_item_moved(moved_cr_id, new_parent_cr_id, new_row) #
+
+            # A full refresh is now REQUIRED after a successful move to ensure
+            # that any changes to the item's 'request_type' (e.g., Feature -> Epic)
+            # are reflected in the UI's "Type" column.
+            self.update_backlog_view()
+
+        except Exception as e:
+            logging.error(f"Failed to process item move in the UI layer: {e}", exc_info=True) #
+            QMessageBox.critical(self, "Error", f"An error occurred while saving the new backlog structure:\n{e}") #
+            # If the save fails, perform a full refresh to revert the UI to the last saved state.
+            self.update_backlog_view() #

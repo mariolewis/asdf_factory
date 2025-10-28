@@ -7,11 +7,14 @@ This agent is responsible for generating formatted .docx reports.
 
 import logging
 from docx import Document
+from docx.enum.section import WD_ORIENT
 from docx.shared import Inches
 from io import BytesIO
 import json
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from openpyxl import Workbook
+from openpyxl.styles import Font
 import pandas as pd
 from datetime import datetime, timezone
 from gui.utils import format_timestamp_for_display
@@ -451,3 +454,202 @@ class ReportGeneratorAgent:
         document.save(doc_buffer)
         doc_buffer.seek(0)
         return doc_buffer
+
+    def generate_traceability_docx(self, trace_data: list, project_name: str) -> BytesIO:
+        """
+        Generates a formatted .docx file for the Requirements Traceability report.
+
+        Args:
+            trace_data (list): A list of dictionaries, where each dict represents
+                            a traceability link. Expects keys like 'backlog_id',
+                            'backlog_title', 'backlog_status', 'artifact_path',
+                            'artifact_name'.
+            project_name (str): The name of the project for the report title.
+
+        Returns:
+            BytesIO: An in-memory byte stream of the generated .docx file.
+        """
+        logging.info(f"Generating DOCX for traceability report for project: {project_name}")
+        document = Document()
+
+        # Change orientation to Landscape
+        try:
+            section = document.sections[0]
+            new_width, new_height = section.page_height, section.page_width
+            section.orientation = WD_ORIENT.LANDSCAPE
+            section.page_width = new_width
+            section.page_height = new_height
+            # Set smaller margins for more table space
+            section.left_margin = Inches(0.5)
+            section.right_margin = Inches(0.5)
+            section.top_margin = Inches(0.5)
+            section.bottom_margin = Inches(0.5)
+        except Exception as e:
+            logging.warning(f"Could not set landscape orientation: {e}")
+
+        # Add Title and Timestamp
+        timestamp_str = datetime.now(timezone.utc).isoformat()
+        timestamp = format_timestamp_for_display(timestamp_str)
+        document.add_heading(f"Requirements Traceability Report: {project_name}", level=1)
+        document.add_paragraph(f"Generated on: {timestamp}")
+        document.add_paragraph() # Add a blank line
+
+        if not trace_data:
+            document.add_paragraph("No traceability data available for this project.")
+        else:
+            # Define table headers (matching the UI)
+            headers = ['Backlog Item (#)', 'Title', 'Status', 'Artifact Path', 'Artifact Name']
+
+            # Create Table
+            try:
+                table = document.add_table(rows=1, cols=len(headers))
+                table.style = 'Table Grid' # Apply a basic style
+                hdr_cells = table.rows[0].cells
+                for i, header_name in enumerate(headers):
+                    hdr_cells[i].text = header_name
+
+                # Populate table with data
+                for item in trace_data:
+                    row_cells = table.add_row().cells
+                    # Use hierarchical ID for the first column
+                    row_cells[0].text = item.get("backlog_id", "N/A")
+                    row_cells[1].text = item.get("backlog_title", "N/A")
+                    row_cells[2].text = item.get("backlog_status", "N/A")
+                    row_cells[3].text = item.get("artifact_path", "N/A")
+                    row_cells[4].text = item.get("artifact_name", "N/A")
+
+                # Optional: Adjust column widths if needed (requires more complex logic)
+                # Example: table.columns[1].width = Inches(3.0) # Set Title column width
+
+            except Exception as table_e:
+                logging.error(f"Error creating DOCX table for traceability: {table_e}", exc_info=True)
+                document.add_paragraph(f"Error creating report table: {table_e}")
+
+        # Save document to an in-memory buffer
+        doc_buffer = BytesIO()
+        try:
+            document.save(doc_buffer)
+            doc_buffer.seek(0)
+            logging.info("Successfully generated traceability DOCX buffer.")
+        except Exception as save_e:
+            logging.error(f"Error saving traceability DOCX to buffer: {save_e}", exc_info=True)
+            # Return an empty buffer or raise error? Let's return empty for now.
+            doc_buffer = BytesIO()
+
+        return doc_buffer
+
+    def generate_health_snapshot_docx(self, project_name: str, snapshot_data: dict) -> BytesIO:
+        """
+        Generates the Project Health Snapshot .docx file with embedded charts.
+        """
+        # Matplotlib is imported here as it's a specific dependency for this report
+        import matplotlib.pyplot as plt
+
+        logging.info(f"Generating Health Snapshot DOCX for project: {project_name}")
+        document = Document()
+
+        # --- Title ---
+        timestamp_str = datetime.now(timezone.utc).isoformat()
+        timestamp = format_timestamp_for_display(timestamp_str)
+        document.add_heading(f"Project Health Snapshot: {project_name}", level=1)
+        document.add_paragraph(f"Generated on: {timestamp}")
+        document.add_paragraph()
+
+        # --- Data Extraction ---
+        backlog_summary = snapshot_data.get('backlog_summary', {})
+        test_summary = snapshot_data.get('test_summary', {})
+
+        # --- 1. Backlog Completion Chart ---
+        document.add_heading("Backlog Completion Status", level=2)
+        if backlog_summary:
+            labels = list(backlog_summary.keys())
+            sizes = list(backlog_summary.values())
+
+            fig1, ax1 = plt.subplots()
+            ax1.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+            ax1.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+            plt.title("Backlog Items by Status")
+
+            # Save chart to a memory buffer
+            chart_buffer = BytesIO()
+            plt.savefig(chart_buffer, format='png', bbox_inches='tight')
+            plt.close(fig1)
+            chart_buffer.seek(0)
+            document.add_picture(chart_buffer, width=Inches(4.0))
+        else:
+            document.add_paragraph("No backlog status data available.")
+
+        document.add_paragraph()
+
+        # --- 2. Code Quality Chart ---
+        document.add_heading("Component Unit Test Status", level=2)
+        if test_summary:
+            labels = list(test_summary.keys())
+            sizes = list(test_summary.values())
+
+            fig2, ax2 = plt.subplots()
+            # Define colors to match expected statuses
+            status_colors = {'PASSED': 'green', 'FAILED': 'red', 'NOT_TESTED': 'gray'}
+            colors = [status_colors.get(label, 'blue') for label in labels]
+
+            ax2.bar(labels, sizes, color=colors)
+            plt.title("Code Components by Test Status")
+            plt.ylabel("Component Count")
+
+            # Save chart to a memory buffer
+            chart_buffer = BytesIO()
+            plt.savefig(chart_buffer, format='png', bbox_inches='tight')
+            plt.close(fig2)
+            chart_buffer.seek(0)
+            document.add_picture(chart_buffer, width=Inches(4.5))
+        else:
+            document.add_paragraph("No component test data available.")
+
+        # --- Save to in-memory buffer ---
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer
+
+    def generate_traceability_xlsx(self, trace_data: list, project_name: str) -> BytesIO:
+        """
+        Generates a formatted .xlsx file for the Requirements Traceability report.
+        """
+        logging.info(f"Generating XLSX for traceability report for project: {project_name}")
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Traceability Matrix"
+
+        # --- Headers ---
+        headers = ['Backlog Item (#)', 'Title', 'Status', 'Artifact Path', 'Artifact Name']
+        ws.append(headers)
+
+        # Apply bold font to header row
+        for cell in ws["1:1"]:
+            cell.font = Font(bold=True)
+
+        # --- Data ---
+        if not trace_data:
+            ws.append(["No traceability data available for this project."])
+        else:
+            for item in trace_data:
+                ws.append([
+                    item.get("backlog_id", "N/A"),
+                    item.get("backlog_title", "N/A"),
+                    item.get("backlog_status", "N/A"),
+                    item.get("artifact_path", "N/A"),
+                    item.get("artifact_name", "N/A")
+                ])
+
+        # Adjust column widths
+        ws.column_dimensions['A'].width = 18
+        ws.column_dimensions['B'].width = 50
+        ws.column_dimensions['C'].width = 20
+        ws.column_dimensions['D'].width = 60
+        ws.column_dimensions['E'].width = 30
+
+        # Save to in-memory buffer
+        xlsx_buffer = BytesIO()
+        wb.save(xlsx_buffer)
+        xlsx_buffer.seek(0)
+        return xlsx_buffer
