@@ -37,7 +37,7 @@ class SpecSynthesisAgent:
         """
         logging.info("Starting 3-stage database usage detection...")
 
-        # [cite_start]Stage 1: High-Certainty File Analysis [cite: 196]
+        # Stage 1: High-Certainty File Analysis [cite: 196]
         logging.info("DB Detection Stage 1: Searching for high-certainty schema files...")
         schema_files = []
         for ext in ['*.sql']:
@@ -48,7 +48,7 @@ class SpecSynthesisAgent:
             file_content = {str(p.relative_to(project_root)): p.read_text(encoding='utf-8', errors='ignore') for p in schema_files}
             return "SCHEMA_FILE", file_content
 
-        # [cite_start]Stage 2: Keyword Heuristic Analysis [cite: 199]
+        # Stage 2: Keyword Heuristic Analysis [cite: 199]
         logging.info("DB Detection Stage 2: Searching for database keywords in source files...")
         db_keywords = [
             'sqlalchemy', 'sqlite3', 'psycopg2', 'mysql.connector',
@@ -73,7 +73,7 @@ class SpecSynthesisAgent:
 
         if candidate_files:
             logging.info(f"DB Detection Stage 2: Found {len(candidate_files)} candidate file(s) with keywords.")
-            # [cite_start]Stage 3 (synthesis) is handled by the caller, which will use the content of these files. [cite: 204, 205]
+            # Stage 3 (synthesis) is handled by the caller, which will use the content of these files. [cite: 204, 205]
             return "KEYWORD", candidate_files
 
         logging.info("DB Detection Complete: No database usage detected in any stage.")
@@ -252,14 +252,14 @@ class SpecSynthesisAgent:
         """
         logging.info("Starting 2-level UI presence detection...")
 
-        # [cite_start]Level 1: File Type Analysis [cite: 2241]
+        # Level 1: File Type Analysis [cite: 2241]
         ui_extensions = ['.js', '.ts', '.html', '.css', '.scss', '.xaml', '.ui']
         for art in all_artifacts:
             if Path(art['file_path']).suffix.lower() in ui_extensions:
                 logging.info(f"UI Detection Level 1: Found UI file extension in '{art['file_path']}'.")
                 return True
 
-        # [cite_start]Level 2: Content Heuristic Analysis [cite: 2242]
+        # Level 2: Content Heuristic Analysis [cite: 2242]
         logging.info("UI Detection Level 2: Searching for UI keywords in source files...")
         ui_keywords = [
             # Python

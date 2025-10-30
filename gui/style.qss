@@ -195,6 +195,58 @@ QTableView::item:selected, QTreeView::item:selected, QListWidget::item:selected 
     color: #F0F0F0;
 }
 
+/* --- Tree View --- */
+QTreeView {
+    border: 1px solid #454545;
+    background-color: #202021;
+    padding: 5px;
+}
+
+QTreeView::item {
+    padding: 4px 2px; /* Vertical and horizontal padding */
+    color: #F0F0F0;
+}
+
+QTreeView::item:selected {
+    background-color: #4B6EAF; /* Selection color */
+    color: #FFFFFF;
+}
+
+QTreeView::item:hover:!selected {
+    background-color: #3C3C3C; /* Hover color */
+}
+
+QTreeView::item:disabled {
+    color: #888888; /* Muted Text color from Design System */
+}
+
+QTreeView::branch {
+    /* Style for the expand/collapse arrows if needed */
+    background-color: transparent;
+}
+
+QTreeView::branch:closed:has-children {
+    image: url(:/icons/icons/chevron_right_light.svg);
+}
+
+QTreeView::branch:open:has-children {
+    image: url(:/icons/icons/chevron_down_light.svg);
+}
+
+/* --- Report Details Panel Title --- */
+QLabel#reportTitleLabel {
+    font-size: 18pt;
+    font-weight: bold;
+    color: #CCCCCC;
+    padding-bottom: 10px;
+}
+
+/* --- Filter GroupBox --- */
+QGroupBox#filterGroupBox {
+    padding-top: 10px;
+    margin-top: 5px;
+}
+
 /* ---- Menus ---- */
 QMenuBar::item:selected {
     background-color: #4A4A4A;

@@ -11,6 +11,7 @@ from docx.enum.section import WD_ORIENT
 from docx.shared import Inches
 from io import BytesIO
 import json
+import matplotlib.pyplot as plt
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from openpyxl import Workbook
@@ -545,13 +546,13 @@ class ReportGeneratorAgent:
         # Matplotlib is imported here as it's a specific dependency for this report
         import matplotlib.pyplot as plt
 
-        logging.info(f"Generating Health Snapshot DOCX for project: {project_name}")
+        logging.info(f"Generating Project Pulse DOCX for project: {project_name}")
         document = Document()
 
         # --- Title ---
         timestamp_str = datetime.now(timezone.utc).isoformat()
         timestamp = format_timestamp_for_display(timestamp_str)
-        document.add_heading(f"Project Health Snapshot: {project_name}", level=1)
+        document.add_heading(f"Project Pulse: {project_name}", level=1)
         document.add_paragraph(f"Generated on: {timestamp}")
         document.add_paragraph()
 
@@ -653,3 +654,218 @@ class ReportGeneratorAgent:
         wb.save(xlsx_buffer)
         xlsx_buffer.seek(0)
         return xlsx_buffer
+
+    def generate_sprint_deliverables_xlsx(self, sprint_id: str, report_data: list) -> BytesIO:
+        """
+        Generates an .xlsx file listing backlog items and linked artifacts for a sprint.
+        """
+        logging.info(f"ReportGenerator: Generating sprint deliverables XLSX for sprint {sprint_id}")
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Sprint Deliverables"
+
+        headers = ['Backlog Item (#)', 'Title', 'Status', 'Artifact Path', 'Artifact Name']
+        ws.append(headers)
+        for cell in ws["1:1"]:
+            cell.font = Font(bold=True)
+
+        if not report_data:
+            ws.append(["No deliverables found or tracked for this sprint."])
+        else:
+            for item in report_data:
+                ws.append([
+                    item.get("backlog_id", "N/A"),
+                    item.get("backlog_title", "N/A"),
+                    item.get("backlog_status", "N/A"),
+                    item.get("artifact_path", "N/A"),
+                    item.get("artifact_name", "N/A")
+                ])
+
+        # Adjust column widths
+        ws.column_dimensions['A'].width = 18
+        ws.column_dimensions['B'].width = 50
+        ws.column_dimensions['C'].width = 20
+        ws.column_dimensions['D'].width = 60
+        ws.column_dimensions['E'].width = 30
+
+        xlsx_buffer = BytesIO()
+        wb.save(xlsx_buffer)
+        xlsx_buffer.seek(0)
+        return xlsx_buffer
+
+    def generate_burndown_chart_image(self, burndown_data: dict) -> BytesIO:
+        """
+        Generates a PNG image of the complexity point burndown chart.
+        (Placeholder implementation - needs refinement based on actual data structure)
+        """
+        logging.info(f"ReportGenerator: Generating burndown chart for sprint {burndown_data.get('sprint_id')}")
+        # --- Placeholder Chart Logic ---
+        # Assumes burndown_data has keys like 'total', 'remaining_per_step': [total, points_step1, points_step2,...]
+        total_points = burndown_data.get('total', 0)
+        # For this example, let's simulate a simple burndown
+        steps = list(range(5)) # Simulate 5 tasks/days
+        remaining = [total_points, total_points*0.8, total_points*0.5, total_points*0.2, 0] # Example data
+
+        fig, ax = plt.subplots()
+        ax.plot(steps, remaining, marker='o', linestyle='-', label='Remaining Complexity')
+        ax.plot(steps, [total_points * (1 - i/len(steps)) for i in steps], linestyle='--', color='gray', label='Ideal Burndown') # Ideal line
+        ax.set_title(f"Sprint Burndown ({burndown_data.get('sprint_id', 'N/A')})")
+        ax.set_xlabel("Tasks Completed (Sequence)")
+        ax.set_ylabel("Remaining Complexity Points")
+        ax.grid(True)
+        ax.legend()
+        plt.ylim(bottom=0) # Ensure y-axis starts at 0
+
+        img_buffer = BytesIO()
+        plt.savefig(img_buffer, format='png', bbox_inches='tight')
+        plt.close(fig)
+        img_buffer.seek(0)
+        return img_buffer
+        # --- End Placeholder ---
+
+    def generate_cfd_chart_image(self, cfd_data: dict) -> BytesIO:
+        """
+        Generates a PNG image of the Cumulative Flow Diagram.
+        (Placeholder implementation - needs historical data)
+        """
+        logging.info("ReportGenerator: Generating CFD chart image.")
+        # --- Placeholder Chart Logic ---
+        # Assumes cfd_data contains historical counts per status per day/event
+        # Example data structure: {'dates': [d1, d2, d3], 'TO_DO': [10, 8, 5], 'IN_PROGRESS': [0, 2, 3], 'COMPLETED': [0, 0, 2]}
+        dates = ['Day 1', 'Day 2', 'Day 3']
+        statuses = {'TO_DO': [10, 8, 5], 'ANALYZED': [0, 1, 2], 'IN_PROGRESS': [0, 2, 3], 'COMPLETED': [0, 0, 2]}
+        labels = list(statuses.keys())
+        data = list(statuses.values())
+
+        fig, ax = plt.subplots()
+        ax.stackplot(dates, data, labels=labels)
+        ax.set_title("Workflow Efficiency (Cumulative Flow)")
+        ax.set_xlabel("Time")
+        ax.set_ylabel("Number of Items")
+        ax.legend(loc='upper left')
+        plt.xticks(rotation=45)
+
+        img_buffer = BytesIO()
+        plt.savefig(img_buffer, format='png', bbox_inches='tight')
+        plt.close(fig)
+        img_buffer.seek(0)
+        return img_buffer
+        # --- End Placeholder ---
+
+    def generate_quality_trend_chart_image(self, trend_data: dict) -> BytesIO:
+        """
+        Generates a PNG image of the Code Quality Trend chart.
+        (Placeholder implementation - needs historical data)
+        """
+        logging.info("ReportGenerator: Generating code quality trend chart image.")
+        # --- Placeholder Chart Logic ---
+        # Assumes trend_data contains snapshots over time/sprints
+        # Example: {'sprints': ['S1', 'S2', 'S3'], 'PASSED': [5, 8, 12], 'FAILED': [2, 1, 0], 'NOT_TESTED': [3, 1, 0]}
+        sprints = ['Sprint 1', 'Sprint 2', 'Sprint 3']
+        passed = [5, 8, 12]
+        failed = [2, 1, 0]
+        not_tested = [3, 1, 0]
+
+        fig, ax = plt.subplots()
+        ax.plot(sprints, passed, marker='o', label='Tests Passing', color='green')
+        ax.plot(sprints, failed, marker='x', label='Tests Failing', color='red')
+        # Optionally plot not_tested if useful
+        # ax.plot(sprints, not_tested, marker='s', label='Not Tested', color='gray')
+        ax.set_title("Code Quality Trend (Unit Test Status)")
+        ax.set_xlabel("Sprint")
+        ax.set_ylabel("Number of Components")
+        ax.legend()
+        ax.grid(True)
+        plt.ylim(bottom=0)
+
+        img_buffer = BytesIO()
+        plt.savefig(img_buffer, format='png', bbox_inches='tight')
+        plt.close(fig)
+        img_buffer.seek(0)
+        return img_buffer
+        # --- End Placeholder ---
+
+    def generate_ai_assistance_report(self, assistance_data: dict) -> BytesIO:
+        """
+        Formats the AI Assistance Rate data into a .docx report.
+        """
+        logging.info("ReportGenerator: Generating AI assistance rate report text.")
+        total_sprints = assistance_data.get('total_sprints_analyzed', 0)
+        total_escalations = assistance_data.get('total_escalations', 0)
+        avg_per_sprint = assistance_data.get('average_escalations_per_sprint', 0)
+
+        if total_sprints == 0:
+            report_text = "No sprint data available to calculate AI Assistance Rate."
+        else:
+            report_lines = [
+                "## AI Assistance Rate Summary\n",
+                f"- **Total Sprints Analyzed:** {total_sprints}",
+                f"- **Total Debug Escalations to PM:** {total_escalations}",
+                f"- **Average Escalations per Sprint:** {avg_per_sprint:.2f}\n",
+                "_Lower rates indicate higher AI reliability and autonomy._"
+            ]
+            report_text = "\n".join(report_lines)
+
+        # Call the existing docx generator to wrap the text content
+        docx_bytes_io = self.generate_text_document_docx(
+            title="AI Assistance Rate Report",
+            content=report_text,
+            is_code=False
+        )
+        return docx_bytes_io
+
+    def generate_backlog_xlsx(self, backlog_data: list) -> BytesIO:
+        """
+        Generates an .xlsx file for the full or filtered project backlog.
+        Accepts a flat list containing hierarchical IDs.
+        """
+        logging.info("ReportGenerator: Generating backlog XLSX.")
+        flat_list = []
+
+        # Check if input is hierarchical or already flat list from filtered query
+        if backlog_data and 'hierarchical_id' in backlog_data[0]:
+            # Input is already flat (or we're treating it as such for filtered export)
+            for item in backlog_data:
+                timestamp_str = item.get('last_modified_timestamp') or item.get('creation_timestamp')
+                formatted_date = format_timestamp_for_display(timestamp_str) if timestamp_str else "N/A"
+                record = {
+                    '#': item.get('hierarchical_id', f"CR-{item.get('cr_id', 'N/A')}"),
+                    'Title': item.get('title', 'N/A'),
+                    'Type': item.get('request_type', 'N/A').replace('_', ' ').title(),
+                    'Status': item.get('status', 'N/A'),
+                    'Priority/Severity': item.get('priority') or item.get('impact_rating') or '',
+                    'Complexity': item.get('complexity', ''),
+                    'Last Modified': formatted_date
+                }
+                flat_list.append(record)
+        else:
+            # Input is hierarchical, need to flatten (original logic)
+            def flatten_hierarchy(items, prefix=""):
+                # ...(same flattening logic as before)...
+                for i, item in enumerate(items, 1):
+                    current_prefix = f"{prefix}{i}"
+                    timestamp_str = item.get('last_modified_timestamp') or item.get('creation_timestamp')
+                    formatted_date = format_timestamp_for_display(timestamp_str) if timestamp_str else "N/A"
+                    record = {
+                        '#': current_prefix,
+                        'Title': item.get('title', 'N/A'),
+                        'Type': item.get('request_type', 'N/A').replace('_', ' ').title(),
+                        'Status': item.get('status', 'N/A'),
+                        'Priority/Severity': item.get('priority') or item.get('impact_rating') or '',
+                        'Complexity': item.get('complexity', ''),
+                        'Last Modified': formatted_date
+                    }
+                    flat_list.append(record)
+                    if "features" in item: flatten_hierarchy(item["features"], prefix=f"{current_prefix}.")
+                    if "user_stories" in item: flatten_hierarchy(item["user_stories"], prefix=f"{current_prefix}.")
+            flatten_hierarchy(backlog_data)
+
+        if not flat_list:
+            flat_list.append({'#': "No items match filter criteria.", 'Title': '', 'Type': '', 'Status': '', 'Priority/Severity': '', 'Complexity': '', 'Last Modified': ''})
+
+        df = pd.DataFrame(flat_list)
+        output_buffer = BytesIO()
+        with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Project Backlog')
+        output_buffer.seek(0)
+        return output_buffer

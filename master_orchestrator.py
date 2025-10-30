@@ -14,6 +14,10 @@ import git
 import hashlib
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QLineEdit
+import matplotlib
+matplotlib.use('Agg') # Ensure backend is set for thread safety
+import matplotlib.pyplot as plt
+from io import BytesIO # For image data
 
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_integration_pmt import IntegrationAgentPMT
@@ -1801,6 +1805,299 @@ class MasterOrchestrator:
             logging.error(f"Failed to get health snapshot data: {e}", exc_info=True)
             return {}
 
+    def get_sprint_list_for_report(self) -> list[tuple[str, str]]:
+        """
+        Fetches completed and in-progress sprints for report filtering dropdowns.
+
+        Returns:
+            A list of tuples, where each tuple is (display_text, sprint_id).
+            Returns an empty list if no project is active or no sprints are found.
+        """
+        if not self.project_id:
+            return []
+        try:
+            # Fetch sprints with relevant statuses, newest first
+            sprints = self.db_manager.get_sprints_by_status(self.project_id, statuses=['COMPLETED', 'IN_PROGRESS', 'PAUSED'])
+            if not sprints:
+                return []
+
+            # Format for the UI dropdown
+            sprint_list = []
+            for sprint in sprints:
+                start_time_str = format_timestamp_for_display(sprint['start_timestamp'])
+                status = sprint['status'].replace('_', ' ').title()
+                display_text = f"{start_time_str} ({status}) - Goal: {sprint['sprint_goal'][:30]}..."
+                sprint_list.append((display_text, sprint['sprint_id']))
+            return sprint_list
+        except Exception as e:
+            logging.error(f"Failed to get sprint list for reporting: {e}", exc_info=True)
+            return []
+
+    def generate_filtered_backlog_report(self, statuses: list[str] | None = None, types: list[str] | None = None, **kwargs) -> BytesIO | str:
+        """
+        Generates an XLSX report of the backlog, filtered by status and/or type.
+
+        Returns:
+            BytesIO object containing XLSX data, or an error string.
+        """
+        logging.info(f"Orchestrator: Generating filtered backlog report (Statuses: {statuses}, Types: {types})")
+        if not self.project_id:
+            return "Error: No active project."
+        try:
+            # 1. Fetch filtered flat list from DB
+            filtered_items_flat = self.db_manager.get_change_requests_filtered(self.project_id, statuses, types)
+            if not filtered_items_flat:
+                logging.warning("No backlog items matched the filters.")
+                # We still generate an empty report for consistency
+                # return "Info: No backlog items matched the selected filters."
+
+            # 2. Reconstruct hierarchy *only* with filtered items (simplified approach)
+            # A more complex approach might fetch all and filter the hierarchy in memory.
+            # For simplicity, we'll report the filtered flat list with hierarchical IDs if available.
+            # We need the full hierarchy first to get the correct IDs.
+            full_hierarchy = self._get_backlog_with_hierarchical_numbers()
+            flat_map = {item['cr_id']: item for item in self._flatten_hierarchy(full_hierarchy)}
+
+            report_data = []
+            for item_row in filtered_items_flat:
+                item_dict = dict(item_row)
+                full_item_data = flat_map.get(item_dict['cr_id'])
+                if full_item_data:
+                    item_dict['hierarchical_id'] = full_item_data.get('hierarchical_id', f"CR-{item_dict['cr_id']}")
+                else:
+                    item_dict['hierarchical_id'] = f"CR-{item_dict['cr_id']}" # Fallback
+                report_data.append(item_dict)
+
+            # 3. Call ReportGeneratorAgent
+            report_agent = ReportGeneratorAgent()
+            xlsx_bytes_io = report_agent.generate_backlog_xlsx(report_data) # Use existing method with potentially filtered data
+            if not xlsx_bytes_io:
+                raise Exception("ReportGeneratorAgent failed to create XLSX data.")
+            return xlsx_bytes_io
+        except Exception as e:
+            logging.error(f"Failed to generate filtered backlog report: {e}", exc_info=True)
+            return f"Error: {e}"
+
+    def generate_sprint_deliverables_report(self, sprint_id: str, **kwargs) -> BytesIO | str:
+        """
+        Generates an XLSX report listing backlog items and implemented artifacts for a sprint.
+
+        Returns:
+            BytesIO object containing XLSX data, or an error string.
+        """
+        logging.info(f"Orchestrator: Generating sprint deliverables report for sprint '{sprint_id}'")
+        if not self.project_id:
+            return "Error: No active project."
+        if not sprint_id:
+            return "Error: No sprint selected."
+        try:
+            # 1. Get sprint details (plan JSON)
+            sprint_details = self.db_manager._execute_query("SELECT sprint_plan_json FROM Sprints WHERE sprint_id = ?", (sprint_id,), fetch="one")
+            if not sprint_details or not sprint_details['sprint_plan_json']:
+                return f"Error: Could not find implementation plan for sprint {sprint_id}."
+
+            sprint_plan_tasks = self._parse_plan_json(sprint_details['sprint_plan_json'])
+            if not sprint_plan_tasks:
+                return f"Info: Sprint {sprint_id} has no defined implementation tasks."
+
+            # 2. Get all micro_spec_ids from the plan
+            micro_spec_ids_in_plan = {task['micro_spec_id'] for task in sprint_plan_tasks if 'micro_spec_id' in task}
+            if not micro_spec_ids_in_plan:
+                return f"Info: No trackable tasks found in the plan for sprint {sprint_id}."
+
+            # 3. Get artifacts linked to those micro_spec_ids
+            linked_artifacts = self.db_manager.get_artifacts_by_micro_spec_ids(self.project_id, list(micro_spec_ids_in_plan))
+            artifact_map = {art['micro_spec_id']: dict(art) for art in linked_artifacts}
+
+            # 4. Get backlog items for the sprint
+            sprint_items = self.db_manager.get_items_for_sprint(sprint_id)
+            full_hierarchy = self._get_backlog_with_hierarchical_numbers()
+            flat_map = {item['cr_id']: item for item in self._flatten_hierarchy(full_hierarchy)}
+
+            report_data = []
+            processed_cr_ids = set() # Track items already added
+
+            # Map artifacts back to tasks and then to CRs
+            for task in sprint_plan_tasks:
+                ms_id = task.get("micro_spec_id")
+                parent_cr_ids = task.get("parent_cr_ids", [])
+                artifact = artifact_map.get(ms_id)
+
+                for cr_id in parent_cr_ids:
+                    if cr_id not in processed_cr_ids:
+                        backlog_item = flat_map.get(cr_id)
+                        if backlog_item:
+                                report_data.append({
+                                    'backlog_id': backlog_item.get('hierarchical_id', f'CR-{cr_id}'),
+                                    'backlog_title': backlog_item.get('title', 'N/A'),
+                                    'backlog_status': backlog_item.get('status', 'N/A'),
+                                    'artifact_path': artifact['file_path'] if artifact else 'N/A (No artifact generated)',
+                                    'artifact_name': artifact['artifact_name'] if artifact else 'N/A'
+                                })
+                                processed_cr_ids.add(cr_id)
+                        else:
+                                logging.warning(f"Could not find backlog item details for CR ID {cr_id} linked from sprint {sprint_id}")
+
+            # Include any sprint items that didn't have trackable tasks
+            for item_row in sprint_items:
+                cr_id = item_row['cr_id']
+                if cr_id not in processed_cr_ids:
+                    backlog_item = flat_map.get(cr_id)
+                    if backlog_item:
+                        report_data.append({
+                                'backlog_id': backlog_item.get('hierarchical_id', f'CR-{cr_id}'),
+                                'backlog_title': backlog_item.get('title', 'N/A'),
+                                'backlog_status': backlog_item.get('status', 'N/A'),
+                                'artifact_path': 'N/A (No trackable tasks)',
+                                'artifact_name': 'N/A'
+                        })
+
+            # 5. Call ReportGeneratorAgent
+            report_agent = ReportGeneratorAgent()
+            xlsx_bytes_io = report_agent.generate_sprint_deliverables_xlsx(sprint_id, report_data) # New method needed
+            if not xlsx_bytes_io:
+                raise Exception("ReportGeneratorAgent failed to create XLSX data.")
+            return xlsx_bytes_io
+
+        except Exception as e:
+            logging.error(f"Failed to generate sprint deliverables report: {e}", exc_info=True)
+            return f"Error: {e}"
+
+    def generate_burndown_chart_data(self, sprint_id: str, **kwargs) -> BytesIO | str:
+        """
+        Generates data/image for the Complexity Point Burndown Chart.
+
+        Returns:
+            BytesIO object containing PNG image data, or an error string.
+        """
+        logging.info(f"Orchestrator: Generating burndown chart data for sprint '{sprint_id}'")
+        if not self.project_id: return "Error: No active project."
+        if not sprint_id: return "Error: No sprint selected."
+        try:
+            complexity_map = {"Small": 1, "Medium": 3, "Large": 5}
+            sprint_items = self.db_manager.get_items_for_sprint(sprint_id)
+            if not sprint_items: return "Info: No items found for this sprint."
+
+            total_points = sum(complexity_map.get(item['complexity'], 0) for item in sprint_items)
+            # Placeholder: Need actual completion history (timestamps/task order)
+            # For now, simulate based on current status
+            completed_points = sum(complexity_map.get(item['complexity'], 0) for item in sprint_items if item['status'] == 'COMPLETED')
+            remaining_points = total_points - completed_points
+            burndown_data = {'total': total_points, 'remaining': remaining_points, 'sprint_id': sprint_id}
+
+            report_agent = ReportGeneratorAgent()
+            image_bytes_io = report_agent.generate_burndown_chart_image(burndown_data) # New method needed
+            if not image_bytes_io:
+                raise Exception("ReportGeneratorAgent failed to create chart image.")
+            return image_bytes_io
+        except Exception as e:
+            logging.error(f"Failed to generate burndown chart data: {e}", exc_info=True)
+            return f"Error: {e}"
+
+    def generate_workflow_efficiency_data(self, **kwargs) -> BytesIO | str:
+        """
+        Generates data/image for the Workflow Efficiency (CFD) chart.
+
+        Returns:
+            BytesIO object containing PNG image data, or an error string.
+        """
+        logging.info("Orchestrator: Generating workflow efficiency (CFD) data.")
+        if not self.project_id: return "Error: No active project."
+        try:
+            # Placeholder: Need historical status data over time.
+            # This requires logging status changes with timestamps or querying git history if available.
+            # For now, we'll use the current snapshot.
+            current_status_counts = self.db_manager.get_backlog_status_summary(self.project_id)
+            cfd_data = {'current_snapshot': current_status_counts} # Simplified data structure
+
+            report_agent = ReportGeneratorAgent()
+            image_bytes_io = report_agent.generate_cfd_chart_image(cfd_data) # New method needed
+            if not image_bytes_io:
+                raise Exception("ReportGeneratorAgent failed to create CFD chart image.")
+            return image_bytes_io
+        except Exception as e:
+            logging.error(f"Failed to generate workflow efficiency data: {e}", exc_info=True)
+            return f"Error: {e}"
+
+    def generate_code_quality_trend_data(self, **kwargs) -> BytesIO | str:
+        """
+        Generates data/image for the Code Quality Trend chart.
+
+        Returns:
+            BytesIO object containing PNG image data, or an error string.
+        """
+        logging.info("Orchestrator: Generating code quality trend data.")
+        if not self.project_id: return "Error: No active project."
+        try:
+            # Placeholder: Need historical test status data across sprints/time.
+            # This requires snapshotting Artifacts.unit_test_status at sprint ends or over time.
+            # For now, use the current snapshot.
+            current_test_status_counts = self.db_manager.get_component_test_status_summary(self.project_id)
+            trend_data = {'current_snapshot': current_test_status_counts} # Simplified
+
+            report_agent = ReportGeneratorAgent()
+            image_bytes_io = report_agent.generate_quality_trend_chart_image(trend_data) # New method needed
+            if not image_bytes_io:
+                raise Exception("ReportGeneratorAgent failed to create quality trend chart image.")
+            return image_bytes_io
+        except Exception as e:
+            logging.error(f"Failed to generate code quality trend data: {e}", exc_info=True)
+            return f"Error: {e}"
+
+    def generate_ai_assistance_rate_data(self, **kwargs) -> BytesIO | str:
+        """
+        Generates data for the AI Assistance Rate report.
+
+        Returns:
+            String containing formatted report data or an error message.
+        """
+        logging.info("Orchestrator: Generating AI assistance rate data.")
+        if not self.project_id: return "Error: No active project."
+        try:
+            # Placeholder: Need historical tracking of DEBUG_PM_ESCALATION phase entries.
+            # This could involve querying logs or a dedicated event table if implemented.
+            # Simulate a simple calculation for now.
+            # Assume 5 escalations happened over 2 sprints.
+            assistance_data = {
+                "total_sprints_analyzed": 2,
+                "total_escalations": 5,
+                "average_escalations_per_sprint": 2.5
+            }
+
+            report_agent = ReportGeneratorAgent()
+            report_text = report_agent.generate_ai_assistance_report(assistance_data) # New method needed
+            return report_text
+        except Exception as e:
+            logging.error(f"Failed to generate AI assistance rate data: {e}", exc_info=True)
+            return f"Error: {e}"
+
+    # Helper method used by Sprint Deliverables Report
+    def _parse_plan_json(self, plan_json_str: str | None) -> list:
+        """Safely parses a plan JSON string into a list of tasks."""
+        if not plan_json_str:
+            return []
+        try:
+            plan_data = json.loads(plan_json_str)
+            if isinstance(plan_data, dict):
+                # Handle old format where plan is under "development_plan" key
+                return plan_data.get("development_plan", [])
+            elif isinstance(plan_data, list):
+                # Handle new format where the list is the plan itself
+                # Check for the error object structure
+                if plan_data and isinstance(plan_data[0], dict) and "error" in plan_data[0]:
+                    logging.warning(f"Parsed plan JSON contains an error: {plan_data[0]['error']}")
+                    return []
+                return plan_data
+            else:
+                logging.warning(f"Plan JSON is neither a dict nor list: {type(plan_data)}")
+                return []
+        except json.JSONDecodeError as e:
+            logging.error(f"Failed to parse plan JSON: {e}")
+            return []
+        except Exception as e:
+            logging.error(f"Unexpected error parsing plan JSON: {e}", exc_info=True)
+            return []
+
     def get_project_reports_dir(self) -> Path:
         """
         Gets the path to the project's 'docs/test_reports' directory, creating it if necessary.
@@ -1818,7 +2115,7 @@ class MasterOrchestrator:
 
         return reports_dir
 
-    def generate_health_snapshot_report(self, **kwargs) -> str:
+    def generate_health_snapshot_report(self, **kwargs) -> BytesIO | str:
         """
         Orchestrates the generation of the Project Health Snapshot .docx file.
         Returns the path to the generated file, or an error string.
@@ -1829,26 +2126,26 @@ class MasterOrchestrator:
         try:
             snapshot_data = self.get_health_snapshot_data()
             if not snapshot_data.get('backlog_summary') and not snapshot_data.get('test_summary'):
-                logging.warning("No data found for health snapshot. Generating report with 'No Data' entries.")
+                logging.warning("No data found for Project Pulse report. Generating report with 'No Data' entries.")
                 # We proceed, the agent method handles empty dicts
 
             agent = ReportGeneratorAgent()
             docx_bytes_io = agent.generate_health_snapshot_docx(self.project_name, snapshot_data)
 
-            # Save the file
-            report_filename = f"{self.project_name}_Health_Snapshot.docx"
-            save_path = self.get_project_reports_dir() / report_filename
+            # The file saving is done by the helper method save_report_file
+            # report_filename = f"{self.project_name}_Health_Snapshot.docx"
+            # save_path = self.get_project_reports_dir() / report_filename
 
-            with open(save_path, 'wb') as f:
-                f.write(docx_bytes_io.getbuffer())
+            # with open(save_path, 'wb') as f:
+            #     f.write(docx_bytes_io.getbuffer())
 
-            logging.info(f"Health Snapshot report saved to: {save_path}")
-            return str(save_path)
+            # logging.info(f"Health Snapshot report saved to: {save_path}")
+            return docx_bytes_io
         except Exception as e:
-            logging.error(f"Failed to generate health snapshot report: {e}", exc_info=True)
-            return f"Error: {e}"
+            logging.error(f"Failed to generate Project Pulse report: {e}", exc_info=True)
+            return f"Error: Failed generating Project Pulse - {e}"
 
-    def generate_traceability_matrix_report(self, **kwargs) -> str:
+    def generate_traceability_matrix_report(self, **kwargs) -> BytesIO | str:
         """
         Orchestrates the generation of the .xlsx Traceability Matrix.
         Returns the path to the generated file, or an error string.
@@ -1876,9 +2173,9 @@ class MasterOrchestrator:
                 f.write(xlsx_bytes_io.getbuffer())
 
             logging.info(f"Traceability Matrix .xlsx report saved to: {save_path}")
-            return str(save_path)
+            return xlsx_bytes_io
         except Exception as e:
-            logging.error(f"Failed to generate traceability matrix report: {e}", exc_info=True)
+            logging.error(f"Failed to generate Backlog Traceability Matrix report: {e}", exc_info=True)
             return f"Error: {e}"
 
     def handle_import_from_tool(self, import_data: dict) -> list:
@@ -2131,7 +2428,6 @@ class MasterOrchestrator:
             return
 
         try:
-            # --- THIS IS THE FIX ---
             # Strip the header to get pure content for the DB and docx body.
             pure_tech_spec_content = self._strip_header_from_document(final_tech_spec_with_header)
 
@@ -2167,7 +2463,6 @@ class MasterOrchestrator:
             self._extract_and_save_primary_technology(final_tech_spec_with_header)
             self.active_spec_draft = None
             self.set_phase("TEST_ENVIRONMENT_SETUP")
-            # --- END OF FIX ---
 
         except Exception as e:
             logging.error(f"Failed to finalize and save technical spec: {e}")
@@ -5249,13 +5544,11 @@ class MasterOrchestrator:
                 logging.error(f"Cannot commit {file_path.name}: project root folder not found.")
                 return
 
-            # --- THIS IS THE FIX ---
             # Check if version control is enabled before attempting any git operations.
             version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
             if not version_control_enabled:
                 logging.info(f"Skipping commit for {file_path.name}; version control is disabled for this project.")
                 return
-            # --- END OF FIX ---
 
             project_root = Path(project_details['project_root_folder'])
             repo = git.Repo(project_root)
@@ -5266,6 +5559,63 @@ class MasterOrchestrator:
             logging.info(f"Successfully committed document: {relative_path}")
         except Exception as e:
             logging.error(f"Failed to commit document {file_path.name}. Error: {e}")
+
+    def get_project_reports_dir(self) -> Path:
+        """
+        Gets the path to the project's 'docs/project_reports' directory, creating it if necessary.
+        (Copied from previous implementation for clarity, ensure it exists or add it)
+        """
+        if not self.project_id:
+            raise Exception("Cannot get reports directory; no active project.")
+
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        if not project_details or not project_details['project_root_folder']:
+            raise Exception("Cannot get reports directory; project root folder not found.")
+
+        project_root = Path(project_details['project_root_folder'])
+        # Corrected path to use 'project_reports' sub-directory
+        reports_dir = project_root / "docs" / "project_reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+
+        return reports_dir
+
+    def save_report_file(self, report_data: BytesIO, report_name: str, file_extension: str) -> str | None:
+        """
+        Saves generated report data (from BytesIO) to a uniquely named file
+        in the project's report directory.
+
+        Args:
+            report_data (BytesIO): The in-memory report data.
+            report_name (str): The base name for the report (e.g., "Project Pulse").
+            file_extension (str): The file extension (e.g., ".docx", ".xlsx").
+
+        Returns:
+            The absolute path to the saved file as a string, or None on failure.
+        """
+        if not self.project_id or not self.project_name:
+            logging.error("Cannot save report file: No active project.")
+            return None
+        if not isinstance(report_data, BytesIO):
+            logging.error(f"Cannot save report file: Invalid data type received ({type(report_data)}). Expected BytesIO.")
+            return None
+
+        try:
+            reports_dir = self.get_project_reports_dir()
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Sanitize report name for filename
+            safe_report_name = report_name.replace(" ", "_").replace("&", "and").replace("/", "-")
+            filename = f"{self.project_name}_{safe_report_name}_{timestamp}{file_extension}"
+            save_path = reports_dir / filename
+
+            with open(save_path, 'wb') as f:
+                f.write(report_data.getbuffer())
+
+            logging.info(f"Report '{report_name}' saved successfully to: {save_path}")
+            return str(save_path) # Return the absolute path as a string
+
+        except Exception as e:
+            logging.error(f"Failed to save report file '{report_name}': {e}", exc_info=True)
+            return None
 
     def _save_debug_log_and_get_path(self, failure_log: str, original_failing_task: dict) -> str | None:
         """

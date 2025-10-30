@@ -15,9 +15,10 @@ from PySide6.QtGui import (QBrush, QColor, QConicalGradient, QCursor,
     QFont, QFontDatabase, QGradient, QIcon,
     QImage, QKeySequence, QLinearGradient, QPainter,
     QPalette, QPixmap, QRadialGradient, QTransform)
-from PySide6.QtWidgets import (QApplication, QFrame, QGridLayout, QGroupBox,
-    QHBoxLayout, QLabel, QPushButton, QSizePolicy,
-    QSpacerItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QApplication, QComboBox, QFormLayout, QFrame,
+    QGroupBox, QHBoxLayout, QHeaderView, QLabel,
+    QPushButton, QSizePolicy, QSpacerItem, QTreeView,
+    QVBoxLayout, QWidget)
 
 class Ui_ReportsPage(object):
     def setupUi(self, ReportsPage):
@@ -41,69 +42,110 @@ class Ui_ReportsPage(object):
 
         self.instructionLabel = QLabel(ReportsPage)
         self.instructionLabel.setObjectName(u"instructionLabel")
+        self.instructionLabel.setWordWrap(True)
 
         self.verticalLayout.addWidget(self.instructionLabel)
 
-        self.reportsGrid = QGridLayout()
-        self.reportsGrid.setObjectName(u"reportsGrid")
-        self.healthSnapshotCard = QGroupBox(ReportsPage)
-        self.healthSnapshotCard.setObjectName(u"healthSnapshotCard")
-        self.verticalLayout_2 = QVBoxLayout(self.healthSnapshotCard)
-        self.verticalLayout_2.setObjectName(u"verticalLayout_2")
-        self.label_2 = QLabel(self.healthSnapshotCard)
-        self.label_2.setObjectName(u"label_2")
-        self.label_2.setWordWrap(True)
+        self.mainHorizontalLayout = QHBoxLayout()
+        self.mainHorizontalLayout.setObjectName(u"mainHorizontalLayout")
+        self.reportTreeView = QTreeView(ReportsPage)
+        self.reportTreeView.setObjectName(u"reportTreeView")
+        self.reportTreeView.setMinimumSize(QSize(250, 0))
+        self.reportTreeView.setHeaderHidden(True)
 
-        self.verticalLayout_2.addWidget(self.label_2)
+        self.mainHorizontalLayout.addWidget(self.reportTreeView)
 
-        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.detailsPanelWidget = QWidget(ReportsPage)
+        self.detailsPanelWidget.setObjectName(u"detailsPanelWidget")
+        self.detailsPanelLayout = QVBoxLayout(self.detailsPanelWidget)
+        self.detailsPanelLayout.setObjectName(u"detailsPanelLayout")
+        self.reportTitleLabel = QLabel(self.detailsPanelWidget)
+        self.reportTitleLabel.setObjectName(u"reportTitleLabel")
 
-        self.verticalLayout_2.addItem(self.verticalSpacer)
+        self.detailsPanelLayout.addWidget(self.reportTitleLabel)
 
-        self.generateHealthSnapshotButton = QPushButton(self.healthSnapshotCard)
-        self.generateHealthSnapshotButton.setObjectName(u"generateHealthSnapshotButton")
+        self.reportDescriptionLabel = QLabel(self.detailsPanelWidget)
+        self.reportDescriptionLabel.setObjectName(u"reportDescriptionLabel")
+        self.reportDescriptionLabel.setWordWrap(True)
+        self.reportDescriptionLabel.setAlignment(Qt.AlignLeading|Qt.AlignLeft|Qt.AlignTop)
 
-        self.verticalLayout_2.addWidget(self.generateHealthSnapshotButton)
+        self.detailsPanelLayout.addWidget(self.reportDescriptionLabel)
+
+        self.filterGroupBox = QGroupBox(self.detailsPanelWidget)
+        self.filterGroupBox.setObjectName(u"filterGroupBox")
+        self.filterGroupBox.setVisible(False)
+        self.filterFormLayout = QFormLayout(self.filterGroupBox)
+        self.filterFormLayout.setObjectName(u"filterFormLayout")
+        self.statusFilterLabel = QLabel(self.filterGroupBox)
+        self.statusFilterLabel.setObjectName(u"statusFilterLabel")
+        self.statusFilterLabel.setVisible(False)
+
+        self.filterFormLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.statusFilterLabel)
+
+        self.statusFilterComboBox = QComboBox(self.filterGroupBox)
+        self.statusFilterComboBox.setObjectName(u"statusFilterComboBox")
+        self.statusFilterComboBox.setVisible(False)
+
+        self.filterFormLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.statusFilterComboBox)
+
+        self.typeFilterLabel = QLabel(self.filterGroupBox)
+        self.typeFilterLabel.setObjectName(u"typeFilterLabel")
+        self.typeFilterLabel.setVisible(False)
+
+        self.filterFormLayout.setWidget(1, QFormLayout.ItemRole.LabelRole, self.typeFilterLabel)
+
+        self.typeFilterComboBox = QComboBox(self.filterGroupBox)
+        self.typeFilterComboBox.setObjectName(u"typeFilterComboBox")
+        self.typeFilterComboBox.setVisible(False)
+
+        self.filterFormLayout.setWidget(1, QFormLayout.ItemRole.FieldRole, self.typeFilterComboBox)
+
+        self.sprintFilterLabel = QLabel(self.filterGroupBox)
+        self.sprintFilterLabel.setObjectName(u"sprintFilterLabel")
+        self.sprintFilterLabel.setVisible(False)
+
+        self.filterFormLayout.setWidget(2, QFormLayout.ItemRole.LabelRole, self.sprintFilterLabel)
+
+        self.sprintFilterComboBox = QComboBox(self.filterGroupBox)
+        self.sprintFilterComboBox.setObjectName(u"sprintFilterComboBox")
+        self.sprintFilterComboBox.setVisible(False)
+
+        self.filterFormLayout.setWidget(2, QFormLayout.ItemRole.FieldRole, self.sprintFilterComboBox)
 
 
-        self.reportsGrid.addWidget(self.healthSnapshotCard, 0, 0, 1, 1)
+        self.detailsPanelLayout.addWidget(self.filterGroupBox)
 
-        self.traceabilityCard = QGroupBox(ReportsPage)
-        self.traceabilityCard.setObjectName(u"traceabilityCard")
-        self.verticalLayout_3 = QVBoxLayout(self.traceabilityCard)
-        self.verticalLayout_3.setObjectName(u"verticalLayout_3")
-        self.label_3 = QLabel(self.traceabilityCard)
-        self.label_3.setObjectName(u"label_3")
-        self.label_3.setWordWrap(True)
+        self.detailsVerticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.verticalLayout_3.addWidget(self.label_3)
+        self.detailsPanelLayout.addItem(self.detailsVerticalSpacer)
 
-        self.verticalSpacer_2 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.lastGeneratedLabel = QLabel(self.detailsPanelWidget)
+        self.lastGeneratedLabel.setObjectName(u"lastGeneratedLabel")
+        self.lastGeneratedLabel.setVisible(False)
 
-        self.verticalLayout_3.addItem(self.verticalSpacer_2)
+        self.detailsPanelLayout.addWidget(self.lastGeneratedLabel)
 
-        self.generateTraceabilityMatrixButton = QPushButton(self.traceabilityCard)
-        self.generateTraceabilityMatrixButton.setObjectName(u"generateTraceabilityMatrixButton")
+        self.detailsButtonLayout = QHBoxLayout()
+        self.detailsButtonLayout.setObjectName(u"detailsButtonLayout")
+        self.detailsHorizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
-        self.verticalLayout_3.addWidget(self.generateTraceabilityMatrixButton)
+        self.detailsButtonLayout.addItem(self.detailsHorizontalSpacer)
 
+        self.generateReportButton = QPushButton(self.detailsPanelWidget)
+        self.generateReportButton.setObjectName(u"generateReportButton")
+        self.generateReportButton.setEnabled(False)
 
-        self.reportsGrid.addWidget(self.traceabilityCard, 0, 1, 1, 1)
-
-        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
-
-        self.reportsGrid.addItem(self.horizontalSpacer, 0, 2, 1, 1)
-
-        self.verticalSpacer_3 = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-
-        self.reportsGrid.addItem(self.verticalSpacer_3, 1, 0, 1, 1)
+        self.detailsButtonLayout.addWidget(self.generateReportButton)
 
 
-        self.verticalLayout.addLayout(self.reportsGrid)
+        self.detailsPanelLayout.addLayout(self.detailsButtonLayout)
 
-        self.mainVerticalSpacer = QSpacerItem(20, 179, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
 
-        self.verticalLayout.addItem(self.mainVerticalSpacer)
+        self.mainHorizontalLayout.addWidget(self.detailsPanelWidget)
+
+        self.mainHorizontalLayout.setStretch(1, 1)
+
+        self.verticalLayout.addLayout(self.mainHorizontalLayout)
 
         self.horizontalLayout_back = QHBoxLayout()
         self.horizontalLayout_back.setObjectName(u"horizontalLayout_back")
@@ -133,13 +175,16 @@ class Ui_ReportsPage(object):
     def retranslateUi(self, ReportsPage):
         ReportsPage.setWindowTitle(QCoreApplication.translate("ReportsPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("ReportsPage", u"Reports Hub", None))
-        self.instructionLabel.setText(QCoreApplication.translate("ReportsPage", u"Generate high-level reports for project analysis and stakeholder updates.", None))
-        self.healthSnapshotCard.setTitle(QCoreApplication.translate("ReportsPage", u"Project Health Snapshot", None))
-        self.label_2.setText(QCoreApplication.translate("ReportsPage", u"A one-page visual summary of backlog completion and code quality. Ideal for stakeholder updates.", None))
-        self.generateHealthSnapshotButton.setText(QCoreApplication.translate("ReportsPage", u"Generate .docx", None))
-        self.traceabilityCard.setTitle(QCoreApplication.translate("ReportsPage", u"Traceability Matrix", None))
-        self.label_3.setText(QCoreApplication.translate("ReportsPage", u"An end-to-end report mapping backlog items to their implemented code artifacts.", None))
-        self.generateTraceabilityMatrixButton.setText(QCoreApplication.translate("ReportsPage", u"Generate .xlsx", None))
+        self.instructionLabel.setText(QCoreApplication.translate("ReportsPage", u"Select a report from the list to view details and generate it.", None))
+        self.reportTitleLabel.setText(QCoreApplication.translate("ReportsPage", u"Select a Report", None))
+        self.reportTitleLabel.setObjectName(QCoreApplication.translate("ReportsPage", u"reportTitleLabel", None))
+        self.reportDescriptionLabel.setText(QCoreApplication.translate("ReportsPage", u"Report description will appear here.", None))
+        self.filterGroupBox.setTitle(QCoreApplication.translate("ReportsPage", u"Options", None))
+        self.statusFilterLabel.setText(QCoreApplication.translate("ReportsPage", u"Filter by Status:", None))
+        self.typeFilterLabel.setText(QCoreApplication.translate("ReportsPage", u"Filter by Type:", None))
+        self.sprintFilterLabel.setText(QCoreApplication.translate("ReportsPage", u"Select Sprint:", None))
+        self.lastGeneratedLabel.setText(QCoreApplication.translate("ReportsPage", u"Last generated: N/A", None))
+        self.generateReportButton.setText(QCoreApplication.translate("ReportsPage", u"Generate Report", None))
         self.backButton.setText(QCoreApplication.translate("ReportsPage", u"< Back", None))
     # retranslateUi
 

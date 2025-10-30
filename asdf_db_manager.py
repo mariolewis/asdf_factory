@@ -590,6 +590,30 @@ class ASDFDBManager:
         """
         return self._execute_query(query, (sprint_id,), fetch="all")
 
+    def get_sprints_by_status(self, project_id: str, statuses: list[str]) -> list:
+        """
+        Retrieves Sprints for a project that match one of the given statuses,
+        ordered by start time descending (newest first).
+        """
+        if not statuses:
+            return []
+
+        placeholders = ', '.join('?' for _ in statuses)
+        query = f"""
+            SELECT sprint_id, sprint_goal, start_timestamp, status
+            FROM Sprints
+            WHERE project_id = ? AND status IN ({placeholders})
+            ORDER BY start_timestamp DESC
+        """
+        params = [project_id]
+        params.extend(statuses)
+
+        try:
+            return self._execute_query(query, tuple(params), fetch="all")
+        except sqlite3.Error as e:
+            logging.error(f"Failed to get sprints by status: {e}")
+            return []
+
     def get_latest_sprint_for_project(self, project_id: str):
         """Retrieves the most recent sprint record for a project."""
         query = "SELECT * FROM Sprints WHERE project_id = ? ORDER BY start_timestamp DESC LIMIT 1"
@@ -817,6 +841,39 @@ class ASDFDBManager:
         query = f"SELECT * FROM ChangeRequestRegister WHERE project_id = ? AND status IN ({placeholders}) ORDER BY creation_timestamp DESC"
         params = (project_id,) + tuple(statuses)
         return self._execute_query(query, params, fetch="all")
+
+    def get_change_requests_filtered(self, project_id: str, statuses: list[str] | None = None, types: list[str] | None = None) -> list:
+        """
+        Retrieves ChangeRequestRegister records for a project, optionally filtered
+        by lists of statuses and/or request types.
+        Returns items ordered by display_order.
+        """
+        if not statuses and not types:
+            # If no filters, use the existing efficient method
+            return self.get_all_change_requests_for_project(project_id)
+
+        query_parts = ["SELECT * FROM ChangeRequestRegister WHERE project_id = ?"]
+        params = [project_id]
+
+        if statuses:
+            placeholders = ', '.join('?' for _ in statuses)
+            query_parts.append(f"AND status IN ({placeholders})")
+            params.extend(statuses)
+
+        if types:
+            placeholders = ', '.join('?' for _ in types)
+            query_parts.append(f"AND request_type IN ({placeholders})")
+            params.extend(types)
+
+        query_parts.append("ORDER BY display_order ASC")
+        final_query = " ".join(query_parts)
+
+        logging.debug(f"Executing filtered CR query: {final_query} with params: {params}")
+        try:
+            return self._execute_query(final_query, tuple(params), fetch="all")
+        except sqlite3.Error as e:
+            logging.error(f"Failed to execute filtered CR query: {e}")
+            return []
 
     def update_artifact_status(self, artifact_id: str, status: str, timestamp: str):
         query = "UPDATE Artifacts SET status = ?, last_modified_timestamp = ? WHERE artifact_id = ?"
