@@ -27,7 +27,7 @@ class RefactoringPlannerAgent_AppTarget:
             raise ValueError("llm_service is required for the RefactoringPlannerAgent_AppTarget.")
         self.llm_service = llm_service
 
-    def create_refactoring_plan(self, change_request_desc: str, final_spec_text: str, tech_spec_text: str, rowd_json: str, source_code_context: dict | None = None, ux_spec_text: str | None = None, db_schema_spec_text: str | None = None) -> str:
+    def create_refactoring_plan(self, change_request_desc: str, final_spec_text: str, tech_spec_text: str, rowd_json: str, source_code_context: dict, ux_spec_text: str = None, db_schema_spec_text: str = None, **kwargs) -> str:
         """
         Generates a detailed, sequential plan of micro-specifications to implement a change,
         now using optional UX and DB specs for higher accuracy.
@@ -53,6 +53,8 @@ class RefactoringPlannerAgent_AppTarget:
             {db_schema_spec_text}
             """
 
+            detected_technologies_json = kwargs.get("detected_technologies_json", "[]")
+
             prompt = f"""
             You are an expert Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format to implement a given change request.
 
@@ -63,10 +65,11 @@ class RefactoringPlannerAgent_AppTarget:
                 - Use the other specifications for business logic and general technical context.
             2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`.
             3.  **JSON Object Schema:** Each JSON object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, and `parent_cr_ids`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
-            4.  **Traceability:** The `parent_cr_ids` array MUST contain the integer ID(s) from the `ITEM_ID` field of the original backlog item(s) this task helps to implement.
-            5.  **Test Generation:** You MUST include the `test_file_path` key for any task involving application logic. Omit it only for non-testable tasks (e.g., simple configuration).
-            6.  **Use Canonical Paths:** For any task modifying an EXISTING component, the `component_file_path` and `artifact_id` MUST exactly match the `file_path` and `artifact_id` from the provided RoWD.
-            7.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
+            4.  **Relevant Languages:** For *each* task object, you MUST add a `relevant_languages` key. The value MUST be a JSON list of strings (e.g., `["Python"]`, `["JavaScript", "HTML", "CSS"]`, `["Python", "SQL"]`) identifying all languages required to implement that specific task, based on the file path and the project's 'Detected Technologies'.
+            5.  **Traceability:** The `parent_cr_ids` array MUST contain the integer ID(s) from the `ITEM_ID` field of the original backlog item(s) this task helps to implement.
+            6.  **Test Generation:** You MUST include the `test_file_path` key for any task involving application logic. Omit it only for non-testable tasks (e.g., simple configuration).
+            7.  **Use Canonical Paths:** For any task modifying an EXISTING component, the `component_file_path` and `artifact_id` MUST exactly match the `file_path` and `artifact_id` from the provided RoWD.
+            8.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
 
             **--- INPUTS ---**
             **1. Technical Specification:**
@@ -80,6 +83,7 @@ class RefactoringPlannerAgent_AppTarget:
 
             **4. Source Code Context:**
             {source_code_context_str}
+            {detected_technologies_json}
             {ux_spec_context}
             {db_spec_context}
 
@@ -117,8 +121,9 @@ class RefactoringPlannerAgent_AppTarget:
                 2.  **Maintain Traceability:** Every task object in your final JSON array response MUST contain the `parent_cr_ids` key.
                 The value should be an array of integers derived from the `ITEM_ID` fields in the 'Change Request' input, reflecting which original item(s) the task implements.
                 This is a critical requirement.
-                3.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, adhering to the original schema.
-                4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
+                3.  **Relevant Languages:** You MUST ensure every task object in the final refined plan also contains the `relevant_languages` key (a JSON list of strings, e.g., `["Python"]`, `["Python", "SQL"]`).
+                4.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, adhering to the original schema.
+                5.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
 
                 **--- CONTEXT: Project Specifications ---**
                 Full Technical Specification: {tech_spec_text}

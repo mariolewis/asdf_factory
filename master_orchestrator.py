@@ -650,6 +650,53 @@ class MasterOrchestrator:
         logging.info(f"Initialized brownfield project '{self.project_name}' in memory from path '{project_path}'.")
         self.set_phase("ENV_SETUP_TARGET_APP")
 
+    def _check_and_route_to_coding_standards(self, next_phase: FactoryPhase) -> FactoryPhase:
+        """
+        Checks if standards are generated for all detected techs.
+        Routes to CODING_STANDARD_GENERATION if not, otherwise to the next_phase.
+        """
+        try:
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if not project_details:
+                logging.warning("Cannot check coding standards, project details not found.")
+                return next_phase
+
+            technologies_json = project_details['detected_technologies'] if project_details and 'detected_technologies' in project_details.keys() and project_details['detected_technologies'] else '[]'
+            detected_technologies = json.loads(technologies_json)
+
+            if not detected_technologies:
+                logging.info("No technologies detected, skipping coding standard check.")
+                return next_phase
+
+            # Find all existing coding standard artifacts
+            all_artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+            completed_standards = set()
+            for art in all_artifacts:
+                if art['artifact_type'] == 'CODING_STANDARD':
+                    # Extract language from name, e.g., "Coding Standard (Python)"
+                    match = re.search(r'\((.*?)\)', art['artifact_name'])
+                    if match:
+                        completed_standards.add(match.group(1))
+
+            # Check if any detected technology is missing a standard
+            missing_standards = False
+            for tech in detected_technologies:
+                if tech not in completed_standards:
+                    missing_standards = True
+                    break
+
+            if missing_standards:
+                logging.info(f"Coding standards are incomplete ({completed_standards} vs {detected_technologies}). Routing to F-Phase 9.")
+                self.task_awaiting_approval = {'next_phase_after_standards': next_phase.name}
+                return FactoryPhase.CODING_STANDARD_GENERATION
+            else:
+                logging.info("All coding standards are present. Proceeding.")
+                return next_phase
+
+        except Exception as e:
+            logging.error(f"Error in _check_and_route_to_coding_standards: {e}", exc_info=True)
+            return next_phase # Fail safe by proceeding
+
     def handle_brownfield_maintain_path(self):
         """
         Kicks off the asynchronous backlog generation process. It first deletes
@@ -660,7 +707,7 @@ class MasterOrchestrator:
         try:
             self.db_manager.delete_change_requests_by_status(self.project_id, ["EXISTING"])
             logging.info("Transitioning to backlog generation.")
-            self.set_phase("GENERATING_BACKLOG")
+            self.set_phase(self._check_and_route_to_coding_standards(FactoryPhase.GENERATING_BACKLOG).name)
         except Exception as e:
             logging.error(f"Failed to handle 'Maintain & Enhance' path: {e}", exc_info=True)
             QMessageBox.critical(None, "Error", f"An error occurred while preparing to generate the backlog:\n{e}")
@@ -788,7 +835,7 @@ class MasterOrchestrator:
         to add new items like quick fixes or features.
         """
         logging.info("PM chose 'Quick Fix / Go to Backlog' path. Transitioning to BACKLOG_VIEW.")
-        self.set_phase("BACKLOG_VIEW")
+        self.set_phase(self._check_and_route_to_coding_standards(FactoryPhase.BACKLOG_VIEW).name)
 
     def finalize_project_creation(self, project_id: str, project_name: str, project_root: str):
         """
@@ -2460,7 +2507,20 @@ class MasterOrchestrator:
                 self._commit_document(spec_file_path_docx, "docs: Add formatted Technical Specification (docx)")
 
             # This can still use the headed version as it's a separate analysis.
-            self._extract_and_save_primary_technology(final_tech_spec_with_header)
+            try:
+                logging.info("Detecting technologies from finalized tech spec...")
+                # We use final_tech_spec_with_header as it's the full-context version
+                technologies = self.detect_technologies_in_spec(final_tech_spec_with_header)
+                if technologies:
+                    self.db_manager.update_project_field(
+                        self.project_id,
+                        "detected_technologies",
+                        json.dumps(technologies)
+                    )
+                    logging.info(f"Saved detected technologies to DB (Greenfield): {technologies}")
+            except Exception as e:
+                logging.error(f"Failed to detect and save technologies from tech spec: {e}", exc_info=True)
+
             self.active_spec_draft = None
             self.set_phase("TEST_ENVIRONMENT_SETUP")
 
@@ -2468,60 +2528,69 @@ class MasterOrchestrator:
             logging.error(f"Failed to finalize and save technical spec: {e}")
             self.task_awaiting_approval = {"error": str(e)}
 
-    def finalize_and_save_coding_standard(self, final_standard_with_header: str, technology_name: str = "default"):
+    def finalize_and_save_coding_standard(self, technology: str, standard_content: str, status: str = "COMPLETED"):
         """
         Saves the final coding standard as a distinct artifact in both .md and .docx
-        formats, and transitions to the AWAITING_BACKLOG_GATEWAY_DECISION phase.
+        formats. This method *only* saves the artifact and does not transition the phase.
         """
         if not self.project_id:
             logging.error("Cannot save coding standard; no active project.")
             return
 
         try:
-            pure_standard_content = self._strip_header_from_document(final_standard_with_header)
+            # FIX: The argument is 'standard_content', not 'final_standard_with_header'
+            pure_standard_content = self._strip_header_from_document(standard_content)
             db = self.db_manager
-            project_details = db.get_project_by_id(self.project_id)
 
-            if project_details and project_details['project_root_folder']:
+            # FIX: Convert sqlite3.Row to a dict to prevent .get() errors
+            project_details_row = db.get_project_by_id(self.project_id)
+            if not project_details_row:
+                raise Exception("Could not retrieve project details.")
+            project_details = dict(project_details_row)
+
+            if project_details and project_details.get('project_root_folder'):
                 project_root = Path(project_details['project_root_folder'])
                 docs_dir = project_root / "docs"
                 docs_dir.mkdir(exist_ok=True)
 
-                safe_tech_name = technology_name.lower().replace('#', 'sharp').replace('+', 'plus')
+                safe_tech_name = technology.lower().replace('#', 'sharp').replace('+', 'plus')
 
-                # --- Save .md file (existing logic) ---
                 md_artifact_name = f"coding_standard_{safe_tech_name}.md"
                 standard_file_path_md = docs_dir / md_artifact_name
-                standard_file_path_md.write_text(final_standard_with_header, encoding="utf-8")
-                self._commit_document(standard_file_path_md, f"docs: Add coding standard for {technology_name} (Markdown)")
 
-                # --- NEW: Generate and save .docx file ---
+                standard_file_path_md.write_text(standard_content, encoding="utf-8")
+
+                self._commit_document(standard_file_path_md, f"docs: Add coding standard for {technology} (Markdown)")
+
                 from agents.agent_report_generator import ReportGeneratorAgent
                 report_generator = ReportGeneratorAgent()
                 docx_bytes = report_generator.generate_text_document_docx(
-                    title=f"Coding Standard ({technology_name}) - {self.project_name}",
+                    # FIX: The argument is 'technology', not 'technology_name'
+                    title=f"Coding Standard ({technology}) - {project_details.get('project_name', 'ASDF Project')}",
                     content=pure_standard_content
                 )
                 docx_artifact_name = f"coding_standard_{safe_tech_name}.docx"
                 standard_file_path_docx = docs_dir / docx_artifact_name
                 with open(standard_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
-                self._commit_document(standard_file_path_docx, f"docs: Add formatted coding standard for {technology_name} (docx)")
+
+                self._commit_document(standard_file_path_docx, f"docs: Add formatted coding standard for {technology} (docx)")
 
                 # --- Save the record for the .md artifact to the Artifacts table ---
                 artifact_data = {
                     "artifact_id": f"art_{uuid.uuid4().hex[:8]}",
                     "project_id": self.project_id,
-                    "status": "COMPLETED",
+                    "status": status,
                     "file_path": str(standard_file_path_md.relative_to(project_root)),
-                    "artifact_name": f"Coding Standard ({technology_name})",
+                    "artifact_name": f"Coding Standard ({technology})",
                     "artifact_type": "CODING_STANDARD",
                     "last_modified_timestamp": datetime.now(timezone.utc).isoformat()
                 }
                 db.add_or_update_artifact(artifact_data)
-                logging.info(f"Successfully saved coding standard for {technology_name} as an artifact.")
 
-            self.set_phase("AWAITING_BACKLOG_GATEWAY_DECISION")
+                logging.info(f"Successfully saved coding standard for {technology} as an artifact.")
+
+            # The calling GUI page is responsible for checking if all items are done.
 
         except Exception as e:
             logging.error(f"Failed to finalize and save coding standard: {e}", exc_info=True)
@@ -2918,11 +2987,51 @@ class MasterOrchestrator:
             raise Exception("Cannot generate code: LLM Service is not configured.")
 
         project_details = db.get_project_by_id(self.project_id)
-        coding_standard = project_details['coding_standard_text']
-        target_language = project_details['technology_stack']
+        # --- NEW MULTI-LANGUAGE LOGIC ---
+        task_languages = task.get("relevant_languages", [])
+        if not task_languages:
+            # Fallback in case the plan is missing the new key
+            logging.warning(f"Task {component_name} is missing 'relevant_languages' key. Falling back to technology_stack.")
+            task_languages = [project_details['technology_stack']] if project_details['technology_stack'] else ['Python'] # Default fallback
+
+        # The primary language for the component is the first one in the list
+        primary_language = task_languages[0]
+
+        # Consolidate all relevant coding standards
+        standards_to_apply = []
+        # Get all standards once to reduce DB calls
+        all_standards_artifacts = [dict(row) for row in db.get_all_artifacts_for_project(self.project_id) if row['artifact_type'] == 'CODING_STANDARD']
+
+        for lang in task_languages:
+            standard_artifact = None
+            for art in all_standards_artifacts:
+                # Match "Python" in "Coding Standard (Python)"
+                if lang.lower() in art['artifact_name'].lower():
+                    standard_artifact = art
+                    break
+
+            if standard_artifact:
+                # We need to read the content of the standard from its .md file
+                try:
+                    standard_file_path = project_root_path / standard_artifact['file_path']
+                    standard_content = standard_file_path.read_text(encoding='utf-8')
+                    # Strip the header to get the raw rules
+                    pure_standard = self._strip_header_from_document(standard_content)
+                    standards_to_apply.append(f"--- Coding Standard for {lang} ---\n{pure_standard}")
+                except Exception as e:
+                    logging.warning(f"Could not read coding standard file for {lang} at {standard_artifact['file_path']}: {e}")
+            else:
+                logging.warning(f"No coding standard artifact found for language: {lang}")
+
+        if not standards_to_apply:
+            logging.error(f"No coding standards found for component {component_name}. Proceeding without standards.")
+            combined_coding_standard = "No coding standard provided."
+        else:
+            combined_coding_standard = "\n\n---\n\n".join(standards_to_apply)
+        # --- END NEW LOGIC ---
         test_command = project_details['test_execution_command']
         version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else True
-        logging.warning(f"DEBUG PRE-FLIGHT: version_control_enabled is '{version_control_enabled}' for project {project_id}")
+        logging.warning(f"DEBUG PRE-FLIGHT: version_control_enabled is '{version_control_enabled}' for project {self.project_id}")
 
         all_artifacts_rows = db.get_all_artifacts_for_project(self.project_id)
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows])
@@ -2938,7 +3047,8 @@ class MasterOrchestrator:
 
         if progress_callback: progress_callback(("INFO", f"Generating source code for {component_name}..."))
         style_guide_to_use = project_details['ux_spec_text'] or project_details['final_spec_text']
-        source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, style_guide=style_guide_to_use)
+        # MODIFIED: Removed target_language, passed combined_coding_standard
+        source_code = code_agent.generate_code_for_component(logic_plan, combined_coding_standard, style_guide=style_guide_to_use)
         if progress_callback: progress_callback(("SUCCESS", "... Source code generated."))
 
         # This block validates the AI's output
@@ -2948,7 +3058,7 @@ class MasterOrchestrator:
         MAX_REVIEW_ATTEMPTS = 2
         for attempt in range(MAX_REVIEW_ATTEMPTS):
             if progress_callback: progress_callback(("INFO", f"Reviewing code for {component_name} (Attempt {attempt + 1})..."))
-            review_status, review_output = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, coding_standard)
+            review_status, review_output = review_agent.review_code(micro_spec_content, logic_plan, source_code, rowd_json, combined_coding_standard)
             if review_status == "pass":
                 break
             elif review_status == "pass_with_fixes":
@@ -2957,7 +3067,8 @@ class MasterOrchestrator:
             elif review_status == "fail":
                 if attempt < MAX_REVIEW_ATTEMPTS - 1:
                     if progress_callback: progress_callback(("INFO", f"Re-writing code for {component_name} based on feedback..."))
-                    source_code = code_agent.generate_code_for_component(logic_plan, coding_standard, target_language, feedback=review_output)
+                    # MODIFIED: Removed target_language, passed combined_coding_standard
+                    source_code = code_agent.generate_code_for_component(logic_plan, combined_coding_standard, style_guide=style_guide_to_use, feedback=review_output)
                 else:
                     raise Exception(f"Component '{component_name}' failed code review after all attempts.")
         if progress_callback: progress_callback(("SUCCESS", "... Code review process complete."))
@@ -2968,7 +3079,8 @@ class MasterOrchestrator:
         # Only generate tests if the plan includes a path for the test file
         if test_path:
             if progress_callback: progress_callback(("INFO", f"Generating unit tests for {component_name}..."))
-            unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, coding_standard, target_language)
+            # MODIFIED: Passed combined_coding_standard and primary_language
+            unit_tests = test_agent.generate_unit_tests_for_component(source_code, micro_spec_content, combined_coding_standard, primary_language)
             if progress_callback: progress_callback(("SUCCESS", "... Unit tests generated."))
 
         if progress_callback:
@@ -3231,36 +3343,6 @@ class MasterOrchestrator:
                 return parts[1]
         return doc_text # Return original text if delimiter not found
 
-    def _extract_and_save_primary_technology(self, tech_spec_text: str):
-        """
-        Uses the LLM service to extract the primary programming language from the
-        technical specification text and saves it to the database.
-        """
-        logging.info("Extracting primary technology from technical specification...")
-        try:
-            if not self.llm_service:
-                raise Exception("Cannot extract technology: LLM Service is not initialized.")
-
-            prompt = f"""
-                Analyze the following technical specification document. Your single task is to identify the primary, top-level programming language or technology stack.
-                Your response MUST be only the name of the language (e.g., "Python", "Java", "C#", "Go").
-                Do not include any other words, explanations, or punctuation.
-                --- Technical Specification ---
-                {tech_spec_text}
-                --- End Specification ---
-                Primary Language:
-            """
-            primary_technology = self.llm_service.generate_text(prompt, task_complexity="simple").strip()
-
-            if primary_technology and not primary_technology.startswith("Error:"):
-                self.db_manager.update_project_field(self.project_id, "technology_stack", primary_technology)
-                logging.info(f"Successfully extracted and saved primary technology: {primary_technology}")
-            else:
-                raise ValueError(f"LLM service returned an empty or error response for technology extraction: {primary_technology}")
-
-        except Exception as e:
-            logging.error(f"Failed to extract and save primary technology: {e}")
-
     def _strip_environment_setup_from_spec(self, tech_spec_text: str) -> str:
         """Removes the Development Environment Setup Guide from the spec text."""
         heading = "Development Environment Setup Guide"
@@ -3439,7 +3521,12 @@ class MasterOrchestrator:
                     self.set_phase("AWAITING_IMPACT_ANALYSIS_CHOICE")
                     return
 
-            project_details = db.get_project_by_id(self.project_id)
+            project_details_row = db.get_project_by_id(self.project_id)
+            if not project_details_row:
+                raise Exception("Could not retrieve project details.")
+            # Convert sqlite3.Row to a dict to safely use .get()
+            project_details = dict(project_details_row)
+
             project_root_path = Path(project_details['project_root_folder'])
             impacted_ids = json.loads(cr_details['impacted_artifact_ids'] or '[]')
             source_code_files = {}
@@ -3457,9 +3544,11 @@ class MasterOrchestrator:
             rowd_json = json.dumps([dict(row) for row in all_artifacts])
 
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
+            detected_technologies_json = project_details.get('detected_technologies', '[]')
             new_plan_str = planner_agent.create_refactoring_plan(
                 cr_details['description'], project_details['final_spec_text'],
-                project_details['tech_spec_text'], rowd_json, context_package["source_code"]
+                project_details['tech_spec_text'], rowd_json, context_package["source_code"],
+                detected_technologies_json=detected_technologies_json
             )
 
             response_data = json.loads(new_plan_str)
@@ -3470,10 +3559,8 @@ class MasterOrchestrator:
             self.active_plan_cursor = 0
             self.is_executing_cr_plan = True
 
-            # --- THIS IS THE FIX ---
             # After the plan is successfully generated, update the status to reflect this.
             db.update_cr_status(cr_id, "IMPLEMENTATION_IN_PROGRESS")
-            # --- END OF FIX ---
 
             logging.info("Successfully generated new development plan from Change Request.")
             self.set_phase("GENESIS")
@@ -3481,10 +3568,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
             db.update_cr_status(cr_id, "RAISED") # Revert status on failure
-            self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
-
-        except Exception as e:
-            logging.error(f"Failed to process implementation for CR-{cr_id}. Error: {e}")
             self.set_phase("IMPLEMENTING_CHANGE_REQUEST")
 
     def handle_stale_analysis_choice(self, choice: str, cr_id: int):
@@ -4376,7 +4459,13 @@ class MasterOrchestrator:
             project_details = db.get_project_by_id(self.project_id)
             if not project_details: raise Exception("Project details not found.")
             project_root = Path(project_details['project_root_folder'])
-            technology_stack = project_details['technology_stack'] or 'python'
+            technologies_json = project_details['detected_technologies'] or '[]'
+            try:
+                technology_list = json.loads(technologies_json)
+            except (json.JSONDecodeError, TypeError):
+                technology_list = ['python'] # Fallback
+            if not technology_list:
+                technology_list = ['python'] # Fallback
 
             # Step 1: Find and read all test files to build a plan.
             if progress_callback: progress_callback(("INFO", "Scanning for test files to build plan..."))
@@ -4395,7 +4484,7 @@ class MasterOrchestrator:
             if test_files_content:
                 if progress_callback: progress_callback(("INFO", "Extracting test plan from source code..."))
                 extractor_agent = BackendTestPlanExtractorAgent(self.llm_service)
-                plan_json = extractor_agent.extract_plan(technology_stack, test_files_content)
+                plan_json = extractor_agent.extract_plan(technology_list, test_files_content)
 
             # Step 3: Run the actual tests.
             if progress_callback: progress_callback(("INFO", "Executing test suite..."))
@@ -4983,28 +5072,41 @@ class MasterOrchestrator:
             self.set_phase("SPRINT_PLANNING")
             self.task_awaiting_approval = {"selected_sprint_items": sprint_items, "error": str(e)}
 
-    def handle_sprint_review_complete(self, **kwargs):
+    def handle_sprint_review_complete(self, **kwargs) -> bool:
         """
         Handles the user's action to complete the sprint review. This method
-        now ONLY updates the status of the sprint and its items.
-        The rest of the finalization is handled by run_doc_update_and_finalize_sprint.
+        updates the status of the sprint and its items, and now returns a
+        boolean indicating if a document update is required.
         """
         logging.info("Sprint review acknowledged. Finalizing sprint item statuses.")
+        needs_doc_update = False  # Assume no update needed
         try:
             sprint_id = self.get_active_sprint_id()
-            if not sprint_id: return
+            if not sprint_id:
+                return False
 
             items_in_sprint = self.db_manager.get_items_for_sprint(sprint_id)
             if items_in_sprint:
-                completed_ids = [item['cr_id'] for item in items_in_sprint if item['status'] == 'IMPLEMENTATION_IN_PROGRESS']
+                completed_ids = []
+                for item in items_in_sprint:
+                    item_data = dict(item) # Convert from sqlite3.Row
+                    if item_data['status'] == 'IMPLEMENTATION_IN_PROGRESS':
+                        completed_ids.append(item_data['cr_id'])
+
+                    # --- BEGIN FIX ---
+                    # Check if any completed item is a change request
+                    if item_data['request_type'] == 'CHANGE_REQUEST_ITEM':
+                        needs_doc_update = True
+                    # --- END FIX ---
+
                 if completed_ids:
                     self.db_manager.batch_update_cr_status(completed_ids, "COMPLETED")
 
             self.db_manager.update_sprint_status(sprint_id, "COMPLETED")
+            return needs_doc_update # Return the flag
         except Exception as e:
             logging.error(f"Failed to update sprint statuses during finalization: {e}")
-            # Re-raise to notify the UI that something went wrong
-            raise
+            raise # Re-raise to notify the UI
 
     def initiate_on_demand_manual_testing(self, **kwargs) -> bool:
         """
@@ -5049,14 +5151,17 @@ class MasterOrchestrator:
                 return widget
         return None
 
-    def run_doc_update_and_finalize_sprint(self, progress_callback=None, **kwargs):
+    def run_doc_update_and_finalize_sprint(self, progress_callback=None, skip_doc_update=False, **kwargs):
         """
-        A single method for a background worker that runs the doc update,
+        A single method for a background worker that conditionally runs the doc update,
         then finalizes the sprint state.
         """
         try:
-            # First, run the document update process.
-            self._run_post_implementation_doc_update(progress_callback)
+            if not skip_doc_update:
+                # First, run the document update process.
+                self._run_post_implementation_doc_update(progress_callback)
+            else:
+                logging.info("Skipping doc update as requested.")
         except Exception as e:
             logging.error(f"An error occurred during the doc update portion of finalization: {e}")
         finally:
@@ -5082,6 +5187,14 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to acknowledge technical preview for CR-{cr_id}: {e}", exc_info=True)
             # For now, logging is sufficient. We can add more robust UI error feedback later if needed.
+
+    def handle_coding_standard_complete(self):
+        """
+        Called when the coding standard page signals completion.
+        Transitions to the backlog gateway.
+        """
+        logging.info("All coding standards finalized. Proceeding to Backlog Gateway.")
+        self.set_phase("AWAITING_BACKLOG_GATEWAY_DECISION")
 
     def run_full_analysis(self, cr_id: int, **kwargs):
         """
@@ -5197,6 +5310,7 @@ class MasterOrchestrator:
             rowd_json = json.dumps([dict(row) for row in all_artifacts])
 
             planner_agent = RefactoringPlannerAgent_AppTarget(llm_service=self.llm_service)
+            detected_technologies_json = project_details.get('detected_technologies', '[]')
             new_plan_str = planner_agent.create_refactoring_plan(
                 change_request_desc=combined_description,
                 final_spec_text=project_details.get('final_spec_text'),
@@ -5204,7 +5318,8 @@ class MasterOrchestrator:
                 rowd_json=rowd_json,
                 source_code_context=self.context_package_summary["source_code"],
                 ux_spec_text=ux_spec,
-                db_schema_spec_text=db_spec
+                db_schema_spec_text=db_spec,
+                detected_technologies_json=detected_technologies_json
             )
 
             response_data = json.loads(new_plan_str)
@@ -6504,15 +6619,30 @@ class MasterOrchestrator:
 
             # --- Conditional Phase Logic ---
             project_details = db.get_project_by_id(self.project_id)
-            primary_technology = project_details['technology_stack'] if project_details else ''
+
+            # NEW: Read the list of all technologies
+            technologies_json = project_details['detected_technologies'] if project_details else '[]'
+            try:
+                detected_technologies = json.loads(technologies_json)
+            except (json.JSONDecodeError, TypeError):
+                detected_technologies = []
 
             # Define technologies that do not require a formal build script
             build_script_not_required = ["Shell Script", "Bash", "PowerShell"]
 
-            if primary_technology in build_script_not_required:
-                logging.info(f"Primary technology '{primary_technology}' does not require a build script. Skipping to Dockerization.")
+            # NEW: Check if *any* detected tech requires a build script
+            requires_build_script = False
+            if detected_technologies:
+                for tech in detected_technologies:
+                    if tech not in build_script_not_required:
+                        requires_build_script = True
+                        break
+
+            if not requires_build_script:
+                logging.info(f"No detected technologies require a build script ({detected_technologies}). Skipping to Dockerization.")
                 self.set_phase("DOCKERIZATION_SETUP")
             else:
+                logging.info(f"Detected technologies ({detected_technologies}) require a build script. Proceeding to Build Script phase.")
                 self.set_phase("BUILD_SCRIPT_SETUP")
 
             logging.info("Test environment setup complete.")
@@ -6604,39 +6734,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to handle integration failure acknowledgment. Error: {e}")
             self.set_phase("DEBUG_PM_ESCALATION")
-
-    def _extract_and_save_primary_technology(self, tech_spec_text: str):
-        """
-        Uses the LLM service to extract the primary programming language from the
-        technical specification text and saves it to the database.
-        """
-        logging.info("Extracting primary technology from technical specification...")
-        try:
-            if not self.llm_service:
-                raise Exception("Cannot extract technology: LLM Service is not initialized.")
-
-            prompt = f"""
-            Analyze the following technical specification document. Your single task is to identify the primary, top-level programming language or technology stack.
-
-            Your response MUST be only the name of the language (e.g., "Python", "Java", "C#", "Go"). Do not include any other words, explanations, or punctuation.
-
-            --- Technical Specification ---
-            {tech_spec_text}
-            --- End Specification ---
-
-            Primary Language:
-            """
-
-            primary_technology = self.llm_service.generate_text(prompt, task_complexity="simple").strip()
-
-            if primary_technology and not primary_technology.startswith("Error:"):
-                self.db_manager.update_project_field(self.project_id, "technology_stack", primary_technology)
-                logging.info(f"Successfully extracted and saved primary technology: {primary_technology}")
-            else:
-                raise ValueError(f"LLM service returned an empty or error response for technology extraction: {primary_technology}")
-
-        except Exception as e:
-            logging.error(f"Failed to extract and save primary technology: {e}")
 
     def get_latest_commit_timestamp(self) -> datetime | None:
         """

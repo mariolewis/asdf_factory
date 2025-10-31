@@ -56,6 +56,16 @@
        </item>
        <item>
         <layout class="QHBoxLayout" name="horizontalLayout">
+        <item>
+          <widget class="QPushButton" name="skipStandardButton">
+           <property name="text">
+            <string>Skip this Technology</string>
+           </property>
+           <property name="cursor">
+            <cursorShape>PointingHandCursor</cursorShape>
+           </property>
+          </widget>
+         </item>
          <item>
           <spacer name="horizontalSpacer_2">
            <property name="orientation">

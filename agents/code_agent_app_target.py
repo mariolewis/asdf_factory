@@ -25,7 +25,7 @@ class CodeAgent_AppTarget:
             raise ValueError("llm_service is required for the CodeAgent_AppTarget.")
         self.llm_service = llm_service
 
-    def generate_code_for_component(self, logic_plan: str, coding_standard: str, target_language: str, style_guide: Optional[str] = None, feedback: Optional[str] = None) -> str:
+    def generate_code_for_component(self, logic_plan: str, coding_standard: str, style_guide: Optional[str] = None, feedback: Optional[str] = None) -> str:
         """
         Generates source code based on a logic plan, a coding standard, and an
         optional style guide, explicitly targeting a specific programming language.
@@ -58,9 +58,8 @@ class CodeAgent_AppTarget:
 
             **MANDATORY INSTRUCTIONS:**
             1.  **RAW CODE ONLY:** Your entire response MUST BE ONLY the raw source code for the component. The first character of your response must be the first character of the code.
-            2.  **CODING STANDARD:** You MUST strictly follow all rules in the provided Coding Standard.
-            3.  **TARGET LANGUAGE:** The code MUST be written in **{target_language}**.
-            4.  **LOGIC:** The code MUST implement ONLY the logic described in the provided Logical Plan.
+            2.  **CODING STANDARD:** You MUST strictly follow all rules in the provided Coding Standard. This standard may contain rules for *multiple* technologies (e.g., Python and embedded SQL, or HTML/CSS/JS in a .vue file). You must correctly apply all relevant rules to the code you generate.
+            3.  **LOGIC:** The code MUST implement ONLY the logic described in the provided Logical Plan.
 
             {correction_context}
 
@@ -76,7 +75,7 @@ class CodeAgent_AppTarget:
 
             {style_guide_context}
 
-            **--- Generated Source Code (Language: {target_language}) ---**
+            **--- Generated Source Code ---**
             """
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")

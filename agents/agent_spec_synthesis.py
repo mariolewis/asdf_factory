@@ -2,6 +2,7 @@
 
 import logging
 import textwrap
+import json
 import os
 from pathlib import Path
 from llm_service import LLMService
@@ -175,6 +176,15 @@ class SpecSynthesisAgent:
         tech_spec_template = get_template("Default Technical Specification")
         tech_spec = self._generate_spec(summaries_context, "Technical", project_name, template_content=tech_spec_template)
         self._save_and_update_spec(project_id, tech_spec, "Technical Specification", "technical_spec", "tech_spec_text", docs_dir, project_name)
+
+        # Now that tech spec exists, detect and save all technologies
+        try:
+            technologies = self.orchestrator.detect_technologies_in_spec(tech_spec)
+            if technologies:
+                self.db_manager.update_project_field(project_id, "detected_technologies", json.dumps(technologies))
+                logging.info(f"Detected and saved technologies for brownfield project: {technologies}")
+        except Exception as e:
+            logging.error(f"Failed to detect technologies during brownfield synthesis: {e}")
 
         # Conditionally generate UX/UI spec with template
         has_ui = self._detect_ui_presence(all_artifacts, project_root)

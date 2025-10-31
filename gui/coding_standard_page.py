@@ -4,8 +4,11 @@ import logging
 import markdown
 import warnings
 import html
+import json
+import re
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QListWidgetItem
-from PySide6.QtCore import Signal, QThreadPool
+from PySide6.QtCore import Signal, QThreadPool, QTimer
+from PySide6.QtGui import QColor
 from pathlib import Path
 
 from gui.ui_coding_standard_page import Ui_CodingStandardPage
@@ -46,6 +49,60 @@ class CodingStandardPage(QWidget):
         self.ui.approveButton.clicked.connect(self.on_approve_or_retry_clicked) # Single, stable handler
         self.ui.cancelButton_2.clicked.connect(self.on_cancel_clicked)
         self.ui.standardTextEdit.textChanged.connect(self.on_draft_changed)
+        self.ui.skipStandardButton.clicked.connect(self.on_skip_tech_clicked)
+        self.ui.techListWidget.itemSelectionChanged.connect(self._on_tech_selection_changed)
+
+    def on_skip_tech_clicked(self):
+        """Skips the selected technology."""
+        if not self.current_technology:
+            return
+
+        logging.info(f"PM skipped coding standard generation for: {self.current_technology}")
+
+        try:
+            # We must call the orchestrator to create a "skipped" artifact
+            # This ensures the system knows this tech is "handled"
+            self.orchestrator.finalize_and_save_coding_standard(
+                self.current_technology,
+                "# This technology was skipped by the Product Manager.",
+                "SKIPPED" # A new status to show it was skipped
+            )
+
+            # This logic now ONLY runs if the 'try' block succeeds
+            self.tech_status[self.current_technology] = "Completed"
+            self._update_tech_list_widget()
+            self._on_tech_selection_changed()
+
+            # The 'if all' check is now safe.
+            if all(status == "Completed" for status in self.tech_status.values()):
+                logging.info("All coding standards (or skips) are complete. Proceeding to next phase.")
+                self.coding_standard_complete.emit()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save skipped status: {e}")
+            logging.error(f"Failed to save skipped artifact for {self.current_technology}", exc_info=True)
+
+
+    def _on_tech_selection_changed(self):
+        """Enables buttons only if a 'Pending' item is selected."""
+        selected_items = self.ui.techListWidget.selectedItems()
+        if not selected_items:
+            self.ui.aiProposedButton.setEnabled(False)
+            self.ui.pmGuidedButton.setEnabled(False)
+            self.ui.skipStandardButton.setEnabled(False)
+            return
+
+        selected_text = selected_items[0].text()
+        self.current_technology = selected_text.split(" ")[0]
+
+        if self.tech_status.get(self.current_technology) == "Pending":
+            self.ui.aiProposedButton.setEnabled(True)
+            self.ui.pmGuidedButton.setEnabled(True)
+            self.ui.skipStandardButton.setEnabled(True)
+        else:
+            self.ui.aiProposedButton.setEnabled(False)
+            self.ui.pmGuidedButton.setEnabled(False)
+            self.ui.skipStandardButton.setEnabled(False)
 
     def on_approve_or_retry_clicked(self):
         """
@@ -108,8 +165,6 @@ class CodingStandardPage(QWidget):
             self._set_ui_busy(False)
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
 
-    # (All other methods remain the same as the last full version I provided)
-    # ... copy the rest of the methods from my response that started with "Step 11b of 11" ...
     def prepare_for_new_project(self):
         """Resets the page to its initial state."""
         logging.info("Resetting CodingStandardPage for a new project.")
@@ -128,14 +183,32 @@ class CodingStandardPage(QWidget):
         self.setEnabled(True)
 
     def prepare_for_display(self):
-        """Prepares the page by detecting technologies and populating the list."""
+        """Prepares the page by reading the pre-populated technologies list."""
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
         self.ui.techListWidget.clear()
-        self.ui.techListWidget.addItem("Detecting technologies...")
         self.ui.aiProposedButton.setEnabled(False)
         self.ui.pmGuidedButton.setEnabled(False)
-        self._execute_task(self._task_detect_tech, self._handle_tech_detection_result,
-                           status_message="Detecting technologies from spec...")
+
+        try:
+            db = self.orchestrator.db_manager
+            project_details_row = db.get_project_by_id(self.orchestrator.project_id)
+            project_details = dict(project_details_row) if project_details_row else None
+            technologies_json = project_details.get('detected_technologies') if project_details else None
+
+            if technologies_json:
+                technologies = json.loads(technologies_json)
+                logging.info(f"Found pre-populated technologies list: {technologies}")
+                # This is a synchronous call, no worker needed
+                self._handle_tech_detection_result(technologies)
+            else:
+                # This is now an error state, it should have been populated
+                logging.error("Coding standard page loaded, but no technologies were found in the database.")
+                QMessageBox.critical(self, "Error", "Could not find detected technologies. Please check the logs.")
+                self.ui.techListWidget.addItem("Error: No technologies found.")
+
+        except Exception as e:
+            logging.error(f"Error in prepare_for_display: {e}", exc_info=True)
+            QMessageBox.critical(self, "Error", f"Failed to prepare page: {e}")
 
     def _task_detect_tech(self, **kwargs):
         db = self.orchestrator.db_manager
@@ -144,17 +217,50 @@ class CodingStandardPage(QWidget):
         return self.orchestrator.detect_technologies_in_spec(tech_spec_text)
 
     def _handle_tech_detection_result(self, technologies):
+        """Populates the tech list, checking for already completed artifacts."""
         try:
             self.ui.techListWidget.clear()
-            self.tech_status = {tech: "Pending" for tech in technologies}
+
+            # --- NEW: Check database for existing artifacts ---
+            db = self.orchestrator.db_manager
+            all_artifacts = db.get_all_artifacts_for_project(self.orchestrator.project_id)
+            completed_techs = set()
+            for art in all_artifacts:
+                art_dict = dict(art) # Convert from sqlite3.Row
+                if art_dict['artifact_type'] == 'CODING_STANDARD' and art_dict['status'] in ('COMPLETED', 'SKIPPED'):
+                    # Extract language from name, e.g., "Coding Standard (Python)"
+                    match = re.search(r'\((.*?)\)', art_dict['artifact_name'])
+                    if match:
+                        completed_techs.add(match.group(1))
+
+            logging.info(f"Found existing completed standards for: {completed_techs}")
+
+            # --- MODIFIED: Build tech_status based on database ---
+            self.tech_status = {}
+            for tech in technologies:
+                if tech in completed_techs:
+                    self.tech_status[tech] = "Completed"
+                else:
+                    self.tech_status[tech] = "Pending"
+            # --- END MODIFIED LOGIC ---
+
             if not self.tech_status:
                 self.ui.techListWidget.addItem("No specific technologies detected.")
                 return
 
             self._update_tech_list_widget()
-            self.ui.aiProposedButton.setEnabled(True)
-            self.ui.pmGuidedButton.setEnabled(True)
+            # Buttons are now disabled by default.
+            self.ui.aiProposedButton.setEnabled(False)
+            self.ui.pmGuidedButton.setEnabled(False)
+            self.ui.skipStandardButton.setEnabled(False)
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+            # --- BEGIN FIX ---
+            # Check for completion *after* populating the list from the DB
+            if self.tech_status and all(status == "Completed" for status in self.tech_status.values()):
+                logging.info("All coding standards are already complete. Emitting completion signal automatically.")
+                # Use QTimer.singleShot to allow the UI to finish rendering before transitioning
+                QTimer.singleShot(0, self.coding_standard_complete.emit)
+            # --- END FIX ---
         finally:
             self._set_ui_busy(False)
 
@@ -164,29 +270,19 @@ class CodingStandardPage(QWidget):
             self.ui.techListWidget.addItem(f"{tech} [{status}]")
 
     def on_ai_proposed_clicked(self):
-        selected_items = self.ui.techListWidget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "Selection Required", "Please select a technology from the list first.")
-            return
-
-        self.current_technology = selected_items[0].text().split(" ")[0]
-        if self.tech_status.get(self.current_technology) == "Completed":
-            QMessageBox.information(self, "Already Completed", f"A standard for {self.current_technology} has already been completed.")
+        """Handles AI proposal for the selected technology."""
+        if not self.current_technology: # Should not happen, but a good safeguard
+            QMessageBox.warning(self, "No Selection", "Please select a technology from the list first.")
             return
         self.run_generation_task()
 
     def on_pm_guided_clicked(self):
-        selected_items = self.ui.techListWidget.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "Selection Required", "Please select a technology from the list first.")
+        """Switches to the PM guidelines page for the selected technology."""
+        if not self.current_technology: # Should not happen, but a good safeguard
+            QMessageBox.warning(self, "No Selection", "Please select a technology from the list first.")
             return
 
-        self.current_technology = selected_items[0].text().split(" ")[0]
-        if self.tech_status.get(self.current_technology) == "Completed":
-            QMessageBox.information(self, "Already Completed", f"A standard for {self.current_technology} has already been completed.")
-            return
-
-        self.ui.pmDefineHeaderLabel.setText(f"Define Guidelines for {self.current_technology}")
+        self.ui.pmDefineHeaderLabel.setText(f"Define Guidelines for {self.current_technology} Coding Standard")
         self.ui.stackedWidget.setCurrentWidget(self.ui.pmDefinePage)
 
     def on_browse_files_clicked(self):
@@ -209,22 +305,39 @@ class CodingStandardPage(QWidget):
             self.orchestrator.set_active_spec_draft(draft_text)
 
     def on_approve_clicked(self):
-        """Finalizes the coding standard and transitions to the backlog gateway."""
-        final_draft = self.ui.standardTextEdit.toPlainText()
-        if not final_draft.strip():
-            QMessageBox.warning(self, "Approval Failed", "The coding standard cannot be empty.")
-            return
+        """Finalizes the coding standard."""
+        try:
+            db = self.orchestrator.db_manager
+            project_details = db.get_project_by_id(self.orchestrator.project_id)
+            project_name = project_details['project_name']
 
-        self.orchestrator.finalize_and_save_coding_standard(final_draft, self.current_technology)
-        self.tech_status[self.current_technology] = "Completed"
-        self._update_tech_list_widget()
+            full_draft_with_header = self.orchestrator.prepend_standard_header(
+                self.coding_standard_draft,
+                f"Coding Standard ({self.current_technology})"
+            )
 
-        if all(status == "Completed" for status in self.tech_status.values()):
-            QMessageBox.information(self, "All Standards Complete", "All required coding standards have been generated. Proceeding to the Backlog Gateway.")
-            self.coding_standard_complete.emit()
-        else:
-            QMessageBox.information(self, "Standard Approved", f"Coding standard for {self.current_technology} has been approved. Please select the next technology.")
+            # This call saves the artifact and updates the DB
+            self.orchestrator.finalize_and_save_coding_standard(
+                self.current_technology,
+                full_draft_with_header, # Pass the full content
+                "COMPLETED"
+            )
+
+            self.tech_status[self.current_technology] = "Completed"
+            self._update_tech_list_widget()
             self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+
+            # Check if all techs are now complete
+            if all(status == "Completed" for status in self.tech_status.values()):
+                logging.info("All coding standards (or skips) are complete. Proceeding to next phase.")
+                self.coding_standard_complete.emit()
+            else:
+                logging.info(f"Coding standard for {self.current_technology} complete. Returning to list.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save coding standard:\n{e}")
+        finally:
+            self._set_ui_busy(False)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
         main_window = self.window()

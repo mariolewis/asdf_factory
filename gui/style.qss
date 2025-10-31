@@ -479,3 +479,21 @@ QStackedWidget#stepsStackedWidget QScrollArea {
     border: 1px solid #007ACC; /* Standard Accent Blue */
     border-radius: 4px;
 }
+
+/* --- Skip Button (Link Style) --- */
+QPushButton#skipTechButton,
+QPushButton#skipStandardButton {
+	border: none;
+	color: #8B8B8B;
+	background-color: transparent;
+	text-decoration: underline;
+}
+QPushButton#skipTechButton:hover,
+QPushButton#skipStandardButton:hover {
+	color: #AAAAAA;
+}
+QPushButton#skipTechButton:disabled,
+QPushButton#skipStandardButton:disabled {
+	color: #444444;
+	text-decoration: none;
+}

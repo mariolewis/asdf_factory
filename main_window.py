@@ -369,7 +369,7 @@ class ASDFMainWindow(QMainWindow):
             if hasattr(page, 'tech_spec_complete'): page.tech_spec_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'build_script_setup_complete'): page.build_script_setup_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'test_env_setup_complete'): page.test_env_setup_complete.connect(self.update_ui_after_state_change)
-            if hasattr(page, 'coding_standard_complete'): page.coding_standard_complete.connect(self.update_ui_after_state_change)
+            if hasattr(page, 'coding_standard_complete'): page.coding_standard_complete.connect(self.on_coding_standard_complete)
             if hasattr(page, 'planning_complete'): page.planning_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'genesis_complete'): page.genesis_complete.connect(self.update_ui_after_state_change)
             if hasattr(page, 'project_loaded'): page.project_loaded.connect(self.update_ui_after_state_change)
@@ -828,12 +828,26 @@ class ASDFMainWindow(QMainWindow):
         # correctly read the new phase (e.g., SPRINT_PLANNING) and transition the page.
         self.update_ui_after_state_change()
 
+    def on_coding_standard_complete(self):
+        """
+        Handles the completion of the coding standard phase by updating
+        the orchestrator's state and then refreshing the UI.
+        """
+        self.orchestrator.handle_coding_standard_complete()
+        self.update_ui_after_state_change()
+
     def on_view_sprint(self):
         """
-        Returns the UI to the previously active sprint workflow phase.
+        Navigates the UI to the active sprint's main page (GenesisPage).
         """
-        if self.orchestrator.project_id and self.previous_phase:
-            self.orchestrator.set_phase(self.previous_phase.name)
+        if self.orchestrator.is_sprint_active():
+            # This is the correct phase to show when a sprint is running
+            self.orchestrator.set_phase("SPRINT_IN_PROGRESS")
+            self.update_ui_after_state_change()
+        else:
+            # Fallback in case the button was visible by mistake
+            logging.warning("on_view_sprint clicked, but no sprint is active.")
+            self.orchestrator.set_phase("BACKLOG_VIEW") # Go to a safe place
             self.update_ui_after_state_change()
 
     def update_ui_after_state_change(self):
@@ -1012,8 +1026,8 @@ class ASDFMainWindow(QMainWindow):
 
             self.decision_page.configure(
                 header="Front-end Testing Phase",
-                instruction="The automated backend tests passed. Choose how to proceed with Front-end Testing for this sprint.",
-                details="Select an option below to continue.",
+                instruction="The automated backend tests passed. Choose how to proceed with Front-end Testing for this sprint.<br><br>Select an option below to continue.",
+                details="",
                 option1_text="Run Automated Front-end Tests",
                 option1_enabled=is_auto_test_configured,
                 option2_text="Run Manual Front-end Tests",
@@ -1521,6 +1535,7 @@ class ASDFMainWindow(QMainWindow):
         worker.signals.result.connect(self._handle_retry_fix_result)
         worker.signals.error.connect(self._on_background_task_error)
         worker.signals.finished.connect(self._on_background_task_finished)
+        worker.signals.finished.connect(self.genesis_page._on_task_finished)
         self.threadpool.start(worker)
 
     def on_decision_option2(self):
@@ -1702,33 +1717,36 @@ class ASDFMainWindow(QMainWindow):
 
     def on_return_to_backlog(self):
         """
-        Handles the signal to complete a sprint review. It now shows a processing
-        state and runs the entire finalization workflow in a background thread.
+        Handles the signal to complete a sprint review. It now conditionally
+        runs the doc update worker only if the sprint contained change requests.
         """
         try:
-            # This part runs synchronously to update the DB statuses first.
-            self.orchestrator.handle_sprint_review_complete()
+            # This part now returns a boolean flag
+            needs_doc_update = self.orchestrator.handle_sprint_review_complete()
+
+            if needs_doc_update:
+                logging.info("Sprint contained Change Requests. Running post-sprint document update...")
+                # Show the processing page and run the doc update in the background.
+                status_message = "Finalizing sprint: Updating project documents..."
+                self.genesis_page.update_processing_display(simple_status_message=status_message)
+                self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+                self.genesis_page.ui.logOutputTextEdit.clear()
+                self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
+
+                worker = Worker(self.orchestrator.run_doc_update_and_finalize_sprint)
+                worker.signals.progress.connect(self.genesis_page.on_progress_update)
+                worker.signals.error.connect(self.genesis_page._on_task_error)
+                worker.signals.finished.connect(self._on_background_task_finished)
+                self.threadpool.start(worker)
+            else:
+                logging.info("Sprint contained no Change Requests. Skipping document update.")
+                # No doc update needed. Clean up state and go directly to backlog.
+                self.orchestrator.run_doc_update_and_finalize_sprint(skip_doc_update=True)
+                self.update_ui_after_state_change() # Go directly to backlog
+
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to finalize sprint statuses:\n{e}")
-            # Still attempt to refresh the UI to get to a stable state.
             self.update_ui_after_state_change()
-            return
-
-        # Now, show the processing page and run the doc update in the background.
-        status_message = "Finalizing sprint: Updating project documents..."
-        self.genesis_page.update_processing_display(simple_status_message=status_message)
-        self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
-        self.genesis_page.ui.logOutputTextEdit.clear()
-        self.ui.mainContentArea.setCurrentWidget(self.genesis_page)
-
-        # The worker now calls the new combined orchestrator method.
-        worker = Worker(self.orchestrator.run_doc_update_and_finalize_sprint)
-        worker.signals.progress.connect(self.genesis_page.on_progress_update)
-        worker.signals.error.connect(self.genesis_page._on_task_error)
-        # When the worker finishes, the orchestrator state will be BACKLOG_VIEW,
-        # so a single UI refresh is all that's needed.
-        worker.signals.finished.connect(self._on_background_task_finished)
-        self.threadpool.start(worker)
 
     def on_save_pre_execution_report_clicked(self):
         """Handles the request to save the pre-execution report to a DOCX file."""

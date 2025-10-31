@@ -58,6 +58,12 @@ class Ui_CodingStandardPage(object):
 
         self.horizontalLayout = QHBoxLayout()
         self.horizontalLayout.setObjectName(u"horizontalLayout")
+        self.skipStandardButton = QPushButton(self.initialChoicePage)
+        self.skipStandardButton.setObjectName(u"skipStandardButton")
+        self.skipStandardButton.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+
+        self.horizontalLayout.addWidget(self.skipStandardButton)
+
         self.horizontalSpacer_2 = QSpacerItem(0, 0, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
 
         self.horizontalLayout.addItem(self.horizontalSpacer_2)
@@ -253,6 +259,7 @@ class Ui_CodingStandardPage(object):
         CodingStandardPage.setWindowTitle(QCoreApplication.translate("CodingStandardPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Coding Standard Generation", None))
         self.instructionLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Choose how to create the Coding Standard document(s) for the detected technologies.", None))
+        self.skipStandardButton.setText(QCoreApplication.translate("CodingStandardPage", u"Skip this Technology", None))
         self.aiProposedButton.setText(QCoreApplication.translate("CodingStandardPage", u"Generate with AI Proposal", None))
         self.pmGuidedButton.setText(QCoreApplication.translate("CodingStandardPage", u"Generate with PM Guidelines", None))
         self.pmDefineHeaderLabel.setText(QCoreApplication.translate("CodingStandardPage", u"Define Guidelines for [Technology]", None))
