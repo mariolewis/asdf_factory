@@ -304,14 +304,18 @@ class TechSpecPage(QWidget):
 
     def on_approve_clicked(self):
         """Finalizes the tech spec."""
-        final_tech_spec = self.ui.techSpecTextEdit.toPlainText()
-        if not final_tech_spec.strip():
+        final_tech_spec_markdown = self.ui.techSpecTextEdit.toMarkdown()
+        final_tech_spec_plaintext = self.ui.techSpecTextEdit.toPlainText()
+
+        if not final_tech_spec_plaintext.strip():
             QMessageBox.warning(self, "Approval Failed", "The technical specification cannot be empty.")
             return
         target_os = self.ui.osComboBox.currentText()
-        # This task now also handles the technology extraction
-        self._execute_task(self._task_approve_spec, self._handle_approval_result, final_tech_spec, target_os,
-                        status_message="Finalizing tech spec and extracting primary technology...")
+
+        # Pass both versions to the background task
+        self._execute_task(self._task_approve_spec, self._handle_approval_result,
+                           final_tech_spec_markdown, final_tech_spec_plaintext, target_os,
+                           status_message="Finalizing tech spec and extracting primary technology...")
 
     def _get_template_content(self, template_name: str) -> str | None:
         """A helper to load a specific template from the database."""
@@ -327,9 +331,9 @@ class TechSpecPage(QWidget):
             logging.warning(f"Could not load '{template_name}' template: {e}")
         return template_content
 
-    def _task_approve_spec(self, final_spec, target_os, **kwargs):
+    def _task_approve_spec(self, final_spec_markdown, final_spec_plaintext, target_os, **kwargs):
         """Background worker task to save the tech spec."""
-        self.orchestrator.finalize_and_save_tech_spec(final_spec, target_os)
+        self.orchestrator.finalize_and_save_tech_spec(final_spec_markdown, final_spec_plaintext, target_os)
         return True
 
     def _handle_approval_result(self, success):

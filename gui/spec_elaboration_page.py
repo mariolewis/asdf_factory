@@ -544,14 +544,24 @@ class SpecElaborationPage(QWidget):
         Handles the final approval of the application specification from the final
         review page.
         """
-        final_draft = self.ui.specDraftTextEdit.toPlainText()
+        # Get both formats, as per our new plan
+        final_draft_markdown = self.ui.specDraftTextEdit.toMarkdown()
+        final_draft_plaintext = self.ui.specDraftTextEdit.toPlainText()
+
+        if not final_draft_plaintext.strip():
+            QMessageBox.warning(self, "Approval Failed", "The specification draft cannot be empty.")
+            return
+
         reply = QMessageBox.question(self, "Confirm Approval",
-                                    "Are you sure you want to approve this specification? It will be finalized and the process will move to the Technical Specification phase.",
+                                     "Are you sure you want to approve this specification? It will be finalized and the process will move to the Technical Specification phase.",
                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            logging.debug(f"DATA CAPTURE: Content from UI before sending to orchestrator: {final_draft[:200]}...")
-            self.orchestrator.finalize_and_save_app_spec(final_draft)
+            logging.debug(f"DATA CAPTURE: Content from UI before sending to orchestrator: {final_draft_plaintext[:200]}...")
+            self.orchestrator.finalize_and_save_app_spec(
+                final_spec_markdown=final_draft_markdown,
+                final_spec_plaintext=final_draft_plaintext
+            )
             self.spec_elaboration_complete.emit()
 
     def _task_approve_and_generate_backlog(self, final_spec_text, **kwargs):

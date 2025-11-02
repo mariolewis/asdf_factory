@@ -497,3 +497,10 @@ QPushButton#skipStandardButton:disabled {
 	color: #444444;
 	text-decoration: none;
 }
+/* ---- Document Hub Specific Styles ---- */
+QLabel#specDocumentsHeaderLabel,
+QLabel#otherDocumentsHeaderLabel,
+QLabel#reviewLogHeaderLabel,
+QLabel#newLogEntryHeaderLabel {
+    font-weight: 700;
+}

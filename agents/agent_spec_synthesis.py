@@ -5,10 +5,12 @@ import textwrap
 import json
 import os
 from pathlib import Path
+from PySide6.QtGui import QTextDocument
 from llm_service import LLMService
 from asdf_db_manager import ASDFDBManager
 from agents.agent_report_generator import ReportGeneratorAgent
 from master_orchestrator import MasterOrchestrator
+
 
 class SpecSynthesisAgent:
     """
@@ -324,4 +326,9 @@ class SpecSynthesisAgent:
         logging.info(f"Saved {doc_type_name} to {docx_path}")
 
         # Update the database with the raw content (without the preamble for AI use)
-        self.db_manager.update_project_field(project_id, db_field, full_content_with_header)
+        # We must convert the markdown to plain text for downstream agents
+        doc = QTextDocument()
+        doc.setMarkdown(full_content_with_header)
+        plain_text_content = doc.toPlainText()
+
+        self.db_manager.update_project_field(project_id, db_field, plain_text_content)

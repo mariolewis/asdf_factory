@@ -100,6 +100,19 @@ class ASDFDBManager:
         );"""
         self._execute_query(create_sprints_table)
 
+        create_doc_review_log_table = """
+        CREATE TABLE IF NOT EXISTS DocumentReviewLog (
+            log_id TEXT PRIMARY KEY,
+            project_id TEXT NOT NULL,
+            document_path TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            author TEXT NOT NULL,
+            log_text TEXT,
+            status TEXT,
+            FOREIGN KEY (project_id) REFERENCES Projects (project_id)
+        );"""
+        self._execute_query(create_doc_review_log_table)
+
         create_sprint_items_table = """
         CREATE TABLE IF NOT EXISTS SprintItems (
             sprint_id TEXT NOT NULL,
@@ -878,3 +891,53 @@ class ASDFDBManager:
     def update_artifact_status(self, artifact_id: str, status: str, timestamp: str):
         query = "UPDATE Artifacts SET status = ?, last_modified_timestamp = ? WHERE artifact_id = ?"
         self._execute_query(query, (status, timestamp, artifact_id))
+
+    def add_document_log_entry(self, project_id: str, document_path: str, author: str, log_text: str, status: str = ""):
+        """
+        Adds a new entry to the document review log.
+
+        Args:
+            project_id: The ID of the project.
+            document_path: The relative path of the document the log is for.
+            author: The author of the log entry (e.g., 'DEVELOPER', 'CLIENT', 'SYSTEM').
+            log_text: The content of the log entry.
+            status: An optional status, like 'APPROVED'.
+        """
+        log_id = f"log_{uuid.uuid4().hex[:8]}"
+        timestamp = datetime.now(timezone.utc).isoformat()
+        query = """
+            INSERT INTO DocumentReviewLog (
+                log_id, project_id, document_path, timestamp, author, log_text, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        values = (log_id, project_id, document_path, timestamp, author, log_text, status)
+        try:
+            self._execute_query(query, values)
+            logging.info(f"Added new document log entry for '{document_path}'")
+        except Exception as e:
+            logging.error(f"Failed to add document log entry: {e}", exc_info=True)
+            raise
+
+    def get_document_log(self, project_id: str, document_path: str) -> list[dict]:
+        """
+        Retrieves all log entries for a specific document, ordered chronologically.
+
+        Args:
+            project_id: The ID of the project.
+            document_path: The relative path of the document to get the log for.
+
+        Returns:
+            A list of dictionaries, where each dict is a log entry.
+        """
+        query = """
+            SELECT timestamp, author, log_text, status
+            FROM DocumentReviewLog
+            WHERE project_id = ? AND document_path = ?
+            ORDER BY timestamp DESC
+        """
+        try:
+            rows = self._execute_query(query, (project_id, document_path), fetch="all")
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logging.error(f"Database error while fetching document log: {e}", exc_info=True)
+            return []

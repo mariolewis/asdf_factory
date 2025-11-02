@@ -1,6 +1,8 @@
 # gui/utils.py
 
 import logging
+import markdown
+import html
 from PySide6.QtCore import QDateTime, QLocale, Qt
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 
@@ -59,3 +61,23 @@ def show_status_message(window: QMainWindow, message: str, level: str = "info", 
         logging.warning(f"Status Bar: {message}")
     else:
         logging.info(f"Status Bar: {message}")
+
+def render_markdown_to_html(md_content: str) -> str:
+    """
+    Renders markdown content to HTML, with fallbacks for plain text.
+    Includes extensions for tables and fenced code blocks.
+    """
+    if not md_content:
+        return "<p><i>No content.</i></p>"
+    try:
+        # Use 'fenced_code' for code blocks, 'tables' for tables
+        html_content = markdown.markdown(
+            md_content,
+            extensions=['fenced_code', 'tables', 'extra']
+        )
+        return html_content
+    except Exception as e:
+        logging.error(f"Failed to render markdown: {e}", exc_info=True)
+        # Fallback to plain text, escaped
+        escaped_content = html.escape(md_content)
+        return f"<h3 style='color:red;'>Markdown Rendering Error</h3><pre>{escaped_content}</pre>"

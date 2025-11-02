@@ -199,8 +199,10 @@ class UXSpecPage(QWidget):
 
     def on_approve_clicked(self):
         """Saves the final UX/UI spec and proceeds to the next phase."""
-        final_spec = self.ui.specTextEdit.toPlainText().strip()
-        if not final_spec:
+        final_spec_markdown = self.ui.specTextEdit.toMarkdown().strip()
+        final_spec_plaintext = self.ui.specTextEdit.toPlainText().strip()
+
+        if not final_spec_plaintext.strip():
             QMessageBox.warning(self, "Approval Failed", "The specification draft cannot be empty.")
             return
 
@@ -209,11 +211,12 @@ class UXSpecPage(QWidget):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            self._execute_task(self._task_finalize_spec, self._handle_finalization_result, final_spec,
+            self._execute_task(self._task_finalize_spec, self._handle_finalization_result,
+                               final_spec_markdown, final_spec_plaintext,
                                status_message="Saving design to .json file for external graphical review...")
 
-    def _task_finalize_spec(self, final_spec, **kwargs):
-        return self.orchestrator.handle_ux_spec_completion(final_spec)
+    def _task_finalize_spec(self, final_spec_markdown, final_spec_plaintext, **kwargs):
+        return self.orchestrator.handle_ux_spec_completion(final_spec_markdown, final_spec_plaintext)
 
     def _handle_finalization_result(self, success):
         try:

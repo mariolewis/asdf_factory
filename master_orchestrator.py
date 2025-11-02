@@ -2,7 +2,10 @@
 import logging
 import uuid
 import json
+import os
+import shutil
 import re
+from typing import Optional
 from datetime import datetime, timezone
 from enum import Enum, auto
 from llm_service import (LLMService, GeminiAdapter, OpenAIAdapter,
@@ -1372,11 +1375,10 @@ class MasterOrchestrator:
             logging.error(f"Failed to handle style guide submission: {e}")
             self.active_ux_spec['error'] = str(e)
 
-    def handle_ux_spec_completion(self, final_spec_with_header: str) -> bool:
+    def handle_ux_spec_completion(self, final_spec_markdown: str, final_spec_plaintext: str) -> bool:
         """
-        Finalizes the UX/UI Specification, saves it, generates the JSON blueprint,
-        and then triggers the Application Specification draft generation. This version
-        saves only the pure, raw content to the database.
+        Finalizes the UX/UI Specification, saves it in two formats, generates the JSON blueprint,
+        and then triggers the Application Specification draft generation.
         """
         if not self.project_id:
             logging.error("Cannot complete UX Spec: No active project.")
@@ -1388,16 +1390,15 @@ class MasterOrchestrator:
             if not (project_details and project_details['project_root_folder']):
                  raise FileNotFoundError("Project root folder not found for saving UX spec.")
 
-            # --- THIS IS THE FIX ---
             # Strip the header to get the pure content for DB and agent use.
-            pure_ux_spec_content = self._strip_header_from_document(final_spec_with_header)
+            pure_ux_spec_content_plaintext = self._strip_header_from_document(final_spec_plaintext)
 
             project_root = Path(project_details['project_root_folder'])
             docs_dir = project_root / "docs"
 
             # Save the HEADED version to the Markdown file.
             ux_spec_file_path_md = docs_dir / "ux_ui_specification.md"
-            ux_spec_file_path_md.write_text(final_spec_with_header, encoding="utf-8")
+            ux_spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
             self._commit_document(ux_spec_file_path_md, "docs: Finalize UX/UI Specification (Markdown)")
 
             # Generate and save the formatted .docx file for human use.
@@ -1406,7 +1407,7 @@ class MasterOrchestrator:
             report_generator = ReportGeneratorAgent()
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"UX/UI Specification - {self.project_name}",
-                content=pure_ux_spec_content
+                content=pure_ux_spec_content_plaintext
             )
             with open(ux_spec_file_path_docx, 'wb') as f:
                 f.write(docx_bytes.getbuffer())
@@ -1414,7 +1415,8 @@ class MasterOrchestrator:
 
             # Generate the blueprint using the PURE content.
             agent = UX_Spec_Agent(llm_service=self.llm_service)
-            json_blueprint = agent.parse_final_spec_and_generate_blueprint(pure_ux_spec_content)
+            # Use the plain text for the agent, as it's cleaner for parsing
+            json_blueprint = agent.parse_final_spec_and_generate_blueprint(pure_ux_spec_content_plaintext)
             if '"error":' in json_blueprint:
                 raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
 
@@ -1424,19 +1426,26 @@ class MasterOrchestrator:
 
             # Create a composite spec using the PURE content for the database.
             composite_spec_for_db = (
-                f"{pure_ux_spec_content}\n\n"
+                f"{pure_ux_spec_content_plaintext}\n\n"
                 f"{'='*80}\n"
                 f"MACHINE-READABLE JSON BLUEPRINT\n"
                 f"{'='*80}\n\n"
                 f"```json\n{json_blueprint}\n```"
             )
+            # Use the PLAIN TEXT version for the database
+            #"composite_spec_for_db = (
+            #    f"{pure_ux_spec_content_plaintext}\n\n"
+            #    f"{'='*80}\n"
+            #    f"MACHINE-READABLE JSON BLUEPRINT\n"
+            #    f"{'='*80}\n\n"
+            #    f"```json\n{json_blueprint}\n```"
+            #)
             db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
             self.active_ux_spec = {}
 
             # Hand off the PURE content to the next phase.
-            self.task_awaiting_approval = {"pending_brief": pure_ux_spec_content}
+            self.task_awaiting_approval = {"pending_brief": pure_ux_spec_content_plaintext}
             self.set_phase("GENERATING_APP_SPEC_AND_RISK_ANALYSIS")
-            # --- END OF FIX ---
             return True
 
         except Exception as e:
@@ -1649,22 +1658,21 @@ class MasterOrchestrator:
             logging.error(f"Failed to generate coding standard from guidelines: {e}", exc_info=True)
             return f"### Error\nAn unexpected error occurred during guided generation: {e}"
 
-    def finalize_and_save_app_spec(self, final_spec_with_header: str):
+    def finalize_and_save_app_spec(self, final_spec_markdown: str, final_spec_plaintext: str):
         """
-        Saves the final application spec, a .md file, and a formatted .docx file,
-        then transitions to the TECHNICAL_SPECIFICATION phase. This version saves
-        only the pure, raw content to the database.
+        Saves the final application spec in two formats:
+        - Markdown to the .md file (for viewing)
+        - Plain text to the database (for downstream agents)
         """
         if not self.project_id:
             logging.error("Cannot save application spec; no active project.")
             return
 
         try:
-            # First, strip the header to get the pure content for the database and docx body.
-            pure_spec_content = self._strip_header_from_document(final_spec_with_header)
-            logging.debug(f"DATA PERSISTENCE: Content being saved to DB: {pure_spec_content[:200]}...")
-
-            # Save the PURE content to the database for AI agents.
+            # 1. Process and save the PLAIN TEXT to the database for agents
+            # Strip the header (which is also plain text) to get the pure content
+            pure_spec_content = self._strip_header_from_document(final_spec_plaintext)
+            logging.debug(f"DATA PERSISTENCE: Saving PLAIN TEXT to DB: {pure_spec_content[:200]}...")
             self.db_manager.update_project_field(self.project_id, "final_spec_text", pure_spec_content)
             logging.info(f"Successfully saved final Application Specification to database for project {self.project_id}")
 
@@ -1675,7 +1683,7 @@ class MasterOrchestrator:
 
                 # Save the HEADED version to the Markdown file for human review.
                 spec_file_path_md = docs_dir / "application_spec.md"
-                spec_file_path_md.write_text(final_spec_with_header, encoding="utf-8")
+                spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
                 self._commit_document(spec_file_path_md, "docs: Finalize Application Specification (Markdown)")
 
                 # Generate and save the formatted .docx file for human use,
@@ -2464,23 +2472,22 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to finalize and save complexity assessment: {e}")
 
-    def finalize_and_save_tech_spec(self, final_tech_spec_with_header: str, target_os: str):
+    def finalize_and_save_tech_spec(self, final_tech_spec_markdown: str, final_tech_spec_plaintext: str, target_os: str):
         """
-        Saves the final technical spec to the database, a .md file, and a formatted
-        .docx file, extracts key info, and transitions to the next phase. This version
-        saves only the pure, raw content to the database.
+        Saves the final technical spec in two formats:
+        - Markdown to the .md file (for viewing)
+        - Plain text to the database (for downstream agents)
         """
         if not self.project_id:
             logging.error("Cannot save technical spec; no active project.")
             return
 
         try:
-            # Strip the header to get pure content for the DB and docx body.
-            pure_tech_spec_content = self._strip_header_from_document(final_tech_spec_with_header)
+            # 1. Process and save the PLAIN TEXT to the database for agents
+            pure_tech_spec_content = self._strip_header_from_document(final_tech_spec_plaintext)
 
             db = self.db_manager
             db.update_project_field(self.project_id, "target_os", target_os)
-            # Save the PURE content to the database.
             db.update_project_field(self.project_id, "tech_spec_text", pure_tech_spec_content)
             logging.info(f"Successfully saved final Technical Specification to database for project {self.project_id}")
 
@@ -2491,7 +2498,7 @@ class MasterOrchestrator:
 
                 # Save the HEADED version to the Markdown file.
                 spec_file_path_md = docs_dir / "technical_spec.md"
-                spec_file_path_md.write_text(final_tech_spec_with_header, encoding="utf-8")
+                spec_file_path_md.write_text(final_tech_spec_markdown, encoding="utf-8")
                 self._commit_document(spec_file_path_md, "docs: Finalize Technical Specification (Markdown)")
 
                 # Generate and save the formatted .docx file using the PURE content.
@@ -2510,7 +2517,7 @@ class MasterOrchestrator:
             try:
                 logging.info("Detecting technologies from finalized tech spec...")
                 # We use final_tech_spec_with_header as it's the full-context version
-                technologies = self.detect_technologies_in_spec(final_tech_spec_with_header)
+                technologies = self.detect_technologies_in_spec(pure_tech_spec_content)
                 if technologies:
                     self.db_manager.update_project_field(
                         self.project_id,
@@ -7176,3 +7183,197 @@ class MasterOrchestrator:
 
         recurse_and_add_ids(full_hierarchy)
         return full_hierarchy
+
+    def get_project_documents(self) -> tuple[list[dict], list[str]]:
+        """
+        Gets a classified list of documents for the Document Hub.
+        - "Specs" are pulled from the database (Projects and Artifacts tables).
+        - "Other" are found by recursively scanning the project root.
+
+        Returns:
+            A tuple containing:
+            (spec_documents, other_documents)
+            - spec_documents: A list of dicts: [{'name': str, 'path': str}]
+            - other_documents: A list of strings (relative paths)
+        """
+        if not self.project_id or not self.project_root_path:
+            return [], []
+
+        spec_docs = []
+        spec_paths_set = set() # To prevent duplicates in the "Other" list
+
+        try:
+            # 1. Get Core Specs from Projects table
+            project_details_row = self.db_manager.get_project_by_id(self.project_id)
+            if project_details_row:
+                project_details = dict(project_details_row)
+                # This map now correctly links the spec name to its REAL file path
+                # and the DB column that confirms it exists.
+                spec_map = {
+                    "Application Specification": ("docs/application_spec.md", "final_spec_text"),
+                    "Technical Specification": ("docs/technical_spec.md", "tech_spec_text"),
+                    "UX/UI Specification": ("docs/ux_ui_specification.md", "ux_spec_text"),
+                    "Database Schema Specification": ("docs/db_schema_spec.md", "db_schema_spec_text")
+                }
+
+                for name, (path_str, db_key) in spec_map.items():
+                    # Check if the spec exists in the database
+                    if project_details.get(db_key):
+                        spec_docs.append({"name": name, "path": path_str})
+                        spec_paths_set.add(path_str)
+
+            # 2. Get Coding Standards from Artifacts table
+            artifacts = self.db_manager.get_all_artifacts_for_project(self.project_id)
+            for art_row in artifacts:
+                art = dict(art_row)
+                if art.get('artifact_type') == 'CODING_STANDARD' and art.get('status') in ('COMPLETED', 'SKIPPED'):
+                    path_str = art.get('file_path')
+                    if path_str:
+                        spec_docs.append({"name": art.get('artifact_name'), "path": path_str})
+                        spec_paths_set.add(path_str)
+
+            # 3. Scan filesystem for "Other Documents"
+            other_docs = []
+            root_path = Path(self.project_root_path)
+            excluded_dirs = {'.git', 'venv', '.venv', '__pycache__', 'node_modules', '.asdf_project'}
+            # Add .xlsx as requested
+            allowed_extensions = {'.pdf', '.docx', '.txt', '.md', '.xlsx', '.json'}
+
+            for file_path in root_path.rglob('*'):
+                if file_path.is_file():
+                    # Check if any part of the path is an excluded directory
+                    if any(part in excluded_dirs for part in file_path.parts):
+                        continue
+
+                    if file_path.suffix.lower() in allowed_extensions:
+                        relative_path_str = str(file_path.relative_to(root_path)).replace('\\', '/')
+
+                        # Add to "Other" list ONLY if it's not a spec we already found
+                        if relative_path_str not in spec_paths_set:
+                            other_docs.append(relative_path_str)
+
+            return spec_docs, sorted(list(other_docs))
+
+        except Exception as e:
+            logging.error(f"Failed to get project documents: {e}", exc_info=True)
+            return [], []
+
+    def add_other_document(self, source_path: Path, **kwargs) -> Optional[Path]:
+        """
+        Copies a new, generic document into the project's docs folder.
+
+        Args:
+            source_path: The path of the file to be copied.
+
+        Returns:
+            The relative destination path of the new document, or None on failure.
+        """
+        if not self.project_root_path:
+            logging.error("Cannot add document: No project path loaded.")
+            return None
+        try:
+            root_path = Path(self.project_root_path)
+            docs_dir = root_path / "docs" / "uploads"
+            docs_dir.mkdir(parents=True, exist_ok=True)
+
+            destination_path = docs_dir / source_path.name
+
+            # Handle name conflicts
+            counter = 1
+            base_name = destination_path.stem
+            extension = destination_path.suffix
+            while destination_path.exists():
+                destination_path = docs_dir / f"{base_name}_{counter}{extension}"
+                counter += 1
+
+            shutil.copy(source_path, destination_path)
+            rel_path = destination_path.relative_to(root_path)
+            logging.info(f"Successfully added new document: {rel_path}")
+            return rel_path
+        except Exception as e:
+            logging.error(f"Failed to add other document: {e}", exc_info=True)
+            return None
+
+    def upload_new_document_version(self, source_path: Path, old_doc_rel_path: str, **kwargs) -> Optional[Path]:
+        """
+        Handles the upload of a new version of an existing document.
+
+        Args:
+            source_path: The path of the new file to be copied.
+            old_doc_rel_path: The relative path (from project root) of the document being replaced.
+
+        Returns:
+            The relative path to the newly versioned document, or None on failure.
+        """
+        if not self.project_root_path or not self.project_id:
+            logging.error("Cannot upload new version: Project state is not fully loaded.")
+            return None
+        try:
+            root_path = Path(self.project_root_path)
+            old_doc_path = root_path / old_doc_rel_path
+
+            # Determine the next version number
+            base_name, extension = os.path.splitext(old_doc_path.name)
+            version_match = re.search(r'_v(\d+)$', base_name)
+
+            if version_match:
+                current_version = int(version_match.group(1))
+                next_version = current_version + 1
+                new_base_name = re.sub(r'_v\d+$', f'_v{next_version}', base_name)
+            else:
+                # If no version tag exists, append '_v2'
+                next_version = 2
+                new_base_name = f"{base_name}_v{next_version}"
+
+            new_doc_name = f"{new_base_name}{extension}"
+            destination_path = old_doc_path.parent / new_doc_name
+
+            # Copy the new file
+            shutil.copy(source_path, destination_path)
+            new_rel_path = destination_path.relative_to(root_path)
+
+            # Add a system log entry for the version change
+            self.db_manager.add_document_log_entry(
+                project_id=self.project_id,
+                document_path=str(new_rel_path).replace('\\', '/'),
+                author="SYSTEM",
+                log_text=f"Version {next_version} uploaded. Replaces '{old_doc_rel_path}'.",
+                status="VERSION_UPDATE"
+            )
+            logging.info(f"Successfully uploaded new version: {new_rel_path}")
+            return new_rel_path
+        except Exception as e:
+            logging.error(f"Failed to upload new document version: {e}", exc_info=True)
+            return None
+
+    def get_document_content(self, relative_path: str, **kwargs) -> tuple[str, str]:
+        """
+        Reads and returns the title and content of a document from the project root.
+        Returns: (title, content)
+        """
+        if not self.project_root_path:
+            logging.error("Cannot read document: No project path loaded.")
+            raise Exception("Project not loaded.")
+        try:
+            full_path = Path(self.project_root_path) / relative_path
+            title = f"View: {relative_path}"
+
+            if not full_path.exists():
+                return title, f"## Error\n\nFile not found: `{relative_path}`"
+
+            # Handle non-previewable files gracefully
+            if full_path.suffix.lower() in ['.pdf', '.docx', '.xlsx']:
+                return title, f"## Non-Previewable Document\n\n**File:** `{relative_path}`\n\nThis file type (`{full_path.suffix}`) cannot be previewed within the application. Please open it using an external editor."
+
+            # Read as text, ignoring errors for potential binary files
+            with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+                content = self._strip_header_from_document(content)
+                # If it's not markdown, wrap it in a code block for plain text display
+                if full_path.suffix.lower() != '.md':
+                     content = f"```\n{content}\n```"
+                return title, content
+
+        except Exception as e:
+            logging.error(f"Failed to read document content for {relative_path}: {e}", exc_info=True)
+            return f"Error: {relative_path}", f"## File Read Error\n\nCould not read file `{relative_path}`.\n\n**Error:**\n```\n{e}\n```"
