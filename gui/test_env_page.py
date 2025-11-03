@@ -291,43 +291,50 @@ class TestEnvPage(QWidget):
         self._execute_task(self._task_get_test_command, self._handle_command_result,
                            status_message="Generating test command...")
 
-    def _handle_command_result(self, command_text):
+    def _handle_command_result(self, command_dict: dict):
         try:
-            if command_text and command_text.strip():
-                self.ui.testCommandLineEdit.setText(command_text)
-            else:
-                self.ui.testCommandLineEdit.setText("pytest")
+            backend_cmd = command_dict.get("backend_cmd", "pytest")
+            ui_cmd = command_dict.get("ui_cmd", "")
+
+            self.ui.testCommandLineEdit.setText(backend_cmd)
+            self.ui.uiTestCommandLineEdit.setText(ui_cmd)
         finally:
             self._set_ui_busy(False)
 
     def _task_get_test_command(self, **kwargs):
         """
-        Gets the test command, prioritizing a user-saved value from the database
-        before falling back to LLM generation.
+        Gets the test commands, prioritizing user-saved values from the database
+        before falling back to LLM generation for the backend command.
         """
         try:
             project_details_row = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
             if not project_details_row:
-                return "pytest" # Fallback
+                return {"backend_cmd": "pytest", "ui_cmd": ""} # Fallback
 
             project_details = dict(project_details_row)
 
-            # First, check for an existing, user-saved command
-            existing_command = project_details.get("test_execution_command")
-            if existing_command and existing_command.strip():
-                logging.info(f"Found existing test command in database: '{existing_command}'")
-                return existing_command
+            # 1. Get existing commands from DB
+            existing_backend_cmd = project_details.get("test_execution_command")
+            existing_ui_cmd = project_details.get("ui_test_execution_command", "")
 
-            # If no command exists, proceed with LLM generation
-            tech_spec_text = project_details.get('tech_spec_text', "")
-            if self.orchestrator.llm_service and tech_spec_text:
-                logging.info("No existing command found. Generating new test command via LLM.")
-                agent = VerificationAgent_AppTarget(llm_service=self.orchestrator.llm_service)
-                details = agent._get_test_execution_details(tech_spec_text)
-                command = details.get("command") if details else ""
-                return command if command and command.strip() else "pytest"
+            # 2. Check if backend command needs LLM generation
+            backend_cmd_to_return = "pytest" # Default fallback
+            if existing_backend_cmd and existing_backend_cmd.strip():
+                logging.info(f"Found existing backend test command in database: '{existing_backend_cmd}'")
+                backend_cmd_to_return = existing_backend_cmd
+            else:
+                # If no backend command exists, proceed with LLM generation
+                tech_spec_text = project_details.get('tech_spec_text', "")
+                if self.orchestrator.llm_service and tech_spec_text:
+                    logging.info("No existing backend command found. Generating new test command via LLM.")
+                    agent = VerificationAgent_AppTarget(llm_service=self.orchestrator.llm_service)
+                    details = agent._get_test_execution_details(tech_spec_text)
+                    command = details.get("command") if details else ""
+                    backend_cmd_to_return = command if command and command.strip() else "pytest"
 
-            return "pytest" # Final fallback
+            # 3. Return both commands
+            return {"backend_cmd": backend_cmd_to_return, "ui_cmd": existing_ui_cmd}
+
         except Exception as e:
-            logging.error(f"Failed to get suggested test command: {e}")
-            return "pytest"
+            logging.error(f"Failed to get suggested test commands: {e}")
+            return {"backend_cmd": "pytest", "ui_cmd": ""}

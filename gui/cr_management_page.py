@@ -528,9 +528,6 @@ class CRManagementPage(QWidget):
                 can_implement = item_status in ["IMPACT_ANALYZED", "TECHNICAL_PREVIEW_COMPLETE"]
                 self.implement_action.setEnabled(can_implement)
 
-                # "Generate Technical Preview" is available once analysis is done.
-                self.tech_preview_action.setEnabled(item_status == "IMPACT_ANALYZED")
-
     def on_save_backlog_clicked(self):
         """Handles the user's request to save the backlog to an XLSX file."""
         if not self.orchestrator.project_id:

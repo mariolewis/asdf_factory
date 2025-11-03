@@ -1773,6 +1773,7 @@ class MasterOrchestrator:
 
         settings = {
             "test_execution_command": project_details['test_execution_command'] or "",
+            "integration_test_command": project_details['integration_test_command'] or "",
             "ui_test_execution_command": project_details['ui_test_execution_command'] or ""
         }
 
