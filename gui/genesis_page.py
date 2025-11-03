@@ -49,6 +49,11 @@ class GenesisPage(QWidget):
         page is shown. It ensures the UI is always up-to-date.
         """
         logging.info("Preparing GenesisPage for display.")
+
+        # If no plan is in memory, try to load one from the DB.
+        if self.orchestrator.active_plan is None:
+            self.orchestrator.resume_active_sprint_if_exists()
+
         if self.orchestrator.is_task_processing:
             self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
         else:
@@ -237,7 +242,7 @@ class GenesisPage(QWidget):
     def _handle_development_result(self, result):
         """Handles the completion of a development step."""
         if result and "Error" in str(result):
-            self.ui.logOutputTextEdit.append(f"\n--- TASK FAILED: {result} ---")
+            self.ui.logOutputTextEdit.append(f"\n--- TASK FAILED ---")
         else:
             self.ui.logOutputTextEdit.append(f"\n--- TASK COMPLETE ---")
         self.ui.continueButton.setVisible(True)

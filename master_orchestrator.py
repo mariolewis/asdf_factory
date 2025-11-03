@@ -4078,7 +4078,7 @@ class MasterOrchestrator:
         self.is_project_dirty = False
         self.set_phase("AWAITING_PREFLIGHT_RESOLUTION")
 
-    def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False, is_phase_failure_override: bool = False):
+    def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False, is_phase_failure_override: bool = False, is_final_verification_failure: bool = False):
         """
         Handles the escalation process for a task failure. It increments a
         counter, and if the maximum attempts are exceeded, it sets the phase
@@ -4114,13 +4114,13 @@ class MasterOrchestrator:
             self.debug_attempt_counter = 0 # Reset for the next issue
             self.set_phase("DEBUG_PM_ESCALATION")
         else:
-            # If attempts are not exhausted, log it and remain in the GENESIS phase
-            # to allow the user to trigger a retry, which will now house the fix-planning logic.
             logging.warning(f"Debug attempt {self.debug_attempt_counter} failed. Awaiting PM decision on escalation screen.")
             original_failing_task = self.get_current_task_details()
             self.task_awaiting_approval = {
                 "failure_log": failure_log,
-                "original_failing_task": original_failing_task
+                "original_failing_task": original_failing_task,
+                "is_phase_failure": is_phase_failure_override or (original_failing_task is None),
+                "is_final_verification_failure": is_final_verification_failure
             }
             self.set_phase("DEBUG_PM_ESCALATION")
 
@@ -4544,7 +4544,12 @@ class MasterOrchestrator:
                 self.set_phase("DEBUG_PM_ESCALATION")
         except Exception as e:
             logging.error(f"An unexpected error occurred during final sprint verification: {e}", exc_info=True)
-            self.escalate_for_manual_debug(f"A system error occurred during Backend Testing:\n{e}", is_phase_failure_override=True)
+            # for *any* failure in this phase (e.g., config error, test failure).
+            self.escalate_for_manual_debug(
+                f"A system error occurred during Backend Testing:\n{e}",
+                is_phase_failure_override=True,
+                is_final_verification_failure=True
+            )
 
     def _run_sprint_integration_test_generation(self, progress_callback=None, **kwargs):
         """
@@ -4847,46 +4852,6 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Critical error in handle_complete_with_failures: {e}", exc_info=True)
             self.escalate_for_manual_debug(f"A system error occurred while logging failures: {e}")
-
-    def handle_generate_technical_preview(self, cr_id: int) -> str:
-        """
-        Orchestrates the generation of a technical preview for a specific CR.
-        This is designed to be called from a background worker.
-
-        Returns:
-            A string containing the Markdown summary of the preview, or an error message.
-        """
-        logging.info(f"Orchestrator: Generating technical preview for CR ID: {cr_id}.")
-        try:
-            if not self.project_id:
-                raise Exception("Cannot generate preview; no active project.")
-            if not self.llm_service:
-                raise Exception("Cannot generate preview: LLM Service is not configured.")
-
-            db = self.db_manager
-            cr_details = db.get_cr_by_id(cr_id)
-            project_details = db.get_project_by_id(self.project_id)
-            all_artifacts = db.get_all_artifacts_for_project(self.project_id)
-
-            if not cr_details or not project_details:
-                raise Exception(f"Could not retrieve details for CR-{cr_id} or project.")
-
-            rowd_json = json.dumps([dict(row) for row in all_artifacts], indent=2)
-
-            agent = ImpactAnalysisAgent_AppTarget(llm_service=self.llm_service)
-            preview_summary = agent.generate_technical_preview(
-                change_request_desc=cr_details['description'],
-                final_spec_text=project_details['final_spec_text'],
-                rowd_json=rowd_json
-            )
-
-            # The summary is returned directly to the worker, not saved here.
-            return preview_summary
-
-        except Exception as e:
-            error_msg = f"Failed to generate technical preview for CR-{cr_id}: {e}"
-            logging.error(error_msg, exc_info=True)
-            return f"### Error\n{error_msg}"
 
     def _task_run_sprint_validation_checks(self, **kwargs):
         """Background task to run all sprint pre-execution validation checks."""
@@ -7382,3 +7347,38 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to read document content for {relative_path}: {e}", exc_info=True)
             return f"Error: {relative_path}", f"## File Read Error\n\nCould not read file `{relative_path}`.\n\n**Error:**\n```\n{e}\n```"
+
+    def resume_active_sprint_if_exists(self) -> bool:
+        """
+        Checks the database for an active (IN_PROGRESS or PAUSED) sprint
+        and loads its plan into the orchestrator's active state if found.
+        """
+        if not self.project_id:
+            return False
+
+        logging.info("Attempting to resume active sprint from database...")
+        try:
+            latest_sprint = self.db_manager.get_latest_sprint_for_project(self.project_id)
+            if latest_sprint and latest_sprint['status'] in ['IN_PROGRESS', 'PAUSED']:
+                logging.info(f"Found active sprint {latest_sprint['sprint_id']}. Loading plan...")
+
+                self.active_sprint_id = latest_sprint['sprint_id']
+                self.load_development_plan(latest_sprint['sprint_plan_json'])
+                self._recalculate_plan_cursor_from_db()
+
+                # We must also re-load the task_awaiting_approval if it was a pause
+                saved_state = self.db_manager.get_orchestration_state_for_project(self.project_id)
+                if saved_state:
+                    details = json.loads(saved_state['state_details'])
+                    self.task_awaiting_approval = details.get("task_awaiting_approval")
+                    if self.task_awaiting_approval and self.task_awaiting_approval.get("resuming_from_manual_fix"):
+                        self.is_resuming_from_manual_fix = True
+
+                logging.info(f"Successfully resumed sprint. Cursor at step {self.active_plan_cursor}.")
+                return True
+        except Exception as e:
+            logging.error(f"Error during active sprint resume: {e}", exc_info=True)
+            return False
+
+        logging.info("No active sprint found to resume.")
+        return False

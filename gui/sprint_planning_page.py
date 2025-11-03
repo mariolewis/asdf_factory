@@ -339,7 +339,7 @@ class SprintPlanningPage(QWidget):
             return
 
         self.ui.runAuditButton.setEnabled(False)
-        self.ui.incorporateFeedbackButton.setEnabled(False)
+        self.ui.refinePlanButton.setEnabled(False)
 
         self.window().setEnabled(False)
         self.window().statusBar().showMessage(f"Running {audit_type} Audit...")

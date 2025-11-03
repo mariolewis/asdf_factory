@@ -410,7 +410,6 @@ class ASDFMainWindow(QMainWindow):
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
         self.cr_management_page.import_from_tool.connect(self.on_import_from_tool)
         self.cr_management_page.sync_items_to_tool.connect(self.on_sync_items_to_tool)
-        self.cr_management_page.generate_technical_preview.connect(self.on_generate_tech_preview_action)
         self.cr_management_page.save_new_order.connect(self.orchestrator.handle_save_cr_order)
         self.cr_management_page.request_ui_refresh.connect(self.update_ui_after_state_change)
         self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
