@@ -5,7 +5,7 @@ from pathlib import Path
 import json
 import re
 from datetime import datetime
-import markdown
+from gui.utils import render_markdown_to_html
 import warnings
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QApplication
 from PySide6.QtCore import Signal, QThreadPool
@@ -162,7 +162,7 @@ class SpecElaborationPage(QWidget):
             task_data = self.orchestrator.task_awaiting_approval or {}
             draft = task_data.get("generated_spec_draft", "Error: Could not load spec draft.")
             self.spec_draft = draft
-            self.ui.pmReviewTextEdit.setHtml(markdown.markdown(draft, extensions=['fenced_code', 'extra']))
+            self.ui.pmReviewTextEdit.setHtml(render_markdown_to_html(self.spec_draft))
             self.ui.pmFeedbackTextEdit.clear()
 
         elif current_phase == FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL:
@@ -173,8 +173,8 @@ class SpecElaborationPage(QWidget):
             task_data = self.orchestrator.task_awaiting_approval or {}
             refined_draft = task_data.get("refined_spec_draft", "Error: Could not load refined draft.")
             ai_analysis = task_data.get("ai_analysis", "Error: Could not load AI analysis.")
-            self.ui.specDraftTextEdit.setHtml(markdown.markdown(refined_draft, extensions=['fenced_code', 'extra']))
-            self.ui.aiIssuesTextEdit.setHtml(markdown.markdown(ai_analysis, extensions=['fenced_code', 'extra']))
+            self.ui.specDraftTextEdit.setHtml(render_markdown_to_html(refined_draft))
+            self.ui.aiIssuesTextEdit.setHtml(render_markdown_to_html(ai_analysis))
             self.ui.feedbackTextEdit.clear()
 
     def on_task_finished():
@@ -331,7 +331,6 @@ class SpecElaborationPage(QWidget):
         try:
             logging.info(f"Brief processing background task completed with result: {result}")
 
-            # ADDED THIS BLOCK TO CLEAR THE STATUS
             main_window = self.window()
             if main_window and hasattr(main_window, 'clear_persistent_status'):
                 main_window.clear_persistent_status()

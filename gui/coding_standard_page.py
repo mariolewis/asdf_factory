@@ -1,10 +1,9 @@
 # gui/coding_standard_page.py
 
 import logging
-import markdown
 import warnings
-import html
 import json
+from gui.utils import render_markdown_to_html
 import re
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QListWidgetItem
 from PySide6.QtCore import Signal, QThreadPool, QTimer
@@ -133,7 +132,7 @@ class CodingStandardPage(QWidget):
             else:
                 self.review_is_error_state = False
                 self.last_failed_action = None
-                self.ui.standardTextEdit.setHtml(markdown.markdown(self.coding_standard_draft, extensions=['fenced_code', 'extra']))
+                self.ui.standardTextEdit.setHtml(render_markdown_to_html(self.coding_standard_draft))
                 self.ui.approveButton.setText("Approve Standard")
 
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
@@ -155,7 +154,7 @@ class CodingStandardPage(QWidget):
             else:
                 self.review_is_error_state = False
                 self.last_failed_action = None
-                self.ui.standardTextEdit.setHtml(markdown.markdown(html.unescape(self.coding_standard_draft), extensions=['fenced_code', 'extra']))
+                self.ui.standardTextEdit.setHtml(render_markdown_to_html(self.coding_standard_draft))
                 self.ui.feedbackTextEdit.clear()
                 self.ui.reviewTabWidget.setCurrentIndex(0)
                 self.ui.approveButton.setText("Approve Standard")

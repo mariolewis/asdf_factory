@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import logging
 import html
-import markdown
+from gui.utils import render_markdown_to_html
 import warnings
 import json
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog
@@ -57,9 +57,8 @@ class TechSpecPage(QWidget):
             self.tech_spec_draft = task_data.get("draft_spec_from_guidelines", "# Your guidelines will appear here.")
             self.ai_analysis = task_data.get("ai_analysis", "No analysis found.")
 
-            # This is the fix for the rendering bug
-            self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
-            self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
+            self.ui.techSpecTextEdit.setHtml(render_markdown_to_html(self.tech_spec_draft))
+            self.ui.aiAnalysisTextEdit.setHtml(render_markdown_to_html(self.ai_analysis))
             self.ui.feedbackTextEdit.clear()
             self.ui.stackedWidget.setCurrentWidget(self.ui.reviewPage)
             self.ui.reviewTabWidget.setCurrentIndex(1)
@@ -245,8 +244,8 @@ class TechSpecPage(QWidget):
                 self.last_failed_action = None
                 self.retry_count = 0
                 self.ui.pauseProjectButton.setVisible(False)
-                self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
-                self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
+                self.ui.techSpecTextEdit.setHtml(render_markdown_to_html(self.tech_spec_draft))
+                self.ui.aiAnalysisTextEdit.setHtml(render_markdown_to_html(self.ai_analysis))
                 self.ui.approveButton.setText("Approve Technical Specification")
 
             self.ui.feedbackTextEdit.clear()
@@ -293,8 +292,8 @@ class TechSpecPage(QWidget):
                 self.last_failed_action = None
                 self.retry_count = 0
                 self.ui.pauseProjectButton.setVisible(False)
-                self.ui.techSpecTextEdit.setHtml(markdown.markdown(self.tech_spec_draft, extensions=['fenced_code', 'extra']))
-                self.ui.aiAnalysisTextEdit.setHtml(markdown.markdown(self.ai_analysis, extensions=['fenced_code', 'extra']))
+                self.ui.techSpecTextEdit.setHtml(render_markdown_to_html(self.tech_spec_draft))
+                self.ui.aiAnalysisTextEdit.setHtml(render_markdown_to_html(self.ai_analysis))
                 self.ui.approveButton.setText("Approve Technical Specification")
 
             self.ui.feedbackTextEdit.clear()

@@ -6,6 +6,7 @@ import os
 import shutil
 import re
 from typing import Optional
+from gui.utils import format_timestamp_for_display, render_markdown_to_html
 from datetime import datetime, timezone
 from enum import Enum, auto
 from llm_service import (LLMService, GeminiAdapter, OpenAIAdapter,
@@ -2936,6 +2937,9 @@ class MasterOrchestrator:
             final_plan_with_header = self.prepend_standard_header(plan_markdown, "UI Test Plan")
             db.update_project_field(self.project_id, "ui_test_plan_text", final_plan_with_header)
 
+            # We render the *full* headed content for the .docx file
+            html_for_docx = render_markdown_to_html(final_plan_with_header)
+
             # Save to Filesystem (.md and .docx)
             if progress_callback: progress_callback(("INFO", "Saving report documents..."))
             project_root = Path(project_details['project_root_folder'])
@@ -2944,12 +2948,13 @@ class MasterOrchestrator:
 
             # Use a specific filename to ensure consistency
             plan_path_md = docs_dir / "manual_ui_test_plan.md"
-            plan_path_md.write_text(final_plan_with_header, encoding="utf-8")
+            plan_path_md.write_text(final_plan_with_header, encoding="utf-8") # Save raw MD to the .md file
 
             report_generator = ReportGeneratorAgent()
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"Manual UI Test Plan - {self.project_name}",
-                content=plan_markdown
+                content=html_for_docx,
+                is_html=True
             )
             plan_path_docx = docs_dir / "manual_ui_test_plan.docx"
             with open(plan_path_docx, 'wb') as f:

@@ -1,7 +1,7 @@
 # gui/ux_spec_page.py
 
 import logging
-import markdown
+from gui.utils import render_markdown_to_html
 import warnings
 from PySide6.QtWidgets import QWidget, QMessageBox
 from PySide6.QtCore import Signal, QThreadPool
@@ -114,7 +114,7 @@ class UXSpecPage(QWidget):
         else:
             self.review_is_error_state = False
             self.last_failed_action = None
-            self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+            self.ui.specTextEdit.setHtml(render_markdown_to_html(self.ux_spec_draft))
             self.ui.approveButton.setText("Approve Specification")
 
     def run_generation_task(self):
@@ -142,7 +142,7 @@ class UXSpecPage(QWidget):
                 self.last_failed_action = None
                 self.retry_count = 0
                 self.ui.pauseProjectButton.setVisible(False)
-                self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+                self.ui.specTextEdit.setHtml(render_markdown_to_html(self.ux_spec_draft))
                 self.ui.approveButton.setText("Approve Specification")
 
             self.state_changed.emit()
@@ -180,7 +180,7 @@ class UXSpecPage(QWidget):
                 self.last_failed_action = None
                 self.retry_count = 0
                 self.ui.pauseProjectButton.setVisible(False)
-                self.ui.specTextEdit.setHtml(markdown.markdown(self.ux_spec_draft, extensions=['fenced_code', 'extra']))
+                self.ui.specTextEdit.setHtml(render_markdown_to_html(self.ux_spec_draft))
                 self.ui.approveButton.setText("Approve Specification")
 
             self.ui.feedbackTextEdit.clear()

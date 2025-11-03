@@ -2,6 +2,7 @@
 
 import logging
 import markdown
+from gui.utils import render_markdown_to_html
 import re
 from pathlib import Path
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox,
@@ -25,7 +26,7 @@ class HelpDialog(QDialog):
         layout = QVBoxLayout(self)
         text_edit = QTextEdit()
         text_edit.setReadOnly(True)
-        text_edit.setHtml(markdown.markdown(content, extensions=['fenced_code', 'extra']))
+        text_edit.setHtml(render_markdown_to_html(content))
         layout.addWidget(text_edit)
 
         button_box = QDialogButtonBox(QDialogButtonBox.Close)

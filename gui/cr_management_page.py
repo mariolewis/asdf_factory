@@ -5,6 +5,7 @@ from PySide6.QtGui import QStandardItemModel, QStandardItem, QAction, QColor
 from PySide6.QtCore import Signal, Qt, QItemSelectionModel, QThreadPool
 from datetime import datetime
 from pathlib import Path
+from gui.utils import render_markdown_to_html
 
 from gui.ui_cr_management_page import Ui_CRManagementPage
 from gui.backlog_item_model import BacklogItemModel

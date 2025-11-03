@@ -1,7 +1,7 @@
 # gui/sprint_review_page.py
 
 import logging
-import markdown
+from gui.utils import render_markdown_to_html
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog
@@ -58,7 +58,7 @@ class SprintReviewPage(QWidget):
 
     def _handle_summary_result(self, summary_markdown: str):
         """Displays the generated summary in the text edit."""
-        html = markdown.markdown(summary_markdown)
+        html = render_markdown_to_html(summary_markdown)
         self.ui.summaryTextEdit.setHtml(html)
 
     def _handle_summary_error(self, error_tuple):

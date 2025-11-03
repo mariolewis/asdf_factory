@@ -14,6 +14,7 @@ import json
 import matplotlib.pyplot as plt
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from htmldocx import HtmlToDocx
 from openpyxl import Workbook
 from openpyxl.styles import Font
 import pandas as pd
@@ -157,15 +158,16 @@ class ReportGeneratorAgent:
         doc_buffer.seek(0)
         return doc_buffer
 
-    def generate_text_document_docx(self, title: str, content: str, is_code: bool = False) -> BytesIO:
+    def generate_text_document_docx(self, title: str, content: str, is_code: bool = False, is_html: bool = False) -> BytesIO:
         """
         Generates a generic .docx file for text-based project documents.
+        Can now handle raw text, code, or HTML content.
 
         Args:
             title (str): The title of the document.
-            content (str): The full text content of the document.
+            content (str): The full text, code, or HTML content.
             is_code (bool, optional): If True, formats content in a monospaced font.
-                                      Defaults to False.
+            is_html (bool, optional): If True, parses the content as HTML.
 
         Returns:
             BytesIO: An in-memory byte stream of the generated .docx file.
@@ -173,8 +175,15 @@ class ReportGeneratorAgent:
         document = Document()
         document.add_heading(title, level=1)
 
-        # If the content is JSON, pretty-print it for readability
-        if is_code:
+        if is_html:
+            try:
+                # Use HtmlToDocx to parse the HTML and add it to the document
+                parser = HtmlToDocx()
+                parser.add_html_to_document(content, document)
+            except Exception as e:
+                logging.error(f"Failed to parse HTML for DOCX: {e}. Falling back to plain text.")
+                document.add_paragraph(content) # Fallback
+        elif is_code:
             try:
                 # Attempt to parse and re-format the JSON with indentation
                 parsed_json = json.loads(content)

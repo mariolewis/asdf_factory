@@ -2,7 +2,7 @@
 
 import logging
 import json
-import markdown
+from gui.utils import render_markdown_to_html
 from pathlib import Path
 from datetime import datetime
 from PySide6.QtWidgets import (QWidget, QMessageBox, QMenu, QListWidgetItem,
@@ -142,7 +142,7 @@ class SprintPlanningPage(QWidget):
         if analysis:
             md_text += f"\n\n---\n\n**Technical Preview:**\n\n{analysis}"
 
-        details_html = markdown.markdown(md_text)
+        details_html = render_markdown_to_html(md_text)
 
         dialog = DetailsDialog(f"Details for: {display_title}", details_html, self)
         dialog.exec()
@@ -366,7 +366,7 @@ class SprintPlanningPage(QWidget):
         """Displays the audit result in the text edit."""
         self.window().setEnabled(True)
         self.window().statusBar().clearMessage()
-        self.ui.auditResultTextEdit.setHtml(markdown.markdown(report_markdown))
+        self.ui.auditResultTextEdit.setHtml(render_markdown_to_html(report_markdown))
 
         self.ui.runAuditButton.setEnabled(True)
 

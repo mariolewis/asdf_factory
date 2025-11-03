@@ -3,6 +3,7 @@
 import logging
 import markdown
 import html
+import re
 from PySide6.QtCore import QDateTime, QLocale, Qt
 from PySide6.QtWidgets import QMainWindow, QMessageBox
 
@@ -62,22 +63,32 @@ def show_status_message(window: QMainWindow, message: str, level: str = "info", 
     else:
         logging.info(f"Status Bar: {message}")
 
-def render_markdown_to_html(md_content: str) -> str:
+def render_markdown_to_html(markdown_text: str) -> str:
     """
-    Renders markdown content to HTML, with fallbacks for plain text.
+    Renders markdown content to HTML, robustly fixing common LLM list errors.
     Includes extensions for tables and fenced code blocks.
     """
-    if not md_content:
-        return "<p><i>No content.</i></p>"
+    if not markdown_text:
+        return ""  # Use the new, simpler empty check
+
     try:
-        # Use 'fenced_code' for code blocks, 'tables' for tables
+        # Unescape HTML entities first (e.g., &lt; becomes <)
+        text = html.unescape(markdown_text)
+
+        # Use regex to insert a newline before a list item if it's not already preceded by one.
+        text = re.sub(r'([^\n])\n([ \t]*[\*\-]\s)', r'\1\n\n\2', text) # For bulleted lists
+        text = re.sub(r'([^\n])\n([ \t]*\d+\.\s)', r'\1\n\n\2', text) # For numbered lists
+
+        # Render to HTML using the standard extensions (merged from both versions)
         html_content = markdown.markdown(
-            md_content,
-            extensions=['fenced_code', 'tables', 'extra']
+            text,
+            extensions=['fenced_code', 'tables', 'extra', 'codehilite']
         )
         return html_content
+
     except Exception as e:
+        # --- ORIGINAL ERROR HANDLING ---
         logging.error(f"Failed to render markdown: {e}", exc_info=True)
         # Fallback to plain text, escaped
-        escaped_content = html.escape(md_content)
+        escaped_content = html.escape(markdown_text) # Use original text for fallback
         return f"<h3 style='color:red;'>Markdown Rendering Error</h3><pre>{escaped_content}</pre>"

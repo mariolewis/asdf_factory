@@ -1,7 +1,7 @@
 # gui/intake_assessment_page.py
 
 import logging
-import markdown
+from gui.utils import render_markdown_to_html
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Signal
 
@@ -41,7 +41,7 @@ class IntakeAssessmentPage(QWidget):
         assessment_text = assessment_data.get("completeness_assessment", "No assessment was provided.")
 
         # Render the markdown summary into the QTextEdit widget
-        summary_html = markdown.markdown(summary_markdown, extensions=['fenced_code', 'extra'])
+        summary_html = render_markdown_to_html(summary_markdown)
         self.ui.summaryTextEdit.setHtml(summary_html)
 
         # Display the assessment text in the appropriate QLabel
