@@ -25,7 +25,7 @@ class SpecSynthesisAgent:
         self.orchestrator = orchestrator
         self.llm_service = orchestrator.llm_service
         self.db_manager = orchestrator.db_manager
-        self.report_generator = ReportGeneratorAgent()
+        self.report_generator = ReportGeneratorAgent(self.db_manager)
         logging.info("SpecSynthesisAgent initialized.")
 
     def _detect_database_usage(self, project_root: Path) -> tuple[str | None, dict]:
@@ -236,6 +236,11 @@ class SpecSynthesisAgent:
             **MANDATORY INSTRUCTIONS:**
             1. **Analyze Summaries:** Read all the provided file summaries to build a holistic understanding of the codebase.
             2. **Synthesize Document:** Write a structured specification document in Markdown format. {prompt_details.get(spec_type, "")}
+
+            **CRITICAL DIAGRAMMING RULE:**
+            - If you generate any diagrams for the specification (e.g., architecture, data flow), you MUST generate them using `mermaid.js` syntax inside a ```mermaid ... ``` block.
+            - Do NOT use ASCII art.
+
             3. **Raw Markdown Output:** Your entire response MUST be only the raw content of the Markdown document. Do not include a header, preamble, or any other conversational text.
 
             **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
@@ -312,7 +317,7 @@ class SpecSynthesisAgent:
         final_content_for_files = f"*{preamble}*\n\n---\n\n" + full_content_with_header
 
         # We render the *full* content (including header) for the .docx file
-        html_for_docx = render_markdown_to_html(final_content_for_files)
+        # html_for_docx = render_markdown_to_html(final_content_for_files)
 
         # Save .md file (This should save the raw, headed markdown as it's a .md file)
         md_path = docs_dir / f"{file_base_name}.md"
@@ -322,8 +327,8 @@ class SpecSynthesisAgent:
         # Save .docx file
         docx_bytes = self.report_generator.generate_text_document_docx(
             title=f"{doc_type_name} - {project_name}",
-            content=html_for_docx,
-            is_html=True
+            content=final_content_for_files,
+            is_html=False
         )
         docx_path = docs_dir / f"{file_base_name}.docx"
         with open(docx_path, 'wb') as f:

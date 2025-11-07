@@ -18,9 +18,6 @@ import git
 import hashlib
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMessageBox, QInputDialog, QLineEdit
-import matplotlib
-matplotlib.use('Agg') # Ensure backend is set for thread safety
-import matplotlib.pyplot as plt
 from io import BytesIO # For image data
 
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
@@ -1405,10 +1402,10 @@ class MasterOrchestrator:
             # Generate and save the formatted .docx file for human use.
             from agents.agent_report_generator import ReportGeneratorAgent
             ux_spec_file_path_docx = docs_dir / "ux_ui_specification.docx"
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"UX/UI Specification - {self.project_name}",
-                content=pure_ux_spec_content_plaintext
+                content=final_spec_markdown
             )
             with open(ux_spec_file_path_docx, 'wb') as f:
                 f.write(docx_bytes.getbuffer())
@@ -1688,13 +1685,13 @@ class MasterOrchestrator:
                 self._commit_document(spec_file_path_md, "docs: Finalize Application Specification (Markdown)")
 
                 # Generate and save the formatted .docx file for human use,
-                # using the PURE content for the body of the document.
+                # using the markdown content for the body of the document.
                 spec_file_path_docx = docs_dir / "application_spec.docx"
                 from agents.agent_report_generator import ReportGeneratorAgent
-                report_generator = ReportGeneratorAgent()
+                report_generator = ReportGeneratorAgent(self.db_manager)
                 docx_bytes = report_generator.generate_text_document_docx(
                     title=f"Application Specification - {self.project_name}",
-                    content=pure_spec_content
+                    content=final_spec_markdown
                 )
                 with open(spec_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
@@ -1926,7 +1923,7 @@ class MasterOrchestrator:
                 report_data.append(item_dict)
 
             # 3. Call ReportGeneratorAgent
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             xlsx_bytes_io = report_agent.generate_backlog_xlsx(report_data) # Use existing method with potentially filtered data
             if not xlsx_bytes_io:
                 raise Exception("ReportGeneratorAgent failed to create XLSX data.")
@@ -2010,7 +2007,7 @@ class MasterOrchestrator:
                         })
 
             # 5. Call ReportGeneratorAgent
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             xlsx_bytes_io = report_agent.generate_sprint_deliverables_xlsx(sprint_id, report_data) # New method needed
             if not xlsx_bytes_io:
                 raise Exception("ReportGeneratorAgent failed to create XLSX data.")
@@ -2042,7 +2039,7 @@ class MasterOrchestrator:
             remaining_points = total_points - completed_points
             burndown_data = {'total': total_points, 'remaining': remaining_points, 'sprint_id': sprint_id}
 
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             image_bytes_io = report_agent.generate_burndown_chart_image(burndown_data) # New method needed
             if not image_bytes_io:
                 raise Exception("ReportGeneratorAgent failed to create chart image.")
@@ -2067,7 +2064,7 @@ class MasterOrchestrator:
             current_status_counts = self.db_manager.get_backlog_status_summary(self.project_id)
             cfd_data = {'current_snapshot': current_status_counts} # Simplified data structure
 
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             image_bytes_io = report_agent.generate_cfd_chart_image(cfd_data) # New method needed
             if not image_bytes_io:
                 raise Exception("ReportGeneratorAgent failed to create CFD chart image.")
@@ -2092,7 +2089,7 @@ class MasterOrchestrator:
             current_test_status_counts = self.db_manager.get_component_test_status_summary(self.project_id)
             trend_data = {'current_snapshot': current_test_status_counts} # Simplified
 
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             image_bytes_io = report_agent.generate_quality_trend_chart_image(trend_data) # New method needed
             if not image_bytes_io:
                 raise Exception("ReportGeneratorAgent failed to create quality trend chart image.")
@@ -2121,7 +2118,7 @@ class MasterOrchestrator:
                 "average_escalations_per_sprint": 2.5
             }
 
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             report_text = report_agent.generate_ai_assistance_report(assistance_data) # New method needed
             return report_text
         except Exception as e:
@@ -2186,7 +2183,7 @@ class MasterOrchestrator:
                 logging.warning("No data found for Project Pulse report. Generating report with 'No Data' entries.")
                 # We proceed, the agent method handles empty dicts
 
-            agent = ReportGeneratorAgent()
+            agent = ReportGeneratorAgent(self.db_manager)
             docx_bytes_io = agent.generate_health_snapshot_docx(self.project_name, snapshot_data)
 
             # The file saving is done by the helper method save_report_file
@@ -2219,7 +2216,7 @@ class MasterOrchestrator:
                 # We proceed, the agent method handles empty lists
 
             # 2. Call the new agent method to generate the .xlsx
-            agent = ReportGeneratorAgent()
+            agent = ReportGeneratorAgent(self.db_manager)
             xlsx_bytes_io = agent.generate_traceability_xlsx(trace_data, self.project_name)
 
             # 3. Save the file
@@ -2462,7 +2459,7 @@ class MasterOrchestrator:
 
                 # Generate and save the formatted .docx report
                 assessment_file_path_docx = docs_dir / "automated_delivery_risk_assessment.docx"
-                report_generator = ReportGeneratorAgent()
+                report_generator = ReportGeneratorAgent(self.db_manager)
                 assessment_data = json.loads(assessment_json_str)
                 docx_bytes = report_generator.generate_assessment_docx(assessment_data, self.project_name)
 
@@ -2506,10 +2503,10 @@ class MasterOrchestrator:
                 # Generate and save the formatted .docx file using the PURE content.
                 from agents.agent_report_generator import ReportGeneratorAgent
                 spec_file_path_docx = docs_dir / "technical_spec.docx"
-                report_generator = ReportGeneratorAgent()
+                report_generator = ReportGeneratorAgent(self.db_manager)
                 docx_bytes = report_generator.generate_text_document_docx(
                     title=f"Technical Specification - {self.project_name}",
-                    content=pure_tech_spec_content
+                    content=final_tech_spec_markdown
                 )
                 with open(spec_file_path_docx, 'wb') as f:
                     f.write(docx_bytes.getbuffer())
@@ -2572,7 +2569,7 @@ class MasterOrchestrator:
                 self._commit_document(standard_file_path_md, f"docs: Add coding standard for {technology} (Markdown)")
 
                 from agents.agent_report_generator import ReportGeneratorAgent
-                report_generator = ReportGeneratorAgent()
+                report_generator = ReportGeneratorAgent(self.db_manager)
                 docx_bytes = report_generator.generate_text_document_docx(
                     # FIX: The argument is 'technology', not 'technology_name'
                     title=f"Coding Standard ({technology}) - {project_details.get('project_name', 'ASDF Project')}",
@@ -2690,7 +2687,7 @@ class MasterOrchestrator:
                 # Generate and save the formatted .docx report
                 from agents.agent_report_generator import ReportGeneratorAgent
                 plan_file_path_docx = docs_dir / "development_plan.docx"
-                report_generator = ReportGeneratorAgent()
+                report_generator = ReportGeneratorAgent(self.db_manager)
                 plan_data = json.loads(plan_json_string)
                 docx_bytes = report_generator.generate_dev_plan_docx(plan_data, self.project_name)
 
@@ -2939,7 +2936,7 @@ class MasterOrchestrator:
             db.update_project_field(self.project_id, "ui_test_plan_text", final_plan_with_header)
 
             # We render the *full* headed content for the .docx file
-            html_for_docx = render_markdown_to_html(final_plan_with_header)
+            # html_for_docx = render_markdown_to_html(final_plan_with_header)
 
             # Save to Filesystem (.md and .docx)
             if progress_callback: progress_callback(("INFO", "Saving report documents..."))
@@ -2951,11 +2948,11 @@ class MasterOrchestrator:
             plan_path_md = docs_dir / "manual_ui_test_plan.md"
             plan_path_md.write_text(final_plan_with_header, encoding="utf-8") # Save raw MD to the .md file
 
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"Manual UI Test Plan - {self.project_name}",
-                content=html_for_docx,
-                is_html=True
+                content=final_plan_with_header,
+                is_html=False
             )
             plan_path_docx = docs_dir / "manual_ui_test_plan.docx"
             with open(plan_path_docx, 'wb') as f:
@@ -3446,7 +3443,7 @@ class MasterOrchestrator:
             # Generate and save the formatted .docx file using the PURE content.
             from agents.agent_report_generator import ReportGeneratorAgent
             test_plan_file_path_docx = docs_dir / "ui_test_plan.docx"
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"Manual UI Test Plan - {self.project_name}",
                 content=ui_test_plan_content
@@ -3845,7 +3842,7 @@ class MasterOrchestrator:
                 logging.warning("No backlog data found to export.")
                 return None
 
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             return report_agent.generate_backlog_xlsx(backlog_data)
         except Exception as e:
             logging.error(f"Failed to orchestrate backlog export: {e}", exc_info=True)
@@ -3865,7 +3862,7 @@ class MasterOrchestrator:
         logging.info("Orchestrating sprint plan export to DOCX format.")
         try:
             plan_data = json.loads(plan_json_str)
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             return report_agent.generate_sprint_plan_docx(self.project_name, sprint_items, plan_data)
         except Exception as e:
             logging.error(f"Failed to orchestrate sprint plan export: {e}", exc_info=True)
@@ -3887,7 +3884,7 @@ class MasterOrchestrator:
             selected_items = report_context.get("selected_sprint_items", [])
             report_data = report_context.get("pre_execution_report", {})
 
-            report_agent = ReportGeneratorAgent()
+            report_agent = ReportGeneratorAgent(self.db_manager)
             return report_agent.generate_pre_execution_report_docx(
                 self.project_name, selected_items, report_data
             )
@@ -4508,7 +4505,7 @@ class MasterOrchestrator:
             report_formatter = TestReportFormattingAgent(self.llm_service)
             report_markdown = report_formatter.format_report(plan_json, raw_output)
 
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"Backend Test Report - {self.project_name}",
                 content=report_markdown
@@ -4617,7 +4614,7 @@ class MasterOrchestrator:
 
         # Generate and save the report regardless of outcome
         try:
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.db_manager)
             report_markdown = f"# Sprint Integration Test Report\n\n**Command Executed:** `{command}`\n\n**Status:** {status}\n\n## Test Runner Output\n\n```\n{output}\n```"
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"Sprint Integration Test Report - {self.project_name}",
@@ -4706,7 +4703,7 @@ class MasterOrchestrator:
 
             # 5. Generate and Save .docx Report
             if progress_callback: progress_callback(("INFO", "Saving test report to file..."))
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.db_manager)
             # First, create the final report content with a proper header
             final_report_with_header = self.prepend_standard_header(report_markdown, "Automated Front-end Test Report")
 
@@ -4793,7 +4790,7 @@ class MasterOrchestrator:
 
             if progress_callback: progress_callback(("INFO", "Saving test report to file..."))
             from agents.agent_report_generator import ReportGeneratorAgent
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.db_manager)
             final_report_with_header = self.prepend_standard_header(report_markdown, "On-Demand Automated Front-end Test Report")
 
             docx_bytes = report_generator.generate_text_document_docx(

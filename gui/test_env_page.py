@@ -237,10 +237,11 @@ class TestEnvPage(QWidget):
                     full_content.append(f"### Step {i}: {task.get('tool_name')}\n")
                     full_content.append(f"{task.get('instructions')}\n")
 
-            report_generator = ReportGeneratorAgent()
+            report_generator = ReportGeneratorAgent(self.orchestrator.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"Environment Setup Guide - {self.orchestrator.project_name}",
-                content="\n".join(full_content)
+                content="\n".join(full_content),
+                is_html=False
             )
             with open(file_path, 'wb') as f:
                 f.write(docx_bytes.getbuffer())

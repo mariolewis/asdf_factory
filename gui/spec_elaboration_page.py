@@ -383,7 +383,6 @@ class SpecElaborationPage(QWidget):
             QMessageBox.warning(self, "Input Required", "The specification draft cannot be empty.")
             return
 
-        # --- THIS BLOCK IS THE FIX ---
         status_message = "Refining draft and analyzing for issues..."
         main_window = self.window()
         if main_window:
@@ -391,7 +390,6 @@ class SpecElaborationPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
             if hasattr(main_window, 'show_persistent_status'):
                 main_window.show_persistent_status(status_message)
-        # --- END FIX ---
 
         # Note: Even if feedback is empty, the process runs to analyze for issues.
         worker = Worker(self._task_refine_and_analyze, current_draft, pm_feedback)
@@ -459,7 +457,6 @@ class SpecElaborationPage(QWidget):
             QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement in the third tab.")
             return
 
-        # --- THIS BLOCK IS THE FIX ---
         status_message = "Refining specification based on your feedback..."
         main_window = self.window()
         if main_window:
@@ -467,7 +464,6 @@ class SpecElaborationPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
             if hasattr(main_window, 'show_persistent_status'):
                 main_window.show_persistent_status(status_message)
-        # --- END FIX ---
 
         worker = Worker(self._task_refine_spec, current_draft, feedback)
         worker.signals.result.connect(self._handle_refinement_result)

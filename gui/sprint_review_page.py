@@ -21,7 +21,7 @@ class SprintReviewPage(QWidget):
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
         self.orchestrator = orchestrator
-        self.report_generator = ReportGeneratorAgent()
+        self.report_generator = ReportGeneratorAgent(self.orchestrator.db_manager)
         self.threadpool = QThreadPool()
 
         self.ui = Ui_SprintReviewPage()

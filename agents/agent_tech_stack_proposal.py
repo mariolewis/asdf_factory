@@ -114,6 +114,22 @@ class TechStackProposalAgent:
             - **Non-Functional Requirements (NFRs)**
             - **Development Environment Setup Guide**
 
+            **CRITICAL DIAGRAMMING RULE:**
+            - For all diagrams, you MUST generate a `mermaid.js` code block.
+            - The parser is automated and will FAIL if you add any text outside the block.
+
+            - **DO NOT** write "helper" text like `[Mermaid Diagram Failed to Render]` or `[Diagram]`. This will break the system.
+            - Your response for a diagram MUST be *ONLY* the code block.
+
+            **EXAMPLE of CORRECT (and ONLY) OUTPUT for a diagram:**
+            ```mermaid
+            graph TD
+                A[Start] --> B[Do Something]
+                B --> C[End]
+            ```
+
+            - Do NOT use ASCII art.
+
             {pm_guidelines_section}
 
             **--- Functional Specification (The "What") ---**

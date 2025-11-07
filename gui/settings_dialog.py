@@ -72,6 +72,7 @@ class SettingsDialog(QDialog):
         self.initial_provider = ""
         self.is_calibrating_on_save = False
         self.provider_changed = False
+        self.active_style_path = ""
 
         self.setWindowTitle("ASDF Settings")
         self.setMinimumSize(600, 500)
@@ -160,6 +161,17 @@ class SettingsDialog(QDialog):
         self.template_add_button = QPushButton("Add/Update Template")
         self.templates_list_widget = QListWidget()
         self.template_remove_button = QPushButton("Remove Selected")
+
+        # --- Docx Styles Tab Widgets ---
+        self.docxStylesTab = QWidget()
+        self.docxStyleInstructionLabel = QLabel("Manage .docx templates for visual styling. The active template will be used to format all exported documents.\n"
+                                                "Templates MUST contain the following named styles: Title, Heading 1, Heading 2, Heading 3, Normal, Bullet List, List Numbered, Code Block.")
+        self.docxStyleListWidget = QListWidget()
+        self.addDocxStyleButton = QPushButton("Add New Style...")
+        self.removeDocxStyleButton = QPushButton("Remove Selected")
+        self.setActiveDocxStyleButton = QPushButton("Set as Active")
+        self.activeStyleLabel = QLabel("Active Style Template:")
+
         self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
 
         # --- Integrations Tab Widgets
@@ -301,9 +313,24 @@ class SettingsDialog(QDialog):
 
         integrations_main_layout.addWidget(self.integrations_stacked_widget)
 
+        # --- Docx Styles Tab Layout ---
+        docx_styles_tab_layout = QVBoxLayout(self.docxStylesTab)
+        self.docxStyleInstructionLabel.setWordWrap(True)
+        docx_styles_tab_layout.addWidget(self.docxStyleInstructionLabel)
+        docx_styles_tab_layout.addWidget(self.activeStyleLabel) # Add the active label
+        docx_styles_tab_layout.addWidget(self.docxStyleListWidget)
+
+        style_buttons_layout = QHBoxLayout()
+        style_buttons_layout.addWidget(self.setActiveDocxStyleButton)
+        style_buttons_layout.addSpacerItem(QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum))
+        style_buttons_layout.addWidget(self.addDocxStyleButton)
+        style_buttons_layout.addWidget(self.removeDocxStyleButton)
+        docx_styles_tab_layout.addLayout(style_buttons_layout)
+
         self.tab_widget.addTab(self.factory_behavior_tab, "Factory Behavior")
         self.tab_widget.addTab(self.llm_providers_tab, "LLM Providers")
         self.tab_widget.addTab(self.templates_tab, "Templates")
+        self.tab_widget.addTab(self.docxStylesTab, "Docx Styles")
         self.tab_widget.addTab(self.integrations_tab, "Integrations")
 
         self.main_layout.addWidget(self.tab_widget)
@@ -429,6 +456,120 @@ class SettingsDialog(QDialog):
                 logging.error(f"Failed to remove template: {e}")
                 QMessageBox.critical(self, "Error", f"Could not remove template: {e}")
 
+    def _populate_docx_styles_list(self):
+        """Fetches all .docx templates from the styles dir and populates the list."""
+        self.docxStyleListWidget.clear()
+        self.active_style_path = self.all_config.get("SELECTED_DOCX_STYLE_PATH", "data/templates/styles/default_docx_template.docx")
+
+        styles_dir = Path("data/templates/styles")
+        styles_dir.mkdir(parents=True, exist_ok=True) # Ensure it exists
+
+        found_active = False
+        default_template_path = "data/templates/styles/default_docx_template.docx"
+
+        for docx_file in styles_dir.glob("*.docx"):
+            item_path_str = str(docx_file).replace('\\', '/')
+            item = QListWidgetItem(docx_file.name)
+            item.setData(Qt.UserRole, item_path_str)
+            self.docxStyleListWidget.addItem(item)
+
+            if item_path_str == self.active_style_path:
+                item.setSelected(True)
+                self.activeStyleLabel.setText(f"Active Style: <b>{docx_file.name}</b>")
+                found_active = True
+
+        if not found_active:
+            # Check if the default is in the list
+            default_in_list = False
+            for i in range(self.docxStyleListWidget.count()):
+                item = self.docxStyleListWidget.item(i)
+                if item.data(Qt.UserRole) == default_template_path:
+                    item.setSelected(True)
+                    default_in_list = True
+                    break
+
+            if default_in_list or Path(default_template_path).exists():
+                self.active_style_path = default_template_path
+                self.activeStyleLabel.setText(f"Active Style: <b>default_docx_template.docx</b>")
+                if not default_in_list:
+                    # Add default to list if it exists but wasn't globbed (e.g., first run)
+                    item = QListWidgetItem("default_docx_template.docx")
+                    item.setData(Qt.UserRole, default_template_path)
+                    self.docxStyleListWidget.addItem(item)
+                    item.setSelected(True)
+            else:
+                self.activeStyleLabel.setText(f"Active Style: <b>None (Default missing!)</b>")
+                self.active_style_path = "" # No valid template
+
+    def _on_add_style_clicked(self):
+        """Handles logic for adding a new .docx style template."""
+        path, _ = QFileDialog.getOpenFileName(self, "Select .docx Style Template", "", "Word Documents (*.docx)")
+        if not path:
+            return
+
+        source_path = Path(path)
+        styles_dir = Path("data/templates/styles")
+        destination_path = styles_dir / source_path.name
+
+        try:
+            shutil.copy(source_path, destination_path)
+            new_path_str = str(destination_path).replace('\\', '/')
+
+            # Add to list and set as active
+            item = QListWidgetItem(destination_path.name)
+            item.setData(Qt.UserRole, new_path_str)
+            self.docxStyleListWidget.addItem(item)
+            item.setSelected(True)
+            self._on_set_active_style_clicked() # This will update the active_style_path
+
+        except Exception as e:
+            logging.error(f"Failed to copy new style template: {e}")
+            QMessageBox.critical(self, "Error", f"Could not copy template: {e}")
+
+    def _on_remove_style_clicked(self):
+        """Handles logic for removing a selected style template."""
+        selected_items = self.docxStyleListWidget.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "No Selection", "Please select a style to remove.")
+            return
+
+        item = selected_items[0]
+        item_path_str = item.data(Qt.UserRole)
+
+        if item_path_str == "data/templates/styles/default_docx_template.docx":
+            QMessageBox.warning(self, "Action Not Allowed", "The default template cannot be removed.")
+            return
+
+        reply = QMessageBox.question(self, "Confirm Deletion",
+                                     f"Are you sure you want to delete '{Path(item_path_str).name}'?",
+                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+
+        if reply == QMessageBox.Yes:
+            try:
+                os.remove(item_path_str)
+                # Remove from list widget
+                self.docxStyleListWidget.takeItem(self.docxStyleListWidget.row(item))
+
+                if item_path_str == self.active_style_path:
+                    # If we deleted the active one, revert to default
+                    self._populate_docx_styles_list() # This will re-select default
+
+            except Exception as e:
+                logging.error(f"Failed to remove style template: {e}")
+                QMessageBox.critical(self, "Error", f"Could not remove template: {e}")
+
+    def _on_set_active_style_clicked(self):
+        """Sets the selected style as the active one for the orchestrator."""
+        selected_items = self.docxStyleListWidget.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "No Selection", "Please select a style to set as active.")
+            return
+
+        item = selected_items[0]
+        self.active_style_path = item.data(Qt.UserRole)
+        self.activeStyleLabel.setText(f"Active Style: <b>{item.text()}</b>")
+        # The path will be saved to DB when the user clicks "Save"
+
     def populate_fields(self):
         """Loads all current settings from the database and populates the UI fields."""
         self.all_config = self.orchestrator.db_manager.get_all_config_values()
@@ -481,6 +622,7 @@ class SettingsDialog(QDialog):
         self.on_provider_changed()
         self.initial_provider = self.provider_combo_box.currentText()
         self._populate_templates_tab()
+        self._populate_docx_styles_list()
 
     def connect_signals(self):
         self.provider_combo_box.currentTextChanged.connect(self.on_provider_changed)
@@ -489,10 +631,15 @@ class SettingsDialog(QDialog):
         self.provider_list.currentRowChanged.connect(self.on_integration_provider_changed)
         self.calibrate_button.clicked.connect(self.on_calibrate_clicked)
 
-        # --- New Template Signal Connections ---
+        # --- Template Signal Connections ---
         self.template_browse_button.clicked.connect(self._on_template_browse_clicked)
         self.template_add_button.clicked.connect(self._on_add_update_template_clicked)
         self.template_remove_button.clicked.connect(self._on_remove_template_clicked)
+
+        # --- Docx Style Signal Connections ---
+        self.addDocxStyleButton.clicked.connect(self._on_add_style_clicked)
+        self.removeDocxStyleButton.clicked.connect(self._on_remove_style_clicked)
+        self.setActiveDocxStyleButton.clicked.connect(self._on_set_active_style_clicked)
 
     def on_provider_changed(self):
         provider_name = self.provider_combo_box.currentText()
@@ -601,6 +748,7 @@ class SettingsDialog(QDialog):
                 "LOGGING_LEVEL": self.logging_combo_box.currentText(),
                 "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
                 "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text(),
+                "SELECTED_DOCX_STYLE_PATH": self.active_style_path,
                 "INTEGRATION_PROVIDER": self.provider_list.currentItem().text(),
                 "INTEGRATION_URL": self.jira_url_input.text(),
                 "INTEGRATION_USERNAME": self.jira_username_input.text(),

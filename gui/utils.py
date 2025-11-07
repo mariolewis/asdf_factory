@@ -6,6 +6,7 @@ import html
 import re
 from PySide6.QtCore import QDateTime, QLocale, Qt
 from PySide6.QtWidgets import QMainWindow, QMessageBox
+from .rendering_utils import preprocess_markdown_for_display
 
 def format_timestamp_for_display(timestamp_str: str) -> str:
     """
@@ -69,11 +70,12 @@ def render_markdown_to_html(markdown_text: str) -> str:
     Includes extensions for tables and fenced code blocks.
     """
     if not markdown_text:
-        return ""  # Use the new, simpler empty check
-
+        return ""
     try:
-        # Unescape HTML entities first (e.g., &lt; becomes <)
-        text = html.unescape(markdown_text)
+        # First, preprocess the text to convert Mermaid blocks to <img> tags
+        text_with_images = preprocess_markdown_for_display(markdown_text)
+        # Unescape any remaining HTML entities
+        text = html.unescape(text_with_images)
 
         # Use regex to insert a newline before a list item if it's not already preceded by one.
         text = re.sub(r'([^\n])\n([ \t]*[\*\-]\s)', r'\1\n\n\2', text) # For bulleted lists

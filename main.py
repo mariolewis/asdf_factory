@@ -5,10 +5,6 @@ from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt
 import logging
-import matplotlib.pyplot as plt
-import matplotlib
-# Configure matplotlib to use a non-interactive backend for thread safety
-matplotlib.use('Agg')
 
 from asdf_db_manager import ASDFDBManager
 from master_orchestrator import MasterOrchestrator
@@ -50,6 +46,7 @@ def initialize_database(db_manager: ASDFDBManager):
         "LOGGING_LEVEL": ("Standard", "Verbosity of ASDF's internal logs."),
         "DEFAULT_PROJECT_PATH": ("", "Default parent directory for new target projects."),
         "DEFAULT_ARCHIVE_PATH": ("", "Default folder for saving project exports."),
+        "SELECTED_DOCX_STYLE_PATH": ("data/templates/styles/default_docx_template.docx", "Path to the .docx file used for styling exported documents."),
         "GEMINI_CONTEXT_LIMIT": ("2500000", "Default context limit for Gemini."),
         "OPENAI_CONTEXT_LIMIT": ("380000", "Default context limit for OpenAI."),
         "ANTHROPIC_CONTEXT_LIMIT": ("600000", "Default context limit for Anthropic."),
