@@ -12,8 +12,6 @@ INCLUDED_EXTENSIONS = {
     '.py',
     '.ui',
     '.qss',
-    '.docx',
-    '.txt'
 }
 
 # Add directory or file names to ignore.
@@ -25,6 +23,7 @@ IGNORED_PATHS = {
     'env',
     'dist',
     'build',
+    'bat',
     'package_context.py' # Ignore the script itself
 }
 # -------------------

@@ -1424,9 +1424,19 @@ class ASDFMainWindow(QMainWindow):
         self.update_ui_after_state_change()
 
     def on_assessment_approved(self):
-        """Handles the PM's approval of the delivery assessment and proceeds."""
-        self.orchestrator.handle_risk_assessment_approval()
-        self.update_ui_after_state_change()
+        """
+        Handles the PM's approval of the delivery assessment and proceeds.
+        This is now asynchronous to allow for .docx generation.
+        """
+        self.setEnabled(False)
+        self.show_persistent_status("Finalizing assessment and saving report...")
+
+        worker = Worker(self.orchestrator.handle_risk_assessment_approval)
+        worker.signals.error.connect(self._on_background_task_error)
+        # Connect to the existing finished handler, which will re-enable
+        # the UI and call update_ui_after_state_change.
+        worker.signals.finished.connect(self._on_background_task_finished)
+        self.threadpool.start(worker)
 
     # def on_risk_assessment_approved(self):
     #    """Handles the PM's approval of the risk assessment and proceeds."""

@@ -1513,7 +1513,7 @@ class MasterOrchestrator:
             self.task_awaiting_approval = {"error": str(e)}
             self.set_phase("SPEC_ELABORATION") # Go back to the starting phase on error
 
-    def handle_risk_assessment_approval(self):
+    def handle_risk_assessment_approval(self, **kwargs):
         """
         Called when the user approves the risk report. This finalizes the
         risk assessment and transitions to the first spec review screen.

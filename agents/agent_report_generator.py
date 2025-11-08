@@ -196,37 +196,146 @@ class ReportGeneratorAgent:
 
     def generate_assessment_docx(self, analysis_data: dict, project_name: str) -> BytesIO:
         """
-        Generates a formatted .docx file for the Complexity & Risk Assessment report
-        by formatting Markdown and passing to the central styling method.
+        Generates a formatted .docx file for the Complexity & Risk Assessment report,
+        now including a Plotly bar chart to visualize the complexity ratings.
         """
-        title = f"Complexity & Risk Assessment: {project_name}"
-        md_content = []
+        document = self._get_styled_document()
+        title = f"Delivery Automation Risk Assessment: {project_name}"
 
-        comp_analysis = analysis_data.get("complexity_analysis", {})
-        if not comp_analysis:
-             md_content.append("Could not parse the analysis result.")
-        else:
-            md_content.append("## Complexity Analysis")
-            for key, value in comp_analysis.items():
-                title_str = key.replace('_', ' ').title()
-                rating = value.get('rating', 'N/A')
-                justification = value.get('justification', 'No details provided.')
-                md_content.append(f"### {title_str}: {rating}\n\n*{justification}*\n")
+        try:
+            document.add_paragraph(title, style='Title')
+        except Exception:
+            logging.warning("Style 'Title' not found. Using default Heading 1.")
+            document.add_heading(title, level=1)
 
-            md_content.append("## Risk Assessment")
+        document.add_paragraph() # Spacer
+
+        # --- Add Automation Confidence Level ---
+        try:
+            risk_data = analysis_data.get("risk_assessment", {})
+            risk_level = risk_data.get("overall_risk_level", "N/A")
+
+            # Inverts risk level to confidence level (mirrors gui/delivery_assessment_page.py)
+            CONFIDENCE_MAP = {
+                "Low": "High",
+                "Medium": "Medium",
+                "High": "Low",
+                "Critical": "Very Low"
+            }
+            confidence_text = CONFIDENCE_MAP.get(risk_level, "N/A")
+
+            # Add the text to the document, centered.
+            p = document.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            run = p.add_run(f"Automation Confidence Level: {confidence_text}")
+            run.font.bold = True
+            run.font.size = Pt(12)
+
+        except Exception as e:
+            logging.warning(f"Failed to add Automation Confidence Level to report: {e}")
+        # --- END BLOCK ---
+
+        # --- 1. Generate and Add Plotly Chart ---
+        try:
+            comp_analysis = analysis_data.get("complexity_analysis", {})
+            if comp_analysis:
+                # Map text ratings to the 0-100 values used by the UI gauges
+                RATING_MAP = {"Low": 25, "Medium": 50, "High": 75, "Very Large": 100, "N/A": 0}
+                # Map ratings to the UI's color scheme
+                RATING_COLORS = {
+                    "Low": "#6A8759",      # Green
+                    "Medium": "#FFC66D",   # Yellow
+                    "High": "#CC7832",     # Orange
+                    "Very Large": "#CC7832" # Red/Orange
+                }
+
+                labels = []
+                values = []
+                colors = []
+                for key, value_dict in comp_analysis.items():
+                    labels.append(key.replace('_', ' ').title())
+                    rating_text = value_dict.get('rating', 'N/A')
+                    values.append(RATING_MAP.get(rating_text, 0))
+                    colors.append(RATING_COLORS.get(rating_text, '#A9B7C6')) # Default to gray
+
+                # Create a horizontal bar chart
+                fig = go.Figure(data=[go.Bar(
+                    y=labels,
+                    x=values,
+                    orientation='h',
+                    # Add text to the bars
+                    text=[f"{v} ({comp_analysis.get(key.lower().replace(' ', '_'), {}).get('rating', 'N/A')})" for key, v in zip(labels, values)],
+                    textposition='auto', # Let Plotly decide inside/outside
+                    textfont=dict(color='black'), # Force readable text
+                    marker_color=colors # Apply mapped colors
+                )])
+
+                fig.update_layout(
+                    title_text='AI Delivery Risk Assessment - Complexity',
+                    template="plotly_white", # Use white background
+                    xaxis=dict(
+                        range=[0, 115],     # Give space for text labels
+                        showline=True,      # Show X-axis line
+                        linecolor='black',  # Set X-axis line color
+                        showgrid=True,      # Show vertical grid lines
+                        gridcolor='#DDDDDD' # Set grid line color to light grey
+                    ),
+                    yaxis=dict(
+                        autorange="reversed", # Show in same order as UI
+                        showline=True,      # Show Y-axis line
+                        linecolor='black',  # Set Y-axis line color
+                        showgrid=False      # Hide horizontal grid lines for a cleaner look
+                    ),
+                    xaxis_title="Complexity Rating (0-100)",
+                    margin=dict(l=10, r=10, t=40, b=40)
+                )
+
+                image_bytes_io = generate_plotly_png(fig)
+                document.add_picture(image_bytes_io, width=Inches(6.0))
+            else:
+                self._add_styled_paragraph(document, "[No complexity data available to generate chart]", 'Normal')
+
+        except Exception as e:
+            logging.error(f"Failed to render Plotly assessment chart: {e}", exc_info=True)
+            self._add_styled_paragraph(document, f"[Error rendering complexity chart: {e}]", 'Normal')
+
+        document.add_paragraph() # Spacer
+
+        # --- 2. Add Text Summary ---
+        try:
             risk_assessment = analysis_data.get("risk_assessment", {})
-            md_content.append(f"**Overall Risk Level:** {risk_assessment.get('overall_risk_level', 'N/A')}\n")
-            md_content.append(f"**Summary:** {risk_assessment.get('summary', 'No summary provided.')}\n")
-            md_content.append(f"**Token Consumption Outlook:** {risk_assessment.get('token_consumption_outlook', 'N/A')}\n")
+
+            self._add_styled_paragraph(document, "Risk Assessment", 'Heading 2')
+            self._add_styled_paragraph(document, f"Overall Risk Level: {risk_assessment.get('overall_risk_level', 'N/A')}", 'Normal')
+            self._add_styled_paragraph(document, f"Summary: {risk_assessment.get('summary', 'No summary provided.')}", 'Normal')
 
             recommendations = risk_assessment.get('recommendations', [])
             if recommendations:
-                md_content.append("\n### Recommendations\n")
+                document.add_paragraph() # Spacer
+                self._add_styled_paragraph(document, "Recommendations", 'Heading 3')
                 for rec in recommendations:
-                    md_content.append(f"* {rec}")
+                    self._add_styled_paragraph(document, rec, 'Bullet List')
 
-        # Call the new central method
-        return self.generate_text_document_docx(title, "\n".join(md_content), is_html=False)
+            document.add_paragraph() # Spacer
+            self._add_styled_paragraph(document, "Complexity Justifications", 'Heading 3')
+
+            if comp_analysis:
+                for key, value in comp_analysis.items():
+                    title_str = key.replace('_', ' ').title()
+                    justification = value.get('justification', 'No details provided.')
+                    self._add_styled_paragraph(document, f"{title_str}: {justification}", 'Normal')
+            else:
+                self._add_styled_paragraph(document, "No justifications provided.", 'Normal')
+
+        except Exception as e:
+            logging.error(f"Failed to add text content to assessment docx: {e}", exc_info=True)
+            self._add_styled_paragraph(document, f"Error adding text: {e}", 'Normal')
+
+        # 4. Save to in-memory buffer
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer
 
     def generate_text_document_docx(self, title: str, content: str, is_html: bool = False) -> BytesIO:
         """
