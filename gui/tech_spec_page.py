@@ -114,7 +114,7 @@ class TechSpecPage(QWidget):
         self.ui.refineButton.clicked.connect(self.run_refine_task)
         self.ui.approveButton.clicked.connect(self.on_approve_or_retry_clicked)
         self.ui.pauseProjectButton.clicked.connect(self.on_pause_project_clicked)
-        self.ui.techSpecTextEdit.textChanged.connect(self.on_draft_changed)
+        # self.ui.techSpecTextEdit.textChanged.connect(self.on_draft_changed)
 
     def on_approve_or_retry_clicked(self):
         if self.review_is_error_state:
@@ -131,11 +131,11 @@ class TechSpecPage(QWidget):
         self.orchestrator.pause_project()
         self.project_cancelled.emit()
 
-    def on_draft_changed(self):
-        """Saves the current text content to the orchestrator's active draft variable."""
-        draft_text = self.ui.techSpecTextEdit.toPlainText()
-        if self.orchestrator:
-            self.orchestrator.set_active_spec_draft(draft_text)
+    #def on_draft_changed(self):
+    #    """Saves the current text content to the orchestrator's active draft variable."""
+    #    draft_text = self.ui.techSpecTextEdit.toPlainText()
+    #    if self.orchestrator:
+    #        self.orchestrator.set_active_spec_draft(draft_text)
 
     def _set_ui_busy(self, is_busy, message="Processing..."):
         """Disables or enables the main window and updates the status bar."""
@@ -212,7 +212,7 @@ class TechSpecPage(QWidget):
             QMessageBox.warning(self, "Input Required", "Please provide feedback to refine the draft.")
             return
 
-        current_draft = self.ui.techSpecTextEdit.toPlainText()
+        current_draft = self.tech_spec_draft
         ai_issues = self.ui.aiAnalysisTextEdit.toPlainText()
         target_os = self.ui.osComboBox.currentText()
 
@@ -303,7 +303,7 @@ class TechSpecPage(QWidget):
 
     def on_approve_clicked(self):
         """Finalizes the tech spec."""
-        final_tech_spec_markdown = self.ui.techSpecTextEdit.toMarkdown()
+        final_tech_spec_markdown = self.tech_spec_draft
         final_tech_spec_plaintext = self.ui.techSpecTextEdit.toPlainText()
 
         if not final_tech_spec_plaintext.strip():

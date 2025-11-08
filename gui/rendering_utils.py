@@ -10,6 +10,7 @@ import base64
 import requests
 from pathlib import Path
 from io import BytesIO
+import graphviz
 
 # Create a persistent temp directory for this session
 TEMP_IMAGE_DIR = Path(tempfile.gettempdir()) / "asdf_session_images"
@@ -19,38 +20,41 @@ def _cleanup_temp_images():
     """Remove temp images on application exit."""
     try:
         for f in TEMP_IMAGE_DIR.glob("*.png"):
-            os.remove(f)
+            if f.exists():
+                os.remove(f)
     except Exception as e:
         logging.warning(f"Could not clean up temp images: {e}")
 
 atexit.register(_cleanup_temp_images)
 
-def generate_mermaid_png(mermaid_text: str) -> BytesIO:
+def generate_dot_png(dot_text: str) -> BytesIO:
     """
-    Creates a PNG from a Mermaid.js text block using the mermaid.ink API.
-    This avoids any local browser/Node.js dependency.
+    Creates a PNG from a Graphviz DOT text block.
     """
     try:
-        # 1. Encode the Mermaid text for the URL
-        # We use a standard base64 encoding
-        mermaid_bytes = mermaid_text.encode("utf-8")
-        base64_bytes = base64.urlsafe_b64encode(mermaid_bytes)
-        base64_string = base64_bytes.decode("utf-8")
+        # Create a Graphviz object from the DOT source
+        # We specify 'png' as the format and get the raw bytes
+        png_data = graphviz.Source(dot_text).pipe(format='png')
 
-        # 2. Call the public API
-        url = f"[https://mermaid.ink/img/](https://mermaid.ink/img/){base64_string}"
-        response = requests.get(url, timeout=10)
+        if not png_data:
+            raise Exception("Graphviz returned empty image data.")
 
-        # 3. Check for success and return the image bytes
-        if response.status_code == 200:
-            logging.debug("Successfully rendered Mermaid diagram via mermaid.ink")
-            return BytesIO(response.content)
+        logging.debug("Successfully rendered DOT diagram via Graphviz")
+        return BytesIO(png_data)
+
+    except graphviz.backend.execute.CalledProcessError as e:
+        # This error means the 'dot' command failed.
+        # Check if the stderr indicates a syntax error, or if the executable was truly not found.
+        stderr_output = e.stderr.decode('utf-8') if e.stderr else ""
+        if "syntax error" in stderr_output:
+            error_msg = f"Graphviz (dot) failed due to a syntax error in the generated DOT code.\nError: {stderr_output}"
         else:
-            logging.error(f"mermaid.ink API failed with status {response.status_code}: {response.text}")
-            raise Exception(f"mermaid.ink API failed: {response.status_code}")
+            error_msg = f"Graphviz (dot) executable not found or failed. Please ensure Graphviz is installed and in your system's PATH.\nError: {e}"
 
+        logging.error(error_msg)
+        raise Exception(error_msg)
     except Exception as e:
-        logging.error(f"Failed to generate Mermaid PNG via API: {e}")
+        logging.error(f"Failed to generate DOT PNG: {e}")
         raise
 
 def generate_plotly_png(plotly_fig) -> BytesIO:
@@ -75,21 +79,40 @@ def generate_plotly_png(plotly_fig) -> BytesIO:
 
 def preprocess_markdown_for_display(markdown_text: str) -> str:
     """
-    Scans Markdown for Mermaid blocks and wraps them in a <pre>
-    block for clean on-screen display, avoiding failed render attempts.
+    Scans Markdown for DOT blocks, renders them as images,
+    and replaces the block with an <img> tag.
     """
     import re
-    def wrap_in_pre(match):
-        mermaid_text = match.group(1)
-        # Wrap the text in a <pre> block with some simple styling
-        return f"""
-<pre style="background-color: #2b2b2b; color: #f1f1f1; padding: 10px; border-radius: 5px;">
-<b>--- Mermaid Diagram ---</b>
-{html.escape(mermaid_text)}
+
+    def render_dot_block(match):
+        dot_text = match.group(1)
+        try:
+            # Generate the PNG data
+            image_bytes_io = generate_dot_png(dot_text)
+
+            # Save to a unique temp file
+            img_hash = hash(dot_text)
+            img_path = TEMP_IMAGE_DIR / f"dot_{img_hash}.png"
+            with open(img_path, "wb") as f:
+                f.write(image_bytes_io.getbuffer())
+
+            # Return an <img> tag pointing to the temp file
+            # Use Path.as_uri() to get the correct 'file:///' format
+            img_src = img_path.as_uri()
+            return f'<img src="{img_src}" alt="DOT Diagram">'
+
+        except Exception as e:
+            logging.error(f"Failed to render DOT block for GUI: {e}")
+            # Fallback to displaying the code
+            return f"""
+<pre style="background-color: #2b2b2b; color: #CC7832; padding: 10px; border-radius: 5px;">
+<b>--- DOT Diagram (Render Failed) ---</b>
+{html.escape(dot_text)}
+<br><b>Error:</b> {html.escape(str(e))}
 </pre>
 """
 
-    # Regex to find ```mermaid ... ``` blocks
-    pattern = re.compile(r"```mermaid\s*(.*?)```", re.DOTALL)
-    processed_markdown = re.sub(pattern, wrap_in_pre, markdown_text)
+    # Regex to find ```dot ... ``` blocks
+    pattern = re.compile(r"```dot\s*(.*?)```", re.DOTALL)
+    processed_markdown = re.sub(pattern, render_dot_block, markdown_text)
     return processed_markdown

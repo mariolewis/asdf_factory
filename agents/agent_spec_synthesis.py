@@ -238,7 +238,21 @@ class SpecSynthesisAgent:
             2. **Synthesize Document:** Write a structured specification document in Markdown format. {prompt_details.get(spec_type, "")}
 
             **CRITICAL DIAGRAMMING RULE:**
-            - If you generate any diagrams for the specification (e.g., architecture, data flow), you MUST generate them using `mermaid.js` syntax inside a ```mermaid ... ``` block.
+            - **To maximize clarity, you SHOULD generate 2-3 key diagrams.**
+            - **Your diagram choices MUST be relevant to the project's archetype.** For example, an `Architecture Diagram`, a `Data Flow Diagram`, or a `Data Model Diagram` (as appropriate).
+            - You MUST generate diagrams using the **DOT language** inside a ```dot ... ``` code block.
+            - The graph MUST be defined (e.g., `digraph G { ... }` or `graph G { ... }`).
+            - **Layout:** For architectural layers or flows, you **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`) to ensure the diagram fits a portrait document.
+            - **Styling:**
+                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`) to differentiate logical groups.
+                - You **MUST NOT** specify any `fontname` or `fontsize`. The renderer will use a default.
+                - You **MUST NOT** add attributes for `size`, `ratio`, or `dimensions`. Let the renderer auto-size.
+            - **Syntax:**
+                - **Nodes MUST use simple string labels.**
+                - **FOR MULTI-LINE LABELS (like database tables):** You MUST use a simple string with newline characters (`\n`). **Example:** `MyTable [label="Products\n- ProductID (PK)\n- Name\n- Price"]`
+                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
+                - **Ensure all nodes are defined only once.** Do not place a node in multiple subgraphs or ranksets.
+                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`. Do NOT use HTML-like labels or `<-` arrows.
             - Do NOT use ASCII art.
 
             3. **Raw Markdown Output:** Your entire response MUST be only the raw content of the Markdown document. Do not include a header, preamble, or any other conversational text.

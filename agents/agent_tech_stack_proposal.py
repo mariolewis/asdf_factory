@@ -115,20 +115,33 @@ class TechStackProposalAgent:
             - **Development Environment Setup Guide**
 
             **CRITICAL DIAGRAMMING RULE:**
-            - For all diagrams, you MUST generate a `mermaid.js` code block.
-            - The parser is automated and will FAIL if you add any text outside the block.
+            - **To maximize clarity, you SHOULD generate 2-3 key diagrams.**
+            - **Your diagram choices MUST be relevant to the project's archetype.** For example, an `Architecture Diagram`, a `Data Flow Diagram`, or a `Data Model Diagram` (as appropriate).
+            - You MUST generate diagrams using the **DOT language** inside a ```dot ... ``` code block.
+            - The graph MUST be defined (e.g., `digraph G { ... }`).
+            - **Layout:** For architectural layers or flows, you **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`) to ensure the diagram fits a portrait document.
+            - **Styling:**
+                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`) to differentiate logical groups.
+                - You **MUST NOT** specify any `fontname` or `fontsize`. The renderer will use a default.
+                - You **MUST NOT** add attributes for `size`, `ratio`, or `dimensions`. Let the renderer auto-size.
+            - **Syntax:**
+                - **Nodes MUST use simple string labels.**
+                - **FOR MULTI-LINE LABELS (like database tables):** You MUST use a simple string with newline characters (`\n`). **Example:** `MyTable [label="Products\n- ProductID (PK)\n- Name\n- Price"]`
+                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
+                - **Ensure all nodes are defined only once.** Do not place a node in multiple subgraphs or ranksets.
+                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`. Do NOT use HTML-like labels or `<-` arrows.
+            - Do NOT use ASCII art.
 
-            - **DO NOT** write "helper" text like `[Mermaid Diagram Failed to Render]` or `[Diagram]`. This will break the system.
-            - Your response for a diagram MUST be *ONLY* the code block.
+            - **DO NOT** write "helper" text like `[Diagram]`. This will break the system.
+            - Your response for a diagram MUST be *ONLY* the code block, starting with ````dot` and ending with ````.
 
             **EXAMPLE of CORRECT (and ONLY) OUTPUT for a diagram:**
-            ```mermaid
-            graph TD
-                A[Start] --> B[Do Something]
-                B --> C[End]
+            ```dot
+            digraph G {{
+                A[Start] -> B[DoSomething];
+                B -> C[End];
+            }}
             ```
-
-            - Do NOT use ASCII art.
 
             {pm_guidelines_section}
 

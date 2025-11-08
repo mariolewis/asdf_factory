@@ -22,7 +22,7 @@ from openpyxl.styles import Font
 import pandas as pd
 from datetime import datetime, timezone
 from gui.utils import format_timestamp_for_display
-from gui.rendering_utils import generate_mermaid_png, generate_plotly_png
+from gui.rendering_utils import generate_dot_png, generate_plotly_png
 import plotly.graph_objects as go
 import plotly.io as pio
 import markdown
@@ -299,10 +299,24 @@ class ReportGeneratorAgent:
                             self._add_styled_paragraph(document, li.get_text(), style_name)
 
                     elif tag.name == 'pre':
-                        # This handles both ```code``` and ```mermaid``` blocks
-                        style_name = 'Code Block'
-                        # .get_text() correctly extracts text from <code> child
-                        self._add_styled_paragraph(document, tag.get_text(), style_name)
+                        # This handles both ```code``` and ```dot``` blocks
+                        code_text = tag.get_text()
+
+                        # Check if this is a DOT block
+                        if code_text.lstrip().startswith(('digraph', 'graph')):
+                            try:
+                                # Render DOT to PNG bytes
+                                image_bytes_io = generate_dot_png(code_text)
+                                document.add_picture(image_bytes_io, width=Inches(6.0))
+                                # Add a blank paragraph for spacing after the image
+                                document.add_paragraph()
+                            except Exception as e:
+                                logging.error(f"Failed to render DOT diagram for docx: {e}")
+                                self._add_styled_paragraph(document, f"[Error rendering DOT diagram: {e}]", 'Code Block')
+                        else:
+                            # It's a regular code block
+                            style_name = 'Code Block'
+                            self._add_styled_paragraph(document, code_text, style_name)
 
                     elif tag.name == 'hr':
                         document.add_page_break()

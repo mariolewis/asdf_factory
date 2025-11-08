@@ -5,6 +5,8 @@ import warnings
 import json
 from gui.utils import render_markdown_to_html
 import re
+from pathlib import Path
+import html
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QListWidgetItem
 from PySide6.QtCore import Signal, QThreadPool, QTimer
 from PySide6.QtGui import QColor
@@ -297,6 +299,7 @@ class CodingStandardPage(QWidget):
         self.review_is_error_state = False
         self.last_failed_action = None
         self.ui.stackedWidget.setCurrentWidget(self.ui.initialChoicePage)
+        self.ui.techListWidget.clearSelection()
 
     def on_draft_changed(self):
         draft_text = self.ui.standardTextEdit.toPlainText()
@@ -385,7 +388,7 @@ class CodingStandardPage(QWidget):
         if not feedback:
             QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement.")
             return
-        current_draft = self.ui.standardTextEdit.toPlainText()
+        current_draft = self.coding_standard_draft
         self._execute_task(self._task_refine_standard, self._handle_refinement_result, current_draft, feedback,
                            status_message=f"Refining standard for {self.current_technology}...")
 
@@ -424,6 +427,6 @@ class CodingStandardPage(QWidget):
         project_details = db.get_project_by_id(self.orchestrator.project_id)
         tech_spec_text = project_details['tech_spec_text']
 
-        draft_content = self.orchestrator.generate_standard_from_guidelines(tech_spec_text, full_guidelines)
+        draft_content = self.orchestrator.generate_standard_from_guidelines(tech_spec_text, full_guidelines, self.current_technology)
         full_draft = self.orchestrator.prepend_standard_header(draft_content, f"Coding Standard ({self.current_technology})")
         return full_draft

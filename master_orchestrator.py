@@ -1636,7 +1636,7 @@ class MasterOrchestrator:
             logging.error(f"Failed to generate coding standard: {e}", exc_info=True)
             return f"### Error\nAn unexpected error occurred during coding standard generation: {e}"
 
-    def generate_standard_from_guidelines(self, tech_spec_text: str, pm_guidelines: str) -> str:
+    def generate_standard_from_guidelines(self, tech_spec_text: str, pm_guidelines: str, technology_name: str) -> str:
         """
         Generates a coding standard by calling the agent with additional
         PM-provided guidelines, which are treated as a mandatory template.
@@ -1650,7 +1650,7 @@ class MasterOrchestrator:
             agent = CodingStandardAgent_AppTarget(self.llm_service)
             # We reuse the generate_standard method, passing the PM's guidelines
             # as a high-priority template for the AI to follow.
-            standard_draft = agent.generate_standard(tech_spec_text, template_content=pm_guidelines)
+            standard_draft = agent.generate_standard(tech_spec_text, technology_name=technology_name, template_content=pm_guidelines)
             return standard_draft
         except Exception as e:
             logging.error(f"Failed to generate coding standard from guidelines: {e}", exc_info=True)

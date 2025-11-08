@@ -54,6 +54,21 @@ class UX_Spec_Agent:
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze Holistically:** Analyze the provided Project Brief and User Personas to understand the application's goals and target audience.
+
+            **CRITICAL DIAGRAMMING RULE:**
+            - **To maximize clarity, you SHOULD generate a "High-Level Screen Flow Diagram"** to visually represent the User Journeys and how the Inferred Screens connect.
+            - You MUST generate this diagram using the **DOT language** inside a ```dot ... ``` code block.
+            - The graph MUST be defined (e.g., `digraph G { ... }`).
+            - **Layout:** You **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`).
+            - **Styling:**
+                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`).
+                - You **MUST NOT** specify any `fontname` or `fontsize`.
+                - You **MUST NOT** add attributes for `size` or `ratio`.
+            - **Syntax:**
+                - **Nodes MUST use simple string labels (e.g., `Node1 [label="My Label"]`).**
+                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
+                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`.
+
             2.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
             3.  **Required Sections (if no template is provided):** If no template is given, you MUST generate a document containing the following sections, using the exact heading names provided:
                 - `## 1. User Personas`

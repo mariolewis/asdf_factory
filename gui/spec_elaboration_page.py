@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import re
 from datetime import datetime
+import markdown
 from gui.utils import render_markdown_to_html
 import warnings
 from PySide6.QtWidgets import QWidget, QMessageBox, QFileDialog, QApplication
@@ -505,7 +506,7 @@ class SpecElaborationPage(QWidget):
                 main_window.clear_persistent_status()
 
             self.spec_draft = new_draft
-            self.ui.specDraftTextEdit.setHtml(markdown.markdown(self.spec_draft, extensions=['fenced_code', 'extra']))
+            self.ui.specDraftTextEdit.setHtml(render_markdown_to_html(self.spec_draft))
             self.ui.aiIssuesTextEdit.setText("Draft has been refined. Please review the new version.")
             self.ui.feedbackTextEdit.clear()
 
@@ -540,7 +541,7 @@ class SpecElaborationPage(QWidget):
         review page.
         """
         # Get both formats, as per our new plan
-        final_draft_markdown = self.ui.specDraftTextEdit.toMarkdown()
+        final_draft_markdown = self.spec_draft
         final_draft_plaintext = self.ui.specDraftTextEdit.toPlainText()
 
         if not final_draft_plaintext.strip():

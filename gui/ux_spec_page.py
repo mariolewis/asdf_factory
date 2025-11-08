@@ -155,7 +155,7 @@ class UXSpecPage(QWidget):
             QMessageBox.warning(self, "Input Required", "Please provide feedback for refinement.")
             return
 
-        current_draft = self.ui.specTextEdit.toPlainText()
+        current_draft = self.ux_spec_draft
         self._execute_task(self._task_refine_draft, self._handle_refinement_result, current_draft, feedback,
                            status_message="Refining UX/UI specification...")
 
@@ -199,7 +199,7 @@ class UXSpecPage(QWidget):
 
     def on_approve_clicked(self):
         """Saves the final UX/UI spec and proceeds to the next phase."""
-        final_spec_markdown = self.ui.specTextEdit.toMarkdown().strip()
+        final_spec_markdown = self.ux_spec_draft
         final_spec_plaintext = self.ui.specTextEdit.toPlainText().strip()
 
         if not final_spec_plaintext.strip():

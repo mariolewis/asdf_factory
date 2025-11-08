@@ -119,6 +119,21 @@ class SpecClarificationAgent:
             {template_instruction}
 
             **MANDATORY INSTRUCTIONS:**
+
+            **CRITICAL DIAGRAMMING RULE:**
+            - **To maximize clarity, you SHOULD generate a "High-Level Use Case Diagram"** to visually represent the main actors (personas) and their primary interactions (use cases) with the system.
+            - You MUST generate this diagram using the **DOT language** inside a ```dot ... ``` code block.
+            - The graph MUST be defined (e.g., `digraph G { ... }`).
+            - **Layout:** You **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`).
+            - **Styling:**
+                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`).
+                - You **MUST NOT** specify any `fontname` or `fontsize`.
+                - You **MUST NOT** add attributes for `size` or `ratio`.
+            - **Syntax:**
+                - **Nodes MUST use simple string labels (e.g., `Node1 [label="My Label"]`).**
+                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
+                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`.
+
             1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
             2.  **Technology Agnostic:** Your response MUST be purely functional and non-functional. You MUST NOT include any recommendations for specific programming languages, frameworks, databases, or technology stacks.
             3.  **User-Specified Tech:** The only exception is if the user's brief explicitly commands the use of a specific technology. In that case, you must include it.
@@ -176,6 +191,7 @@ class SpecClarificationAgent:
             {convergence_directive}
 
             **MANDATORY INSTRUCTIONS:**
+
             1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
             2.  Identify any ambiguities, contradictions, underspecified features, or missing information.
             3.  For each issue you identify, you MUST propose 1-2 concrete potential solutions or clarifying options for the Product Manager to consider.
