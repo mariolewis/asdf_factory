@@ -109,7 +109,7 @@ QToolBar QToolButton {
     color: #F0F0F0;
 }
 
-QToolBar QToolButton:hover {
+QWidget#verticalActionBar QToolButton:hover:!checked {
     background-color: #4A4A4A;
 }
 

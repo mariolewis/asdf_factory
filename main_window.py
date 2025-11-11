@@ -598,6 +598,8 @@ class ASDFMainWindow(QMainWindow):
         else:
             self.ui.actionManage_CRs_Bugs.setToolTip("The project backlog must be generated before it can be managed.")
 
+        self.button_raise_request.setToolTip("Add a new Backlog Item or Bug Report")
+
         if project_root and Path(project_root).exists():
             if self.current_tree_root_path != project_root or self.orchestrator.current_phase == FactoryPhase.AWAITING_BROWNFIELD_STRATEGY:
                 self.current_tree_root_path = project_root
@@ -2085,8 +2087,24 @@ class ASDFMainWindow(QMainWindow):
         self._check_mandatory_settings()
 
     def on_raise_cr(self):
-        """Delegates the action to the dedicated handler in the CR Management page."""
-        self.cr_management_page.on_add_item_clicked()
+        """
+        Delegates the action to the CR Management page, but only if a project
+        and ratified backlog are active. Otherwise, shows a warning.
+        """
+        # First, we must get the project's current state.
+        is_project_active = self.orchestrator.project_id is not None
+        project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id) if is_project_active else None
+
+        # Use the same 'is_backlog_ready' logic as the menu item.
+        is_backlog_ready = is_project_active and bool(project_details and project_details['is_backlog_generated'])
+
+        if is_backlog_ready:
+            # If ready, proceed to open the dialog.
+            self.cr_management_page.on_add_item_clicked()
+        else:
+            # If not ready, show the informative message box.
+            QMessageBox.warning(self, "Action Not Available",
+                                "A project must be open and have a ratified backlog before new items can be added.")
 
     def on_manage_crs(self):
         """Switches to the CR Management page."""
