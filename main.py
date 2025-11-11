@@ -58,7 +58,8 @@ def initialize_database(db_manager: ASDFDBManager):
         "INTEGRATION_PROVIDER": ("None", "The selected external project management tool provider."),
         "INTEGRATION_URL": ("", "The base URL for the external tool's API."),
         "INTEGRATION_USERNAME": ("", "The username or email for the integration account."),
-        "INTEGRATION_API_TOKEN": ("", "The API token for the integration account.")
+        "INTEGRATION_API_TOKEN": ("", "The API token for the integration account."),
+        "IDE_EXECUTABLE_PATH": ("", "The absolute path to the developer's IDE executable (e.g., code.cmd, pycharm64.exe)."),
     }
 
     all_config = db_manager.get_all_config_values()

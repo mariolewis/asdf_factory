@@ -12,6 +12,7 @@ INCLUDED_EXTENSIONS = {
     '.py',
     '.ui',
     '.qss',
+    '.txt'
 }
 
 # Add directory or file names to ignore.
@@ -29,14 +30,24 @@ IGNORED_PATHS = {
 # -------------------
 
 def get_file_content(file_path: Path) -> str:
-    """Reads the content of a file, handling .docx separately."""
+    """Reads the content of a file, handling .docx and various text encodings."""
     try:
         if file_path.suffix == '.docx':
             doc = docx.Document(file_path)
             return "\n".join([para.text for para in doc.paragraphs])
         else:
-            # For text-based files
-            return file_path.read_text(encoding='utf-8', errors='ignore')
+            # For text-based files, read as bytes first to handle encoding issues
+            file_bytes = file_path.read_bytes()
+            try:
+                # Try UTF-8 first (for all .py, .qss, etc.)
+                return file_bytes.decode('utf-8')
+            except UnicodeDecodeError:
+                try:
+                    # Fallback for Windows-created files (like pip freeze >)
+                    return file_bytes.decode('utf-16')
+                except UnicodeDecodeError:
+                    # Final fallback for any other case
+                    return file_bytes.decode('latin-1', errors='ignore')
     except Exception as e:
         return f"Error reading file {file_path.name}: {e}"
 

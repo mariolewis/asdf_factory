@@ -4,7 +4,7 @@ import logging
 import shutil
 import os
 from pathlib import Path
-from PySide6.QtCore import Qt, QThreadPool, QTimer
+from PySide6.QtCore import Qt, QThreadPool, QTimer, QDir
 from PySide6.QtWidgets import QFileDialog
 from PySide6.QtGui import QStandardItemModel, QStandardItem
 from PySide6.QtWidgets import (QTableView, QHeaderView, QAbstractItemView,
@@ -149,10 +149,12 @@ class SettingsDialog(QDialog):
         self.logging_combo_box.addItems(["Standard", "Detailed", "Debug"])
         self.project_path_input = QLineEdit()
         self.archive_path_input = QLineEdit()
+        self.ide_path_input = QLineEdit()
+        self.ide_path_browse_button = QPushButton("Browse...")
 
         # --- Templates Tab Widgets ---
         self.templates_tab = QWidget()
-        self.template_instruction_label = QLabel("Here you can manage global document templates. A template defines the structure and boilerplate text for a specific document type. When a template is set, the AI will use it to format its output for all new projects.")
+        self.template_instruction_label = QLabel("Here you can manage global document templates. A template provides a standard structure for a specification document. When a template is set, the AI will use it to structure its output according to it.")
         self.template_type_combo = QComboBox()
         self.template_type_combo.addItems(["Application Specification", "Technical Specification", "UX/UI Specification"])
         self.template_path_input = QLineEdit()
@@ -262,6 +264,10 @@ class SettingsDialog(QDialog):
         factory_tab_layout.addRow("Logging Level:", self.logging_combo_box)
         factory_tab_layout.addRow("Default Project Path:", self.project_path_input)
         factory_tab_layout.addRow("Default Export Path:", self.archive_path_input)
+        ide_path_layout = QHBoxLayout()
+        ide_path_layout.addWidget(self.ide_path_input)
+        ide_path_layout.addWidget(self.ide_path_browse_button)
+        factory_tab_layout.addRow("IDE Executable Path:", ide_path_layout)
 
         # --- Templates Tab Layout ---
         templates_tab_layout = QVBoxLayout(self.templates_tab)
@@ -570,6 +576,34 @@ class SettingsDialog(QDialog):
         self.activeStyleLabel.setText(f"Active Style: <b>{item.text()}</b>")
         # The path will be saved to DB when the user clicks "Save"
 
+    def _on_browse_for_ide(self):
+        """
+        Opens a file dialog to select an IDE executable.
+        Provides OS-aware defaults for a better user experience.
+        """
+        # Determine the starting directory
+        current_path = self.ide_path_input.text()
+        if current_path and os.path.exists(current_path):
+            start_dir = os.path.dirname(current_path)
+        else:
+            # A reasonable default for Windows/Mac
+            start_dir = "C:\\Program Files" if os.name == 'nt' else "/Applications"
+            if not os.path.exists(start_dir):
+                start_dir = QDir.homePath()
+        # Define file filters
+        if os.name == 'nt':
+            file_filter = "Executables (*.exe *.cmd *.bat);;All Files (*)"
+        else:
+            file_filter = "All Files (*)"
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select IDE Executable",
+            start_dir,
+            file_filter
+        )
+        if file_path:
+            self.ide_path_input.setText(file_path)
+
     def populate_fields(self):
         """Loads all current settings from the database and populates the UI fields."""
         self.all_config = self.orchestrator.db_manager.get_all_config_values()
@@ -607,6 +641,7 @@ class SettingsDialog(QDialog):
         self.logging_combo_box.setCurrentText(get_val("LOGGING_LEVEL", "Standard"))
         self.project_path_input.setText(get_val("DEFAULT_PROJECT_PATH"))
         self.archive_path_input.setText(get_val("DEFAULT_ARCHIVE_PATH"))
+        self.ide_path_input.setText(get_val("IDE_EXECUTABLE_PATH"))
 
         # --- Populate Integrations
         provider = get_val("INTEGRATION_PROVIDER", "None")
@@ -630,6 +665,7 @@ class SettingsDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         self.provider_list.currentRowChanged.connect(self.on_integration_provider_changed)
         self.calibrate_button.clicked.connect(self.on_calibrate_clicked)
+        self.ide_path_browse_button.clicked.connect(self._on_browse_for_ide)
 
         # --- Template Signal Connections ---
         self.template_browse_button.clicked.connect(self._on_template_browse_clicked)
@@ -748,6 +784,7 @@ class SettingsDialog(QDialog):
                 "LOGGING_LEVEL": self.logging_combo_box.currentText(),
                 "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
                 "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text(),
+                "IDE_EXECUTABLE_PATH": self.ide_path_input.text(),
                 "SELECTED_DOCX_STYLE_PATH": self.active_style_path,
                 "INTEGRATION_PROVIDER": self.provider_list.currentItem().text(),
                 "INTEGRATION_URL": self.jira_url_input.text(),

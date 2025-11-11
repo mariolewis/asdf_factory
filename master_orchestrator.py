@@ -7380,3 +7380,21 @@ class MasterOrchestrator:
 
         logging.info("No active sprint found to resume.")
         return False
+
+    def get_files_from_stack_trace(self, failure_log: str, **kwargs) -> list[str]:
+        """
+        Uses the TriageAgent to parse a stack trace and return a list of file paths.
+        This acts as a clean interface for the UI.
+        """
+        if not self.llm_service:
+            logging.error("Cannot parse stack trace: LLM Service is not initialized.")
+            return []
+        try:
+            from agents.agent_triage_app_target import TriageAgent_AppTarget
+            agent = TriageAgent_AppTarget(self.llm_service, self.db_manager)
+            # We can reuse the existing parse_stack_trace method
+            file_paths = agent.parse_stack_trace(failure_log)
+            return file_paths
+        except Exception as e:
+            logging.error(f"Failed to parse stack trace for IDE launch: {e}")
+            return []

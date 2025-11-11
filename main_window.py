@@ -249,7 +249,7 @@ class ASDFMainWindow(QMainWindow):
 
         # --- Active Sprint Button (Initially Hidden) ---
         self.button_view_sprint = QToolButton()
-        self.button_view_sprint.setToolTip("Return to Active Process")
+        self.button_view_sprint.setToolTip("Return to Active Sprint")
         self.button_view_sprint.setIcon(QIcon(str(icons_path / "sprint_active.png"))) # We will need to add this icon
         self.button_view_sprint.setCheckable(True)
         self.button_view_sprint.setVisible(False) # Hidden by default
@@ -1548,6 +1548,107 @@ class ASDFMainWindow(QMainWindow):
         self.threadpool.start(worker)
 
     def on_decision_option2(self):
+        """
+        Handles the "Pause for Manual Fix" decision.
+        This method now checks for an IDE path and, if present,
+        launches a background worker to get file paths from the
+        stack trace before launching the IDE.
+        """
+        try:
+            ide_path = self.orchestrator.db_manager.get_config_value("IDE_EXECUTABLE_PATH")
+
+            if ide_path and ide_path.strip() and self.orchestrator.task_awaiting_approval:
+                failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "")
+
+                if failure_log:
+                    logging.info(f"IDE path is set. Starting worker to parse stack trace for: {ide_path}")
+                    self.statusBar().showMessage("Parsing stack trace for IDE...")
+
+                    # --- BEGIN NON-BLOCKING LOGIC ---
+                    # Pass necessary data to the worker
+                    worker = Worker(
+                        self.orchestrator.get_files_from_stack_trace,
+                        failure_log=failure_log
+                    )
+
+                    # Pass ide_path and project_root to the result handler via lambda
+                    project_root = self.orchestrator.project_root_path
+                    worker.signals.result.connect(
+                        lambda file_list: self._on_ide_launch_ready(file_list, ide_path, project_root)
+                    )
+
+                    # Connect error signal for graceful failure
+                    worker.signals.error.connect(self._on_ide_launch_error)
+
+                    # Start the worker thread
+                    self.threadpool.start(worker)
+                    # --- END NON-BLOCKING LOGIC ---
+
+                    # Note: We DO NOT call the pause logic here.
+                    # The worker's result handler (_on_ide_launch_ready)
+                    # is now responsible for calling the pause logic
+                    # *after* the IDE is launched.
+                    return
+
+                else:
+                    logging.warning("IDE path is set, but no failure log was found in context. Proceeding to pause.")
+
+            else:
+                logging.info("No IDE path set or no task awaiting approval. Proceeding with standard pause.")
+        except Exception as e:
+            # This is a safeguard for the launch *setup* logic.
+            logging.error(f"Failed to initiate IDE launch: {e}", exc_info=True)
+            QMessageBox.warning(self, "IDE Launch Failed", f"Could not initiate IDE launch. Proceeding to pause.\nError: {e}")
+
+        # --- FALLBACK ---
+        # If any of the IDE launch conditions fail,
+        # just run the original pause logic immediately.
+        self.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
+        self.update_ui_after_state_change()
+
+    def _on_ide_launch_ready(self, file_list: list[str], ide_path: str, project_root: str):
+        """
+        Slot to receive file list from the background worker.
+        This method runs on the main UI thread and is safe to
+        launch the IDE and update the UI.
+        """
+        logging.info(f"Worker finished. Received {len(file_list)} files. Launching IDE.")
+
+        try:
+            command = [ide_path]
+
+            # Add all found absolute file paths
+            for f in file_list:
+                safe_f = f.strip().replace("\"", "")
+                abs_path = Path(project_root) / safe_f
+                if abs_path.exists():
+                    command.append(str(abs_path))
+
+            # Fallback: if no files found, just open the project root
+            if len(command) == 1:
+                command.append(str(project_root))
+
+            subprocess.Popen(command)
+            logging.info(f"Launched IDE with command: {command}")
+
+        except Exception as e:
+            logging.error(f"Failed to launch IDE subprocess: {e}", exc_info=True)
+            QMessageBox.warning(self, "IDE Launch Failed", f"Could not launch the configured IDE. Proceeding to pause.\nError: {e}")
+        # --- FINAL STEP ---
+        # Now that the IDE is launched (or failed to launch),
+        # we proceed with the original pause logic.
+        self.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
+        self.update_ui_after_state_change()
+
+    def _on_ide_launch_error(self, error_tuple):
+        """
+        Slot to handle errors from the stack trace parsing worker.
+        """
+        exctype, value, traceback_str = error_tuple
+        logging.error(f"Worker failed to parse stack trace: {value}\n{traceback_str}")
+        QMessageBox.warning(self, "IDE Launch Failed", f"Could not parse stack trace for IDE. Proceeding to pause.\nError: {value}")
+
+        # Fallback to standard pause
         self.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
         self.update_ui_after_state_change()
 
