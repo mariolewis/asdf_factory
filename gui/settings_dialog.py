@@ -141,7 +141,7 @@ class SettingsDialog(QDialog):
         # --- Factory Behavior Tab Widgets ---
         self.factory_behavior_tab = QWidget()
         self.max_debug_spin_box = QSpinBox()
-        self.max_debug_spin_box.setRange(1, 10)
+        self.max_debug_spin_box.setRange(0, 10)
         self.context_limit_input = QLineEdit()
         self.context_limit_input.setReadOnly(False)
         self.calibrate_button = QPushButton("Auto-Calibrate Now")

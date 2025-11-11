@@ -2826,18 +2826,59 @@ class MasterOrchestrator:
                         logging.warning(f"Path mismatch for artifact {task['artifact_id']}. Overriding plan path '{plan_path}' with canonical RoWD path '{canonical_path}'.")
                         task["component_file_path"] = canonical_path
 
+            # This is the main call to execute the task
             self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
-            self.active_plan_cursor += 1
-            self.debug_attempt_counter = 0
 
+            # If it succeeds, we advance the plan
+            self.active_plan_cursor += 1
+            self.debug_attempt_counter = 0 # Reset counter on a successful task
             return "Step complete."
 
+        except EnvironmentFailureException as env_e:
+            # Environment failures are unrecoverable by the AI.
+            # The escalation was already handled inside _execute_source_code_generation_task.
+            # We just need to stop the worker thread.
+            logging.warning(f"Caught EnvironmentFailureException for {component_name}. Escalation already handled.")
+            raise env_e # Re-raise to stop the worker and signal error to UI
+
         except Exception as e:
+            # This is for all *other* failures (e.g., Code review, Code gen, Test failure)
             if progress_callback:
-                progress_callback(("ERROR", f"Task failed for {component_name}. Initiating debug protocol..."))
+                progress_callback(("ERROR", f"Task failed for {component_name}. Initiating automated debug protocol..."))
             logging.error(f"Genesis Pipeline failed for {component_name}. Error: {e}", exc_info=True)
-            self.escalate_for_manual_debug(str(e))
-            return f"Error during fix execution: {e}"
+
+            failure_log = str(e)
+            max_attempts = int(self.db_manager.get_config_value("MAX_DEBUG_ATTEMPTS") or "0")
+            fix_successful = False
+
+            if max_attempts > 0:
+                for i in range(max_attempts):
+                    logging.info(f"--- Automated Debug Attempt {i + 1} of {max_attempts} ---")
+                    if progress_callback:
+                        progress_callback(("INFO", f"--- Automated Debug Attempt {i + 1} of {max_attempts} ---"))
+
+                    # This helper method returns True if the fix was applied, False if it failed
+                    fix_successful = self._attempt_automated_fix(failure_log, **kwargs)
+
+                    if fix_successful:
+                        logging.info(f"Automated fix successful on attempt {i + 1}. Re-running original task.")
+                        if progress_callback:
+                            progress_callback(("SUCCESS", "Automated fix successful. Re-running original task..."))
+
+                        # The fix is in. Now we re-run the *original* task to verify.
+                        # We do this by calling handle_proceed_action again.
+                        return self.handle_proceed_action(**kwargs)
+                    else:
+                        # The fix attempt failed. We need the *new* failure log from the escalation.
+                        failure_log = self.task_awaiting_approval.get("failure_log", "Automated fix failed.")
+                        logging.warning(f"Automated fix attempt {i + 1} failed.")
+                        if progress_callback:
+                            progress_callback(("ERROR", f"Automated fix attempt {i + 1} failed."))
+
+            # If we are here, it's because max_attempts was 0 OR all attempts failed.
+            logging.warning(f"All {max_attempts} automated debug attempts failed or were skipped. Escalating to PM.")
+            self.escalate_for_manual_debug(failure_log)
+            raise Exception(f"Task failed and automated fixes were unsuccessful. Escalating to PM.\nLast error: {failure_log}")
 
     def run_integration_and_verification_phase(self, force_proceed=False, progress_callback=None):
         """
@@ -3076,7 +3117,7 @@ class MasterOrchestrator:
                 break
             elif review_status == "fail":
                 if attempt < MAX_REVIEW_ATTEMPTS - 1:
-                    if progress_callback: progress_callback(("INFO", f"Re-writing code for {component_name} based on feedback..."))
+                    if progress_callback: progress_callback(("INFO", f"Re-writing code for {component_name} based on review feedback..."))
                     # MODIFIED: Removed target_language, passed combined_coding_standard
                     source_code = code_agent.generate_code_for_component(logic_plan, combined_coding_standard, style_guide=style_guide_to_use, feedback=review_output)
                 else:
@@ -4078,49 +4119,48 @@ class MasterOrchestrator:
 
     def escalate_for_manual_debug(self, failure_log: str, is_functional_bug: bool = False, is_phase_failure_override: bool = False, is_final_verification_failure: bool = False):
         """
-        Handles the escalation process for a task failure. It increments a
-        counter, and if the maximum attempts are exceeded, it sets the phase
-        to escalate to the PM.
+        Handles the escalation process for a task failure.
+        This method's ONLY job is to set the orchestrator phase and
+        package the failure data for the PM.
         """
-        logging.info("A failure has triggered the escalation pipeline.")
+        logging.warning(f"Automated fix attempts failed or were skipped. Escalating to PM.")
 
-        # If this is a functional bug from UI testing, it's a direct escalation.
-        if is_functional_bug:
-            self.task_awaiting_approval = {
-                "failure_log": failure_log,
-                "original_failing_task": None,
-                "is_phase_failure": True
-            }
-            self.set_phase("DEBUG_PM_ESCALATION")
-            return
+        original_failing_task = self.get_current_task_details()
+        self.task_awaiting_approval = {
+            "failure_log": failure_log,
+            "original_failing_task": original_failing_task,
+            "is_phase_failure": is_phase_failure_override or (original_failing_task is None) or is_functional_bug,
+            "is_final_verification_failure": is_final_verification_failure
+        }
+        self.debug_attempt_counter = 0 # Reset counter for the next *set* of attempts
+        self.set_phase("DEBUG_PM_ESCALATION")
 
-        db = self.db_manager
-        max_attempts = int(db.get_config_value("MAX_DEBUG_ATTEMPTS") or "2")
+    def handle_retry_fix_action(self, failure_log: str, progress_callback=None, **kwargs):
+        """
+        Handles the PM's click of the "Retry Automated Fix" button.
+        This runs *one* attempt and then either re-runs the original task
+        or re-escalates.
+        """
+        logging.info("PM initiated 'Retry Automated Fix'.")
+        if progress_callback:
+            progress_callback(("INFO", "PM initiated 'Retry Automated Fix'. Attempting to generate a new fix plan..."))
 
-        self.debug_attempt_counter += 1
-        logging.info(f"--- Automated Debug Attempt {self.debug_attempt_counter} of {max_attempts} ---")
+        fix_successful = self._attempt_automated_fix(failure_log, **kwargs)
 
-        if self.debug_attempt_counter > max_attempts:
-            logging.warning(f"All {max_attempts} automated debug attempts have failed. Escalating to PM.")
+        if fix_successful:
+            logging.info("Automated fix was successful. Now re-attempting the original task...")
+            if progress_callback:
+                progress_callback(("SUCCESS", "Automated fix was successful. Now re-attempting the original task..."))
 
-            original_failing_task = self.get_current_task_details()
-            self.task_awaiting_approval = {
-                "failure_log": failure_log,
-                "original_failing_task": original_failing_task,
-                "is_phase_failure": is_phase_failure_override or (original_failing_task is None)
-            }
-            self.debug_attempt_counter = 0 # Reset for the next issue
-            self.set_phase("DEBUG_PM_ESCALATION")
+            # Now that the fix is in, re-run the *original* task that failed.
+            # This will run the task at self.active_plan_cursor.
+            return self.handle_proceed_action(progress_callback=progress_callback, **kwargs)
         else:
-            logging.warning(f"Debug attempt {self.debug_attempt_counter} failed. Awaiting PM decision on escalation screen.")
-            original_failing_task = self.get_current_task_details()
-            self.task_awaiting_approval = {
-                "failure_log": failure_log,
-                "original_failing_task": original_failing_task,
-                "is_phase_failure": is_phase_failure_override or (original_failing_task is None),
-                "is_final_verification_failure": is_final_verification_failure
-            }
-            self.set_phase("DEBUG_PM_ESCALATION")
+            # The fix attempt failed. _attempt_automated_fix already called escalate_for_manual_debug,
+            # so the phase is already DEBUG_PM_ESCALATION.
+            logging.warning("Automated fix attempt failed. Returning to PM escalation.")
+            # We raise an exception to let the UI worker know it failed.
+            raise Exception("The automated fix attempt failed. Please review the new failure log.")
 
     def handle_pm_triage_input(self, pm_error_description: str):
         """
@@ -4361,7 +4401,7 @@ class MasterOrchestrator:
             # Return the application to the idle state
             self.reset()
 
-    def handle_retry_fix_action(self, failure_log: str, progress_callback=None, **kwargs):
+    def _attempt_automated_fix(self, failure_log: str, progress_callback=None, **kwargs) -> bool:
         """
         Handles the PM's choice to retry an automated fix. This is designed
         to be run in a background thread. It generates a plan and then immediately
@@ -4400,17 +4440,19 @@ class MasterOrchestrator:
                 self._execute_source_code_generation_task(task, project_root_path, db, progress_callback)
                 self.fix_plan_cursor += 1
 
+            # If the loop completes without error, the fix was applied
             logging.info("Automated fix plan executed successfully.")
-            # Reset flags and re-attempt the original task to confirm the fix
             self.is_in_fix_mode = False
             self.fix_plan = None
             self.fix_plan_cursor = 0
-            return self.handle_proceed_action(progress_callback=progress_callback)
+            return True # Signal that the fix was applied
 
         except Exception as e:
-            logging.error(f"Failed during retry action: {e}", exc_info=True)
-            self.escalate_for_manual_debug(str(e))
-            raise # Re-raise to be caught by the worker's error handler
+            # If any part of the fix plan fails, log it and return False
+            logging.error(f"Failed during automated fix attempt: {e}", exc_info=True)
+            # Store the *new* failure log so the caller can escalate with it
+            self.task_awaiting_approval = {"failure_log": str(e)}
+            return False # Signal that the fix failed
 
     def run_full_test_suite(self, test_type: str = "regression", progress_callback=None, **kwargs):
         """

@@ -1272,7 +1272,7 @@ class ASDFMainWindow(QMainWindow):
                     option1_text="I have fixed the issue, Retry",
                     option2_text="Stop & Export Project"
                 )
-                self.decision_page.option1_selected.connect(self.on_decision_option1)
+                self.decision_page.option1_selected.connect(self.on_retry_environment_failure)
                 self.decision_page.option2_selected.connect(self.on_stop_export_project)
             elif is_final_verification_failure:
                 self.decision_page.configure(
@@ -1545,6 +1545,34 @@ class ASDFMainWindow(QMainWindow):
         worker.signals.progress.connect(self.genesis_page.on_progress_update)
         worker.signals.result.connect(self._handle_retry_fix_result)
         worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.finished.connect(self._on_background_task_finished)
+        worker.signals.finished.connect(self.genesis_page._on_task_finished)
+        self.threadpool.start(worker)
+
+    def on_retry_environment_failure(self):
+        """
+        Handles the "Retry" button click ONLY from an Environment Failure page.
+        This method re-runs the original task, NOT the automated-fix logic.
+        """
+        if not self.orchestrator.task_awaiting_approval:
+            logging.warning("Retry (Env) clicked, but no failure context found.")
+            return
+
+        # Set UI to busy state and transition to the Genesis processing view
+        self.setEnabled(False)
+        self.statusBar().showMessage("Re-running the last failed task...")
+        self.orchestrator.set_phase("GENESIS")
+        self.update_ui_after_state_change()
+
+        # Switch the Genesis page to its processing view
+        self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
+        self.genesis_page.ui.logOutputTextEdit.clear()
+
+        # Start the background worker to re-run handle_proceed_action
+        worker = Worker(self.orchestrator.handle_proceed_action)
+        worker.signals.progress.connect(self.genesis_page.on_progress_update)
+        worker.signals.result.connect(self.genesis_page._handle_development_result)
+        worker.signals.error.connect(self.genesis_page._on_task_error)
         worker.signals.finished.connect(self._on_background_task_finished)
         worker.signals.finished.connect(self.genesis_page._on_task_finished)
         self.threadpool.start(worker)
