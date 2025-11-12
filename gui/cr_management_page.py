@@ -52,7 +52,7 @@ class CRManagementPage(QWidget):
         self.delete_action = self.more_actions_menu.addAction("Delete Item")
         self.more_actions_menu.addSeparator()
         self.analyze_action = self.more_actions_menu.addAction("Run Impact Analysis")
-        self.implement_action = self.more_actions_menu.addAction("Implement Item")
+        #self.implement_action = self.more_actions_menu.addAction("Implement Item")
         self.more_actions_menu.addSeparator()
         self.import_action = self.more_actions_menu.addAction("Import from Tool...")
         self.sync_action = self.more_actions_menu.addAction("Sync to Tool")
@@ -95,7 +95,7 @@ class CRManagementPage(QWidget):
         self.edit_action.triggered.connect(self.on_edit_clicked)
         self.delete_action.triggered.connect(self.on_delete_item)
         self.analyze_action.triggered.connect(self.on_run_full_analysis_clicked)
-        self.implement_action.triggered.connect(self.on_implement_clicked)
+        # self.implement_action.triggered.connect(self.on_implement_clicked)
         self.import_action.triggered.connect(self.import_from_tool.emit)
         self.sync_action.triggered.connect(self.on_sync_clicked)
         self.ui.backButton.clicked.connect(self.on_back_clicked)
@@ -417,9 +417,9 @@ class CRManagementPage(QWidget):
         item, data = self._get_selected_item_and_data()
         if data and data.get('request_type') in ["BACKLOG_ITEM", "BUG_REPORT"]: self.analyze_cr.emit(data)
 
-    def on_implement_clicked(self):
-        item, data = self._get_selected_item_and_data()
-        if data and data.get('request_type') in ["BACKLOG_ITEM", "BUG_REPORT"]: self.implement_cr.emit(data['cr_id'])
+    #def on_implement_clicked(self):
+    #    item, data = self._get_selected_item_and_data()
+    #    if data and data.get('request_type') in ["BACKLOG_ITEM", "BUG_REPORT"]: self.implement_cr.emit(data['cr_id'])
 
     def on_sync_clicked(self):
         selection_model = self.ui.crTreeView.selectionModel()
@@ -497,7 +497,7 @@ class CRManagementPage(QWidget):
         self.delete_action.setEnabled(False)
         self.analyze_action.setEnabled(False)
         self.sync_action.setEnabled(False)
-        self.implement_action.setEnabled(False)
+        # self.implement_action.setEnabled(False)
 
         if not has_selection:
             return # No more logic needed if nothing is selected.
@@ -527,8 +527,8 @@ class CRManagementPage(QWidget):
                 self.analyze_action.setEnabled(can_analyze)
 
                 # "Implement" is only available after analysis is complete.
-                can_implement = item_status in ["IMPACT_ANALYZED", "TECHNICAL_PREVIEW_COMPLETE"]
-                self.implement_action.setEnabled(can_implement)
+                can_implement = item_status in ["TECHNICAL_PREVIEW_COMPLETE"]
+                # self.implement_action.setEnabled(can_implement)
 
     def on_save_backlog_clicked(self):
         """Handles the user's request to save the backlog to an XLSX file."""

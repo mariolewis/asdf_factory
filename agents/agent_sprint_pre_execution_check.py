@@ -38,20 +38,19 @@ class SprintPreExecutionCheckAgent:
         logging.info("Running sprint pre-execution check...")
 
         prompt = textwrap.dedent(f"""
-            You are an expert Agile project manager and software architect. Your task is to analyze a set of proposed backlog items for a new sprint and identify potential risks by comparing them against the entire project backlog and the current state of the codebase (RoWD).
+            You are an expert software architect. Your **sole task** is to perform a narrow **technical conflict analysis** on a set of proposed backlog items.
+
+            **PRIMARY GOAL:** Identify if any of the 'selected_sprint_items' will conflict with each other during implementation. Do NOT analyze for logical or business dependencies (e.g., "Story 2 depends on Story 1"). Focus ONLY on technical implementation conflicts.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **JSON Schema:** The JSON object MUST have a single key "pre_execution_report" which contains an object with three keys: "missing_dependencies", "technical_conflicts", and "sequencing_advice". Each of these keys must hold an array of strings.
-            3.  **Use Hierarchical IDs:** When referring to any backlog item in your report, you MUST use its user-facing 'hierarchical_id' (e.g., "1.2.1"), NOT its internal 'cr_id'.
-            4.  **Analysis:**
-                -   **Missing Dependencies:** Analyze the 'selected_sprint_items'. If an item logically depends on another item from the 'full_project_backlog' that is NOT included in the sprint, list it as a warning.
-                -   **Technical Conflicts:** Analyze the 'technical_preview_text' of the selected items. If two or more items propose conflicting changes to the same file or component, flag this as a conflict.
-                -   **Architectural Sequencing Advice:** Review the selected items and suggest a more efficient or logical implementation order if one exists.
-            5.  **No Issues:** If you find no issues in a category, return an empty array `[]` for that key.
-            6.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
+            2.  **JSON Schema:** The JSON object MUST have a single key "pre_execution_report" which contains an object with three keys: "missing_dependencies", "technical_conflicts", and "sequencing_advice".
+            3.  **Analysis:**
+                -   **Technical Conflicts:** Analyze the 'technical_preview_text' and 'impacted_artifact_ids' of the selected items. If two or more items propose conflicting changes to the *same file* or *component*, list this as a technical conflict.
+                -   **Other Keys:** You MUST return empty arrays `[]` for "missing_dependencies" and "sequencing_advice". Your role is not to perform these strategic checks.
+            4.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON object itself.
 
-            **--- INPUT 1: Full Project Backlog (Each item has a 'hierarchical_id') ---**
+            **--- INPUT 1: Full Project Backlog (for context, NOT for dependency checks) ---**
             ```json
             {full_backlog_json}
             ```
@@ -66,7 +65,7 @@ class SprintPreExecutionCheckAgent:
             {rowd_json}
             ```
 
-            **--- Pre-Execution Check Report (JSON Output, using 'hierarchical_id') ---**
+            **--- Pre-Execution Check Report (JSON Output) ---**
         """)
 
         try:

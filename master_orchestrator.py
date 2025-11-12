@@ -4960,15 +4960,29 @@ class MasterOrchestrator:
         report_data = json.loads(report_json).get("pre_execution_report", {})
         missing_deps = report_data.get("missing_dependencies", [])
         tech_conflicts = report_data.get("technical_conflicts", [])
-        if missing_deps or tech_conflicts:
-            details = ""
-            if missing_deps:
-                details += "Missing Dependencies Found:\n" + "\n".join([f"- {dep}" for dep in missing_deps]) + "\n\n"
-            if tech_conflicts:
-                details += "Potential Technical Conflicts Found:\n" + "\n".join([f"- {con}" for con in tech_conflicts])
+        # --- Technical Risk Check ---
+        tech_conflicts = report_data.get("technical_conflicts", [])
+
+        if tech_conflicts:
+            # We ONLY fail if there are *real technical conflicts*.
+            details = "Potential Technical Conflicts Found:\n" + "\n".join([f"- {con}" for con in tech_conflicts])
             final_report["technical_risk"] = {"status": "FAIL", "details": details.strip()}
         else:
-            final_report["technical_risk"] = {"status": "PASS", "details": "No technical conflicts or missing dependencies were found."}
+            # If the *only* things found are "missing_deps" or "advice", we PASS.
+            details = "No *technical conflicts* were found."
+
+            # We can still (harmlessly) pass along any other "fussy" warnings
+            # that the LLM might have generated, so the PM can see them
+            # without being blocked.
+            missing_deps = report_data.get("missing_dependencies", [])
+            sequencing_advice = report_data.get("sequencing_advice", [])
+
+            if missing_deps:
+                details += "\n\nNote: The AI also suggested the following non-mandatory dependencies:\n" + "\n".join([f"- {dep}" for dep in missing_deps])
+            if sequencing_advice:
+                 details += "\n\nNote: The AI also suggested the following implementation order:\n" + "\n".join([f"- {adv}" for adv in sequencing_advice])
+
+            final_report["technical_risk"] = {"status": "PASS", "details": details.strip()}
 
         self.task_awaiting_approval["sprint_validation_report"] = final_report
         self.set_phase("AWAITING_SPRINT_VALIDATION_APPROVAL")
