@@ -238,7 +238,7 @@ class Ui_TestEnvPage(object):
         self.helpButton.setText(QCoreApplication.translate("TestEnvPage", u"I Need Help", None))
         self.ignoreButton.setText(QCoreApplication.translate("TestEnvPage", u"Ignore && Continue", None))
         self.finalizeLabel.setText(QCoreApplication.translate("TestEnvPage", u"All setup steps have been actioned. Please confirm the final commands that will be used to run the project's automated tests.", None))
-        self.backendCommandLabel.setText(QCoreApplication.translate("TestEnvPage", u"Backend Test Command:", None))
+        self.backendCommandLabel.setText(QCoreApplication.translate("TestEnvPage", u"Backend Regression Test Command:", None))
         self.uiCommandLabel.setText(QCoreApplication.translate("TestEnvPage", u"Automated UI Test Command (Optional):", None))
         self.finalizeButton.setText(QCoreApplication.translate("TestEnvPage", u"Finalize Setup && Proceed", None))
         self.manualBuildScriptLabel.setText(QCoreApplication.translate("TestEnvPage", u"<b>Action Required</b><br>You previously chose to create the build script manually. Please enter the exact filename of the script you created (e.g., requirements.txt, build.gradle). This is required for the test environment setup.", None))

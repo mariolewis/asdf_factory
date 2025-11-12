@@ -114,6 +114,7 @@ class CRManagementPage(QWidget):
         self.ui.backButton.setVisible(is_from_dashboard)
 
     def update_backlog_view(self):
+        current_scroll_value = self.ui.crTreeView.verticalScrollBar().value()
         selection_model = self.ui.crTreeView.selectionModel()
         selection_model.blockSignals(True)
         self.model.clear()
@@ -131,6 +132,7 @@ class CRManagementPage(QWidget):
         self.model.layoutChanged.emit()
         selection_model.blockSignals(False)
         self._on_selection_changed()
+        self.ui.crTreeView.verticalScrollBar().setValue(current_scroll_value)
 
     def _populate_from_dict(self, parent_item, items, prefix=""):
         status_colors = { "IMPACT_ANALYZED": QColor("#007ACC"), "IMPLEMENTATION_IN_PROGRESS": QColor("#FFC66D"), "COMPLETED": QColor("#6A8759"), "DEBUG_PM_ESCALATION": QColor("#CC7832"), "KNOWN_ISSUE": QColor("#CC7832"), "BLOCKED": QColor("#CC7832") }

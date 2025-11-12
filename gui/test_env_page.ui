@@ -186,7 +186,7 @@
             <item row="0" column="0">
             <widget class="QLabel" name="backendCommandLabel">
             <property name="text">
-            <string>Backend Test Command:</string>
+            <string>Backend Regression Test Command:</string>
             </property>
             </widget>
             </item>
