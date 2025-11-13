@@ -73,7 +73,7 @@ class TestAgent_AppTarget:
         except Exception as e:
             error_message = f"An error occurred during unit test generation: {e}"
             logging.error(error_message)
-            return error_message
+            raise e # Re-raise the exception
 
     def generate_integration_tests(self, components: list[dict], integration_spec: str) -> str:
         """
@@ -144,4 +144,4 @@ class TestAgent_AppTarget:
             error_message = f"An error occurred during integration test generation: {e}"
             # In a real scenario, this would use the configured logger
             logging.error(error_message)
-            return error_message
+            raise e # Re-raise the exception

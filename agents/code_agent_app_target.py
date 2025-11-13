@@ -93,4 +93,4 @@ class CodeAgent_AppTarget:
         except Exception as e:
             error_message = f"An error occurred during code generation: {e}"
             logging.error(error_message)
-            return error_message
+            raise e # Re-raise the exception

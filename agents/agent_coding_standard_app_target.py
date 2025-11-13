@@ -86,7 +86,7 @@ class CodingStandardAgent_AppTarget:
             return response_text
         except Exception as e:
             logging.error(f"CodingStandardAgent_AppTarget failed: {e}")
-            return f"Error: An unexpected error occurred while generating the coding standard: {e}"
+            raise e # Re-raise the exception
 
     def refine_standard(self, current_draft: str, pm_feedback: str) -> str:
         """
@@ -128,4 +128,4 @@ class CodingStandardAgent_AppTarget:
             return response_text
         except Exception as e:
             logging.error(f"CodingStandardAgent_AppTarget refinement failed: {e}")
-            return f"Error: An unexpected error occurred while refining the coding standard: {e}"
+            raise e # Re-raise the exception

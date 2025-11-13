@@ -158,7 +158,7 @@ class TechStackProposalAgent:
             return response_text
         except Exception as e:
             logging.error(f"TechStackProposalAgent API call failed: {e}")
-            return f"Error: An unexpected error occurred while generating the tech stack proposal: {e}"
+            raise e # Re-raise the exception
 
     def refine_stack(self, current_draft: str, pm_feedback: str, target_os: str, functional_spec_text: str, ai_issues_text: str, template_content: str | None = None) -> str:
         """
@@ -214,7 +214,7 @@ class TechStackProposalAgent:
             return response_text
         except Exception as e:
             logging.error(f"TechStackProposalAgent refinement failed: {e}")
-            return f"Error: An unexpected error occurred while refining the tech spec: {e}"
+            raise e
 
     def analyze_draft(self, tech_spec_draft: str, iteration_count: int, previous_analysis: str) -> str:
         """

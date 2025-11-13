@@ -129,7 +129,7 @@ class SpecSynthesisAgent:
             return response_text.strip()
         except Exception as e:
             logging.error(f"Failed to generate Database Schema Spec: {e}")
-            return f"### Error\nAn error occurred during Database Schema Specification generation: {e}"
+            raise e # Re-raise the exception
 
     def synthesize_all_specs(self, project_id: str):
         """
@@ -138,77 +138,83 @@ class SpecSynthesisAgent:
         """
         logging.info(f"Starting specification synthesis for project {project_id}.")
 
-        project_details = self.db_manager.get_project_by_id(project_id)
-        if not project_details:
-            raise Exception("Project details not found.")
-
-        project_name = project_details['project_name']
-        project_root = Path(project_details['project_root_folder'])
-        docs_dir = project_root / "docs"
-        docs_dir.mkdir(exist_ok=True)
-
-        all_artifacts = self.db_manager.get_all_artifacts_for_project(project_id)
-        if not all_artifacts:
-            logging.warning("No artifacts found to synthesize specs from.")
-            return
-
-        summaries_context = "\n\n---\n\n".join(
-            f"File: {art['file_path']}\nSummary:\n{art['code_summary']}"
-            for art in all_artifacts if art['code_summary']
-        )
-
-        # Helper function to load a template
-        def get_template(template_name):
-            try:
-                template_record = self.db_manager.get_template_by_name(template_name)
-                if template_record:
-                    template_path = Path(template_record['file_path'])
-                    if template_path.exists():
-                        logging.info(f"Found and loaded '{template_name}' template for brownfield generation.")
-                        return template_path.read_text(encoding='utf-8')
-            except Exception as e:
-                logging.warning(f"Could not load template '{template_name}': {e}")
-            return None
-
-        # Generate App Spec with template
-        app_spec_template = get_template("Default Application Specification")
-        app_spec = self._generate_spec(summaries_context, "Application", project_name, template_content=app_spec_template)
-        self._save_and_update_spec(project_id, app_spec, "Application Specification", "application_spec", "final_spec_text", docs_dir, project_name)
-
-        # Generate Tech Spec with template
-        tech_spec_template = get_template("Default Technical Specification")
-        tech_spec = self._generate_spec(summaries_context, "Technical", project_name, template_content=tech_spec_template)
-        self._save_and_update_spec(project_id, tech_spec, "Technical Specification", "technical_spec", "tech_spec_text", docs_dir, project_name)
-
-        # Now that tech spec exists, detect and save all technologies
         try:
-            technologies = self.orchestrator.detect_technologies_in_spec(tech_spec)
-            if technologies:
-                self.db_manager.update_project_field(project_id, "detected_technologies", json.dumps(technologies))
-                logging.info(f"Detected and saved technologies for brownfield project: {technologies}")
+
+            project_details = self.db_manager.get_project_by_id(project_id)
+            if not project_details:
+                raise Exception("Project details not found.")
+
+            project_name = project_details['project_name']
+            project_root = Path(project_details['project_root_folder'])
+            docs_dir = project_root / "docs"
+            docs_dir.mkdir(exist_ok=True)
+
+            all_artifacts = self.db_manager.get_all_artifacts_for_project(project_id)
+            if not all_artifacts:
+                logging.warning("No artifacts found to synthesize specs from.")
+                return
+
+            summaries_context = "\n\n---\n\n".join(
+                f"File: {art['file_path']}\nSummary:\n{art['code_summary']}"
+                for art in all_artifacts if art['code_summary']
+            )
+
+            # Helper function to load a template
+            def get_template(template_name):
+                try:
+                    template_record = self.db_manager.get_template_by_name(template_name)
+                    if template_record:
+                        template_path = Path(template_record['file_path'])
+                        if template_path.exists():
+                            logging.info(f"Found and loaded '{template_name}' template for brownfield generation.")
+                            return template_path.read_text(encoding='utf-8')
+                except Exception as e:
+                    logging.warning(f"Could not load template '{template_name}': {e}")
+                return None
+
+            # Generate App Spec with template
+            app_spec_template = get_template("Default Application Specification")
+            app_spec = self._generate_spec(summaries_context, "Application", project_name, template_content=app_spec_template)
+            self._save_and_update_spec(project_id, app_spec, "Application Specification", "application_spec", "final_spec_text", docs_dir, project_name)
+
+            # Generate Tech Spec with template
+            tech_spec_template = get_template("Default Technical Specification")
+            tech_spec = self._generate_spec(summaries_context, "Technical", project_name, template_content=tech_spec_template)
+            self._save_and_update_spec(project_id, tech_spec, "Technical Specification", "technical_spec", "tech_spec_text", docs_dir, project_name)
+
+            # Now that tech spec exists, detect and save all technologies
+            try:
+                technologies = self.orchestrator.detect_technologies_in_spec(tech_spec)
+                if technologies:
+                    self.db_manager.update_project_field(project_id, "detected_technologies", json.dumps(technologies))
+                    logging.info(f"Detected and saved technologies for brownfield project: {technologies}")
+            except Exception as e:
+                logging.error(f"Failed to detect technologies during brownfield synthesis: {e}")
+
+            # Conditionally generate UX/UI spec with template
+            has_ui = self._detect_ui_presence(all_artifacts, project_root)
+            self.db_manager.update_project_field(project_id, "is_gui_project", 1 if has_ui else 0)
+            if has_ui:
+                ux_spec_template = get_template("Default UX/UI Specification")
+                ux_spec = self._generate_spec(summaries_context, "UX/UI", project_name, template_content=ux_spec_template)
+                self._save_and_update_spec(project_id, ux_spec, "UX/UI Specification", "ux_ui_spec", "ux_spec_text", docs_dir, project_name)
+            else:
+                logging.info("Skipping UX/UI Specification generation as no UI components were detected.")
+
+            # Conditionally generate Database Schema spec (no template for this one)
+            detection_stage, db_files_content = self._detect_database_usage(project_root)
+            if db_files_content:
+                db_schema_spec = self._generate_db_schema_spec(detection_stage, db_files_content, project_name)
+                self._save_and_update_spec(project_id, db_schema_spec, "Database Schema Specification", "db_schema_spec", "db_schema_spec_text", docs_dir, project_name)
+            else:
+                logging.info("Skipping Database Schema Specification generation as no database usage was detected.")
+
+            logging.info("Specification synthesis complete.")
+            return True
+
         except Exception as e:
-            logging.error(f"Failed to detect technologies during brownfield synthesis: {e}")
-
-        # Conditionally generate UX/UI spec with template
-        has_ui = self._detect_ui_presence(all_artifacts, project_root)
-        self.db_manager.update_project_field(project_id, "is_gui_project", 1 if has_ui else 0)
-        if has_ui:
-            ux_spec_template = get_template("Default UX/UI Specification")
-            ux_spec = self._generate_spec(summaries_context, "UX/UI", project_name, template_content=ux_spec_template)
-            self._save_and_update_spec(project_id, ux_spec, "UX/UI Specification", "ux_ui_spec", "ux_spec_text", docs_dir, project_name)
-        else:
-            logging.info("Skipping UX/UI Specification generation as no UI components were detected.")
-
-        # Conditionally generate Database Schema spec (no template for this one)
-        detection_stage, db_files_content = self._detect_database_usage(project_root)
-        if db_files_content:
-            db_schema_spec = self._generate_db_schema_spec(detection_stage, db_files_content, project_name)
-            self._save_and_update_spec(project_id, db_schema_spec, "Database Schema Specification", "db_schema_spec", "db_schema_spec_text", docs_dir, project_name)
-        else:
-            logging.info("Skipping Database Schema Specification generation as no database usage was detected.")
-
-        logging.info("Specification synthesis complete.")
-        return True
+            logging.error(f"Fatal error during spec synthesis: {e}", exc_info=True)
+            raise e # Re-raise to be caught by the worker
 
     def _generate_spec(self, summaries_context: str, spec_type: str, project_name: str, template_content: str | None = None) -> str:
         """Generic method to generate a specific type of specification, now with template support."""
@@ -275,7 +281,7 @@ class SpecSynthesisAgent:
             return response_text.strip()
         except Exception as e:
             logging.error(f"Failed to generate {spec_type} Spec: {e}")
-            return f"### Error\nAn error occurred during {spec_type} Specification generation: {e}"
+            raise e # Re-raise the exception
 
     def _detect_ui_presence(self, all_artifacts: list, project_root: Path) -> bool:
         """

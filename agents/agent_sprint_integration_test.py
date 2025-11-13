@@ -95,7 +95,7 @@ class SprintIntegrationTestAgent:
 
         except Exception as e:
             logging.error(f"Failed to generate sprint integration test: {e}", exc_info=True)
-            return None
+            raise e # Re-raise the exception
 
     def _build_prompt(self, tech_spec: str, sprint_artifacts_context: str) -> str:
         """Constructs the prompt for the LLM to generate the test script and command."""

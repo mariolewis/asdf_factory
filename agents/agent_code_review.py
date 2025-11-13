@@ -90,4 +90,4 @@ class CodeReviewAgent:
 
         except Exception as e:
             logging.error(f"CodeReviewAgent API call failed: {e}")
-            return "fail", f"An unexpected error occurred during code review: {e}"
+            raise e # Re-raise the exception

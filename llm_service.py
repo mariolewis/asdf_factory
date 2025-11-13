@@ -33,7 +33,7 @@ class GeminiAdapter(LLMService):
         """
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-            response = model_to_use.generate_content(prompt, request_options={'timeout': 600})
+            response = model_to_use.generate_content(prompt, request_options={'timeout': 60})
 
             # Robust check for valid response content
             if not response.candidates or not response.candidates[0].content.parts:
@@ -47,7 +47,8 @@ class GeminiAdapter(LLMService):
             return response.text.strip()
         except Exception as e:
             logging.error(f"Gemini API call failed: {e}", exc_info=True)
-            return f"Error: The call to the Gemini API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e
 
 class OpenAIAdapter(LLMService):
     """
@@ -69,7 +70,7 @@ class OpenAIAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=600
+                timeout=60
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -77,7 +78,8 @@ class OpenAIAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"OpenAI API call failed: {e}")
-            return f"Error: The call to the OpenAI API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e
 
 class AnthropicAdapter(LLMService):
     """
@@ -99,7 +101,7 @@ class AnthropicAdapter(LLMService):
                 model=model_to_use,
                 max_tokens=4096,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=600
+                timeout=60
             )
             response_text = message.content[0].text
             if not response_text:
@@ -107,7 +109,8 @@ class AnthropicAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Anthropic API call failed: {e}")
-            return f"Error: The call to the Anthropic API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e
 
 class GrokAdapter(LLMService):
     """
@@ -131,7 +134,7 @@ class GrokAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=600
+                timeout=60
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -139,7 +142,8 @@ class GrokAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Grok API call failed: {e}")
-            return f"Error: The call to the Grok API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e
 
 class DeepseekAdapter(LLMService):
     """
@@ -163,7 +167,7 @@ class DeepseekAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=600
+                timeout=60
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -171,7 +175,8 @@ class DeepseekAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Deepseek API call failed: {e}")
-            return f"Error: The call to the Deepseek API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e
 
 class LlamaAdapter(LLMService):
     """
@@ -203,7 +208,8 @@ class LlamaAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Llama (Replicate) API call failed: {e}")
-            return f"Error: The call to the Llama (Replicate) API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e
 
 class LocalPhi3Adapter(LLMService):
     """
@@ -221,7 +227,7 @@ class LocalPhi3Adapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=600
+                timeout=60
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -229,10 +235,12 @@ class LocalPhi3Adapter(LLMService):
             return response_text.strip()
         except openai.APIConnectionError as e:
             logging.error(f"Local Phi-3 (Ollama) API call failed: {e}")
-            return f"Error: Could not connect to the local Ollama server. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise ConnectionError(f"Could not connect to the local Ollama server. Details: {e}")
         except Exception as e:
             logging.error(f"Local Phi-3 (Ollama) API call failed: {e}")
-            return f"Error: The call to the local Phi-3 (Ollama) API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e
 
 class CustomEndpointAdapter(LLMService):
     """
@@ -253,7 +261,7 @@ class CustomEndpointAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=600
+                timeout=60
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -261,4 +269,5 @@ class CustomEndpointAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Custom Endpoint API call failed: {e}")
-            return f"Error: The call to the Custom Endpoint API failed. Details: {e}"
+            # Re-raise the exception to be caught by the worker
+            raise e

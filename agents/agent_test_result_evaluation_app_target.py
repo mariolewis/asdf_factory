@@ -60,4 +60,4 @@ class TestResultEvaluationAgent_AppTarget:
         except Exception as e:
             error_message = f"An error occurred during UI test result evaluation: {e}"
             logging.error(error_message)
-            return error_message
+            raise e # Re-raise the exception

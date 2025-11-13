@@ -45,7 +45,7 @@ class PlanAuditorAgent:
             return response_text.strip()
         except Exception as e:
             logging.error(f"PlanAuditorAgent failed during '{audit_type}' audit: {e}")
-            return f"### Error\nAn unexpected error occurred during the {audit_type} audit: {e}"
+            raise e # Re-raise the exception
 
     def _get_prompt_for_audit(self, audit_type: str, plan_json: str, tech_spec: str) -> str:
         """Selects and formats the correct prompt for the requested audit type."""

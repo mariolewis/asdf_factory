@@ -781,13 +781,17 @@ class MasterOrchestrator:
             logging.info("Reference backlog generation complete.")
             self.update_dashboard_metrics()
 
+            # 4. Transition to the backlog view only on success
+            self.set_phase("BACKLOG_VIEW")
+
         except Exception as e:
             logging.error(f"Failed to generate reference backlog: {e}", exc_info=True)
-            QTimer.singleShot(0, lambda: QMessageBox.critical(None, "Error", f"An error occurred while generating the backlog:\n{e}"))
+            raise e
+            # QTimer.singleShot(0, lambda: QMessageBox.critical(None, "Error", f"An error occurred while generating the backlog:\n{e}"))
 
-        finally:
+        #finally:
             # 4. Transition to the backlog view regardless of success
-            self.set_phase("BACKLOG_VIEW")
+        #    self.set_phase("BACKLOG_VIEW")
 
     def update_dashboard_metrics(self):
         """
@@ -994,12 +998,13 @@ class MasterOrchestrator:
 
             except Exception as e:
                 logging.error(f"Direct to Development path failed: {e}", exc_info=True)
+                raise e
                 # This is the improved, graceful error handling
-                if 'assessment_data' in self.task_awaiting_approval:
-                    self.task_awaiting_approval['assessment_data']['error'] = str(e)
-                else:
-                    self.task_awaiting_approval['assessment_data'] = {"error": str(e)}
-                self.set_phase("PROJECT_INTAKE_ASSESSMENT")
+                #if 'assessment_data' in self.task_awaiting_approval:
+                #    self.task_awaiting_approval['assessment_data']['error'] = str(e)
+                #else:
+                #    self.task_awaiting_approval['assessment_data'] = {"error": str(e)}
+                #self.set_phase("PROJECT_INTAKE_ASSESSMENT")
 
     def handle_ux_ui_brief_submission(self, brief_input):
         """
@@ -1175,7 +1180,7 @@ class MasterOrchestrator:
 
         except Exception as e:
             logging.error(f"Failed to generate initial UX spec draft: {e}", exc_info=True)
-            return f"### Error\nAn unexpected error occurred while generating the draft: {e}"
+            raise e # Re-raise the exception
 
     def refine_ux_spec_draft(self, current_draft: str, pm_feedback: str) -> str:
         """
@@ -1512,6 +1517,7 @@ class MasterOrchestrator:
             # Store the error so the UI can display it
             self.task_awaiting_approval = {"error": str(e)}
             self.set_phase("SPEC_ELABORATION") # Go back to the starting phase on error
+            raise e
 
     def handle_risk_assessment_approval(self, **kwargs):
         """
@@ -2648,8 +2654,8 @@ class MasterOrchestrator:
 
         except Exception as e:
             logging.error(f"Failed to generate project backlog: {e}", exc_info=True)
-            self.task_awaiting_approval = {"error": str(e)}
-            self.set_phase("AWAITING_BACKLOG_GATEWAY_DECISION")
+            # Re-raise the exception to be caught by the worker's error handler
+            raise e
 
     def finalize_and_save_dev_plan(self, plan_json_string: str) -> tuple[bool, str]:
         """

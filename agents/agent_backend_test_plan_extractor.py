@@ -61,4 +61,4 @@ class BackendTestPlanExtractorAgent:
 
         except Exception as e:
             logging.error(f"Failed to extract backend test plan: {e}", exc_info=True)
-            return json.dumps([{"error": f"An error occurred while extracting the test plan: {e}"}])
+            raise e # Re-raise the exception

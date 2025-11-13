@@ -58,4 +58,4 @@ class CodeSummarizationAgent:
             return response_text.strip()
         except Exception as e:
             logging.error(f"CodeSummarizationAgent failed to generate summary: {e}")
-            return f"### Error\nAn unexpected error occurred during code summarization: {e}"
+            raise e # Re-raise the exception

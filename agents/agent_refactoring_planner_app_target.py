@@ -103,7 +103,7 @@ class RefactoringPlannerAgent_AppTarget:
         except Exception as e:
             error_msg = f"An unexpected error occurred during refactoring planning: {e}"
             logging.error(error_msg, exc_info=True)
-            return json.dumps([{"error": error_msg}])
+            raise e # Re-raise the exception
 
     def refine_refactoring_plan(self, current_plan_json: str, pm_feedback: str, change_request_desc: str, tech_spec_text: str, rowd_json: str) -> str:
         """
@@ -156,4 +156,4 @@ class RefactoringPlannerAgent_AppTarget:
         except Exception as e:
             error_msg = f"An unexpected error occurred during refactoring plan refinement: {e}"
             logging.error(error_msg)
-            return json.dumps([{"error": error_msg}])
+            raise e # Re-raise the exception

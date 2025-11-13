@@ -142,7 +142,7 @@ class UX_Spec_Agent:
             return response_text.strip()
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to refine UX draft: {e}")
-            return f"### Error\nCould not refine the UX/UI Specification Draft. Details: {e}"
+            raise e
 
     def parse_final_spec_and_generate_blueprint(self, final_spec_markdown: str) -> str:
         """

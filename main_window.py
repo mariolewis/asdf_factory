@@ -713,6 +713,28 @@ class ASDFMainWindow(QMainWindow):
             # A full UI update is needed to refresh the backlog's status colors and button states
             self.update_ui_after_state_change()
 
+    def _handle_backlog_gen_error(self, error_tuple):
+        """Handles the failure of the background backlog generation task."""
+        logging.error(f"Brownfield backlog generation failed: {error_tuple[1]}", exc_info=error_tuple)
+
+        QMessageBox.critical(self, "Generation Failed",
+                             f"Failed to generate the project backlog:\n{error_tuple[1]}")
+
+        # Reset the orchestrator to the state before generation was attempted
+        self.orchestrator.set_phase("AWAITING_BROWNFIELD_STRATEGY")
+        self.update_ui_after_state_change()
+
+    def _handle_intake_direct_gen_error(self, error_tuple):
+        """Handles the failure of the direct-to-development backlog generation task."""
+        logging.error(f"Direct-to-dev backlog generation failed: {error_tuple[1]}", exc_info=error_tuple)
+
+        QMessageBox.critical(self, "Generation Failed",
+                             f"Failed to generate the project backlog:\n{error_tuple[1]}")
+
+        # Reset the orchestrator to the state before generation was attempted
+        self.orchestrator.set_phase("PROJECT_INTAKE_ASSESSMENT")
+        self.update_ui_after_state_change()
+
     def _handle_integration_result(self):
         """Called when the integration worker is finished. Triggers a final UI update."""
         # The orchestrator's phase will have been updated, so a full UI refresh
@@ -1398,8 +1420,6 @@ class ASDFMainWindow(QMainWindow):
         # so the UI update is handled after the user provides input.
         self.update_ui_after_state_change()
 
-    # In gui/main_window.py, inside the ASDFMainWindow class
-
     def _task_generate_backlog(self):
         """Wrapper to run the orchestrator's backlog generation in a background thread."""
         worker = Worker(self.orchestrator.run_backlog_generation_task)
@@ -1407,6 +1427,7 @@ class ASDFMainWindow(QMainWindow):
         # so we just need to trigger a UI refresh.
         worker.signals.finished.connect(self.update_ui_after_state_change)
         worker.signals.finished.connect(self.clear_persistent_status)
+        worker.signals.error.connect(self._handle_backlog_gen_error)
         self.threadpool.start(worker)
 
     def on_open_project(self):
@@ -1713,14 +1734,37 @@ class ASDFMainWindow(QMainWindow):
         self.update_ui_after_state_change()
 
     def on_gateway_generate_backlog(self):
-        """Handles the user's choice to generate the project backlog."""
+        """
+        Handles the user's choice to generate the project backlog, now
+        intelligently routing to the correct orchestrator method based on
+        whether the project is Greenfield or Brownfield.
+        """
         self.setEnabled(False)
         self.statusBar().showMessage("Generating project backlog from specifications...")
 
-        worker = Worker(self.orchestrator.handle_backlog_generation)
-        # The worker will change the orchestrator's state; the generic finished
-        # handler will then correctly refresh the UI to the new page.
-        worker.signals.error.connect(self._on_background_task_error)
+        # Determine which workflow to call by checking for existing code artifacts
+        is_brownfield = False
+        try:
+            artifacts = self.orchestrator.db_manager.get_all_artifacts_for_project(self.orchestrator.project_id)
+            if any(art['artifact_type'] == 'EXISTING_CODE' for art in artifacts):
+                is_brownfield = True
+        except Exception as e:
+            logging.error(f"Failed to check project type, defaulting to Greenfield. Error: {e}")
+
+        if is_brownfield:
+            logging.info("Routing backlog generation to BROWNFIELD method: run_backlog_generation_task")
+            # --- This is the Brownfield path ---
+            worker = Worker(self.orchestrator.run_backlog_generation_task)
+            # Connect to the robust error handler we created
+            worker.signals.error.connect(self._handle_backlog_gen_error)
+        else:
+            logging.info("Routing backlog generation to GREENFIELD method: handle_backlog_generation")
+            # --- This is the Greenfield path ---
+            worker = Worker(self.orchestrator.handle_backlog_generation)
+            # Connect to the robust error handler we created
+            worker.signals.error.connect(self._handle_intake_direct_gen_error)
+
+        # The finished signal is the same for both
         worker.signals.finished.connect(self._on_background_task_finished)
         self.threadpool.start(worker)
 
@@ -1745,7 +1789,7 @@ class ASDFMainWindow(QMainWindow):
         self.show_persistent_status(status_message)
 
         worker = Worker(self.orchestrator.handle_intake_assessment_decision, "DIRECT_TO_DEVELOPMENT")
-        worker.signals.error.connect(self._on_background_task_error)
+        worker.signals.error.connect(self._handle_intake_direct_gen_error)
         worker.signals.finished.connect(self._on_background_task_finished)
         self.threadpool.start(worker)
 

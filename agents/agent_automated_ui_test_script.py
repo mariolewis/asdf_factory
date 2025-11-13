@@ -78,4 +78,4 @@ class AutomatedUITestScriptAgent:
             return script_code, plan_json_str
         except Exception as e:
             logging.error(f"Failed to generate UI test script and plan: {e}", exc_info=True)
-            return None, None
+            raise e

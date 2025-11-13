@@ -33,7 +33,19 @@ class CodebaseAnalysisPage(QWidget):
         self.ui.resumeButton.clicked.connect(self.on_resume_clicked)
         self.ui.cancelButton.clicked.connect(self.on_cancel_clicked)
         self.ui.continueButton.clicked.connect(self.analysis_complete.emit)
-        self.analysis_cancelled.connect(self.orchestrator.reset) # Connect to orchestrator
+        self.analysis_cancelled.connect(self._go_back_to_env_setup) # Connect to local method
+
+    def _go_back_to_env_setup(self):
+        """
+        Handles a cancelled or failed analysis by returning the user to the
+        environment setup page, allowing them to restart the analysis.
+        """
+        logging.info("Analysis failed or was cancelled. Returning to Environment Setup.")
+        # Set the orchestrator's phase back to the start of the brownfield flow
+        self.orchestrator.set_phase("ENV_SETUP_TARGET_APP")
+        # Emit the 'analysis_complete' signal, which is what tells the
+        # main window to refresh its UI based on the orchestrator's new phase.
+        self.analysis_complete.emit()
 
     def prepare_for_display(self):
         """Resets UI and starts the background analysis task."""

@@ -72,4 +72,4 @@ class FixPlannerAgent_AppTarget:
         except Exception as e:
             error_message = f"An error occurred during fix plan generation: {e}"
             logging.error(error_message)
-            return json.dumps([{"error": error_message}]) # Return a valid JSON array with an error message
+            raise e # Re-raise the exception

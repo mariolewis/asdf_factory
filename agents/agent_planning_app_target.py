@@ -90,7 +90,7 @@ class PlanningAgent_AppTarget:
             return cleaned_response
         except Exception as e:
             logging.error(f"Failed to generate backlog items: {e}")
-            error_response = [{{"error": "Failed to generate a valid backlog.", "details": str(e)}}]
+            error_response = [{"error": "Failed to generate a valid backlog.", "details": str(e)}]
             return json.dumps(error_response)
 
     def generate_reference_backlog_from_specs(self, final_spec_text, tech_spec_text, ux_spec_text=None):
@@ -156,8 +156,9 @@ class PlanningAgent_AppTarget:
             json.loads(cleaned_response)
             return cleaned_response
         except Exception as e:
-            logging.error(f"Failed to generate reference backlog: {e}")
-            return json.dumps([{"title": "Error", "description": f"Failed to generate backlog: {e}", "features": []}])
+            logging.error(f"Failed to generate reference backlog: {e}", exc_info=True)
+            # Re-raise the exception to be caught by the worker's error handler
+            raise e
 
     def _summarize_text(self, text: str, document_type: str) -> str:
         """Helper to summarize long texts to fit context windows."""

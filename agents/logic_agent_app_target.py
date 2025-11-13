@@ -67,4 +67,4 @@ class LogicAgent_AppTarget:
             # As per the programming standard, we handle foreseeable errors gracefully.
             error_message = f"An error occurred while generating the logical plan: {e}"
             logging.error(error_message)
-            return error_message
+            raise e # Re-raise the exception

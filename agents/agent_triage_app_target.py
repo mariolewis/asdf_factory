@@ -56,7 +56,7 @@ class TriageAgent_AppTarget:
             return []
         except Exception as e:
             logging.error(f"Stack trace parsing via LLM failed: {e}")
-            return []
+            raise e # Re-raise the exception
 
     def analyze_and_hypothesize(self, error_logs: str, relevant_code: str, test_report: str = "") -> str:
         """
@@ -99,7 +99,7 @@ class TriageAgent_AppTarget:
         except Exception as e:
             error_message = f"An error occurred during triage hypothesis: {e}"
             logging.error(error_message)
-            return error_message
+            raise e # Re-raise the exception
 
     def perform_apex_trace_analysis(self, rowd_json: str, apex_file_name: str, failing_component_name: str) -> str:
         """
@@ -137,4 +137,4 @@ class TriageAgent_AppTarget:
                 return "[]"
         except Exception as e:
             logging.error(f"Apex Trace Analysis API call failed: {e}")
-            return "[]"
+            raise e # Re-raise the exception

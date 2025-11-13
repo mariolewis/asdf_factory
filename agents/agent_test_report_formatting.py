@@ -55,4 +55,4 @@ class TestReportFormattingAgent:
 
         except Exception as e:
             logging.error(f"Failed to format test report: {e}", exc_info=True)
-            return f"### Error\nAn error occurred while formatting the test report: {e}"
+            raise e # Re-raise the exception
