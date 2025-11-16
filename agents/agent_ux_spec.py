@@ -76,8 +76,31 @@ class UX_Spec_Agent:
                 - `## 3. Features (grouped by Epic)`
                 - `## 4. User Stories (grouped by Feature)`
                 - `## 5. Inferred Screens & Components`
-                - `## 6. Draft Theming & Style Guide`
-            4.  **Content Generation:** For each section, generate detailed and logical content based on the inputs. For the Style Guide, propose a clean, modern, and professional theme suitable for the application type.
+                - `## 6. Prescriptive Style Guide (for Code Agent)`
+
+            4.  **CRITICAL: Style Guide Format:** For the "## 6. Prescriptive Style Guide" section, you MUST generate a set of specific, tech-agnostic rules for the UI. This guide will be used by a downstream code agent, so it must be a set of concrete rules.
+
+                **Use this exact format:**
+
+                ### A. Color Palette
+                * `accent_color`: `"#007ACC"` (Vibrant Blue)
+                * `primary_text_color`: `"#F0F0F0"` (Off-white)
+                * `secondary_text_color`: `"#A9B7C6"` (Light Gray)
+                * `primary_background_color`: `"#202021"` (Dark Gray)
+                * `secondary_background_color`: `"#2A2A2B"` (Medium-Dark Gray)
+                * `error_color`: `"#CC7832"` (Orange-Red)
+
+                ### B. Typography
+                * `font_family`: `"Inter, Segoe UI, sans-serif"`
+                * `heading_1_size`: `"18pt"`
+                * `heading_2_size`: `"14pt"`
+                * `body_text_size`: `"10pt"`
+
+                ### C. Component Rules
+                * **Primary Button:** `background: accent_color; color: primary_text_color; min-height: 35px;`
+                * **Secondary Button:** `background: secondary_background_color; color: primary_text_color; border: 1px solid accent_color;`
+                * **Text Input:** `background: primary_background_color; border: 1px solid secondary_background_color; padding: 8px;`
+                * **Data Table:** `header_background: secondary_background_color; alternate_row_color: primary_background_color;`
 
             ---
             **INPUT 1: Project Brief**

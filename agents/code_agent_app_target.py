@@ -46,7 +46,9 @@ class CodeAgent_AppTarget:
             if style_guide:
                 style_guide_context = f"""
                 **--- INPUT 3: The Theming & Style Guide to Follow (MANDATORY) ---**
-                You MUST ensure the generated code, especially for UI components, adheres to the following aesthetic style guide (e.g., colors, fonts, component styles).
+                You MUST ensure the generated code, especially for UI components, strictly adheres to the visual styling rules defined in this guide.
+                The guide contains a "Prescriptive Style Guide" section with key-value rules (e.g., "Primary Button: background: accent_color...").
+                You MUST find these rules and translate them into the correct syntax and properties for the target language.
                 ```
                 {style_guide}
                 ```
