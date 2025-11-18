@@ -77,7 +77,7 @@ class BacklogItemModel(QStandardItemModel):
 
     def mimeTypes(self):
         """Specifies the custom MIME type this model uses for drag-and-drop."""
-        return ["application/x-asdf-backlogitem"]
+        return ["application/x-klyve-backlogitem"]
 
     def mimeData(self, indexes):
         """Encodes the dragged item's cr_id into the MIME data."""
@@ -92,7 +92,7 @@ class BacklogItemModel(QStandardItemModel):
             source_data = source_item.data(Qt.UserRole)
             if source_data and 'cr_id' in source_data:
                 # Encode the cr_id as bytes
-                mime_data.setData("application/x-asdf-backlogitem", str(source_data['cr_id']).encode())
+                mime_data.setData("application/x-klyve-backlogitem", str(source_data['cr_id']).encode())
         return mime_data
 
     def dropMimeData(self, data: QMimeData, action: Qt.DropAction, row: int, column: int, parent_index: QModelIndex):
@@ -102,11 +102,11 @@ class BacklogItemModel(QStandardItemModel):
         """
         if action == Qt.IgnoreAction:
             return True
-        if not data.hasFormat("application/x-asdf-backlogitem"):
+        if not data.hasFormat("application/x-klyve-backlogitem"):
             return False
 
         try:
-            source_cr_id = int(data.data("application/x-asdf-backlogitem").data().decode())
+            source_cr_id = int(data.data("application/x-klyve-backlogitem").data().decode())
             source_item = self._find_item_by_cr_id(source_cr_id)
             if not source_item:
                 logging.error(f"dropMimeData: Could not find source item with cr_id {source_cr_id}")

@@ -78,7 +78,7 @@ if __name__ == "__main__":
 
         # --- 1. Setup Application Assets (Icon & Splash) ---
         # (Uncomment and ensure these files exist before enabling)
-        # icon_path = Path(__file__).parent / "gui" / "icons" / "asdf_logo.ico"
+        # icon_path = Path(__file__).parent / "gui" / "icons" / "klyve_logo.ico"
         # if icon_path.exists():
         #     app.setWindowIcon(QIcon(str(icon_path)))
 
