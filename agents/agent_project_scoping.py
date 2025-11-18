@@ -6,7 +6,7 @@ This module contains the ProjectScopingAgent class.
 This agent is responsible for performing a high-level complexity analysis
 on a given specification to prevent the factory from attempting projects
 that exceed a configurable complexity threshold.
-(ASDF Change Request CR-ASDF-004)
+(Klyve Change Request CR-Klyve-004)
 """
 
 import logging
@@ -17,7 +17,7 @@ from llm_service import LLMService
 class ProjectScopingAgent:
     """
     Analyzes project specifications to provide a complexity rating.
-    (ASDF Change Request CR-ASDF-004)
+    (Klyve Change Request CR-Klyve-004)
     """
 
     def __init__(self, llm_service: LLMService):
@@ -34,7 +34,7 @@ class ProjectScopingAgent:
     def analyze_complexity(self, spec_text: str) -> dict:
         """
         Performs a detailed complexity and risk analysis on the specification text,
-        anchored by objective metrics to forecast "ASDF Effort".
+        anchored by objective metrics to forecast "Klyve Effort".
         Returns a structured dictionary with the full analysis.
         """
         import re
@@ -42,12 +42,12 @@ class ProjectScopingAgent:
         import textwrap
         import logging
 
-        logging.info("ProjectScopingAgent: Analyzing specification for ASDF Effort...")
+        logging.info("ProjectScopingAgent: Analyzing specification for Klyve Effort...")
 
 
         # After (REPLACE the old prompt with this new one)
         prompt = textwrap.dedent(f"""
-            You are the ASDF's internal Resource Forecaster. Your task is to perform a holistic analysis on the provided specification to produce a realistic and consistent Delivery Assessment.
+            You are the Klyve's internal Resource Forecaster. Your task is to perform a holistic analysis on the provided specification to produce a realistic and consistent Delivery Assessment.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
@@ -97,7 +97,7 @@ class ProjectScopingAgent:
                 if "complexity_analysis" not in result or "risk_assessment" not in result:
                     raise ValueError("LLM response was valid JSON but missed required keys ('complexity_analysis' or 'risk_assessment').")
 
-                logging.info(f"Successfully received and parsed ASDF Effort analysis on attempt {attempt + 1}.")
+                logging.info(f"Successfully received and parsed Klyve Effort analysis on attempt {attempt + 1}.")
                 return result
 
             except (json.JSONDecodeError, ValueError) as e:

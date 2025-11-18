@@ -13,7 +13,7 @@ from io import BytesIO
 import graphviz
 
 # Create a persistent temp directory for this session
-TEMP_IMAGE_DIR = Path(tempfile.gettempdir()) / "asdf_session_images"
+TEMP_IMAGE_DIR = Path(tempfile.gettempdir()) / "klyve_session_images"
 TEMP_IMAGE_DIR.mkdir(exist_ok=True)
 
 def _cleanup_temp_images():

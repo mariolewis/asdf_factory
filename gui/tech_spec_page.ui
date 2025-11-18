@@ -69,7 +69,7 @@
          <item>
           <widget class="QPushButton" name="proposeStackButton">
            <property name="text">
-            <string>Let ASDF Propose a Tech Stack</string>
+            <string>Let Klyve Propose a Tech Stack</string>
            </property>
           </widget>
          </item>

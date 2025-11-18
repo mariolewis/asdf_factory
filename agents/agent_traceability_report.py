@@ -2,7 +2,7 @@
 
 import logging
 import json
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 # Import MasterOrchestrator to access the hierarchical numbering method
 # from master_orchestrator import MasterOrchestrator
 
@@ -12,12 +12,12 @@ class RequirementTraceabilityAgent:
     down to implemented code artifacts.
     """
 
-    def __init__(self, db_manager: ASDFDBManager, orchestrator: 'MasterOrchestrator'):
+    def __init__(self, db_manager: KlyveDBManager, orchestrator: 'MasterOrchestrator'):
         """
         Initializes the RequirementTraceabilityAgent.
 
         Args:
-            db_manager (ASDFDBManager): An instance of the database manager.
+            db_manager (KlyveDBManager): An instance of the database manager.
             orchestrator (MasterOrchestrator): An instance of the main orchestrator
                                                (needed for hierarchical IDs).
         """

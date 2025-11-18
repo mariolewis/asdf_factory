@@ -2,7 +2,7 @@
 
 import logging
 import re
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 import textwrap
 import json
 from llm_service import LLMService
@@ -12,7 +12,7 @@ class TriageAgent_AppTarget:
     Agent responsible for analyzing failures and hypothesizing the root cause.
     """
 
-    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
+    def __init__(self, llm_service: LLMService, db_manager: KlyveDBManager):
         """
         Initializes the TriageAgent_AppTarget.
         """

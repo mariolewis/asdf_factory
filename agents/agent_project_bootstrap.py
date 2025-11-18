@@ -6,7 +6,7 @@ This module contains the ProjectBootstrapAgent class.
 
 import logging
 from typing import List, Tuple, Optional
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 from pathlib import Path
 # Note: pypdf is now imported inside the method to prevent startup hangs.
 
@@ -14,7 +14,7 @@ class ProjectBootstrapAgent:
     """
     Processes uploaded specification documents for the target application.
     """
-    def __init__(self, db_manager: ASDFDBManager):
+    def __init__(self, db_manager: KlyveDBManager):
         """
         Initializes the ProjectBootstrapAgent.
         """

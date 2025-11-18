@@ -5,7 +5,7 @@ This module contains the RollbackAgent class.
 
 This agent is responsible for handling Git rollback operations for a target
 application's repository, as directed by the MasterOrchestrator.
-(ASDF PRD v0.6, Section 3.6)
+(Klyve PRD v0.6, Section 3.6)
 """
 
 from pathlib import Path

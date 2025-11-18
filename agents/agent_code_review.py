@@ -2,7 +2,7 @@
 
 """
 This module contains the CodeReviewAgent class.
-(ASDF Change Request CR-ASDF-002)
+(Klyve Change Request CR-Klyve-002)
 """
 
 import logging
@@ -14,7 +14,7 @@ class CodeReviewAgent:
     """
     Acts as an automated code reviewer, validating new source code against its
     specification, logic plan, and the existing codebase context.
-    (ASDF Change Request CR-ASDF-002)
+    (Klyve Change Request CR-Klyve-002)
     """
 
     def __init__(self, llm_service: LLMService):

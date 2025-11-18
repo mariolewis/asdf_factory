@@ -58,9 +58,9 @@ from gui.codebase_analysis_page import CodebaseAnalysisPage
 from gui.project_dashboard_page import ProjectDashboardPage
 from gui.sprint_integration_test_page import SprintIntegrationTestPage
 
-class ASDFMainWindow(QMainWindow):
+class KlyveMainWindow(QMainWindow):
     """
-    The main window for the ASDF desktop application.
+    The main window for the Klyve desktop application.
     This is the complete, architecturally corrected version.
     """
     def __init__(self, orchestrator: MasterOrchestrator):
@@ -351,7 +351,7 @@ class ASDFMainWindow(QMainWindow):
         self.ui.actionReport_Bug.triggered.connect(self.on_report_bug)
 
         # Help Menu
-        self.ui.actionAbout_ASDF.triggered.connect(self.on_about)
+        self.ui.actionAbout_Klyve.triggered.connect(self.on_about)
 
         # --- CORRECTED: Vertical Action Bar Connections ---
         self.button_view_explorer.clicked.connect(self.on_view_explorer)
@@ -1436,7 +1436,7 @@ class ASDFMainWindow(QMainWindow):
         self.update_ui_after_state_change()
 
     def on_load_project(self):
-        """Handles the 'Import Archived Project' action."""
+        """Handles the 'Import Exported Project' action."""
         self.orchestrator.set_phase("VIEWING_PROJECT_HISTORY")
         self.update_ui_after_state_change()
 
@@ -1528,7 +1528,7 @@ class ASDFMainWindow(QMainWindow):
             QMessageBox.information(self, "Success", "Project settings have been saved.")
 
     def on_about(self):
-        QMessageBox.about(self, "About ASDF", "<h3>Autonomous Software Development Factory (ASDF)</h3><p>Version 0.8 (PySide6 Migration)</p><p>This application uses AI to assist in the end-to-end creation of software.</p>")
+        QMessageBox.about(self, "About Klyve", "<h3>Autonomous Software Development Factory (Klyve)</h3><p>Version 0.8 (PySide6 Migration)</p><p>This application uses AI to assist in the end-to-end creation of software.</p>")
 
     def on_back_to_workflow(self):
         """Returns the UI to the previously active workflow phase."""
@@ -2315,7 +2315,7 @@ class ASDFMainWindow(QMainWindow):
         details = ""
         # Only add synced items to details if there were more than one, or if there were failures.
         if len(synced_items) > 1 or failed > 0:
-            created_keys = "\n".join([f"- {item['external_key']} (ASDF ID: {item['id']})" for item in synced_items])
+            created_keys = "\n".join([f"- {item['external_key']} (Klyve ID: {item['id']})" for item in synced_items])
             details += f"Successfully Created Issues:\n{created_keys}\n\n"
 
         if errors:

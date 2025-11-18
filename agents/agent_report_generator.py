@@ -12,7 +12,7 @@ from docx.shared import Inches
 from io import BytesIO
 import json
 import re
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 from pathlib import Path
 from docx.shared import Pt
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -34,12 +34,12 @@ class ReportGeneratorAgent:
     project reports.
     """
 
-    def __init__(self, db_manager: ASDFDBManager = None):
+    def __init__(self, db_manager: KlyveDBManager = None):
         """
         Initializes the ReportGeneratorAgent.
 
         Args:
-            db_manager (ASDFDBManager, optional): An instance of the database manager.
+            db_manager (KlyveDBManager, optional): An instance of the database manager.
                 Required for template-based generation.
         """
         self.db_manager = db_manager
@@ -105,10 +105,10 @@ class ReportGeneratorAgent:
         document = self._get_styled_document()
 
         try:
-            document.add_paragraph('ASDF - Development Progress Summary', style='Title')
+            document.add_paragraph('Klyve - Development Progress Summary', style='Title')
         except KeyError:
             logging.warning("Style 'Title' not found. Using fallback.")
-            document.add_heading('ASDF - Development Progress Summary', level=1)
+            document.add_heading('Klyve - Development Progress Summary', level=1)
 
         try:
             document.add_paragraph(f"Total Components Defined in Plan: {total_components}", style='Normal')
@@ -153,12 +153,12 @@ class ReportGeneratorAgent:
         document = self._get_styled_document()
 
         try:
-            document.add_paragraph('ASDF - Change Requests & Bug Fixes', style='Title')
+            document.add_paragraph('Klyve - Change Requests & Bug Fixes', style='Title')
             document.add_paragraph(f"Report Filter: {filter_type}", style='Normal')
             document.add_paragraph() # Spacer
         except KeyError:
             logging.warning("Style not found. Using fallbacks.")
-            document.add_heading('ASDF - Change Requests & Bug Fixes', level=1)
+            document.add_heading('Klyve - Change Requests & Bug Fixes', level=1)
             document.add_paragraph(f"Report Filter: {filter_type}")
 
         try:

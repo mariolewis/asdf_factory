@@ -5,7 +5,7 @@ import textwrap
 import json
 import re
 from llm_service import LLMService
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 
 class PlanningAgent_AppTarget:
     """
@@ -13,7 +13,7 @@ class PlanningAgent_AppTarget:
     based on the finalized application and technical specifications.
     """
 
-    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
+    def __init__(self, llm_service: LLMService, db_manager: KlyveDBManager):
         if not llm_service:
             raise ValueError("llm_service is required for the PlanningAgent_AppTarget.")
         if not db_manager:

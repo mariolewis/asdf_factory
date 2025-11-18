@@ -87,7 +87,7 @@
            <item row="0" column="1">
             <widget class="QLineEdit" name="projectKeyLineEdit">
              <property name="toolTip">
-              <string>The short code for your project in Jira (e.g., ASDF, PROJ).</string>
+              <string>The short code for your project in Jira (e.g., Klyve, PROJ).</string>
              </property>
             </widget>
            </item>

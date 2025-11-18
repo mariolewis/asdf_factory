@@ -9,7 +9,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from llm_service import LLMService
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 from agents.agent_code_summarization import CodeSummarizationAgent
 from agents.doc_update_agent_rowd import DocUpdateAgentRoWD
 
@@ -19,7 +19,7 @@ class CodebaseScannerAgent:
     and populating the Record-of-Work-Done (RoWD) in the database.
     """
 
-    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
+    def __init__(self, llm_service: LLMService, db_manager: KlyveDBManager):
         if not llm_service:
             raise ValueError("llm_service is required for the CodebaseScannerAgent.")
         if not db_manager:

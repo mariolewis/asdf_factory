@@ -278,7 +278,7 @@ class Ui_TechSpecPage(object):
         TechSpecPage.setWindowTitle(QCoreApplication.translate("TechSpecPage", u"Form", None))
         self.headerLabel.setText(QCoreApplication.translate("TechSpecPage", u"Technical Specification & Architecture", None))
         self.instructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"First, choose how to create the Technical Specification document.", None))
-        self.proposeStackButton.setText(QCoreApplication.translate("TechSpecPage", u"Let ASDF Propose a Tech Stack", None))
+        self.proposeStackButton.setText(QCoreApplication.translate("TechSpecPage", u"Let Klyve Propose a Tech Stack", None))
         self.pmDefineButton.setText(QCoreApplication.translate("TechSpecPage", u"I Will Provide Technology Guidelines", None))
         self.pmDefineHeaderLabel.setText(QCoreApplication.translate("TechSpecPage", u"Define Technology Guidelines", None))
         self.pmDefineInstructionLabel.setText(QCoreApplication.translate("TechSpecPage", u"Provide your key technology choices or guidelines below (e.g., 'Use Python with a Flask backend and a SQLite database'). You can also upload supporting documents. The AI will use your input to generate the full technical specification document.", None))

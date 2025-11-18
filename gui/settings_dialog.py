@@ -62,7 +62,7 @@ class AddTemplateDialog(QDialog):
         }
 class SettingsDialog(QDialog):
     """
-    The dialog window for managing ASDF settings.
+    The dialog window for managing Klyve settings.
     """
     def __init__(self, orchestrator: MasterOrchestrator, parent=None):
         super().__init__(parent)
@@ -74,7 +74,7 @@ class SettingsDialog(QDialog):
         self.provider_changed = False
         self.active_style_path = ""
 
-        self.setWindowTitle("ASDF Settings")
+        self.setWindowTitle("Klyve Settings")
         self.setMinimumSize(600, 500)
         self.setModal(True)
 

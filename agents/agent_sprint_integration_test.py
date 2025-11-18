@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Tuple, Optional
 
 from llm_service import LLMService
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 
 class SprintIntegrationTestAgent:
     """
@@ -19,13 +19,13 @@ class SprintIntegrationTestAgent:
     to execute it[cite: 2192, 2196].
     """
 
-    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
+    def __init__(self, llm_service: LLMService, db_manager: KlyveDBManager):
         """
         Initializes the SprintIntegrationTestAgent.
 
         Args:
             llm_service (LLMService): An instance of a class that adheres to the LLMService interface.
-            db_manager (ASDFDBManager): An instance of the database manager.
+            db_manager (KlyveDBManager): An instance of the database manager.
         """
         if not llm_service:
             raise ValueError("llm_service is required for the SprintIntegrationTestAgent.")

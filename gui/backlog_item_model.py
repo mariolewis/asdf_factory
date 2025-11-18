@@ -7,7 +7,7 @@ from PySide6.QtCore import Signal, Qt, QMimeData, QModelIndex
 class BacklogItemModel(QStandardItemModel):
     """
     A custom QStandardItemModel to handle the specific drag-and-drop logic
-    and business rules for the ASDF project backlog.
+    and business rules for the Klyve project backlog.
     """
     itemsMoved = Signal(int, object, int) # moved_cr_id, new_parent_cr_id (can be None), new_row
 

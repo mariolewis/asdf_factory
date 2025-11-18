@@ -30,7 +30,7 @@ from agents.agent_ux_triage import UX_Triage_Agent
 from agents.agent_ux_spec import UX_Spec_Agent
 from agents.agent_report_generator import ReportGeneratorAgent
 from agents.agent_ux_spec import UX_Spec_Agent
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 from agents.logic_agent_app_target import LogicAgent_AppTarget
 from agents.code_agent_app_target import CodeAgent_AppTarget
 from agents.test_agent_app_target import TestAgent_AppTarget
@@ -131,11 +131,11 @@ class FactoryPhase(Enum):
 
 class MasterOrchestrator:
     """
-    The central state machine and workflow manager for the ASDF.
+    The central state machine and workflow manager for the Klyve.
     It coordinates agents, manages project state, and handles project lifecycle.
     """
 
-    def __init__(self, db_manager: ASDFDBManager):
+    def __init__(self, db_manager: KlyveDBManager):
         self.db_manager = db_manager
         self.resumable_state = None # Initialize as None
 
@@ -2345,7 +2345,7 @@ class MasterOrchestrator:
 
     def handle_sync_to_tool(self, cr_ids: list) -> dict:
         """
-        Handles syncing a list of ASDF backlog items to the external tool,
+        Handles syncing a list of Klyve backlog items to the external tool,
         including their hierarchical parent information and correct issue types.
         """
         if not self.project_id:
@@ -2405,7 +2405,7 @@ class MasterOrchestrator:
 
 
             if not issue_type_id_to_use:
-                failed_items.append({"id": cr_id, "reason": f"No Jira Issue Type ID configured in Project Settings for ASDF type '{item_type}'."})
+                failed_items.append({"id": cr_id, "reason": f"No Jira Issue Type ID configured in Project Settings for Klyve type '{item_type}'."})
                 continue
 
             # 5. Find parent information
@@ -2578,7 +2578,7 @@ class MasterOrchestrator:
                 report_generator = ReportGeneratorAgent(self.db_manager)
                 docx_bytes = report_generator.generate_text_document_docx(
                     # FIX: The argument is 'technology', not 'technology_name'
-                    title=f"Coding Standard ({technology}) - {project_details.get('project_name', 'ASDF Project')}",
+                    title=f"Coding Standard ({technology}) - {project_details.get('project_name', 'Klyve Project')}",
                     content=pure_standard_content
                 )
                 docx_artifact_name = f"coding_standard_{safe_tech_name}.docx"
@@ -3022,7 +3022,7 @@ class MasterOrchestrator:
             return False
             # return "Error"
 
-    def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
+    def _execute_source_code_generation_task(self, task: dict, project_root_path: Path, db: KlyveDBManager, progress_callback=None):
         """
         Handles the 'generate -> review -> correct -> verify -> commit -> update docs' workflow.
         """
@@ -3189,7 +3189,7 @@ class MasterOrchestrator:
         })
         if progress_callback: progress_callback(("SUCCESS", "... Project records updated."))
 
-    def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: ASDFDBManager, progress_callback=None):
+    def _execute_declarative_modification_task(self, task: dict, project_root_path: Path, db: KlyveDBManager, progress_callback=None):
         """
         Pauses the workflow to await PM confirmation for a declarative change.
         """
@@ -4975,7 +4975,7 @@ class MasterOrchestrator:
             final_report["technical_risk"] = {"status": "FAIL", "details": details.strip()}
         else:
             # If the *only* things found are "missing_deps" or "advice", we PASS.
-            details = "No *technical conflicts* were found."
+            details = "No technical conflicts were found."
 
             # We can still (harmlessly) pass along any other "fussy" warnings
             # that the LLM might have generated, so the PM can see them
@@ -5181,10 +5181,10 @@ class MasterOrchestrator:
         return True
 
     def get_main_window_instance(self):
-        """Helper to find the ASDFMainWindow instance."""
+        """Helper to find the KlyveMainWindow instance."""
         from PySide6.QtWidgets import QApplication
         for widget in QApplication.topLevelWidgets():
-            if 'ASDFMainWindow' in str(type(widget)):
+            if 'KlyveMainWindow' in str(type(widget)):
                 return widget
         return None
 
@@ -5518,12 +5518,12 @@ class MasterOrchestrator:
                 return None
         return None
 
-    def _calculate_asdf_effort_metrics(self, spec_text: str) -> dict:
+    def _calculate_klyve_effort_metrics(self, spec_text: str) -> dict:
         """
         Performs a non-LLM, heuristic analysis on a spec text to generate
         objective metrics that anchor the ProjectScopingAgent's analysis.
         """
-        logging.info("Calculating ASDF Effort metrics for spec text...")
+        logging.info("Calculating Klyve Effort metrics for spec text...")
         metrics = {
             "context_pressure_score": len(spec_text),
             "component_density_score": 0,
@@ -5587,7 +5587,7 @@ class MasterOrchestrator:
         for keyword in backend_keywords:
             metrics["backend_score"] += lower_spec.count(keyword)
 
-        logging.info(f"ASDF Effort Metrics calculated: {metrics}")
+        logging.info(f"Klyve Effort Metrics calculated: {metrics}")
         return metrics
 
     def _consolidate_specification_inputs(self) -> str:
@@ -5659,7 +5659,7 @@ class MasterOrchestrator:
 
     def _strip_header_from_document(self, document_content: str) -> str:
         """
-        A helper method to reliably remove the ASDF-standard plain text header
+        A helper method to reliably remove the Klyve-standard plain text header
         from a document, returning only the raw content. This version uses a
         regular expression to be more resilient to whitespace or encoding issues.
         """
@@ -5957,7 +5957,7 @@ class MasterOrchestrator:
             logging.error(f"Failed to cleanly pause project {self.project_id}: {e}", exc_info=True)
             self.reset()
 
-    def _clear_active_project_data(self, db: ASDFDBManager, project_id: str):
+    def _clear_active_project_data(self, db: KlyveDBManager, project_id: str):
         """Helper method to clear all data for a specific project."""
         if not project_id:
             return
@@ -7265,7 +7265,7 @@ class MasterOrchestrator:
             # 3. Scan filesystem for "Other Documents"
             other_docs = []
             root_path = Path(self.project_root_path)
-            excluded_dirs = {'.git', 'venv', '.venv', '__pycache__', 'node_modules', '.asdf_project'}
+            excluded_dirs = {'.git', 'venv', '.venv', '__pycache__', 'node_modules', '.klyve_project'}
             # Add .xlsx as requested
             allowed_extensions = {'.pdf', '.docx', '.txt', '.md', '.xlsx', '.json'}
 

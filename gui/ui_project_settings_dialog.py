@@ -204,7 +204,7 @@ class Ui_ProjectSettingsDialog(object):
         self.noProviderLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"No integration provider selected for this project.", None))
         self.projectKeyLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Project Key:", None))
 #if QT_CONFIG(tooltip)
-        self.projectKeyLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"The short code for your project in Jira (e.g., ASDF, PROJ).", None))
+        self.projectKeyLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"The short code for your project in Jira (e.g., Klyve, PROJ).", None))
 #endif // QT_CONFIG(tooltip)
         self.epicTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Epic Type ID:", None))
         self.storyTypeIdLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Jira Story Type ID:", None))

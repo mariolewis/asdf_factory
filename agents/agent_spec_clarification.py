@@ -8,7 +8,7 @@ import logging
 import textwrap
 import re
 from typing import List
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 from llm_service import LLMService
 
 
@@ -18,7 +18,7 @@ class SpecClarificationAgent:
     to produce a complete and clear specification document.
     """
 
-    def __init__(self, llm_service: LLMService, db_manager: ASDFDBManager):
+    def __init__(self, llm_service: LLMService, db_manager: KlyveDBManager):
         """
         Initializes the SpecClarificationAgent.
         """

@@ -6,11 +6,11 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from PySide6.QtCore import Qt
 import logging
 
-from asdf_db_manager import ASDFDBManager
+from klyve_db_manager import KlyveDBManager
 from master_orchestrator import MasterOrchestrator
-from main_window import ASDFMainWindow
+from main_window import KlyveMainWindow
 
-def initialize_database(db_manager: ASDFDBManager):
+def initialize_database(db_manager: KlyveDBManager):
     """
     Ensures the database is created and populated with all necessary defaults.
     """
@@ -43,7 +43,7 @@ def initialize_database(db_manager: ASDFDBManager):
         "LLAMA_FAST_MODEL": ("meta/meta-llama-3-8b-instruct", "Default fast model for Llama."),
         "MAX_DEBUG_ATTEMPTS": ("2", "Max automated fix attempts before escalating to the PM."),
         "CONTEXT_WINDOW_CHAR_LIMIT": ("2500000", "Max characters for complex analysis context."),
-        "LOGGING_LEVEL": ("Standard", "Verbosity of ASDF's internal logs."),
+        "LOGGING_LEVEL": ("Standard", "Verbosity of Klyve's internal logs."),
         "DEFAULT_PROJECT_PATH": ("", "Default parent directory for new target projects."),
         "DEFAULT_ARCHIVE_PATH": ("", "Default folder for saving project exports."),
         "SELECTED_DOCX_STYLE_PATH": ("data/templates/styles/default_docx_template.docx", "Path to the .docx file used for styling exported documents."),
@@ -69,43 +69,71 @@ def initialize_database(db_manager: ASDFDBManager):
             logging.info(f"Initialized missing config key '{key}' with default value.")
 
 if __name__ == "__main__":
-    QApplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
-    app = QApplication(sys.argv)
-    db_dir = Path("data")
-    db_dir.mkdir(exist_ok=True)
-    db_path = db_dir / "asdf.db"
+    # Import traceback for logging fatal errors
+    import traceback
 
-    db_manager = ASDFDBManager(db_path=str(db_path))
-    initialize_database(db_manager)
-
-    log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
-    log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
-    log_level = log_level_map.get(log_level_str, logging.INFO)
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
-        force=True
-    )
-    logging.info(f"Logging level set to '{log_level_str}'.")
-
-    orchestrator = MasterOrchestrator(db_manager=db_manager)
-    window = ASDFMainWindow(orchestrator=orchestrator)
-
-    # --- Robust Stylesheet Loading ---
     try:
-        style_file = Path(__file__).parent / "gui" / "style.qss"
-        if not style_file.exists():
-            raise FileNotFoundError(f"Stylesheet not found at: {style_file}")
+        QApplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
+        app = QApplication(sys.argv)
 
-        with open(style_file, "r") as f:
-            app.setStyleSheet(f.read())
-            logging.info("Successfully loaded global stylesheet.")
+        # --- 1. Setup Application Assets (Icon & Splash) ---
+        # (Uncomment and ensure these files exist before enabling)
+        # icon_path = Path(__file__).parent / "gui" / "icons" / "asdf_logo.ico"
+        # if icon_path.exists():
+        #     app.setWindowIcon(QIcon(str(icon_path)))
+
+        # --- 2. Setup Database ---
+        db_dir = Path("data")
+        db_dir.mkdir(exist_ok=True)
+        db_path = db_dir / "klyve.db"
+
+        # Initialize DB Manager
+        # (Note: Add your Dev Mode/Security logic here later when ready)
+        db_manager = KlyveDBManager(db_path=str(db_path))
+        initialize_database(db_manager)
+
+        # --- 3. Setup Logging ---
+        log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
+        log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
+        log_level = log_level_map.get(log_level_str, logging.INFO)
+
+        logging.basicConfig(
+            level=log_level,
+            format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
+            force=True
+        )
+        logging.info(f"Klyve started. Logging level: '{log_level_str}'")
+
+        # --- 4. Initialize Core Components ---
+        orchestrator = MasterOrchestrator(db_manager=db_manager)
+        window = KlyveMainWindow(orchestrator=orchestrator)
+
+        # --- 5. Robust Stylesheet Loading ---
+        try:
+            style_file = Path(__file__).parent / "gui" / "style.qss"
+            if style_file.exists():
+                with open(style_file, "r") as f:
+                    app.setStyleSheet(f.read())
+                    logging.info("Successfully loaded global stylesheet.")
+            else:
+                logging.warning(f"Stylesheet not found at: {style_file}")
+        except Exception as e:
+            logging.error(f"Failed to load stylesheet: {e}")
+            # We continue without style rather than crashing
+
+        # --- 6. Launch ---
+        window.showMaximized()
+        sys.exit(app.exec())
 
     except Exception as e:
-        error_msg = f"Fatal Error: Could not load the stylesheet 'gui/style.qss'.\nThe application cannot continue.\n\nDetails: {e}"
-        logging.critical(error_msg)
-        QMessageBox.critical(None, "Stylesheet Load Error", error_msg)
-        sys.exit(1) # Exit if the stylesheet fails to load
+        # --- FATAL ERROR HANDLER ---
+        # If anything above fails, log it and show a popup to the user.
+        error_msg = f"A critical error occurred causing Klyve to shut down.\n\nError: {e}"
+        logging.critical("CRITICAL STARTUP FAILURE", exc_info=True)
 
-    window.showMaximized()
-    sys.exit(app.exec())
+        # We need a temporary app instance to show the message box if the main one failed
+        if not QApplication.instance():
+            temp_app = QApplication(sys.argv)
+
+        QMessageBox.critical(None, "Critical Startup Error", error_msg)
+        sys.exit(1)

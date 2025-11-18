@@ -28,9 +28,9 @@ class Artifact:
     dependencies: Optional[str] = None
     unit_test_status: Optional[str] = None
 
-class ASDFDBManager:
+class KlyveDBManager:
     """
-    Data Access Object (DAO) for the ASDF SQLite database.
+    Data Access Object (DAO) for the Klyve SQLite database.
     This version is architected to be thread-safe by managing connections
     on a per-query basis.
     """
