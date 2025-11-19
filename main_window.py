@@ -1601,25 +1601,35 @@ class KlyveMainWindow(QMainWindow):
 
         version = self.get_app_version()
 
+        # Use high-contrast colors suitable for the dark dialog background (#2A2A2B)
         about_html = f"""
         <html>
         <head>
             <style>
-                h3 {{ margin-bottom: 8px; color: #004080; font-weight: bold; }}
-                p {{ margin: 0 0 5px 0; color: #333333; }}
-                .version {{ font-weight: bold; color: #CC7832; }}
-                .tagline {{ font-style: italic; margin-top: 10px; }}
+                /* Dialog Text Colors: Inverted for Dark Mode */
+                body {{ color: #F0F0F0; }} /* Sets all default text to bright white */
+                h3 {{ margin-bottom: 8px; color: #007ACC; font-weight: bold; }} /* Bright blue for the main heading */
+                p {{ margin: 0 0 5px 0; }}
+                .version {{ font-weight: bold; color: #FFC66D; }} /* Soft amber/yellow for version number */
+                .tagline {{ font-style: italic; margin-top: 10px; color: #A9B7C6; }} /* Light gray for subtle text */
             </style>
         </head>
         <body>
             <center>
+                <!-- 1. KLYVE Name & Tagline (Color: Blue) -->
                 <h3>KLYVE: YOUR EXPERTISE. SCALED.</h3>
+
+                <!-- 2. Application Title & Version (Color: White/Amber) -->
                 <p>The Autonomous Software Development Factory</p>
                 <p class="version">Version: {version}</p>
-                <p class="tagline">An AI-powered partner for effortlessly scaling expertise and accelerating software delivery.</p>
-                <hr>
-                <p>&copy; 2025 Mario J. Lewis. All Rights Reserved.</p>
-                <p style="font-size: 10px;">Protected by the Klyve License Agreement (EULA).</p>
+
+                <!-- 3. Subtler Description -->
+                <p class="tagline">An AI-powered partner providing effort scaling and expert execution.</p>
+                <hr style="border-top: 1px solid #4A4A4A;">
+
+                <!-- 4. Copyright & Legal -->
+                <p style="font-size: 10pt;">&copy; 2025 Mario J. Lewis. All Rights Reserved.</p>
+                <p style="font-size: 8pt; color: #888888;">Protected by the Klyve License Agreement (EULA).</p>
             </center>
         </body>
         </html>

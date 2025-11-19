@@ -326,6 +326,8 @@ QWidget[class="contentPanel"] {
 
 /* ---- Status Bar ---- */
 QStatusBar {
+    background-color: #1E1E1E;
+    color: #A9B7C6;
     border-top: 1px solid #4A4A4A; /* Match panel separator color */
 }
 
