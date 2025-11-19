@@ -2,7 +2,8 @@
 
 import sys
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt
 import logging
 
@@ -77,10 +78,30 @@ if __name__ == "__main__":
         app = QApplication(sys.argv)
 
         # --- 1. Setup Application Assets (Icon & Splash) ---
-        # (Uncomment and ensure these files exist before enabling)
-        # icon_path = Path(__file__).parent / "gui" / "icons" / "klyve_logo.ico"
-        # if icon_path.exists():
-        #     app.setWindowIcon(QIcon(str(icon_path)))
+        # Define paths
+        assets_dir = Path(__file__).parent / "gui"
+        icon_path = assets_dir / "icons" / "klyve_logo.ico"
+        splash_path = assets_dir / "images" / "splash_screen.png"
+
+        # A. Window Icon
+        if icon_path.exists():
+            app.setWindowIcon(QIcon(str(icon_path)))
+            # logging.info("Application icon loaded.")
+        else:
+            # This is expected right now, so we won't log a warning to keep console clean
+            pass
+
+        # B. Splash Screen
+        splash = None # Initialize variable to avoid scope errors later
+        if splash_path.exists():
+            try:
+                splash_pix = QPixmap(str(splash_path))
+                splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+                splash.show()
+                app.processEvents() # Critical: Forces the splash to paint immediately
+                logging.info("Splash screen displayed.")
+            except Exception as e:
+                logging.error(f"Failed to load splash screen: {e}")
 
         # --- 2. Setup Database ---
         db_dir = Path("data")
@@ -123,6 +144,11 @@ if __name__ == "__main__":
 
         # --- 6. Launch ---
         window.showMaximized()
+
+        # Close splash screen if it exists
+        if splash and splash.isVisible():
+            splash.finish(window) # 'finish' waits for 'window' to be fully visible before closing
+
         sys.exit(app.exec())
 
     except Exception as e:
