@@ -8,7 +8,7 @@ import subprocess
 import sys
 import warnings
 
-from PySide6.QtWidgets import (QMainWindow, QWidget, QLabel, QStackedWidget,
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QStackedWidget,
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu, QStatusBar,
                                QHBoxLayout, QVBoxLayout, QHeaderView, QAbstractItemView,
                                QStyle, QToolButton, QButtonGroup, QPushButton,
@@ -1611,30 +1611,28 @@ class KlyveMainWindow(QMainWindow):
                 h3 {{ margin-bottom: 8px; color: #007ACC; font-weight: bold; }} /* Bright blue for the main heading */
                 p {{ margin: 0 0 5px 0; }}
                 .version {{ font-weight: bold; color: #FFC66D; }} /* Soft amber/yellow for version number */
-                .tagline {{ font-style: italic; margin-top: 10px; color: #A9B7C6; }} /* Light gray for subtle text */
+                .corevalue {{ margin-top: 15px; margin-bottom: 15px; color: #CCCCCC; }} /* Core value label */
             </style>
         </head>
         <body>
             <center>
-                <!-- 1. KLYVE Name & Tagline (Color: Blue) -->
-                <h3>KLYVE: YOUR EXPERTISE. SCALED.</h3>
+                <h3>KLYVE: Your Expertise. Scaled.</h3>
 
-                <!-- 2. Application Title & Version (Color: White/Amber) -->
-                <p>The Autonomous Software Development Factory</p>
+                <p>The Intelligent Software Delivery Lifecycle Platform</p>
                 <p class="version">Version: {version}</p>
 
-                <!-- 3. Subtler Description -->
-                <p class="tagline">An AI-powered partner providing effort scaling and expert execution.</p>
+                <p class="corevalue">Your strategic implementation partner in software development, providing a highly controlled environment that scales your technical expertise.</p>
                 <hr style="border-top: 1px solid #4A4A4A;">
 
-                <!-- 4. Copyright & Legal -->
                 <p style="font-size: 10pt;">&copy; 2025 Mario J. Lewis. All Rights Reserved.</p>
                 <p style="font-size: 8pt; color: #888888;">Protected by the Klyve License Agreement (EULA).</p>
             </center>
         </body>
         </html>
         """
+
         QMessageBox.about(self, "About Klyve", about_html)
+
 
     def on_back_to_workflow(self):
         """Returns the UI to the previously active workflow phase."""
