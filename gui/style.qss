@@ -504,3 +504,4 @@ QLabel#reviewLogHeaderLabel,
 QLabel#newLogEntryHeaderLabel {
     font-weight: 700;
 }
+

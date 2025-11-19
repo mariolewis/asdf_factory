@@ -89,7 +89,7 @@ class KlyveMainWindow(QMainWindow):
         self._create_menus_and_toolbar()
         self._connect_signals()
 
-        #self._add_permanent_branding()
+        self._add_permanent_branding()
 
         self.setWindowTitle(f"Klyve - Autonomous Software Factory")
 
@@ -1595,6 +1595,45 @@ class KlyveMainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Error Loading License", f"Could not load license file: {e}")
+
+    def _add_permanent_branding(self):
+        """Adds the Klyve logo and version text to the far right of the existing QStatusBar."""
+
+        status_bar = self.ui.statusbar
+
+        if not status_bar:
+            logging.warning("Status bar object not found in UI setup. Skipping branding.")
+            return
+
+        # 1. Spacer: Push the branding content to the far right.
+        # This preserves the left side for the original dynamic status messages.
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        status_bar.addWidget(spacer)
+
+        # --- Right-aligned Branding Widget ---
+
+        # 2. Branding Container
+        branding_widget = QWidget()
+        branding_layout = QHBoxLayout(branding_widget)
+        branding_layout.setContentsMargins(5, 0, 5, 0)
+        branding_layout.setSpacing(5)
+
+        # 3. Klyve Icon (The Mark)
+        icon_path = Path(__file__).parent / "gui" / "icons" / "klyve_logo.ico"
+        if icon_path.exists():
+            icon_label = QLabel()
+            icon_label.setPixmap(QIcon(str(icon_path)).pixmap(QSize(16, 16)))
+            branding_layout.addWidget(icon_label)
+
+        # 4. Version/Branding Text
+        version = self.get_app_version()
+        version_label = QLabel(f"Klyve | v{version}")
+        version_label.setStyleSheet("color: #A9B7C6; margin-right: 5px;")
+        branding_layout.addWidget(version_label)
+
+        # 5. Add the branding widget permanently to the right
+        status_bar.addPermanentWidget(branding_widget)
 
     def on_about(self):
         """Displays the 'About Klyve' dialog with branding, version, and copyright info."""
