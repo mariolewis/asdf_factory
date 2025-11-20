@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
 from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 import logging
 
 from klyve_db_manager import KlyveDBManager
@@ -69,6 +69,58 @@ def initialize_database(db_manager: KlyveDBManager):
             db_manager.set_config_value(key, value, desc)
             logging.info(f"Initialized missing config key '{key}' with default value.")
 
+def _initialize_klyve(app, splash):
+            # This function is executed after a brief delay to ensure the splash screen
+            # is visible during the main I/O and component initialization phase.
+
+            # --- 2. Setup Database ---
+            db_dir = Path("data")
+            db_dir.mkdir(exist_ok=True)
+            db_path = db_dir / "klyve.db"
+
+            # Initialize DB Manager
+            # (Note: Add your Dev Mode/Security logic here later when ready)
+            db_manager = KlyveDBManager(db_path=str(db_path))
+            initialize_database(db_manager)
+
+            # --- 3. Setup Logging ---
+            log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
+            log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
+            log_level = log_level_map.get(log_level_str, logging.INFO)
+
+            logging.basicConfig(
+                level=log_level,
+                format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
+                force=True
+            )
+            logging.info(f"Klyve started. Logging level: '{log_level_str}'")
+
+            # --- 4. Initialize Core Components ---
+            orchestrator = MasterOrchestrator(db_manager=db_manager)
+            window = KlyveMainWindow(orchestrator=orchestrator)
+
+            # --- 5. Robust Stylesheet Loading ---
+            try:
+                style_file = Path(__file__).parent / "gui" / "style.qss"
+                if style_file.exists():
+                    with open(style_file, "r") as f:
+                        app.setStyleSheet(f.read())
+                        logging.info("Successfully loaded global stylesheet.")
+                else:
+                    logging.warning(f"Stylesheet not found at: {style_file}")
+            except Exception as e:
+                logging.error(f"Failed to load stylesheet: {e}")
+                # We continue without style rather than crashing
+
+            # --- 6. Launch ---
+            window.showMaximized()
+
+            # Fix: Defer the splash screen closing to ensure the main window has time to paint.
+            if splash and splash.isVisible():
+                QTimer.singleShot(0, lambda: splash.finish(window))
+
+        # --- END OF INITIALIZE FUNCTION ---
+
 if __name__ == "__main__":
     # Import traceback for logging fatal errors
     import traceback
@@ -103,51 +155,8 @@ if __name__ == "__main__":
             except Exception as e:
                 logging.error(f"Failed to load splash screen: {e}")
 
-        # --- 2. Setup Database ---
-        db_dir = Path("data")
-        db_dir.mkdir(exist_ok=True)
-        db_path = db_dir / "klyve.db"
-
-        # Initialize DB Manager
-        # (Note: Add your Dev Mode/Security logic here later when ready)
-        db_manager = KlyveDBManager(db_path=str(db_path))
-        initialize_database(db_manager)
-
-        # --- 3. Setup Logging ---
-        log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
-        log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
-        log_level = log_level_map.get(log_level_str, logging.INFO)
-
-        logging.basicConfig(
-            level=log_level,
-            format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
-            force=True
-        )
-        logging.info(f"Klyve started. Logging level: '{log_level_str}'")
-
-        # --- 4. Initialize Core Components ---
-        orchestrator = MasterOrchestrator(db_manager=db_manager)
-        window = KlyveMainWindow(orchestrator=orchestrator)
-
-        # --- 5. Robust Stylesheet Loading ---
-        try:
-            style_file = Path(__file__).parent / "gui" / "style.qss"
-            if style_file.exists():
-                with open(style_file, "r") as f:
-                    app.setStyleSheet(f.read())
-                    logging.info("Successfully loaded global stylesheet.")
-            else:
-                logging.warning(f"Stylesheet not found at: {style_file}")
-        except Exception as e:
-            logging.error(f"Failed to load stylesheet: {e}")
-            # We continue without style rather than crashing
-
-        # --- 6. Launch ---
-        window.showMaximized()
-
-        # Close splash screen if it exists
-        if splash and splash.isVisible():
-            splash.finish(window) # 'finish' waits for 'window' to be fully visible before closing
+        QTimer.singleShot(3000, lambda: _initialize_klyve(app, splash))
+        #_initialize_klyve(app, splash)
 
         sys.exit(app.exec())
 

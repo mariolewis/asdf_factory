@@ -1620,7 +1620,7 @@ class KlyveMainWindow(QMainWindow):
             <center>
                 <h3>KLYVE: Your Expertise. Scaled.</h3>
 
-                <p>An Intelligent Software Implementation Partner</p><br>
+                <p>The Orchestrated Software Development Assistant</p><br>
                 <p class="version">Version: {version}</p>
 
                 <!-- <p class="corevalue">Your implementation partner in software development.</p> -->
