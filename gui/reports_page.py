@@ -252,7 +252,7 @@ class ReportsPage(QWidget):
         # Disconnect previous slot before connecting new one
         try:
             self.ui.generateReportButton.clicked.disconnect()
-        except (TypeError, RuntimeError):
+        except Exception:
             pass
         # Dynamically connect the button to the correct handler based on report name
         # We use a lambda to pass the report name or necessary context if needed

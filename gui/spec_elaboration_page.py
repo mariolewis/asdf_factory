@@ -331,14 +331,11 @@ class SpecElaborationPage(QWidget):
         """
         try:
             logging.info(f"Brief processing background task completed with result: {result}")
-
-            main_window = self.window()
-            if main_window and hasattr(main_window, 'clear_persistent_status'):
-                main_window.clear_persistent_status()
-
+            # The UI transition is handled by the main window after the 'finished' signal fires.
             self.spec_elaboration_complete.emit()
-        finally:
-            self._set_ui_busy(False)
+        except Exception as e:
+            # We must still re-raise any error to trigger the _on_task_error handler
+            raise e
 
     def _task_submit_brief_for_triage(self, input_data, **kwargs):
         """Background task to process the initial brief from either text or files."""
@@ -391,6 +388,8 @@ class SpecElaborationPage(QWidget):
             self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
             if hasattr(main_window, 'show_persistent_status'):
                 main_window.show_persistent_status(status_message)
+
+        self.window().setEnabled(False)
 
         # Note: Even if feedback is empty, the process runs to analyze for issues.
         worker = Worker(self._task_refine_and_analyze, current_draft, pm_feedback)

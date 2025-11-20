@@ -65,28 +65,6 @@ class KlyveMainWindow(QMainWindow):
     The main window for the Klyve desktop application.
     This is the complete, architecturally corrected version.
     """
-    STABLE_CHECKPOINT_PHASES = {
-        FactoryPhase.IDLE,
-        FactoryPhase.BACKLOG_VIEW,
-        FactoryPhase.AWAITING_BROWNFIELD_STRATEGY,
-        FactoryPhase.PROJECT_INTAKE_ASSESSMENT,
-        FactoryPhase.AWAITING_DELIVERY_ASSESSMENT_APPROVAL,
-        FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION,
-        FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL,
-        FactoryPhase.TECHNICAL_SPECIFICATION,
-        FactoryPhase.TEST_ENVIRONMENT_SETUP,
-        FactoryPhase.BUILD_SCRIPT_SETUP,
-        FactoryPhase.DOCKERIZATION_SETUP,
-        FactoryPhase.CODING_STANDARD_GENERATION,
-        FactoryPhase.AWAITING_BACKLOG_GATEWAY_DECISION,
-        FactoryPhase.PLANNING,
-        FactoryPhase.SPRINT_REVIEW,
-        FactoryPhase.MANUAL_UI_TESTING,
-        FactoryPhase.DEBUG_PM_ESCALATION,
-        FactoryPhase.AWAITING_SPRINT_INTEGRATION_TEST_APPROVAL,
-        FactoryPhase.AWAITING_INTEGRATION_TEST_RESULT_ACK,
-        FactoryPhase.AWAITING_UI_TEST_DECISION
-    }
     def __init__(self, orchestrator: MasterOrchestrator):
         super().__init__()
         self.threadpool = QThreadPool()
@@ -341,9 +319,6 @@ class KlyveMainWindow(QMainWindow):
         self.ui.statusbar.addPermanentWidget(self.status_project_label)
         self.ui.statusbar.addPermanentWidget(self.status_phase_label)
         self.ui.statusbar.addPermanentWidget(self.status_git_label)
-
-        # Display the initial 'Ready' state on startup
-        self.statusBar().showMessage("Ready", 5000)
 
         # --- EULA Action Definition ---
         self.ui.actionLicense = QAction(QIcon(), "License Agreement", self)
@@ -907,18 +882,15 @@ class KlyveMainWindow(QMainWindow):
     def _on_background_task_finished(self):
         """
         A dedicated slot that runs AFTER a background task is completely finished.
-        It re-enables the UI, clears the persistent status, and conditionally shows the ready message.
+        It re-enables the UI and then refreshes the data tables.
         """
         self.setEnabled(True)
         self.statusBar().clearMessage()
         self.clear_persistent_status()
 
-        # The orchestrator's state is now final.
+        # The orchestrator's state is now final. A single call here will now
+        # correctly read the new phase (e.g., SPRINT_PLANNING) and transition the page.
         self.update_ui_after_state_change()
-
-        # Display 'Ready' only if the final state is a stable user checkpoint.
-        if self.orchestrator.current_phase in self.STABLE_CHECKPOINT_PHASES:
-            self._show_ready_status()
 
     def on_coding_standard_complete(self):
         """
@@ -948,31 +920,6 @@ class KlyveMainWindow(QMainWindow):
         Performs a full UI refresh. This is the single source of truth for mapping
         the orchestrator's state to the correct UI view.
         """
-        # Set of phases where the system is stable and awaiting user action.
-        STABLE_CHECKPOINT_PHASES = {
-            FactoryPhase.IDLE,
-            FactoryPhase.BACKLOG_VIEW,
-            FactoryPhase.AWAITING_BROWNFIELD_STRATEGY,
-            FactoryPhase.PROJECT_INTAKE_ASSESSMENT,
-            FactoryPhase.AWAITING_DELIVERY_ASSESSMENT_APPROVAL,
-            FactoryPhase.AWAITING_SPEC_REFINEMENT_SUBMISSION,
-            FactoryPhase.AWAITING_SPEC_FINAL_APPROVAL,
-            FactoryPhase.TECHNICAL_SPECIFICATION,
-            FactoryPhase.AWAITING_TECH_SPEC_RECTIFICATION,
-            FactoryPhase.TEST_ENVIRONMENT_SETUP,
-            FactoryPhase.BUILD_SCRIPT_SETUP,
-            FactoryPhase.DOCKERIZATION_SETUP,
-            FactoryPhase.CODING_STANDARD_GENERATION,
-            FactoryPhase.AWAITING_BACKLOG_GATEWAY_DECISION,
-            FactoryPhase.PLANNING,
-            FactoryPhase.SPRINT_REVIEW,
-            FactoryPhase.MANUAL_UI_TESTING,
-            FactoryPhase.DEBUG_PM_ESCALATION, # System is waiting for PM decision
-            FactoryPhase.AWAITING_SPRINT_INTEGRATION_TEST_APPROVAL,
-            FactoryPhase.AWAITING_INTEGRATION_TEST_RESULT_ACK,
-            # Add other known user checkpoint phases as needed
-        }
-
         self.update_static_ui_elements()
 
         current_phase = self.orchestrator.current_phase
@@ -1452,10 +1399,6 @@ class KlyveMainWindow(QMainWindow):
         else:
             self.ui.mainContentArea.setCurrentWidget(self.ui.phasePage)
             self.ui.phaseLabel.setText(f"UI for phase '{current_phase_name}' is not yet implemented.")
-
-        # Check if the final state is a user checkpoint (IDLE or BACKLOG_VIEW)
-        if current_phase in STABLE_CHECKPOINT_PHASES:
-            self._show_ready_status()
         logging.debug("update_ui_after_state_change: Method finished.")
 
     def show_persistent_status(self, message: str):
@@ -1476,11 +1419,6 @@ class KlyveMainWindow(QMainWindow):
             self.ui.statusbar.removeWidget(self.persistent_status_widget)
             self.persistent_status_widget.deleteLater()
             self.persistent_status_widget = None
-
-    def _show_ready_status(self):
-        """Displays a transient 'Ready' status message on the status bar."""
-        # This uses the default transient message mechanism on the far left.
-        self.statusBar().showMessage("Ready", 5000) # Message lasts 5 seconds
 
     def on_new_project(self):
         """Handles the 'New Project' dialog and routes to the correct workflow."""
@@ -1960,7 +1898,6 @@ class KlyveMainWindow(QMainWindow):
     def on_intake_full_lifecycle_selected(self):
         """Handles the PM's choice to proceed with the full spec elaboration lifecycle."""
         status_message = "Processing specifications for full lifecycle..."
-        self.setEnabled(False)
         self.show_persistent_status(status_message)
 
         worker = Worker(self.orchestrator.handle_intake_assessment_decision, "FULL_LIFECYCLE")
