@@ -7,6 +7,8 @@ import os
 import subprocess
 import sys
 import warnings
+import base64
+from io import BytesIO
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QStackedWidget,
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu, QStatusBar,
@@ -1618,10 +1620,10 @@ class KlyveMainWindow(QMainWindow):
             <center>
                 <h3>KLYVE: Your Expertise. Scaled.</h3>
 
-                <p>The Intelligent Software Delivery Lifecycle Platform</p>
+                <p>An Intelligent Software Implementation Partner</p><br>
                 <p class="version">Version: {version}</p>
 
-                <p class="corevalue">Your strategic implementation partner in software development, providing a highly controlled environment that scales your technical expertise.</p>
+                <!-- <p class="corevalue">Your implementation partner in software development.</p> -->
                 <hr style="border-top: 1px solid #4A4A4A;">
 
                 <p style="font-size: 10pt;">&copy; 2025 Mario J. Lewis. All Rights Reserved.</p>
@@ -1631,7 +1633,19 @@ class KlyveMainWindow(QMainWindow):
         </html>
         """
 
-        QMessageBox.about(self, "About Klyve", about_html)
+        # Use a custom QMessageBox instance to assign an objectName for surgical QSS targeting.
+        msg = QMessageBox(self)
+        msg.setWindowTitle("About Klyve")
+        msg.setText(about_html)
+
+        # Set a unique objectName for surgical QSS styling
+        msg.setObjectName("aboutKlyveDialog")
+
+        # The icon type must be explicitly set to Information or NoIcon to ensure the title bar icon appears.
+        # We use NoIcon to prevent the native icon type from overriding the app icon.
+        msg.setIcon(QMessageBox.NoIcon)
+
+        msg.exec()
 
 
     def on_back_to_workflow(self):

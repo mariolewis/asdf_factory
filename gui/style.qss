@@ -507,3 +507,9 @@ QLabel#newLogEntryHeaderLabel {
     font-weight: 700;
 }
 
+/* ---- UI Fix: Restore Padding for About Klyve Dialog ---- */
+/* Targets only the QLabel (content area) inside the uniquely named About dialog. */
+QMessageBox#aboutKlyveDialog QLabel {
+    /* Top, Right, Bottom, Left. Increasing these values adds empty space around the content. */
+    padding: 15px 30px 15px 10px;
+}
