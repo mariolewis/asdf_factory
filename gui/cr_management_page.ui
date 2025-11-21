@@ -103,6 +103,13 @@
           </widget>
          </item>
          <item>
+          <widget class="QPushButton" name="toggleScopeButton">
+           <property name="text">
+            <string>Toggle Sprint Scope</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QPushButton" name="saveBacklogButton">
            <property name="text">
             <string>Export Backlog to .xlsx...</string>

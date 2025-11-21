@@ -75,6 +75,11 @@ class Ui_CRManagementPage(object):
 
         self.horizontalLayout_2.addWidget(self.addNewItemButton)
 
+        self.toggleScopeButton = QPushButton(self.normalModePage)
+        self.toggleScopeButton.setObjectName(u"toggleScopeButton")
+
+        self.horizontalLayout_2.addWidget(self.toggleScopeButton)
+
         self.saveBacklogButton = QPushButton(self.normalModePage)
         self.saveBacklogButton.setObjectName(u"saveBacklogButton")
 
@@ -110,6 +115,7 @@ class Ui_CRManagementPage(object):
         self.instructionLabel.setText(QCoreApplication.translate("CRManagementPage", u"Manage the project hierarchy. Double-click to edit an item. Right-click an item to add children or delete.", None))
         self.backButton.setText(QCoreApplication.translate("CRManagementPage", u"< Back", None))
         self.addNewItemButton.setText(QCoreApplication.translate("CRManagementPage", u"Add New Item...", None))
+        self.toggleScopeButton.setText(QCoreApplication.translate("CRManagementPage", u"Toggle Sprint Scope", None))
         self.saveBacklogButton.setText(QCoreApplication.translate("CRManagementPage", u"Export Backlog to .xlsx...", None))
         self.primaryActionButton.setText(QCoreApplication.translate("CRManagementPage", u"Plan Sprint", None))
         self.moreActionsButton.setText(QCoreApplication.translate("CRManagementPage", u"More Actions...", None))

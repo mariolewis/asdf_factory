@@ -100,6 +100,7 @@ class CRManagementPage(QWidget):
         self.sync_action.triggered.connect(self.on_sync_clicked)
         self.ui.backButton.clicked.connect(self.on_back_clicked)
         self.model.itemsMoved.connect(self.on_items_moved)
+        self.ui.toggleScopeButton.clicked.connect(self.on_toggle_scope_clicked)
 
     def prepare_for_display(self):
         """
@@ -162,7 +163,7 @@ class CRManagementPage(QWidget):
 
             # Highlight the row if the item is staged for the sprint
             if item_data['cr_id'] in self.staged_sprint_items:
-                amber_color = QColor("#FFAB00") # As per GUI Design System: Warning Color
+                amber_color = QColor("#7D5C28") # As per GUI Design System: Warning Color
                 for cell_item in [num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item]:
                     cell_item.setBackground(amber_color)
 
@@ -304,6 +305,37 @@ class CRManagementPage(QWidget):
                     self.staged_sprint_items.add(data['cr_id'])
 
         self.update_backlog_view()
+
+    def on_toggle_scope_clicked(self):
+        """
+        Handles the click on the new toggle button. It determines the state
+        of the selected items and calls the appropriate add/remove function.
+        """
+        selection_model = self.ui.crTreeView.selectionModel()
+        selected_ids = []
+
+        # Get all selected CR IDs and their status
+        selected_items_data = []
+        for index in selection_model.selectedRows():
+            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+            if num_item and num_item.data(Qt.UserRole):
+                selected_items_data.append(num_item.data(Qt.UserRole))
+
+        selected_ids = [data.get('cr_id') for data in selected_items_data]
+
+        if not selected_ids:
+            return
+
+        # Check if ALL selected eligible items are currently staged
+        eligible_and_staged_ids = [cr_id for cr_id in selected_ids
+                                   if cr_id in self.staged_sprint_items and
+                                   any(data.get('cr_id') == cr_id and data.get('status') in ["TO_DO", "IMPACT_ANALYZED"] for data in selected_items_data)]
+
+        # If all eligible items are currently staged, REMOVE them. Otherwise, ADD them.
+        if eligible_and_staged_ids:
+            self.on_remove_from_sprint_scope()
+        else:
+            self.on_add_to_sprint_scope()
 
     def on_remove_from_sprint_scope(self):
         """Removes all selected items from the sprint staging set."""
@@ -472,63 +504,89 @@ class CRManagementPage(QWidget):
         Updates the enabled/disabled state of all action buttons based on the
         current selection in the tree view and the overall sprint status.
         """
-        has_items = self.model.rowCount() > 0
-
-        # --- Sprint Action Button Logic ---
-        is_sprint_active = self.orchestrator.is_sprint_active()
-        if is_sprint_active:
-            self.ui.primaryActionButton.setEnabled(False)
-            self.ui.primaryActionButton.setToolTip("Cannot plan a new sprint while another is in progress.")
-        else:
-            self.ui.primaryActionButton.setEnabled(bool(self.staged_sprint_items))
-            self.ui.primaryActionButton.setToolTip("Plan a new sprint with the staged items.")
-
-        # --- More Actions Menu Logic ---
         selection_model = self.ui.crTreeView.selectionModel()
-        has_selection = selection_model.hasSelection()
+        selected_rows = selection_model.selectedRows()
 
-        # The "More Actions" button itself is always enabled to allow access to "Import".
+        # --- Base Control States ---
+        is_sprint_active = self.orchestrator.is_sprint_active()
+        self.ui.primaryActionButton.setEnabled(bool(self.staged_sprint_items) and not is_sprint_active)
         self.ui.moreActionsButton.setEnabled(True)
-        # The "Import" action is always enabled.
-        self.import_action.setEnabled(True)
 
         # By default, disable all selection-dependent actions.
         self.edit_action.setEnabled(False)
         self.delete_action.setEnabled(False)
         self.analyze_action.setEnabled(False)
         self.sync_action.setEnabled(False)
-        # self.implement_action.setEnabled(False)
+        self.ui.toggleScopeButton.setEnabled(False)
+        self.ui.toggleScopeButton.setVisible(False)
 
-        if not has_selection:
-            return # No more logic needed if nothing is selected.
+        if not selected_rows:
+            return
 
-        # Logic for actions that require at least ONE item to be selected
+        # --- Retrieve Data for All Selected Items ---
+        selected_items_data = []
+        for index in selected_rows:
+            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
+            if num_item and num_item.data(Qt.UserRole):
+                selected_items_data.append(num_item.data(Qt.UserRole))
+
+        if not selected_items_data:
+            return
+
+        # --- 1. Toggle Scope Button Logic (Add to Scope / Remove from Scope) ---
+        eligible_items_count = sum(1 for data in selected_items_data if data.get('status') in ["TO_DO", "IMPACT_ANALYZED"])
+        staged_items_count = sum(1 for data in selected_items_data if data.get('cr_id') in self.staged_sprint_items)
+
+        self.ui.toggleScopeButton.setVisible(True)
+
+        # Check if ALL selected items are currently staged.
+        is_fully_staged = staged_items_count > 0 and staged_items_count == len(selected_rows)
+
+        if is_fully_staged:
+            # Action: REMOVE ALL
+            self.ui.toggleScopeButton.setEnabled(True)
+            self.ui.toggleScopeButton.setText("Remove from Sprint")
+            self.ui.toggleScopeButton.setToolTip("Remove all selected items from the sprint staging area.")
+        elif eligible_items_count > 0:
+            # Action: ADD ELIGIBLE
+            self.ui.toggleScopeButton.setEnabled(True)
+            self.ui.toggleScopeButton.setText("Add to Sprint")
+            self.ui.toggleScopeButton.setToolTip(f"Add {eligible_items_count} eligible item(s) to the sprint staging area.")
+        else:
+            # If selected, but none are staged or eligible (e.g., COMPLETED, EXISTING, BLOCKED)
+            self.ui.toggleScopeButton.setEnabled(False)
+            self.ui.toggleScopeButton.setText("Add to Sprint")
+            self.ui.toggleScopeButton.setToolTip("Selected items must be TO_DO or IMPACT_ANALYZED to be added to scope.")
+
+        # --- 2. Multi-Select Actions (Delete/Sync) ---
         can_delete = False
         can_sync = False
-        for index in selection_model.selectedRows():
-            num_item = self.model.itemFromIndex(index.siblingAtColumn(0))
-            if num_item:
-                data = num_item.data(Qt.UserRole)
-                if data and data.get('status') != 'EXISTING':
-                    can_delete = True
-                if data and not data.get('external_id'):
-                    can_sync = True
+        for data in selected_items_data:
+            if data.get('status') != 'EXISTING':
+                can_delete = True
+            if not data.get('external_id'):
+                can_sync = True
+
         self.delete_action.setEnabled(can_delete)
         self.sync_action.setEnabled(can_sync)
 
-        # Logic for actions that require exactly ONE item to be selected
-        if len(selection_model.selectedRows()) == 1:
-            item, data = self._get_selected_item_and_data()
-            if data and data.get('status') != 'EXISTING':
-                item_status = data.get("status", "")
+        # --- 3. Single-Select Actions (Edit/Analyze/Implement) ---
+        if len(selected_rows) == 1:
+            item_data = selected_items_data[0]
+            item_status = item_data.get("status", "")
+
+            # Edit action is available unless the item is an uneditable EXISTING item
+            if item_status != 'EXISTING':
                 self.edit_action.setEnabled(True)
 
-                can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED", "BLOCKED", "TO_DO"]
-                self.analyze_action.setEnabled(can_analyze)
+            # Analyze action is available if the item is 'RAISED' or 'TO_DO'
+            can_analyze = item_status in ["CHANGE_REQUEST", "BUG_RAISED", "TO_DO", "BLOCKED"]
+            self.analyze_action.setEnabled(can_analyze)
 
-                # "Implement" is only available after analysis is complete.
-                can_implement = item_status in ["TECHNICAL_PREVIEW_COMPLETE"]
-                # self.implement_action.setEnabled(can_implement)
+            # IMPLEMENT LOGIC (Restored and Corrected to check the ready state)
+            # It is ready after the impact analysis is done (IMPACT_ANALYZED)
+            can_implement = item_status in ["TECHNICAL_PREVIEW_COMPLETE", "IMPACT_ANALYZED"]
+            # self.implement_action.setEnabled(can_implement)
 
     def on_save_backlog_clicked(self):
         """Handles the user's request to save the backlog to an XLSX file."""
