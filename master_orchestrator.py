@@ -163,6 +163,7 @@ class MasterOrchestrator:
         self.active_sprint_id = None
         self.post_fix_reverification_path = None
         self.is_on_demand_test_cycle = False
+        self.last_operational_phase: FactoryPhase = FactoryPhase.IDLE
         logging.info("MasterOrchestrator instance created.")
 
     def reset(self):
@@ -191,6 +192,7 @@ class MasterOrchestrator:
         self.active_sprint_id = None
         self.active_sprint_goal = None
         self.post_fix_reverification_path = None
+        self.last_operational_phase = FactoryPhase.IDLE
 
     def close_active_project(self):
         """

@@ -260,11 +260,26 @@ class TechSpecPage(QWidget):
         try:
             if isinstance(result, str):
                 self._handle_generation_result(result)
-            elif isinstance(result, dict) and "compatible" in result:
+            elif isinstance(result, dict) and "compatible" in result: # Validation Failed
                 user_guidelines = result.get("user_guidelines", "")
                 recommendation = result.get("recommendation", "No recommendation provided.")
                 self.orchestrator.handle_tech_spec_validation_failure(user_guidelines, recommendation)
                 self.tech_spec_complete.emit()
+            elif isinstance(result, tuple) and len(result) == 2: # Validation Succeeded, Generation Complete
+                full_draft, ai_analysis = result
+                # MODIFIED: Set the success state explicitly in the orchestrator before completion
+                self.orchestrator.task_awaiting_approval = {
+                    "draft_spec_from_guidelines": full_draft,
+                    "ai_analysis": ai_analysis
+                }
+                self.orchestrator.set_phase(FactoryPhase.AWAITING_TECH_SPEC_RECTIFICATION.name)
+                self.tech_spec_complete.emit() # This emits the signal that triggers main window refresh
+            else:
+                raise Exception("Unexpected result format from worker.")
+
+        except Exception as e:
+            QMessageBox.critical(self, "Worker Error", f"Unexpected worker outcome: {e}")
+            logging.error(f"Error in _handle_validation_result: {e}", exc_info=True)
         finally:
             self._set_ui_busy(False)
 

@@ -425,7 +425,7 @@ class KlyveMainWindow(QMainWindow):
         self.button_raise_request.clicked.connect(self.on_raise_cr)
         self.button_view_reports.clicked.connect(self.on_view_reports)
         self.button_view_documents.clicked.connect(self.on_view_documents)
-        self.button_view_sprint.clicked.connect(self.on_view_sprint)
+        self.button_view_sprint.clicked.connect(self.on_unified_return_clicked)
 
         # Connect signals that trigger a FULL UI refresh and page transition
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page, self.ux_spec_page]:
@@ -942,6 +942,35 @@ class KlyveMainWindow(QMainWindow):
             self.orchestrator.set_phase("BACKLOG_VIEW") # Go to a safe place
             self.update_ui_after_state_change()
 
+    def on_return_to_last_phase(self):
+        """
+        Returns the user to the persistent last_operational_phase checkpoint.
+        This handles all non-sprint returns (Specifications, Setup, Backlog).
+        """
+        return_phase = self.orchestrator.last_operational_phase
+
+        # Guardrail: Only return if the current phase is a viewing phase
+        if self.orchestrator.project_id and return_phase != FactoryPhase.IDLE:
+            self.orchestrator.set_phase(return_phase.name)
+            self.update_ui_after_state_change()
+        else:
+            # Fallback if no specific checkpoint was saved (e.g., just opened project)
+            self.orchestrator.set_phase(FactoryPhase.BACKLOG_VIEW.name)
+            self.update_ui_after_state_change()
+
+    def on_unified_return_clicked(self):
+        """
+        Delegates the return action:
+        1. If sprint is active, call the ORIGINAL on_view_sprint (must not be modified).
+        2. Otherwise, call the new handler to return to the last general workflow phase.
+        """
+        if self.orchestrator.is_sprint_active():
+            # Delegate to the ORIGINAL, unmodified sprint logic
+            self.on_view_sprint()
+        else:
+            # Delegate to the new general workflow return logic
+            self.on_return_to_last_phase()
+
     def update_ui_after_state_change(self):
         logging.debug("update_ui_after_state_change: Method entered.")
         """
@@ -979,14 +1008,39 @@ class KlyveMainWindow(QMainWindow):
 
         # --- SPRINT NAVIGATION AND PROTECTION LOGIC (CORRECTED) ---
         # Use the new reliable method to check the project's persistent state
-        is_sprint_active = self.orchestrator.is_sprint_active()
-        self.button_view_sprint.setVisible(is_sprint_active)
+        # is_sprint_active = self.orchestrator.is_sprint_active()
+        # self.button_view_sprint.setVisible(is_sprint_active)
 
         # The button should only be "checked" if we are actively viewing the sprint page
-        is_viewing_sprint = (current_phase == FactoryPhase.SPRINT_IN_PROGRESS)
-        if is_sprint_active:
-            self.button_view_sprint.setChecked(is_viewing_sprint)
+        # is_viewing_sprint = (current_phase == FactoryPhase.SPRINT_IN_PROGRESS)
+        # if is_sprint_active:
+        #     self.button_view_sprint.setChecked(is_viewing_sprint)
         # --- END OF NEW LOGIC ---
+
+        # MODIFIED: Control the visibility of the unified Return to Workflow button
+        is_project_active = self.orchestrator.project_id is not None
+        current_phase = self.orchestrator.current_phase
+
+        # Phases where the button should be visible (i.e., when user is viewing ancillary page)
+        is_on_ancillary_page = current_phase in [FactoryPhase.VIEWING_DOCUMENTS, FactoryPhase.VIEWING_REPORTS, FactoryPhase.VIEWING_SPRINT_HISTORY]
+
+        # Check if a non-IDLE operational phase was saved before navigation
+        has_return_phase = self.orchestrator.last_operational_phase != FactoryPhase.IDLE
+
+        # The button is visible if the project is active AND we are currently on an ancillary page,
+        # AND we have a valid return point saved.
+        should_be_visible = is_project_active and is_on_ancillary_page and has_return_phase
+
+        # The button is functionally now the "Return to Workflow" button.
+        self.button_view_sprint.setVisible(should_be_visible)
+        self.button_view_sprint.setChecked(should_be_visible) # Check/Highlight when visible
+
+        # If visible, update the tooltip to indicate the return phase (helpful for the user)
+        if should_be_visible:
+             return_phase_name = self.orchestrator.PHASE_DISPLAY_NAMES.get(self.orchestrator.last_operational_phase, 'Workflow')
+             self.button_view_sprint.setToolTip(f"Return to Active Task: {return_phase_name}")
+
+        # --- END OF MODIFIED LOGIC ---
 
         current_phase_name = current_phase.name
         logging.debug(f"update_ui_after_state_change: Detected phase: {current_phase_name}")
@@ -2396,9 +2450,9 @@ class KlyveMainWindow(QMainWindow):
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to view its documents.")
             return
-        # --- THIS IS THE FIX ---
-        self.previous_phase = self.orchestrator.current_phase
-        # --- END OF FIX ---
+        # self.previous_phase = self.orchestrator.current_phase
+        # MODIFIED: Store current phase in orchestrator's new persistent property
+        self.orchestrator.last_operational_phase = self.orchestrator.current_phase
         self.orchestrator.set_phase("VIEWING_DOCUMENTS")
         self.update_ui_after_state_change()
 
@@ -2406,7 +2460,9 @@ class KlyveMainWindow(QMainWindow):
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to view its reports.")
             return
-        self.previous_phase = self.orchestrator.current_phase
+        # self.previous_phase = self.orchestrator.current_phase
+        # MODIFIED: Store current phase in orchestrator's new persistent property
+        self.orchestrator.last_operational_phase = self.orchestrator.current_phase
         self.orchestrator.set_phase("VIEWING_REPORTS")
         self.update_ui_after_state_change()
 
@@ -2416,7 +2472,9 @@ class KlyveMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Project", "Please load a project to view its sprint history.")
             return
 
-        self.previous_phase = self.orchestrator.current_phase
+        # self.previous_phase = self.orchestrator.current_phase
+        # MODIFIED: Store current phase in orchestrator's new persistent property
+        self.orchestrator.last_operational_phase = self.orchestrator.current_phase
         self.orchestrator.set_phase("VIEWING_SPRINT_HISTORY")
         self.update_ui_after_state_change()
 
