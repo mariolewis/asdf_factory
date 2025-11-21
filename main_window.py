@@ -1488,7 +1488,10 @@ class KlyveMainWindow(QMainWindow):
         if dialog.exec():
             # Check the custom result property we set in the dialog
             if getattr(dialog, 'result', 'spec') == 'codebase':
-                self.on_start_brownfield_project()
+                project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
+                if ok and project_name:
+                    # Pass the acquired name to the brownfield path sequence
+                    self.on_start_brownfield_project(project_name)
             else: # Default is to create from spec (greenfield)
                 project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
                 if ok and project_name:
@@ -1497,13 +1500,11 @@ class KlyveMainWindow(QMainWindow):
                     self.env_setup_page.prepare_for_greenfield(suggested_path)
                     self.update_ui_after_state_change()
 
-    def on_start_brownfield_project(self):
+    def on_start_brownfield_project(self, project_name: str): # MODIFIED: Added project_name argument
         """Gets a directory from the user and prepares the EnvSetupPage for the brownfield workflow."""
         repo_path = QFileDialog.getExistingDirectory(self, "Select Existing Project Folder")
         if repo_path:
-            # Use the folder name as the project name
-            project_name = Path(repo_path).name
-            # Call the new, correct orchestrator method for brownfield projects
+            # Call the orchestrator method with the user-entered name and the path
             self.orchestrator.start_brownfield_project(project_name, repo_path)
             self._reset_all_pages_for_new_project()
             # This configures the EnvSetupPage for the BROWNFIELD flow

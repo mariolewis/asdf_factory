@@ -51,7 +51,7 @@
         <item>
          <widget class="QLabel" name="greenfieldTitleLabel">
           <property name="text">
-           <string>New Project (Greenfield)</string>
+           <string>Develop New Application</string>
           </property>
          </widget>
         </item>
@@ -105,7 +105,7 @@
         <item>
          <widget class="QLabel" name="brownfieldTitleLabel">
           <property name="text">
-           <string>Onboard Project (Brownfield)</string>
+           <string>Maintain Existing Application</string>
           </property>
          </widget>
         </item>

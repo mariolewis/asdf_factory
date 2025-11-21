@@ -171,6 +171,6 @@ class Ui_PreflightCheckPage(object):
         self.discardLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Deletes all local changes that have not been committed to Git. This action cannot be undone.)", None))
         self.ignoreButton.setText(QCoreApplication.translate("PreflightCheckPage", u"Ignore Uncommitted Changes && Continue", None))
         self.ignoreLabel.setText(QCoreApplication.translate("PreflightCheckPage", u"(Proceeds with loading the project, leaving any uncommitted changes in the local repository untouched for you to manage manually later.)", None))
-        self.backButton.setText(QCoreApplication.translate("PreflightCheckPage", u"<-- Back to Project List", None))
+        self.backButton.setText(QCoreApplication.translate("PreflightCheckPage", u"< Back", None))
     # retranslateUi
 

@@ -169,7 +169,7 @@
        <item>
         <widget class="QPushButton" name="backButton">
          <property name="text">
-          <string>&lt;-- Back to Project List</string>
+          <string>&lt; Back</string>
          </property>
         </widget>
        </item>

@@ -137,11 +137,11 @@ class Ui_NewProjectDialog(object):
         self.headerLabel.setText(QCoreApplication.translate("NewProjectDialog", u"Create New Project", None))
         self.instructionLabel.setText(QCoreApplication.translate("NewProjectDialog", u"Choose a workflow to begin your project.", None))
         self.greenfieldCard.setTitle("")
-        self.greenfieldTitleLabel.setText(QCoreApplication.translate("NewProjectDialog", u"New Project (Greenfield)", None))
+        self.greenfieldTitleLabel.setText(QCoreApplication.translate("NewProjectDialog", u"Develop New Application", None))
         self.greenfieldDescLabel.setText(QCoreApplication.translate("NewProjectDialog", u"Create a new software application from a textual brief or specification document.", None))
         self.createGreenfieldButton.setText(QCoreApplication.translate("NewProjectDialog", u"Create...", None))
         self.brownfieldCard.setTitle("")
-        self.brownfieldTitleLabel.setText(QCoreApplication.translate("NewProjectDialog", u"Onboard Project (Brownfield)", None))
+        self.brownfieldTitleLabel.setText(QCoreApplication.translate("NewProjectDialog", u"Maintain Existing Application", None))
         self.brownfieldDescLabel.setText(QCoreApplication.translate("NewProjectDialog", u"Analyze an existing local codebase to reverse-engineer specifications and create a backlog.", None))
         self.onboardBrownfieldButton.setText(QCoreApplication.translate("NewProjectDialog", u"Onboard...", None))
     # retranslateUi

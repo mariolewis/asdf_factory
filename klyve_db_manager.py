@@ -194,8 +194,8 @@ class KlyveDBManager:
 
         logging.info("Finished creating/verifying database tables.")
 
-    def create_project(self, project_id: str, project_name: str, creation_timestamp: str) -> str:
-        self._execute_query("INSERT INTO Projects (project_id, project_name, creation_timestamp) VALUES (?, ?, ?)", (project_id, project_name, creation_timestamp))
+    def create_project(self, project_id: str, project_name: str, project_root: str, creation_timestamp: str) -> str:
+        self._execute_query("INSERT INTO Projects (project_id, project_name, project_root_folder, creation_timestamp) VALUES (?, ?, ?, ?)", (project_id, project_name, project_root, creation_timestamp))
         return project_id
 
     def get_project_by_id(self, project_id: str) -> Optional[sqlite3.Row]:

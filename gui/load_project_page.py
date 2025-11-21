@@ -43,31 +43,33 @@ class LoadProjectPage(QWidget):
             self.ui.headerLabel.setText("Open Project")
             self.ui.instructionLabel.setText("Select a project from your active workspace to resume working on it.")
             self.ui.loadButton.setText("Open Selected Project")
-            self.model.setHorizontalHeaderLabels(['Project Name', 'Created On', 'Project ID'])
+            self.model.setHorizontalHeaderLabels(['Project Name', 'Project Folder (Path)', 'Created On', 'Project ID'])
 
             projects = self.orchestrator.db_manager.get_all_active_projects()
             for row in projects:
                 self.model.appendRow([
-                    QStandardItem(row['project_name']),
+                    QStandardItem(row['project_name']), # New Display Name
+                    QStandardItem(row['project_root_folder']), # Show the path for clarity
                     QStandardItem(format_timestamp_for_display(row['creation_timestamp'])),
                     QStandardItem(row['project_id'])
                 ])
-            self.ui.projectsTableView.setColumnHidden(2, True) # Hide Project ID
+            self.ui.projectsTableView.setColumnHidden(3, True) # Hide Project ID
         else: # Default to VIEWING_PROJECT_HISTORY
             self.current_mode = "history"
             self.ui.headerLabel.setText("Import Archived Project")
             self.ui.instructionLabel.setText("Select a project from the history below to import it into the factory.")
             self.ui.loadButton.setText("Import Selected Project")
-            self.model.setHorizontalHeaderLabels(['Project Name', 'Archived On', 'History ID'])
+            self.model.setHorizontalHeaderLabels(['Project Name', 'Project Folder (Path)', 'Archived On', 'History ID'])
 
             history = self.orchestrator.get_project_history()
             for row in history:
                 self.model.appendRow([
                     QStandardItem(row['project_name']),
+                    QStandardItem(row['project_root_folder']),
                     QStandardItem(format_timestamp_for_display(row['last_stop_timestamp'])),
                     QStandardItem(str(row['history_id']))
                 ])
-            self.ui.projectsTableView.setColumnHidden(2, True) # Hide History ID
+            self.ui.projectsTableView.setColumnHidden(3, True) # Hide History ID
 
         self.ui.projectsTableView.resizeColumnsToContents()
 
@@ -85,7 +87,7 @@ class LoadProjectPage(QWidget):
             return None
 
         selected_row = selection_model.selectedRows()[0].row()
-        id_item = self.model.item(selected_row, 2) # ID is always in the hidden 3rd column
+        id_item = self.model.item(selected_row, 3) # ID is always in the hidden 3rd column
         return id_item.text()
 
     def on_load_clicked(self):

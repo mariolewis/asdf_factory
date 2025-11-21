@@ -849,8 +849,7 @@ class MasterOrchestrator:
         """
         timestamp = datetime.now(timezone.utc).isoformat()
         try:
-            self.db_manager.create_project(project_id, project_name, timestamp)
-            self.db_manager.update_project_field(project_id, "project_root_folder", project_root)
+            self.db_manager.create_project(project_id, project_name, project_root, timestamp)
             logging.info(f"Successfully created and saved project '{project_name}' to database.")
         except Exception as e:
             logging.error(f"Failed to finalize project creation for '{project_name}': {e}")
