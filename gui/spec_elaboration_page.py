@@ -221,13 +221,13 @@ class SpecElaborationPage(QWidget):
             # Page-specific handlers will switch back from the processing page.
             pass
 
-    def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
-        """Generic method to run a task in the background."""
-        self._set_ui_busy(True, status_message)
-        worker = Worker(task_function, *args)
-        worker.signals.result.connect(on_result)
-        worker.signals.error.connect(self._on_task_error)
-        self.threadpool.start(worker)
+    #def _execute_task(self, task_function, on_result, *args, status_message="Processing..."):
+    #    """Generic method to run a task in the background."""
+    #    self._set_ui_busy(True, status_message)
+    #    worker = Worker(task_function, *args)
+    #    worker.signals.result.connect(on_result)
+    #   worker.signals.error.connect(self._on_task_error)
+    #   self.threadpool.start(worker)
 
     def _on_task_error(self, error_tuple):
         """Handles errors from the worker thread."""
@@ -282,7 +282,6 @@ class SpecElaborationPage(QWidget):
         Processes the initial user brief (from text or files) and passes it to the
         orchestrator's UX Triage workflow.
         """
-        self.ui.headerLabel.setText("Analyzing Requirement")
         sender = self.sender()
         input_data = None
         status_message = "Processing brief for initial analysis..."
@@ -300,10 +299,22 @@ class SpecElaborationPage(QWidget):
                 return
 
         if input_data:
-            self._execute_task(self._task_process_brief,
-                            self._handle_brief_processing_result,
-                            input_data,
-                            status_message=status_message)
+            self.window().setEnabled(False)
+            # CRITICAL: Use the main window's persistent status method
+            if hasattr(self.window(), 'show_persistent_status'):
+                self.window().show_persistent_status(status_message)
+
+            self.ui.processingLabel.setText(status_message)
+            self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
+            # self.ui.mainContentArea.setCurrentWidget(self.ui.stackedWidget) # Ensure main widget is showing
+
+            worker = Worker(self._task_process_brief, input_data)
+
+            # CRITICAL FIX: Connect to the main window's global cleanup handler
+            worker.signals.finished.connect(self.window()._on_background_task_finished)
+            worker.signals.error.connect(self.window()._on_background_task_error)
+            worker.signals.result.connect(self._handle_brief_processing_result)
+            self.threadpool.start(worker)
 
     def _task_process_brief(self, input_data, **kwargs):
         """Background task to process the initial brief from either text or files."""

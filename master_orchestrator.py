@@ -1389,37 +1389,71 @@ class MasterOrchestrator:
             return False
 
         try:
+            # MODIFIED: Store all arguments needed for the worker in task_awaiting_approval
+            self.task_awaiting_approval = {
+                "final_spec_markdown": final_spec_markdown,
+                "final_spec_plaintext": final_spec_plaintext
+            }
+            # MODIFIED: New temporary phase to signal file I/O worker execution is needed
+            self.set_phase("FINALIZING_UX_SPEC_FILES")
+
+            return True # Indicate successful initiation of the process
+
+        except Exception as e:
+            logging.error(f"Failed to initiate UX/UI Specification finalization: {e}", exc_info=True)
+            self.task_awaiting_approval = {"error": str(e)}
+            return False
+
+    def _task_finalize_ux_spec_files(self, final_spec_markdown: str, final_spec_plaintext: str, progress_callback=None, worker_instance=None):
+        """
+        Background task to perform synchronous file I/O and set the next phase.
+        Provides status updates during the file saving/blueprint generation process.
+        """
+        if not self.project_id or not self.task_awaiting_approval:
+            raise ValueError("State missing for UX finalization.")
+
+        # final_spec_markdown = self.task_awaiting_approval["final_spec_markdown"]
+        # final_spec_plaintext = self.task_awaiting_approval["final_spec_plaintext"]
+
+        try:
             db = self.db_manager
             project_details = db.get_project_by_id(self.project_id)
             if not (project_details and project_details['project_root_folder']):
                  raise FileNotFoundError("Project root folder not found for saving UX spec.")
 
-            # Strip the header to get the pure content for DB and agent use.
-            pure_ux_spec_content_plaintext = self._strip_header_from_document(final_spec_plaintext)
-
             project_root = Path(project_details['project_root_folder'])
             docs_dir = project_root / "docs"
 
-            # Save the HEADED version to the Markdown file.
+            # Step 1: File I/O and Blueprint Generation
+            if progress_callback: progress_callback(("INFO", "Generating blueprint and saving files..."))
+
+            # --- Move Logic from Original handle_ux_spec_completion (401-406) ---
+
+            # 1. Strip header to get pure content for DB and agent use
+            pure_ux_spec_content_plaintext = self._strip_header_from_document(final_spec_plaintext)
+
+            # 2. Save the HEADED version to the Markdown file. (Original 402)
             ux_spec_file_path_md = docs_dir / "ux_ui_specification.md"
             ux_spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
             self._commit_document(ux_spec_file_path_md, "docs: Finalize UX/UI Specification (Markdown)")
 
-            # Generate and save the formatted .docx file for human use.
+            # 3. Generate and save the formatted .docx file. (Original 403)
+            if progress_callback: progress_callback(("INFO", "Generating formatted .docx report..."))
             from agents.agent_report_generator import ReportGeneratorAgent
-            ux_spec_file_path_docx = docs_dir / "ux_ui_specification.docx"
             report_generator = ReportGeneratorAgent(self.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
                 title=f"UX/UI Specification - {self.project_name}",
                 content=final_spec_markdown
             )
+            ux_spec_file_path_docx = docs_dir / "ux_ui_specification.docx"
             with open(ux_spec_file_path_docx, 'wb') as f:
                 f.write(docx_bytes.getbuffer())
             self._commit_document(ux_spec_file_path_docx, "docs: Add formatted UX/UI Specification (docx)")
 
-            # Generate the blueprint using the PURE content.
+            # 4. Generate and save JSON Blueprint (Original 404)
+            if progress_callback: progress_callback(("INFO", "Generating machine-readable JSON blueprint..."))
+            from agents.agent_ux_spec import UX_Spec_Agent
             agent = UX_Spec_Agent(llm_service=self.llm_service)
-            # Use the plain text for the agent, as it's cleaner for parsing
             json_blueprint = agent.parse_final_spec_and_generate_blueprint(pure_ux_spec_content_plaintext)
             if '"error":' in json_blueprint:
                 raise Exception(f"Failed to generate JSON blueprint from final spec: {json_blueprint}")
@@ -1428,34 +1462,30 @@ class MasterOrchestrator:
             blueprint_file_path_json.write_text(json_blueprint, encoding="utf-8")
             self._commit_document(blueprint_file_path_json, "docs: Add UX/UI JSON Blueprint")
 
-            # Create a composite spec using the PURE content for the database.
+            # 5. Final DB update and Hand off (Original 405-406)
             composite_spec_for_db = (
                 f"{pure_ux_spec_content_plaintext}\n\n"
-                f"{'='*80}\n"
-                f"MACHINE-READABLE JSON BLUEPRINT\n"
-                f"{'='*80}\n\n"
+                f"{'='*80}\nMACHINE-READABLE JSON BLUEPRINT\n{'='*80}\n\n"
                 f"```json\n{json_blueprint}\n```"
             )
-            # Use the PLAIN TEXT version for the database
-            #"composite_spec_for_db = (
-            #    f"{pure_ux_spec_content_plaintext}\n\n"
-            #    f"{'='*80}\n"
-            #    f"MACHINE-READABLE JSON BLUEPRINT\n"
-            #    f"{'='*80}\n\n"
-            #    f"```json\n{json_blueprint}\n```"
-            #)
             db.update_project_field(self.project_id, "ux_spec_text", composite_spec_for_db)
             self.active_ux_spec = {}
 
             # Hand off the PURE content to the next phase.
             self.task_awaiting_approval = {"pending_brief": pure_ux_spec_content_plaintext}
-            self.set_phase("GENERATING_APP_SPEC_AND_RISK_ANALYSIS")
+
+            # Step 6: Set the next phase immediately after I/O is complete
+            # self.set_phase(FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS.name)
+
+            if progress_callback: progress_callback(("SUCCESS", "UX Spec files saved. Starting App Spec generation."))
             return True
 
         except Exception as e:
-            logging.error(f"Failed to complete UX/UI Specification: {e}", exc_info=True)
+            if progress_callback: progress_callback(("ERROR", f"File finalization failed: {e}"))
+            # Store error details and reset phase to review page on error
             self.task_awaiting_approval = {"error": str(e)}
-            return False
+            self.set_phase(FactoryPhase.UX_UI_DESIGN.name)
+            raise
 
     def generate_application_spec_draft_and_risk_analysis(self, initial_spec_text: str, **kwargs):
         """

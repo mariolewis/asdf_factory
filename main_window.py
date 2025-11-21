@@ -1343,6 +1343,34 @@ class KlyveMainWindow(QMainWindow):
 
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
+        elif current_phase_name == "GENERATING_APP_SPEC_AND_RISK_ANALYSIS":
+            status_message = "Generating initial draft and assessing execution risk..."
+
+            self.window().setEnabled(False)
+
+            self.show_persistent_status(status_message)
+
+            self.spec_elaboration_page.ui.processingLabel.setText(status_message)
+            self.spec_elaboration_page.ui.stackedWidget.setCurrentWidget(self.spec_elaboration_page.ui.processingPage)
+            self.ui.mainContentArea.setCurrentWidget(self.spec_elaboration_page)
+
+            task_data = self.orchestrator.task_awaiting_approval or {}
+            initial_brief = task_data.get("pending_brief")
+
+            if not initial_brief:
+                QMessageBox.critical(self, "Error", "Could not find the initial brief text to start the analysis.")
+                self.orchestrator.set_phase("SPEC_ELABORATION")
+                self.window().setEnabled(True) # Re-enable on error
+                self.update_ui_after_state_change()
+                return
+
+            worker = Worker(self.orchestrator.generate_application_spec_draft_and_risk_analysis, initial_brief)
+
+            # Worker connects to the generic handlers for safety and cleanup
+            worker.signals.finished.connect(self._on_background_task_finished)
+            worker.signals.error.connect(self._on_background_task_error)
+            self.threadpool.start(worker)
+
         elif current_phase_name in ["AWAITING_SPEC_REFINEMENT_SUBMISSION", "AWAITING_SPEC_FINAL_APPROVAL"]:
             # These two states now correctly point to the spec elaboration page.
             # The page itself will handle which view (initial draft or 3-tab) to show.

@@ -8,7 +8,7 @@ from PySide6.QtCore import Signal, QThreadPool
 
 from gui.ui_ux_spec_page import Ui_UXSpecPage
 from gui.worker import Worker
-from master_orchestrator import MasterOrchestrator
+from master_orchestrator import MasterOrchestrator, FactoryPhase
 
 class UXSpecPage(QWidget):
     state_changed = Signal()
@@ -211,22 +211,42 @@ class UXSpecPage(QWidget):
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
-            self._execute_task(self._task_finalize_spec, self._handle_finalization_result,
-                               final_spec_markdown, final_spec_plaintext,
-                               status_message="Saving design to .json file for external graphical review...")
+            # MODIFIED: Pass local variables as direct arguments to the worker
+            self._execute_task(self.orchestrator._task_finalize_ux_spec_files,
+                               self._handle_finalization_result,
+                               final_spec_markdown, final_spec_plaintext, # MODIFIED: Passing arguments here
+                               status_message="Finalizing UX/UI Spec and preparing json blueprint...")
 
     def _task_finalize_spec(self, final_spec_markdown, final_spec_plaintext, **kwargs):
         return self.orchestrator.handle_ux_spec_completion(final_spec_markdown, final_spec_plaintext)
 
-    def _handle_finalization_result(self, success):
+    def _handle_finalization_result(self, result):
         try:
-            if success:
-                self.ux_spec_complete.emit()
+            if result:
+                # MODIFIED: Show Confirmation Dialog (the original QMessageBox)
+                QMessageBox.information(self, "Success", "UX/UI Specification finalized. Proceeding to Application Specification.")
+
+                # MODIFIED: Launch the next generation process only after the dialog is dismissed
+                self._launch_app_spec_generation()
+
             else:
+                # The task failed, and the worker raised an exception. We display the message
                 error_msg = self.orchestrator.task_awaiting_approval.get('error', 'An unknown error occurred.')
                 QMessageBox.critical(self, "Error", f"Failed to finalize the UX/UI Specification:\n{error_msg}")
         finally:
             self._set_ui_busy(False)
+
+    def _launch_app_spec_generation(self):
+        """
+        Launches the App Spec generation process. This is called only after
+        the user dismisses the "UX/UI Specification finalized" dialog.
+        """
+        # We manually transition the phase here, which correctly triggers the
+        # main window's update_ui_after_state_change method to launch the next worker
+        # and display its status notification.
+        self.orchestrator.set_phase(FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS.name)
+        self.window().update_ui_after_state_change()
+        self.ux_spec_complete.emit() # Signal completion to clean up the page context
 
     def on_pause_project_clicked(self):
         """Calls the orchestrator to save state and then signals the main window to reset."""
