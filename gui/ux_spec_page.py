@@ -4,7 +4,7 @@ import logging
 from gui.utils import render_markdown_to_html
 import warnings
 from PySide6.QtWidgets import QWidget, QMessageBox
-from PySide6.QtCore import Signal, QThreadPool
+from PySide6.QtCore import Signal, QThreadPool, QTimer
 
 from gui.ui_ux_spec_page import Ui_UXSpecPage
 from gui.worker import Worker
@@ -227,7 +227,7 @@ class UXSpecPage(QWidget):
                 QMessageBox.information(self, "Success", "UX/UI Specification finalized. Proceeding to Application Specification.")
 
                 # MODIFIED: Launch the next generation process only after the dialog is dismissed
-                self._launch_app_spec_generation()
+                QTimer.singleShot(0, self._launch_app_spec_generation)
 
             else:
                 # The task failed, and the worker raised an exception. We display the message
@@ -245,7 +245,7 @@ class UXSpecPage(QWidget):
         # main window's update_ui_after_state_change method to launch the next worker
         # and display its status notification.
         self.orchestrator.set_phase(FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS.name)
-        self.window().update_ui_after_state_change()
+        # self.window().update_ui_after_state_change()
         self.ux_spec_complete.emit() # Signal completion to clean up the page context
 
     def on_pause_project_clicked(self):

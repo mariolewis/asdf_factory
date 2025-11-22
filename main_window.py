@@ -1345,10 +1345,11 @@ class KlyveMainWindow(QMainWindow):
 
         elif current_phase_name == "GENERATING_APP_SPEC_AND_RISK_ANALYSIS":
             status_message = "Generating initial draft and assessing execution risk..."
+            self.show_persistent_status(status_message)
+
+            QApplication.processEvents()
 
             self.window().setEnabled(False)
-
-            self.show_persistent_status(status_message)
 
             self.spec_elaboration_page.ui.processingLabel.setText(status_message)
             self.spec_elaboration_page.ui.stackedWidget.setCurrentWidget(self.spec_elaboration_page.ui.processingPage)

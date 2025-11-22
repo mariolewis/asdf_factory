@@ -81,6 +81,7 @@ class FactoryPhase(Enum):
     SPRINT_INTEGRATION_TEST_EXECUTION = auto()
     AWAITING_INTEGRATION_TEST_RESULT_ACK = auto()
     POST_SPRINT_DOC_UPDATE = auto()
+    FINALIZING_UX_SPEC_FILES = auto()
     BACKLOG_RATIFICATION = auto()
     VIEWING_ACTIVE_PROJECTS = auto()
     UX_UI_DESIGN = auto()
@@ -243,6 +244,7 @@ class MasterOrchestrator:
         FactoryPhase.ANALYZING_CODEBASE: "Analyzing Codebase",
         FactoryPhase.AWAITING_BROWNFIELD_STRATEGY: "Awaiting Project Strategy",
         FactoryPhase.GENERATING_BACKLOG: "Generating Project Backlog...",
+        FactoryPhase.PROJECT_INTAKE_ASSESSMENT: "Project Intake Assessment",
         FactoryPhase.BACKLOG_VIEW: "Backlog Overview",
         FactoryPhase.SPRINT_PLANNING: "Sprint Planning",
         FactoryPhase.AWAITING_SPRINT_VALIDATION_CHECK: "Validating Sprint Scope",
@@ -261,6 +263,8 @@ class MasterOrchestrator:
         FactoryPhase.AWAITING_UX_UI_RECOMMENDATION_CONFIRMATION: "UX/UI Phase Recommendation",
         FactoryPhase.ENV_SETUP_TARGET_APP: "New Application Setup",
         FactoryPhase.SPEC_ELABORATION: "Application Specification",
+        FactoryPhase.GENERATING_UX_UI_SPEC_DRAFT: "Generating UX/UI Specification Draft", # <--- ADD THIS LINE
+        FactoryPhase.FINALIZING_UX_SPEC_FILES: "Finalizing UX/UI Specification",
         FactoryPhase.GENERATING_APP_SPEC_AND_RISK_ANALYSIS: "Generating App Spec & Risk Analysis",
         # FactoryPhase.AWAITING_RISK_ASSESSMENT_APPROVAL: "Project Complexity & Risk Assessment",
         FactoryPhase.AWAITING_DELIVERY_ASSESSMENT_APPROVAL: "Delivery Assessment",
@@ -1518,6 +1522,9 @@ class MasterOrchestrator:
                 brief_description=consolidated_requirements,
                 template_content=template_content
             )
+
+            # Ensure no duplicate header exists from the agent/template output
+            app_spec_draft_content = self._strip_header_from_document(app_spec_draft_content)
 
             # 4. Add the standard document header to the draft
             full_app_spec_draft = self.prepend_standard_header(
