@@ -27,17 +27,31 @@ class VerificationAgent_AppTarget:
         self.llm_service = llm_service
         logging.info("VerificationAgent initialized.")
 
-    def _get_test_execution_details(self, tech_spec_text: str) -> dict:
+    def _get_test_execution_details(self, tech_spec_text: str, installed_tools_context: str = "") -> dict:
         """
-        Analyzes the tech spec to determine the test command and required tools.
-        Returns a dictionary with 'command' and 'required_tools' keys.
+        Analyzes the tech spec and INSTALLED TOOLS to determine the test command.
+
+        Args:
+            tech_spec_text (str): The project specification.
+            installed_tools_context (str): A comma-separated list of tools the user actually installed.
         """
+
+        # We modify the prompt to prioritize the installed tools
+        context_instruction = ""
+        if installed_tools_context:
+            context_instruction = (
+                f"**CRITICAL CONTEXT:** The user has ALREADY installed the following tools: [{installed_tools_context}]. "
+                "You MUST generate a command that uses one of these specific tools. Do not suggest a tool that is not in this list."
+            )
+
         prompt = textwrap.dedent(f"""
-            Analyze the following Technical Specification to determine the command needed to run unit tests and a list of any required testing libraries or frameworks.
+            Analyze the following Technical Specification and the list of installed tools to determine the command needed to run unit tests.
+
+            {context_instruction}
 
             **MANDATORY INSTRUCTIONS:**
             1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **Structure:** The JSON object must have two keys: "command" (a string with the exact test command, e.g., "pytest") and "required_tools" (a JSON array of strings, e.g., ["pytest", "pytest-cov"]).
+            2.  **Structure:** The JSON object must have two keys: "command" (a string with the exact test command, e.g., "pytest") and "required_tools" (a JSON array of strings).
             3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object.
 
             **--- Technical Specification ---**

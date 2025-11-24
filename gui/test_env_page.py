@@ -326,12 +326,39 @@ class TestEnvPage(QWidget):
             else:
                 # If no backend command exists, proceed with LLM generation
                 tech_spec_text = project_details.get('tech_spec_text', "")
+
+                #------ Original code to get backend test command -----
+                #if self.orchestrator.llm_service and tech_spec_text:
+                #    logging.info("No existing backend command found. Generating new test command via LLM.")
+                #    agent = VerificationAgent_AppTarget(llm_service=self.orchestrator.llm_service)
+                #    details = agent._get_test_execution_details(tech_spec_text)
+                #    command = details.get("command") if details else ""
+                #    backend_cmd_to_return = command if command and command.strip() else "pytest"
+                #------- End of original code to get backend test command -----
+
+                # ----- Fix to pass test tool to get command -----
+
                 if self.orchestrator.llm_service and tech_spec_text:
                     logging.info("No existing backend command found. Generating new test command via LLM.")
+
+                    # 1. Extract the tools explicitly selected in the previous step
+                    # We know self.setup_tasks is populated because we are in the finalize phase
+                    installed_tools = [task.get('tool_name', '') for task in self.setup_tasks]
+                    installed_tools_str = ", ".join(filter(None, installed_tools))
+
                     agent = VerificationAgent_AppTarget(llm_service=self.orchestrator.llm_service)
-                    details = agent._get_test_execution_details(tech_spec_text)
+
+                    # 2. Pass this context to the agent to prevent hallucination
+                    # NOTE: You must ensure the agent's method definition accepts this new argument.
+                    details = agent._get_test_execution_details(
+                        tech_spec_text,
+                        installed_tools_context=installed_tools_str
+                    )
+
                     command = details.get("command") if details else ""
                     backend_cmd_to_return = command if command and command.strip() else "pytest"
+
+                # ----- End Fix -----
 
             # 3. Return both commands
             return {"backend_cmd": backend_cmd_to_return, "ui_cmd": existing_ui_cmd}
