@@ -513,3 +513,79 @@ QMessageBox#aboutKlyveDialog QLabel {
     /* Top, Right, Bottom, Left. Increasing these values adds empty space around the content. */
     padding: 15px 30px 15px 10px;
 }
+
+/* ---- Legal Dialog Specific Styles ---- */
+/* Targets the dialog by its objectName defined in the UI file */
+QDialog#LegalDialog {
+    background-color: #2A2A2B;
+}
+
+/* Ensure the text boxes inside match the dark theme */
+QDialog#LegalDialog QTextEdit {
+    background-color: #202021;
+    color: #F0F0F0;
+    border: 1px solid #4A4A4A;
+}
+
+/* Specific Tab Styling for Legal Dialog */
+QDialog#LegalDialog QTabWidget::pane {
+    border: 1px solid #4A4A4A;
+    background-color: #202021;
+}
+
+QDialog#LegalDialog QTabBar::tab {
+    background: #1E1E1E;
+    color: #A9B7C6;
+    border: 1px solid #4A4A4A;
+    border-bottom: none;
+    padding: 8px 12px;
+    margin-right: 2px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+}
+
+QDialog#LegalDialog QTabBar::tab:selected {
+    background: #3C3F41;
+    color: #FFFFFF;
+    font-weight: bold;
+}
+
+QDialog#LegalDialog QTabBar::tab:hover {
+    background: #4A4A4A;
+}
+
+/* Validation Label States */
+/* Default state is defined in the .ui file properties or generic QLabel styles */
+
+/* Success state (triggered via dynamic property in Python) */
+QLabel#validationLabel[state="success"] {
+    color: #6A8759; /* Green success color */
+    font-weight: bold;
+}
+
+/* Legal Dialog Validation Label (Default State) */
+QLabel#validationLabel {
+    color: #007ACC; /* High-contrast Blue */
+    font-weight: bold;
+    font-size: 11pt;
+}
+
+/* ---- Settings Dialog - Revoke Consent button ---- */
+
+/* "Reset License & Permissions" Button - Cautionary Style */
+QPushButton#revokeConsentButton {
+    background-color: transparent;
+    color: #CC7832; /* Warning/Error Orange */
+    border: 1px solid #CC7832;
+    font-weight: bold;
+}
+
+QPushButton#revokeConsentButton:hover {
+    background-color: #3A2020; /* Very subtle dark red tint */
+    border: 1px solid #FF6B6B; /* Lighter red border */
+    color: #FF6B6B; /* Lighter red text */
+}
+
+QPushButton#revokeConsentButton:pressed {
+    background-color: #4A2020;
+}

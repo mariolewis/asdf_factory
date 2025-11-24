@@ -22,6 +22,7 @@ from PySide6.QtCore import QThreadPool
 from gui.ui_main_window import Ui_MainWindow
 from master_orchestrator import MasterOrchestrator, FactoryPhase
 from gui.settings_dialog import SettingsDialog
+from gui.about_dialog import AboutDialog
 from gui.new_project_dialog import NewProjectDialog
 from gui.intake_assessment_page import IntakeAssessmentPage
 from gui.env_setup_page import EnvSetupPage
@@ -346,16 +347,16 @@ class KlyveMainWindow(QMainWindow):
         self.statusBar().showMessage("Ready", 5000)
 
         # --- EULA Action Definition ---
-        self.ui.actionLicense = QAction(QIcon(), "License Agreement", self)
-        self.ui.actionLicense.setObjectName("actionLicense")
+        #self.ui.actionLicense = QAction(QIcon(), "License Agreement", self)
+        #self.ui.actionLicense.setObjectName("actionLicense")
 
         # 1. Safely find the Help Menu object using the parent of the About action
-        help_menu = self.ui.actionAbout_Klyve.parent()
+        #help_menu = self.ui.actionAbout_Klyve.parent()
 
         # 2. Insert the new License action BEFORE the existing About action
-        if isinstance(help_menu, QMenu):
+        #if isinstance(help_menu, QMenu):
              # This is the safest way to insert: use the existing action as a marker
-             help_menu.insertAction(self.ui.actionAbout_Klyve, self.ui.actionLicense)
+        #     help_menu.insertAction(self.ui.actionAbout_Klyve, self.ui.actionLicense)
         # --- END EULA Action Definition ---
 
     def _connect_signals(self):
@@ -400,8 +401,8 @@ class KlyveMainWindow(QMainWindow):
         # --- Help Menu and License Insertion (Final Clean Version) ---
 
         # 1. Define the License Action (Must be done in self.ui)
-        self.ui.actionLicense = QAction(QIcon(), "License Agreement", self)
-        self.ui.actionLicense.setObjectName("actionLicense")
+        #self.ui.actionLicense = QAction(QIcon(), "License Agreement", self)
+        #self.ui.actionLicense.setObjectName("actionLicense")
 
         # 2. Find the Help Menu object by accessing the QMenuBar
         # We iterate over the top-level menu actions to find the correct menu
@@ -411,12 +412,12 @@ class KlyveMainWindow(QMainWindow):
                 help_menu = action.menu()
                 break
 
-        # 3. Insert the new License action BEFORE the existing About action
-        if help_menu:
-            help_menu.insertAction(self.ui.actionAbout_Klyve, self.ui.actionLicense)
+        # 3. Insert the License action BEFORE the existing About action
+        #if help_menu:
+        #    help_menu.insertAction(self.ui.actionAbout_Klyve, self.ui.actionLicense)
 
-        # 4. Connect the actions (Must be done whether or not the insertion worked)
-        self.ui.actionLicense.triggered.connect(self._show_license_agreement)
+        # 4. Connect the actions
+        #self.ui.actionLicense.triggered.connect(self._show_license_agreement)
         self.ui.actionAbout_Klyve.triggered.connect(self.on_about)
         # --- END Help Menu Fix ---
 
@@ -1719,83 +1720,10 @@ class KlyveMainWindow(QMainWindow):
         # NOTE: This should eventually read from a central config file.
         return "1.0 Beta"
 
-    def _show_license_agreement(self):
-        """
-        Displays the content of the EULA/License Agreement from an external file.
-        """
-        try:
-            eula_file = Path(__file__).parent / "EULA.txt"
-            if not eula_file.exists():
-                 eula_file = Path(__file__).parent / "data" / "EULA.txt"
-
-            if not eula_file.exists():
-                text = "The License Agreement file (EULA.txt) was not found. Please ensure it is in the application directory."
-                QMessageBox.warning(self, "License File Not Found", text)
-                return
-            else:
-                with open(eula_file, 'r', encoding='utf-8') as f:
-                    text = f.read()
-
-            # Use a QMessageBox with Detailed Text area for the full license body
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Klyve License Agreement")
-            msg.setText("Please review the full terms of service:")
-            msg.setInformativeText("By using Klyve, you agree to the terms below.")
-            msg.setDetailedText(text)
-            msg.setIcon(QMessageBox.Information)
-            msg.exec()
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error Loading License", f"Could not load license file: {e}")
-
     def on_about(self):
-        """Displays the 'About Klyve' dialog with branding, version, and copyright info."""
-
-        version = self.get_app_version()
-
-        # Use high-contrast colors suitable for the dark dialog background (#2A2A2B)
-        about_html = f"""
-        <html>
-        <head>
-            <style>
-                /* Dialog Text Colors: Inverted for Dark Mode */
-                body {{ color: #F0F0F0; }} /* Sets all default text to bright white */
-                h3 {{ margin-bottom: 8px; color: #007ACC; font-weight: bold; }} /* Bright blue for the main heading */
-                p {{ margin: 0 0 5px 0; }}
-                .version {{ font-weight: bold; color: #FFC66D; }} /* Soft amber/yellow for version number */
-                .corevalue {{ margin-top: 15px; margin-bottom: 15px; color: #CCCCCC; }} /* Core value label */
-            </style>
-        </head>
-        <body>
-            <center>
-                <h3>KLYVE: Your Expertise. Scaled.</h3>
-
-                <p>The Orchestrated Software Development Assistant</p><br>
-                <p class="version">Version: {version}</p>
-
-                <!-- <p class="corevalue">Your implementation partner in software development.</p> -->
-                <hr style="border-top: 1px solid #4A4A4A;">
-
-                <p style="font-size: 10pt;">&copy; 2025 Mario J. Lewis. All Rights Reserved.</p>
-                <p style="font-size: 8pt; color: #888888;">Protected by the Klyve License Agreement (EULA).</p>
-            </center>
-        </body>
-        </html>
-        """
-
-        # Use a custom QMessageBox instance to assign an objectName for surgical QSS targeting.
-        msg = QMessageBox(self)
-        msg.setWindowTitle("About Klyve")
-        msg.setText(about_html)
-
-        # Set a unique objectName for surgical QSS styling
-        msg.setObjectName("aboutKlyveDialog")
-
-        # The icon type must be explicitly set to Information or NoIcon to ensure the title bar icon appears.
-        # We use NoIcon to prevent the native icon type from overriding the app icon.
-        msg.setIcon(QMessageBox.NoIcon)
-
-        msg.exec()
+        """Displays the centralized About & Legal dialog."""
+        dialog = AboutDialog(self)
+        dialog.exec()
 
 
     def on_back_to_workflow(self):

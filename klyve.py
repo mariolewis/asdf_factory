@@ -2,14 +2,16 @@
 
 import sys
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen
+from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen, QDialog
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt, QTimer
 import logging
+from datetime import datetime, timezone
 
 from klyve_db_manager import KlyveDBManager
 from master_orchestrator import MasterOrchestrator
 from main_window import KlyveMainWindow
+from gui.legal_dialog import LegalDialog
 
 def initialize_database(db_manager: KlyveDBManager):
     """
@@ -70,54 +72,80 @@ def initialize_database(db_manager: KlyveDBManager):
             logging.info(f"Initialized missing config key '{key}' with default value.")
 
 def _initialize_klyve(app, splash):
-            # This function is executed after a brief delay to ensure the splash screen
-            # is visible during the main I/O and component initialization phase.
+    # This function is executed after a brief delay to ensure the splash screen
+    # is visible during the main I/O and component initialization phase.
 
-            # --- 2. Setup Database ---
-            db_dir = Path("data")
-            db_dir.mkdir(exist_ok=True)
-            db_path = db_dir / "klyve.db"
+    # --- 0. Prevent Premature Exit ---
+    # Critical: Prevent app from quitting when the EULA dialog closes (and splash is hidden)
+    app.setQuitOnLastWindowClosed(False)
 
-            # Initialize DB Manager
-            # (Note: Add your Dev Mode/Security logic here later when ready)
-            db_manager = KlyveDBManager(db_path=str(db_path))
-            initialize_database(db_manager)
+    # --- 1. Setup Database ---
+    db_dir = Path("data")
+    db_dir.mkdir(exist_ok=True)
+    db_path = db_dir / "klyve.db"
 
-            # --- 3. Setup Logging ---
-            log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
-            log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
-            log_level = log_level_map.get(log_level_str, logging.INFO)
+    # Initialize DB Manager
+    db_manager = KlyveDBManager(db_path=str(db_path))
+    initialize_database(db_manager)
 
-            logging.basicConfig(
-                level=log_level,
-                format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
-                force=True
-            )
-            logging.info(f"Klyve started. Logging level: '{log_level_str}'")
+    # --- 2. Setup Logging ---
+    log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
+    log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
+    log_level = log_level_map.get(log_level_str, logging.INFO)
 
-            # --- 4. Initialize Core Components ---
-            orchestrator = MasterOrchestrator(db_manager=db_manager)
-            window = KlyveMainWindow(orchestrator=orchestrator)
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
+        force=True
+    )
+    logging.info(f"Klyve started. Logging level: '{log_level_str}'")
 
-            # --- 5. Robust Stylesheet Loading ---
-            try:
-                style_file = Path(__file__).parent / "gui" / "style.qss"
-                if style_file.exists():
-                    with open(style_file, "r") as f:
-                        app.setStyleSheet(f.read())
-                        logging.info("Successfully loaded global stylesheet.")
-                else:
-                    logging.warning(f"Stylesheet not found at: {style_file}")
-            except Exception as e:
-                logging.error(f"Failed to load stylesheet: {e}")
-                # We continue without style rather than crashing
+    # --- 3. Robust Stylesheet Loading (MOVED UP) ---
+    # We load this BEFORE the EULA check so the dialog is styled correctly.
+    try:
+        style_file = Path(__file__).parent / "gui" / "style.qss"
+        if style_file.exists():
+            with open(style_file, "r") as f:
+                app.setStyleSheet(f.read())
+                logging.info("Successfully loaded global stylesheet.")
+        else:
+            logging.warning(f"Stylesheet not found at: {style_file}")
+    except Exception as e:
+        logging.error(f"Failed to load stylesheet: {e}")
 
-            # --- 6. Launch ---
-            window.showMaximized()
+    # --- 4. Legal Guardrail (EULA Check) ---
+    if not db_manager.get_config_value("EULA_ACCEPTED_TIMESTAMP"):
+        logging.info("EULA not yet accepted. Showing Legal Dialog.")
+        if splash and splash.isVisible():
+            splash.hide() # Hide splash so dialog is accessible
 
-            # Fix: Defer the splash screen closing to ensure the main window has time to paint.
-            if splash and splash.isVisible():
-                QTimer.singleShot(0, lambda: splash.finish(window))
+        legal_dialog = LegalDialog()
+        result = legal_dialog.exec()
+
+        if result != QDialog.Accepted:
+            logging.info("User declined EULA or closed dialog. Exiting application.")
+            sys.exit(0)
+
+        # If accepted, save the timestamp
+        acceptance_time = datetime.now(timezone.utc).isoformat()
+        db_manager.set_config_value("EULA_ACCEPTED_TIMESTAMP", acceptance_time, "Timestamp of EULA acceptance.")
+
+        if splash:
+            splash.show() # Restore splash while the rest of the app loads
+
+    # --- 5. Initialize Core Components ---
+    orchestrator = MasterOrchestrator(db_manager=db_manager)
+    window = KlyveMainWindow(orchestrator=orchestrator)
+
+    # --- 6. Launch ---
+    window.showMaximized()
+
+    # Restore standard quit behavior now that the main window is open
+    app.setQuitOnLastWindowClosed(True)
+
+    # Defer the splash screen closing to ensure the main window has time to paint.
+    if splash and splash.isVisible():
+        QTimer.singleShot(0, lambda: splash.finish(window))
 
         # --- END OF INITIALIZE FUNCTION ---
 

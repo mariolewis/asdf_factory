@@ -3,6 +3,7 @@
 import logging
 import shutil
 import os
+import sys
 from pathlib import Path
 from PySide6.QtCore import Qt, QThreadPool, QTimer, QDir
 from PySide6.QtWidgets import QFileDialog
@@ -152,6 +153,11 @@ class SettingsDialog(QDialog):
         self.ide_path_input = QLineEdit()
         self.ide_path_browse_button = QPushButton("Browse...")
 
+        # --- USER CONSENT REVOCATION ---
+        self.revoke_consent_button = QPushButton("Reset Permissions & License")
+        self.revoke_consent_button.setObjectName("revokeConsentButton")
+        self.revoke_consent_button.setToolTip("Revokes your permission for data transmission and resets the application to its initial state.")
+
         # --- Templates Tab Widgets ---
         self.templates_tab = QWidget()
         self.template_instruction_label = QLabel("Here you can manage global document templates. A template provides a standard structure for a specification document. When a template is set, the AI will use it to structure its output according to it.")
@@ -268,6 +274,10 @@ class SettingsDialog(QDialog):
         ide_path_layout.addWidget(self.ide_path_input)
         ide_path_layout.addWidget(self.ide_path_browse_button)
         factory_tab_layout.addRow("IDE Executable Path:", ide_path_layout)
+
+        # --- Privacy & Legal ---
+        factory_tab_layout.addItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+        factory_tab_layout.addRow(QLabel("Privacy & Legal:"), self.revoke_consent_button)
 
         # --- Templates Tab Layout ---
         templates_tab_layout = QVBoxLayout(self.templates_tab)
@@ -665,7 +675,8 @@ class SettingsDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         self.provider_list.currentRowChanged.connect(self.on_integration_provider_changed)
         self.calibrate_button.clicked.connect(self.on_calibrate_clicked)
-        self.ide_path_browse_button.clicked.connect(self._on_browse_for_ide)
+
+        self.revoke_consent_button.clicked.connect(self.on_revoke_consent_clicked)
 
         # --- Template Signal Connections ---
         self.template_browse_button.clicked.connect(self._on_template_browse_clicked)
@@ -799,3 +810,35 @@ class SettingsDialog(QDialog):
         except Exception as e:
             logging.error(f"Failed to save settings: {e}", exc_info=True)
             QMessageBox.critical(self, "Error", f"Failed to save settings:\n{e}")
+
+    def on_revoke_consent_clicked(self):
+        """
+        Handles the revocation of EULA consent.
+        Deletes the timestamp key and exits the application.
+        """
+        reply = QMessageBox.question(
+            self,
+            "Reset License & Permissions?",
+            "Are you sure you want to revoke your authorization for AI data transmission?\n\n"
+            "Because Klyve requires this permission to function, this action will also reset your acceptance of the End User License Agreement (EULA).\n\n"
+            "The application will close immediately. You will be asked to review and accept the terms again the next time you launch Klyve.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            try:
+                # Use the DB manager to delete the specific config key
+                db = self.orchestrator.db_manager
+                with db._get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("DELETE FROM FactoryConfig WHERE key = 'EULA_ACCEPTED_TIMESTAMP'")
+                    conn.commit()
+
+                logging.info("EULA consent revoked by user. Exiting application.")
+                QMessageBox.information(self, "Permissions Reset", "Your permissions have been reset. The application will now exit.")
+                sys.exit(0)
+
+            except Exception as e:
+                logging.error(f"Failed to revoke consent: {e}")
+                QMessageBox.critical(self, "Error", f"Failed to revoke settings: {e}")
