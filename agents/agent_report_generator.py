@@ -194,167 +194,27 @@ class ReportGeneratorAgent:
         doc_buffer.seek(0)
         return doc_buffer
 
-    def generate_assessment_docx(self, analysis_data: dict, project_name: str) -> BytesIO:
-        """
-        Generates a formatted .docx file for the Complexity & Risk Assessment report,
-        now including a Plotly bar chart to visualize the complexity ratings.
-        """
-        document = self._get_styled_document()
-        title = f"Delivery Automation Risk Assessment: {project_name}"
-
-        try:
-            document.add_paragraph(title, style='Title')
-        except Exception:
-            logging.warning("Style 'Title' not found. Using default Heading 1.")
-            document.add_heading(title, level=1)
-
-        document.add_paragraph() # Spacer
-
-        # --- Add Automation Confidence Level ---
-        try:
-            risk_data = analysis_data.get("risk_assessment", {})
-            risk_level = risk_data.get("overall_risk_level", "N/A")
-
-            # Inverts risk level to confidence level (mirrors gui/delivery_assessment_page.py)
-            CONFIDENCE_MAP = {
-                "Low": "High",
-                "Medium": "Medium",
-                "High": "Low",
-                "Critical": "Very Low"
-            }
-            confidence_text = CONFIDENCE_MAP.get(risk_level, "N/A")
-
-            # Add the text to the document, centered.
-            p = document.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            run = p.add_run(f"Automation Confidence Level: {confidence_text}")
-            run.font.bold = True
-            run.font.size = Pt(12)
-
-        except Exception as e:
-            logging.warning(f"Failed to add Automation Confidence Level to report: {e}")
-        # --- END BLOCK ---
-
-        # --- 1. Generate and Add Plotly Chart ---
-        try:
-            comp_analysis = analysis_data.get("complexity_analysis", {})
-            if comp_analysis:
-                # Map text ratings to the 0-100 values used by the UI gauges
-                RATING_MAP = {"Low": 25, "Medium": 50, "High": 75, "Very Large": 100, "N/A": 0}
-                # Map ratings to the UI's color scheme
-                RATING_COLORS = {
-                    "Low": "#6A8759",      # Green
-                    "Medium": "#FFC66D",   # Yellow
-                    "High": "#CC7832",     # Orange
-                    "Very Large": "#CC7832" # Red/Orange
-                }
-
-                labels = []
-                values = []
-                colors = []
-                for key, value_dict in comp_analysis.items():
-                    labels.append(key.replace('_', ' ').title())
-                    rating_text = value_dict.get('rating', 'N/A')
-                    values.append(RATING_MAP.get(rating_text, 0))
-                    colors.append(RATING_COLORS.get(rating_text, '#A9B7C6')) # Default to gray
-
-                # Create a horizontal bar chart
-                fig = go.Figure(data=[go.Bar(
-                    y=labels,
-                    x=values,
-                    orientation='h',
-                    # Add text to the bars
-                    text=[f"{v} ({comp_analysis.get(key.lower().replace(' ', '_'), {}).get('rating', 'N/A')})" for key, v in zip(labels, values)],
-                    textposition='auto', # Let Plotly decide inside/outside
-                    textfont=dict(color='black'), # Force readable text
-                    marker_color=colors # Apply mapped colors
-                )])
-
-                fig.update_layout(
-                    title_text='AI Delivery Risk Assessment - Complexity',
-                    template="plotly_white", # Use white background
-                    xaxis=dict(
-                        range=[0, 115],     # Give space for text labels
-                        showline=True,      # Show X-axis line
-                        linecolor='black',  # Set X-axis line color
-                        showgrid=True,      # Show vertical grid lines
-                        gridcolor='#DDDDDD' # Set grid line color to light grey
-                    ),
-                    yaxis=dict(
-                        autorange="reversed", # Show in same order as UI
-                        showline=True,      # Show Y-axis line
-                        linecolor='black',  # Set Y-axis line color
-                        showgrid=False      # Hide horizontal grid lines for a cleaner look
-                    ),
-                    xaxis_title="Complexity Rating (0-100)",
-                    margin=dict(l=10, r=10, t=40, b=40)
-                )
-
-                image_bytes_io = generate_plotly_png(fig)
-                document.add_picture(image_bytes_io, width=Inches(6.0))
-            else:
-                self._add_styled_paragraph(document, "[No complexity data available to generate chart]", 'Normal')
-
-        except Exception as e:
-            logging.error(f"Failed to render Plotly assessment chart: {e}", exc_info=True)
-            self._add_styled_paragraph(document, f"[Error rendering complexity chart: {e}]", 'Normal')
-
-        document.add_paragraph() # Spacer
-
-        # --- 2. Add Text Summary ---
-        try:
-            risk_assessment = analysis_data.get("risk_assessment", {})
-
-            self._add_styled_paragraph(document, "Risk Assessment", 'Heading 2')
-            self._add_styled_paragraph(document, f"Overall Risk Level: {risk_assessment.get('overall_risk_level', 'N/A')}", 'Normal')
-            self._add_styled_paragraph(document, f"Summary: {risk_assessment.get('summary', 'No summary provided.')}", 'Normal')
-
-            recommendations = risk_assessment.get('recommendations', [])
-            if recommendations:
-                document.add_paragraph() # Spacer
-                self._add_styled_paragraph(document, "Recommendations", 'Heading 3')
-                for rec in recommendations:
-                    self._add_styled_paragraph(document, rec, 'Bullet List')
-
-            document.add_paragraph() # Spacer
-            self._add_styled_paragraph(document, "Complexity Justifications", 'Heading 3')
-
-            if comp_analysis:
-                for key, value in comp_analysis.items():
-                    title_str = key.replace('_', ' ').title()
-                    justification = value.get('justification', 'No details provided.')
-                    self._add_styled_paragraph(document, f"{title_str}: {justification}", 'Normal')
-            else:
-                self._add_styled_paragraph(document, "No justifications provided.", 'Normal')
-
-        except Exception as e:
-            logging.error(f"Failed to add text content to assessment docx: {e}", exc_info=True)
-            self._add_styled_paragraph(document, f"Error adding text: {e}", 'Normal')
-
-        # 4. Save to in-memory buffer
-        doc_buffer = BytesIO()
-        document.save(doc_buffer)
-        doc_buffer.seek(0)
-        return doc_buffer
-
     def generate_text_document_docx(self, title: str, content: str, is_html: bool = False) -> BytesIO:
         """
         Generates a generic .docx file for text-based project documents.
-        This version converts Markdown to HTML, then parses the HTML
-        to robustly apply named styles from a template.
+        Restores the hard Page Break to separate the Title Page from content.
         """
         document = self._get_styled_document()
 
-        # 1. Add the main title
+        # 1. Add Title Page
         try:
+            # Try to use the specific 'Title' style from the template
             document.add_paragraph(title, style='Title')
         except Exception:
-            logging.warning("Style 'Title' not found. Using default Heading 1.")
-            document.add_heading(title, level=1)
+            # Fallback to standard Title heading (Level 0)
+            document.add_heading(title, level=0)
 
+        # Add a spacer
         document.add_paragraph()
 
-        # 2. Check for pre-formatted HTML (for manual test plans)
+        document.add_page_break()
+
+        # 2. Check for pre-formatted HTML
         if is_html:
             try:
                 parser = HtmlToDocx()
@@ -366,18 +226,14 @@ class ReportGeneratorAgent:
         # 3. Standard Markdown Processing
         else:
             try:
-                # 1. Convert Markdown to HTML with extensions for code blocks, tables, and sane lists
                 html_content = markdown.markdown(content, extensions=['fenced_code', 'tables', 'sane_lists'])
                 soup = BeautifulSoup(html_content, 'html.parser')
 
                 root_tags = soup.find_all(True, recursive=False)
                 search_node = soup
                 if len(root_tags) == 1 and root_tags[0].name not in ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'pre', 'hr']:
-                    # If the root is a single, unknown tag (like <div>),
-                    # search inside it instead of the document root.
                     search_node = root_tags[0]
 
-                # 2. Iterate over all *top-level* tags and map them to Word styles
                 for tag in search_node.find_all(True, recursive=False):
                     style_name = 'Normal' # Default
 
@@ -408,22 +264,22 @@ class ReportGeneratorAgent:
                             self._add_styled_paragraph(document, li.get_text(), style_name)
 
                     elif tag.name == 'pre':
-                        # This handles both ```code``` and ```dot``` blocks
-                        code_text = tag.get_text()
+                        code_text = tag.get_text().strip()
 
-                        # Check if this is a DOT block
-                        if code_text.lstrip().startswith(('digraph', 'graph')):
+                        if code_text.startswith(('digraph', 'graph')):
                             try:
-                                # Render DOT to PNG bytes
                                 image_bytes_io = generate_dot_png(code_text)
-                                document.add_picture(image_bytes_io, width=Inches(6.0))
-                                # Add a blank paragraph for spacing after the image
+
+                                # Center the image
+                                p = document.add_paragraph()
+                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                r = p.add_run()
+                                r.add_picture(image_bytes_io, width=Inches(6.0))
                                 document.add_paragraph()
                             except Exception as e:
                                 logging.error(f"Failed to render DOT diagram for docx: {e}")
                                 self._add_styled_paragraph(document, f"[Error rendering DOT diagram: {e}]", 'Code Block')
                         else:
-                            # It's a regular code block
                             style_name = 'Code Block'
                             self._add_styled_paragraph(document, code_text, style_name)
 
@@ -432,10 +288,111 @@ class ReportGeneratorAgent:
 
             except Exception as e:
                 logging.error(f"Fatal error during Markdown-to-HTML parsing: {e}")
-                # Fallback: just dump the raw text
                 self._add_styled_paragraph(document, content, 'Normal')
 
-        # 4. Save to in-memory buffer
+        doc_buffer = BytesIO()
+        document.save(doc_buffer)
+        doc_buffer.seek(0)
+        return doc_buffer
+
+    def generate_text_document_docx(self, title: str, content: str, is_html: bool = False) -> BytesIO:
+        """
+        Generates a generic .docx file for text-based project documents.
+        Includes a dedicated Title Page using a Section Break.
+        """
+        document = self._get_styled_document()
+
+        # 1. Add Title Page Content
+        try:
+            document.add_paragraph(title, style='Title')
+        except Exception:
+            logging.warning("Style 'Title' not found. Using default Heading 1.")
+            document.add_heading(title, level=1)
+
+        # Add timestamp or extra meta info here if desired
+        document.add_paragraph()
+
+        # 2. Force a Section Break (Next Page) to create a true Title Page
+        # This isolates the title page formatting from the rest of the doc
+        from docx.enum.section import WD_SECTION
+        section = document.add_section(WD_SECTION.NEW_PAGE)
+
+        # 3. Check for pre-formatted HTML (for manual test plans)
+        if is_html:
+            try:
+                parser = HtmlToDocx()
+                parser.add_html_to_document(content, document)
+            except Exception as e:
+                logging.error(f"Failed to parse HTML for DOCX: {e}. Falling back to plain text.")
+                document.add_paragraph(content, style='Normal')
+
+        # 4. Standard Markdown Processing
+        else:
+            try:
+                html_content = markdown.markdown(content, extensions=['fenced_code', 'tables', 'sane_lists'])
+                soup = BeautifulSoup(html_content, 'html.parser')
+
+                root_tags = soup.find_all(True, recursive=False)
+                search_node = soup
+                if len(root_tags) == 1 and root_tags[0].name not in ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'pre', 'hr']:
+                    search_node = root_tags[0]
+
+                for tag in search_node.find_all(True, recursive=False):
+                    style_name = 'Normal' # Default
+
+                    if tag.name == 'h1':
+                        style_name = 'Heading 1'
+                        self._add_styled_paragraph(document, tag.get_text(), style_name)
+
+                    elif tag.name == 'h2':
+                        style_name = 'Heading 2'
+                        self._add_styled_paragraph(document, tag.get_text(), style_name)
+
+                    elif tag.name == 'h3':
+                        style_name = 'Heading 3'
+                        self._add_styled_paragraph(document, tag.get_text(), style_name)
+
+                    elif tag.name == 'p':
+                        style_name = 'Normal'
+                        self._add_styled_paragraph(document, tag.get_text(), style_name)
+
+                    elif tag.name == 'ul':
+                        style_name = 'Bullet List'
+                        for li in tag.find_all('li'):
+                            self._add_styled_paragraph(document, li.get_text(), style_name)
+
+                    elif tag.name == 'ol':
+                        style_name = 'List Numbered'
+                        for li in tag.find_all('li'):
+                            self._add_styled_paragraph(document, li.get_text(), style_name)
+
+                    elif tag.name == 'pre':
+                        code_text = tag.get_text().strip()
+
+                        if code_text.startswith(('digraph', 'graph')):
+                            try:
+                                image_bytes_io = generate_dot_png(code_text)
+
+                                # Center the image
+                                p = document.add_paragraph()
+                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                r = p.add_run()
+                                r.add_picture(image_bytes_io, width=Inches(6.0))
+                                document.add_paragraph()
+                            except Exception as e:
+                                logging.error(f"Failed to render DOT diagram for docx: {e}")
+                                self._add_styled_paragraph(document, f"[Error rendering DOT diagram: {e}]", 'Code Block')
+                        else:
+                            style_name = 'Code Block'
+                            self._add_styled_paragraph(document, code_text, style_name)
+
+                    elif tag.name == 'hr':
+                        document.add_page_break()
+
+            except Exception as e:
+                logging.error(f"Fatal error during Markdown-to-HTML parsing: {e}")
+                self._add_styled_paragraph(document, content, 'Normal')
+
         doc_buffer = BytesIO()
         document.save(doc_buffer)
         doc_buffer.seek(0)
@@ -524,7 +481,7 @@ class ReportGeneratorAgent:
                 formatted_date = format_timestamp_for_display(timestamp_str)
 
                 record = {
-                    '#': current_prefix,
+                    '#': item.get('hierarchical_id', current_prefix),
                     'Title': item.get('title', 'N/A'),
                     'Type': item.get('request_type', 'N/A').replace('_', ' ').title(),
                     'Status': item.get('status', 'N/A'),
@@ -539,7 +496,28 @@ class ReportGeneratorAgent:
                 if "user_stories" in item:
                     flatten_hierarchy(item["user_stories"], prefix=f"{current_prefix}.")
 
-        flatten_hierarchy(backlog_data)
+        # If the data is already flat (e.g. from a filter), we might need different handling.
+        # But assuming the orchestrator provides a hierarchical or somewhat structured list.
+        if backlog_data and 'hierarchical_id' in backlog_data[0]:
+            # Already flattened?
+             for item in backlog_data:
+                timestamp_str = item.get('last_modified_timestamp') or item.get('creation_timestamp')
+                formatted_date = format_timestamp_for_display(timestamp_str)
+                record = {
+                    '#': item.get('hierarchical_id', f"CR-{item.get('cr_id', 'N/A')}"),
+                    'Title': item.get('title', 'N/A'),
+                    'Type': item.get('request_type', 'N/A').replace('_', ' ').title(),
+                    'Status': item.get('status', 'N/A'),
+                    'Priority/Severity': item.get('priority') or item.get('impact_rating') or '',
+                    'Complexity': item.get('complexity', ''),
+                    'Last Modified': formatted_date
+                }
+                flat_list.append(record)
+        else:
+            flatten_hierarchy(backlog_data)
+
+        if not flat_list:
+            flat_list.append({'#': "No items match filter criteria.", 'Title': '', 'Type': '', 'Status': '', 'Priority/Severity': '', 'Complexity': '', 'Last Modified': ''})
 
         df = pd.DataFrame(flat_list)
 
@@ -781,7 +759,12 @@ class ReportGeneratorAgent:
                     fig = go.Figure(data=[go.Pie(labels=labels, values=values, textinfo='label+percent', hole=.3)])
                     fig.update_layout(title_text='Backlog Items by Status', showlegend=False)
                     image_bytes_io = generate_plotly_png(fig)
-                    document.add_picture(image_bytes_io, width=Inches(6.0))
+
+                    # CHANGED: Center the image
+                    p = document.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run()
+                    run.add_picture(image_bytes_io, width=Inches(6.0))
                 else:
                     document.add_paragraph("No backlog status data available.", style='Normal')
             except Exception as e:
@@ -805,7 +788,12 @@ class ReportGeneratorAgent:
                     fig = go.Figure(data=[go.Bar(x=labels, y=values, marker_color=colors)])
                     fig.update_layout(title_text='Code Components by Test Status')
                     image_bytes_io = generate_plotly_png(fig)
-                    document.add_picture(image_bytes_io, width=Inches(6.0))
+
+                    # CHANGED: Center the image
+                    p = document.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = p.add_run()
+                    run.add_picture(image_bytes_io, width=Inches(6.0))
                 else:
                     document.add_paragraph("No component test data available.", style='Normal')
             except Exception as e:
@@ -1091,62 +1079,6 @@ class ReportGeneratorAgent:
         docx_bytes_io = self.generate_text_document_docx(
             title="AI Assistance Rate Report",
             content=report_text,
-            is_code=False
+            is_html=False
         )
         return docx_bytes_io
-
-    def generate_backlog_xlsx(self, backlog_data: list) -> BytesIO:
-        """
-        Generates an .xlsx file for the full or filtered project backlog.
-        Accepts a flat list containing hierarchical IDs.
-        """
-        logging.info("ReportGenerator: Generating backlog XLSX.")
-        flat_list = []
-
-        # Check if input is hierarchical or already flat list from filtered query
-        if backlog_data and 'hierarchical_id' in backlog_data[0]:
-            # Input is already flat (or we're treating it as such for filtered export)
-            for item in backlog_data:
-                timestamp_str = item.get('last_modified_timestamp') or item.get('creation_timestamp')
-                formatted_date = format_timestamp_for_display(timestamp_str) if timestamp_str else "N/A"
-                record = {
-                    '#': item.get('hierarchical_id', f"CR-{item.get('cr_id', 'N/A')}"),
-                    'Title': item.get('title', 'N/A'),
-                    'Type': item.get('request_type', 'N/A').replace('_', ' ').title(),
-                    'Status': item.get('status', 'N/A'),
-                    'Priority/Severity': item.get('priority') or item.get('impact_rating') or '',
-                    'Complexity': item.get('complexity', ''),
-                    'Last Modified': formatted_date
-                }
-                flat_list.append(record)
-        else:
-            # Input is hierarchical, need to flatten (original logic)
-            def flatten_hierarchy(items, prefix=""):
-                # ...(same flattening logic as before)...
-                for i, item in enumerate(items, 1):
-                    current_prefix = f"{prefix}{i}"
-                    timestamp_str = item.get('last_modified_timestamp') or item.get('creation_timestamp')
-                    formatted_date = format_timestamp_for_display(timestamp_str) if timestamp_str else "N/A"
-                    record = {
-                        '#': current_prefix,
-                        'Title': item.get('title', 'N/A'),
-                        'Type': item.get('request_type', 'N/A').replace('_', ' ').title(),
-                        'Status': item.get('status', 'N/A'),
-                        'Priority/Severity': item.get('priority') or item.get('impact_rating') or '',
-                        'Complexity': item.get('complexity', ''),
-                        'Last Modified': formatted_date
-                    }
-                    flat_list.append(record)
-                    if "features" in item: flatten_hierarchy(item["features"], prefix=f"{current_prefix}.")
-                    if "user_stories" in item: flatten_hierarchy(item["user_stories"], prefix=f"{current_prefix}.")
-            flatten_hierarchy(backlog_data)
-
-        if not flat_list:
-            flat_list.append({'#': "No items match filter criteria.", 'Title': '', 'Type': '', 'Status': '', 'Priority/Severity': '', 'Complexity': '', 'Last Modified': ''})
-
-        df = pd.DataFrame(flat_list)
-        output_buffer = BytesIO()
-        with pd.ExcelWriter(output_buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Project Backlog')
-        output_buffer.seek(0)
-        return output_buffer

@@ -4,6 +4,8 @@ import logging
 import textwrap
 import json
 import os
+import subprocess
+import re
 from gui.utils import render_markdown_to_html
 from pathlib import Path
 from PySide6.QtGui import QTextDocument
@@ -83,17 +85,65 @@ class SpecSynthesisAgent:
         logging.info("DB Detection Complete: No database usage detected in any stage.")
         return None, {}
 
+    def _validate_and_fix_dot_diagrams(self, markdown_text: str) -> str:
+        """
+        Scans the markdown for DOT blocks, attempts to render them locally to check for syntax errors,
+        and uses the LLM to fix them if they fail.
+        """
+        # Find all DOT blocks
+        dot_blocks = list(re.finditer(r"```dot\s*(.*?)```", markdown_text, re.DOTALL))
+        if not dot_blocks:
+            return markdown_text
+
+        dot_executable = "dot"
+
+        for match in reversed(dot_blocks):
+            original_code = match.group(1)
+            try:
+                # Dry run using graphviz 'dot'
+                subprocess.run(
+                    [dot_executable, "-Tpng"],
+                    input=original_code.encode('utf-8'),
+                    capture_output=True,
+                    check=True
+                )
+                continue
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                error_msg = e.stderr.decode('utf-8') if isinstance(e, subprocess.CalledProcessError) else str(e)
+                logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
+
+                # Use standard string to avoid brace collision
+                fix_prompt_template = textwrap.dedent("""
+                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
+                **Error:** <<ERROR_MSG>>
+                **Invalid Code:**
+                ```dot
+                <<ORIGINAL_CODE>>
+                ```
+                **Task:** Fix the syntax error so it compiles.
+                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
+                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
+                """)
+
+                fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
+                fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
+
+                try:
+                    fixed_response = self.llm_service.generate_text(fix_prompt, task_complexity="simple")
+                    code_match = re.search(r"```dot\s*(.*?)```", fixed_response, re.DOTALL)
+                    if code_match:
+                        fixed_code = code_match.group(1)
+                        start, end = match.span(1)
+                        markdown_text = markdown_text[:start] + fixed_code + markdown_text[end:]
+                        logging.info("DOT Diagram successfully fixed by AI.")
+                except Exception as fix_error:
+                    logging.error(f"Failed to apply AI fix to DOT diagram: {fix_error}")
+
+        return markdown_text
+
     def _generate_db_schema_spec(self, detection_stage: str, files_content: dict, project_name: str) -> str:
         """
         Generates the Database Schema Specification document using an LLM.
-
-        Args:
-            detection_stage (str): The stage that found the database evidence ('SCHEMA_FILE' or 'KEYWORD').
-            files_content (dict): A dictionary mapping file paths to their content.
-            project_name (str): The name of the project.
-
-        Returns:
-            A string containing the generated specification in Markdown.
         """
         logging.info(f"Generating Database Schema Specification from {detection_stage} context...")
 
@@ -103,33 +153,53 @@ class SpecSynthesisAgent:
 
         prompt_focus = ""
         if detection_stage == 'SCHEMA_FILE':
-            prompt_focus = "The provided context contains .sql files. Your primary task is to parse these files and reverse-engineer the schema into a human-readable Markdown format. List each table with its columns, data types, and any constraints (keys, nullability)."
+            prompt_focus = "The provided context contains .sql files. Parse these files and reverse-engineer the schema."
         else: # KEYWORD
-            prompt_focus = "The provided context contains various source code files with database-related keywords. Your primary task is to analyze the code (e.g., ORM models, SQL query strings) to infer and synthesize the database schema. List each inferred table with its columns, likely data types, and any relationships you can identify."
+            prompt_focus = "The provided context contains source code with database keywords. Infer the schema from ORM models or SQL strings."
 
-        prompt = textwrap.dedent(f"""
-            You are an expert database administrator and technical writer. Your task is to analyze the provided file contents and generate a clear, professional "Database Schema Specification" document in Markdown format.
+        # FIXED: Use standard string (no 'f' prefix) to avoid brace collision
+        prompt_template = textwrap.dedent("""
+            You are an expert database administrator. Analyze the provided file contents and generate a clear, professional "Database Schema Specification" document in Markdown format.
 
             **MANDATORY INSTRUCTIONS:**
-            1. **Analyze Content:** Based on the provided file content, reverse-engineer the database schema.
-            2. **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-            3. **Raw Output:** Your entire response MUST be only the raw Markdown content. Do not include a header or any conversational text.
+            1. **Analyze Content:** <<PROMPT_FOCUS>>
+            2. **STRICT MARKDOWN FORMATTING:** Use '##' for main headings and '###' for sub-headings.
+            3. **Raw Output:** Your entire response MUST be only the raw Markdown content.
+
+            **DIAGRAMMING RULE (Professional Graphviz ERD):**
+            - You MUST generate an **Entity-Relationship Diagram (ERD)**.
+            - Use the **DOT language** inside a ```dot ... ``` code block.
+            - **Layout & Style:** Use these exact settings:
+                `graph [fontname="Arial", fontsize=12, rankdir=LR, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=11, shape=record, style="filled,rounded", fillcolor="#F0F4C3", color="#827717", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
+            - **Syntax:** Use "record" shapes for tables. Example:
+                `Users [label="{{Users|+ ID (PK)\l+ Email\l+ PasswordHash\l}}"];`
 
             **--- Project Name ---**
-            {project_name}
+            <<PROJECT_NAME>>
 
             **--- Relevant File Contents ---**
-            {context_str}
+            <<CONTEXT_STR>>
 
             **--- Draft Database Schema Specification (Markdown) ---**
         """)
 
+        # Safe injection
+        prompt = prompt_template.replace("<<PROMPT_FOCUS>>", prompt_focus)
+        prompt = prompt.replace("<<PROJECT_NAME>>", project_name)
+        prompt = prompt.replace("<<CONTEXT_STR>>", context_str)
+
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            return response_text.strip()
+
+            # Apply Self-Correction Loop
+            validated_text = self._validate_and_fix_dot_diagrams(response_text)
+
+            return validated_text.strip()
         except Exception as e:
             logging.error(f"Failed to generate Database Schema Spec: {e}")
-            raise e # Re-raise the exception
+            raise e
 
     def synthesize_all_specs(self, project_id: str):
         """
@@ -217,71 +287,81 @@ class SpecSynthesisAgent:
             raise e # Re-raise to be caught by the worker
 
     def _generate_spec(self, summaries_context: str, spec_type: str, project_name: str, template_content: str | None = None) -> str:
-        """Generic method to generate a specific type of specification, now with template support."""
+        """Generic method to generate a specific type of specification with Professional Graphviz diagrams."""
         logging.info(f"Generating draft {spec_type} Specification...")
 
         template_instruction = ""
         if template_content:
             template_instruction = textwrap.dedent(f"""
             **CRITICAL TEMPLATE INSTRUCTION:**
-            Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template. Populate the sections of the template with content synthesized from the code summaries.
+            Strictly follow the structure of the provided template.
             --- TEMPLATE START ---
             {template_content}
             --- TEMPLATE END ---
             """)
 
         prompt_details = {
-            "Application": "Focus on user-facing features, functionality, and user stories.",
-            "Technical": "Focus on architecture, technology stack, data models, and component interactions.",
-            "UX/UI": "Focus on user personas, user journeys, screen layouts, and a high-level style guide."
+            "Application": "Focus on user-facing features and user stories.",
+            "Technical": "Focus on architecture, technology stack, and data models.",
+            "UX/UI": "Focus on user personas, journeys, and screen layouts."
         }
 
-        prompt = textwrap.dedent(f"""
-            You are an expert technical writer. Your task is to synthesize a collection of code summaries into a coherent, high-level **{spec_type} Specification** document.
+        # Define specific placement rules for each document type
+        placement_map = {
+            "Application": "inside the 'System Overview' or 'Functional Architecture' section, immediately after the header.",
+            "Technical": "inside the 'High-Level Architecture' section, immediately after the header.",
+            "UX/UI": "inside the 'Navigation Structure' or 'Site Map' section, immediately after the header."
+        }
+        placement_rule = placement_map.get(spec_type, "at the beginning of the detailed architecture section.")
+
+        # Use standard string (no 'f' prefix) to avoid brace collision
+        prompt_template = textwrap.dedent("""
+            You are an expert technical writer. Synthesize the code summaries into a high-level **<<SPEC_TYPE>> Specification**.
 
             **MANDATORY INSTRUCTIONS:**
-            1. **Analyze Summaries:** Read all the provided file summaries to build a holistic understanding of the codebase.
-            2. **Synthesize Document:** Write a structured specification document in Markdown format. {prompt_details.get(spec_type, "")}
+            1. **Synthesize Document:** Write a structured specification in Markdown. <<PROMPT_DETAIL>>
+            2. **Raw Output:** Return only the Markdown content.
 
-            **CRITICAL DIAGRAMMING RULE:**
-            - **To maximize clarity, you SHOULD generate 2-3 key diagrams.**
-            - **Your diagram choices MUST be relevant to the project's archetype.** For example, an `Architecture Diagram`, a `Data Flow Diagram`, or a `Data Model Diagram` (as appropriate).
-            - You MUST generate diagrams using the **DOT language** inside a ```dot ... ``` code block.
-            - The graph MUST be defined (e.g., `digraph G { ... }` or `graph G { ... }`).
-            - **Layout:** For architectural layers or flows, you **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`) to ensure the diagram fits a portrait document.
-            - **Styling:**
-                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`) to differentiate logical groups.
-                - You **MUST NOT** specify any `fontname` or `fontsize`. The renderer will use a default.
-                - You **MUST NOT** add attributes for `size`, `ratio`, or `dimensions`. Let the renderer auto-size.
-            - **Syntax:**
-                - **Nodes MUST use simple string labels.**
-                - **FOR MULTI-LINE LABELS (like database tables):** You MUST use a simple string with newline characters (`\n`). **Example:** `MyTable [label="Products\n- ProductID (PK)\n- Name\n- Price"]`
-                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
-                - **Ensure all nodes are defined only once.** Do not place a node in multiple subgraphs or ranksets.
-                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`. Do NOT use HTML-like labels or `<-` arrows.
-            - Do NOT use ASCII art.
+            **DIAGRAMMING RULE (Professional Graphviz):**
+            - Generate 1 key diagram relevant to the spec type.
+            - Use the **DOT language** inside a ```dot ... ``` code block.
+            - **SCOPE:** Create a **"High-Level Module View"**. Group classes/files into logical modules/namespaces. Do NOT create a node for every single file.
+            - **CRITICAL:** You MUST use `digraph G {` (directed graph). Do NOT use `graph {`.
+            - **PLACEMENT:** You MUST place this diagram <<PLACEMENT_INSTRUCTION>>
+            - **Layout & Style:** Use these exact settings:
+                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#F3E5F5", color="#7B1FA2", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
 
-            3. **Raw Markdown Output:** Your entire response MUST be only the raw content of the Markdown document. Do not include a header, preamble, or any other conversational text.
-
-            **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-
-            {template_instruction}
+            <<TEMPLATE_INSTRUCTION>>
 
             **--- Project Name ---**
-            {project_name}
+            <<PROJECT_NAME>>
 
-            **--- Collection of Code Summaries ---**
-            {summaries_context}
+            **--- Code Summaries ---**
+            <<SUMMARIES_CONTEXT>>
 
-            **--- Draft {spec_type} Specification (Markdown) ---**
+            **--- Draft <<SPEC_TYPE>> Specification (Markdown) ---**
         """)
+
+        # Safe injection
+        prompt = prompt_template.replace("<<SPEC_TYPE>>", spec_type)
+        prompt = prompt.replace("<<PROMPT_DETAIL>>", prompt_details.get(spec_type, ""))
+        prompt = prompt.replace("<<PLACEMENT_INSTRUCTION>>", placement_rule)
+        prompt = prompt.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
+        prompt = prompt.replace("<<PROJECT_NAME>>", project_name)
+        prompt = prompt.replace("<<SUMMARIES_CONTEXT>>", summaries_context)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            return response_text.strip()
+
+            # Apply Self-Correction Loop
+            validated_text = self._validate_and_fix_dot_diagrams(response_text)
+
+            return validated_text.strip()
         except Exception as e:
             logging.error(f"Failed to generate {spec_type} Spec: {e}")
-            raise e # Re-raise the exception
+            raise e
 
     def _detect_ui_presence(self, all_artifacts: list, project_root: Path) -> bool:
         """

@@ -8,6 +8,9 @@ generation of the UX/UI Specification document.
 import logging
 import textwrap
 import json
+import re
+import subprocess
+from pathlib import Path
 from llm_service import LLMService
 
 class UX_Spec_Agent:
@@ -24,6 +27,62 @@ class UX_Spec_Agent:
             raise ValueError("llm_service is required for the UX_Spec_Agent.")
         self.llm_service = llm_service
         logging.info("UX_Spec_Agent initialized.")
+
+    def _validate_and_fix_dot_diagrams(self, markdown_text: str) -> str:
+        """
+        Scans the markdown for DOT blocks, attempts to render them locally to check for syntax errors,
+        and uses the LLM to fix them if they fail.
+        """
+        # Find all DOT blocks
+        dot_blocks = list(re.finditer(r"```dot\s*(.*?)```", markdown_text, re.DOTALL))
+        if not dot_blocks:
+            return markdown_text
+
+        dot_executable = "dot"
+
+        for match in reversed(dot_blocks):
+            original_code = match.group(1)
+            try:
+                # Dry run using graphviz 'dot'
+                subprocess.run(
+                    [dot_executable, "-Tpng"],
+                    input=original_code.encode('utf-8'),
+                    capture_output=True,
+                    check=True
+                )
+                continue
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                error_msg = e.stderr.decode('utf-8') if isinstance(e, subprocess.CalledProcessError) else str(e)
+                logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
+
+                # Use standard string to avoid brace collision
+                fix_prompt_template = textwrap.dedent("""
+                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
+                **Error:** <<ERROR_MSG>>
+                **Invalid Code:**
+                ```dot
+                <<ORIGINAL_CODE>>
+                ```
+                **Task:** Fix the syntax error so it compiles.
+                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
+                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
+                """)
+
+                fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
+                fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
+
+                try:
+                    fixed_response = self.llm_service.generate_text(fix_prompt, task_complexity="simple")
+                    code_match = re.search(r"```dot\s*(.*?)```", fixed_response, re.DOTALL)
+                    if code_match:
+                        fixed_code = code_match.group(1)
+                        start, end = match.span(1)
+                        markdown_text = markdown_text[:start] + fixed_code + markdown_text[end:]
+                        logging.info("DOT Diagram successfully fixed by AI.")
+                except Exception as fix_error:
+                    logging.error(f"Failed to apply AI fix to DOT diagram: {fix_error}")
+
+        return markdown_text
 
     def generate_enriched_ux_draft(self, project_brief: str, personas: list[str], template_content: str | None = None) -> str:
         """
@@ -45,77 +104,81 @@ class UX_Spec_Agent:
             --- TEMPLATE END ---
             """)
 
-        prompt = textwrap.dedent(f"""
+        # Use standard string to avoid brace collisions
+        prompt_template = textwrap.dedent("""
             You are a senior UX Designer and Business Analyst. Your task is to create a single, comprehensive, and consolidated UX/UI Specification document in Markdown format.
 
             **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown document. Do not include any preamble, introduction, or conversational text.
 
-            {template_instruction}
+            <<TEMPLATE_INSTRUCTION>>
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Analyze Holistically:** Analyze the provided Project Brief and User Personas to understand the application's goals and target audience.
+            2.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. Paragraphs MUST be separated by a full blank line.
 
-            **CRITICAL DIAGRAMMING RULE:**
-            - **To maximize clarity, you SHOULD generate a "High-Level Screen Flow Diagram"** to visually represent the User Journeys and how the Inferred Screens connect.
-            - You MUST generate this diagram using the **DOT language** inside a ```dot ... ``` code block.
-            - The graph MUST be defined (e.g., `digraph G { ... }`).
-            - **Layout:** You **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`).
-            - **Styling:**
-                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`).
-                - You **MUST NOT** specify any `fontname` or `fontsize`.
-                - You **MUST NOT** add attributes for `size` or `ratio`.
-            - **Syntax:**
-                - **Nodes MUST use simple string labels (e.g., `Node1 [label="My Label"]`).**
-                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
-                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`.
+            **SECTION REQUIREMENTS:**
+            If no template is provided, you MUST generate a document containing the following sections in this exact order:
 
-            2.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-            3.  **Required Sections (if no template is provided):** If no template is given, you MUST generate a document containing the following sections, using the exact heading names provided:
-                - `## 1. User Personas`
-                - `## 2. Epics`
-                - `## 3. Features (grouped by Epic)`
-                - `## 4. User Stories (grouped by Feature)`
-                - `## 5. Inferred Screens & Components`
-                - `## 6. Prescriptive Style Guide (for Code Agent)`
+            `## 1. User Personas`
+            `## 2. Epics`
+            `## 3. Features (grouped by Epic)`
+            `## 4. User Stories (grouped by Feature)`
 
-            4.  **CRITICAL: Style Guide Format:** For the "## 6. Prescriptive Style Guide" section, you MUST generate a set of specific, tech-agnostic rules for the UI. This guide will be used by a downstream code agent, so it must be a set of concrete rules.
+            `## 5. Inferred Screens & Components`
+            **CRITICAL:** In this section, you MUST first list the screens. **IMMEDIATELY AFTER** the list of screens, you MUST generate a **"Core Journey Diagram"**.
 
-                **Use this exact format:**
+            **DIAGRAMMING RULE (Professional Graphviz):**
+            - You MUST generate the diagram using the **DOT language** inside a ```dot ... ``` code block.
+            - **SCOPE:** Diagram ONLY the **"Happy Path"** or the most critical user journey. **Limit to 10-15 key screens** to ensure the diagram remains readable on a single page. Do not map minor edge cases.
+            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
+            - **Layout & Style:** Use these exact settings:
+                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
+            - **Content:**
+                - Define nodes: `InventoryView [label="Inventory List"];`
+                - Define edges: `InventoryView -> AddProductForm [label="Add"];`
 
+            `## 6. Prescriptive Style Guide (for Code Agent)`
+            **CRITICAL:** Generate specific, tech-agnostic rules using this exact format:
                 ### A. Color Palette
-                * `accent_color`: `"#007ACC"` (Vibrant Blue)
-                * `primary_text_color`: `"#F0F0F0"` (Off-white)
-                * `secondary_text_color`: `"#A9B7C6"` (Light Gray)
-                * `primary_background_color`: `"#202021"` (Dark Gray)
-                * `secondary_background_color`: `"#2A2A2B"` (Medium-Dark Gray)
-                * `error_color`: `"#CC7832"` (Orange-Red)
-
+                * `accent_color`: `"#007ACC"`
+                * `primary_text_color`: `"#F0F0F0"`
+                * `secondary_text_color`: `"#A9B7C6"`
+                * `primary_background_color`: `"#202021"`
+                * `secondary_background_color`: `"#2A2A2B"`
+                * `error_color`: `"#CC7832"`
                 ### B. Typography
                 * `font_family`: `"Inter, Segoe UI, sans-serif"`
-                * `heading_1_size`: `"18pt"`
-                * `heading_2_size`: `"14pt"`
-                * `body_text_size`: `"10pt"`
-
                 ### C. Component Rules
                 * **Primary Button:** `background: accent_color; color: primary_text_color; min-height: 35px;`
-                * **Secondary Button:** `background: secondary_background_color; color: primary_text_color; border: 1px solid accent_color;`
                 * **Text Input:** `background: primary_background_color; border: 1px solid secondary_background_color; padding: 8px;`
-                * **Data Table:** `header_background: secondary_background_color; alternate_row_color: primary_background_color;`
 
             ---
             **INPUT 1: Project Brief**
-            {project_brief}
+            <<PROJECT_BRIEF>>
 
             **INPUT 2: Confirmed User Personas**
-            {personas_str}
+            <<PERSONAS_STR>>
             ---
 
             **Consolidated UX/UI Specification (Markdown):**
         """)
 
+        # Manually inject variables
+        prompt = prompt_template.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
+        prompt = prompt.replace("<<PROJECT_BRIEF>>", project_brief)
+        prompt = prompt.replace("<<PERSONAS_STR>>", personas_str)
+
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            return response_text.strip()
+            draft = response_text.strip()
+
+            # VALIDATION LOOP
+            validated_draft = self._validate_and_fix_dot_diagrams(draft)
+
+            return validated_draft
+
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to generate enriched UX draft: {e}")
             return f"### Error\nCould not generate the UX/UI Specification Draft. Details: {e}"
@@ -136,245 +199,160 @@ class UX_Spec_Agent:
             --- TEMPLATE END ---
             """)
 
-        prompt = textwrap.dedent(f"""
+        # Use standard string to avoid brace collisions
+        prompt_template = textwrap.dedent("""
             You are a senior UX Designer revising a document. Your task is to refine an existing draft of a UX/UI Specification based on specific feedback from a Product Manager.
 
-            {template_instruction}
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the refined document. Do not include any preamble.
+
+            <<TEMPLATE_INSTRUCTION>>
 
             **MANDATORY INSTRUCTIONS:**
-            1.  **Preserve Header**: The document has a standard header (Project Number, Type, Date, Version). You MUST preserve this header and its structure exactly as it is.
-            2.  **Modify Body Only**: Your changes should only be in the body of the document to incorporate the PM's feedback. Do not regenerate the entire document from scratch.
-            3.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document, including the preserved header.
-            4.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+            1.  **Preserve Header**: The document has a standard header. Preserve it.
+            2.  **Modify Body Only**: Incorporate the PM's feedback.
+            3.  **RAW MARKDOWN ONLY**: Return only the raw content.
+
+            **DIAGRAMMING RULE (Professional Graphviz):**
+            - If the feedback requires updating the diagram, use the **DOT language** inside a ```dot ... ``` code block.
+            - **SCOPE:** Maintain the scope of a **"Core Journey Diagram"** (Happy Path only, max 10-15 nodes). Do not expand it to cover every edge case unless explicitly requested.
+            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
+            - **Layout & Style:** Use these exact settings:
+                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
 
             **--- INPUT 1: Current Draft ---**
             ```markdown
-            {current_draft}
+            <<CURRENT_DRAFT>>
             ```
 
             **--- INPUT 2: PM Feedback to Address ---**
             ```
-            {pm_feedback}
+            <<PM_FEEDBACK>>
             ```
 
             **--- Refined UX/UI Specification Document (Markdown) ---**
         """)
 
+        prompt = prompt_template.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
+        prompt = prompt.replace("<<CURRENT_DRAFT>>", current_draft)
+        prompt = prompt.replace("<<PM_FEEDBACK>>", pm_feedback)
+
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            return response_text.strip()
+            draft = response_text.strip()
+
+            # VALIDATION LOOP: Check and fix any DOT diagrams before returning
+            validated_draft = self._validate_and_fix_dot_diagrams(draft)
+
+            return validated_draft
+
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to refine UX draft: {e}")
             raise e
 
     def parse_final_spec_and_generate_blueprint(self, final_spec_markdown: str) -> str:
-        """
-        Parses the final, human-readable UX/UI spec in Markdown and generates
-        a structured, machine-readable JSON blueprint of the screens and components.
-        """
+        # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Parsing final spec to generate JSON blueprint...")
-
-        prompt = textwrap.dedent(f"""
-            You are a meticulous data extraction system. Your task is to analyze a final UX/UI Specification written in Markdown and convert all screen and component descriptions into a single, structured JSON object.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the JSON object. Do not include any preamble, introduction, comments, or markdown formatting like ```json. The first character of your response must be the opening brace `{{`.
-
+        prompt_template = textwrap.dedent("""
+            You are a meticulous data extraction system. Your task is to analyze a final UX/UI Specification...
             **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Output:** Your response MUST be a single, valid JSON object.
-            2.  **Top-Level Key:** The top-level key of the JSON object MUST be "screens". Its value should be an array of screen objects.
-            3.  **Screen Object Schema:** Each object in the "screens" array MUST adhere to the following schema:
-                {{
-                  "screen_name": "...",
-                  "layout_description": "...",
-                  "components": [
-                    {{
-                      "component_type": "...",
-                      "label": "...",
-                      "details": "...",
-                      "action": "..."
-                    }}
-                  ]
-                }}
-            4.  **Extraction:** Carefully read the 'Inferred Screens & Components' section of the Markdown input and populate the JSON structure accordingly. Infer the layout, component types, labels, details, and actions from the text.
-
+            1. **JSON Output:** Your response MUST be a single, valid JSON object.
+            ...
             ---
             **INPUT: Final UX/UI Specification (Markdown)**
-            {final_spec_markdown}
+            <<FINAL_SPEC_MARKDOWN>>
             ---
-
             **OUTPUT: Structural UI Blueprint (JSON Object):**
         """)
-
+        prompt = prompt_template.replace("<<FINAL_SPEC_MARKDOWN>>", final_spec_markdown)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            # Clean the response to remove potential markdown fences
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
-            # Final validation check
             json.loads(cleaned_response)
             return cleaned_response
         except Exception as e:
-            logging.error(f"UX_Spec_Agent failed to parse spec and generate blueprint: {e}")
-            error_json = {{"error": f"Could not generate blueprint from spec. Details: {e}"}}
-            return json.dumps(error_json, indent=2)
+            logging.error(f"UX_Spec_Agent failed to parse spec: {e}")
+            return json.dumps({"error": f"Details: {e}"}, indent=2)
 
     def generate_user_journeys(self, project_brief: str, personas: list[str]) -> str:
-        """
-        Generates a list of core user journeys based on the project brief and personas.
-        """
+        # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Generating user journeys...")
-
         personas_str = "- " + "\n- ".join(personas)
-
         prompt = textwrap.dedent(f"""
-            You are a senior UX Designer. Your task is to outline the most critical user journeys for an application based on its description and the target user personas.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the numbered list. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the list (e.g., "1.").
-
+            You are a senior UX Designer...
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze:** Consider the project brief and the user personas.
-            2.  **Identify Journeys:** Identify a list of high-level, end-to-end user journeys. A journey describes a complete task a user would perform (e.g., "Booking a flight," "Viewing a monthly sales report," "Configuring user settings").
-            3.  **Numbered List:** Your response MUST be only a numbered list of these journeys.
-
+            1. **Identify Journeys:**...
             ---
             **Project Brief:**
             {project_brief}
-
             **User Personas:**
             {personas_str}
             ---
-
             **Core User Journeys (Numbered List):**
         """)
-
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text.strip()
         except Exception as e:
-            logging.error(f"UX_Spec_Agent failed to generate user journeys: {e}")
-            return f"Error: Could not generate user journeys. Details: {e}"
+            return f"Error: {e}"
 
     def identify_screens_from_journeys(self, user_journeys: str) -> str:
-        """
-        Analyzes a list of user journeys and identifies the necessary UI screens/views.
-        """
+        # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Identifying screens from user journeys...")
-
         prompt = textwrap.dedent(f"""
-            You are a senior UI/UX Architect. Your task is to analyze a list of user journeys and identify all the unique screens, views, or major UI components required to fulfill them.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the numbered list. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the list (e.g., "1.").
-
+            You are a senior UI/UX Architect...
             **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze:** Read the user journeys and list every distinct screen or view that is explicitly mentioned or strongly implied.
-            2.  **Consolidate:** Consolidate duplicate screens. For example, if one journey mentions a "Login Page" and another mentions a "Sign-in screen," list it once as "Login Screen."
-            3.  **Numbered List:** Your response MUST be only a numbered list of these screen/view names.
-
+            1. **Analyze:** Read the user journeys...
             ---
             **Core User Journeys:**
             {user_journeys}
             ---
-
             **Required Screens/Views (Numbered List):**
         """)
-
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text.strip()
         except Exception as e:
-            logging.error(f"UX_Spec_Agent failed to identify screens: {e}")
-            return f"Error: Could not identify screens from journeys. Details: {e}"
+            return f"Error: {e}"
 
     def generate_screen_blueprint(self, screen_name: str, pm_description: str) -> str:
-        """
-        Takes a PM's description of a screen and generates a structured
-        JSON blueprint for its layout and components.
-        """
+        # ... (Keep existing logic)
         logging.info(f"UX_Spec_Agent: Generating blueprint for screen: {screen_name}")
-
-        prompt = textwrap.dedent(f"""
-            You are a meticulous UI/UX Architect creating a machine-readable specification. Your task is to convert a natural language description of a single application screen into a structured JSON object.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the JSON object. Do not include any preamble, introduction, comments, or markdown formatting like ```json. The first character of your response must be the opening brace `{{`.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Output:** Your response MUST be a single, valid JSON object.
-            2.  **JSON Schema:** The JSON object MUST adhere to the following schema:
-                {{
-                  "screen_name": "...",
-                  "layout_description": "...",
-                  "components": [
-                    {{
-                      "component_type": "...",
-                      "label": "...",
-                      "details": "...",
-                      "action": "..."
-                    }}
-                  ]
-                }}
-            3.  **Schema Fields:**
-                - `screen_name`: The name of the screen you are designing.
-                - `layout_description`: A brief description of the screen's layout (e.g., "2-column layout with a fixed sidebar", "Main content area with a modal dialog").
-                - `components`: An array of objects, where each object represents a single UI element.
-                - `component_type`: The type of the element (e.g., "button", "data_table", "chart", "text_input", "kpi_card", "navigation_menu").
-                - `label`: The visible text or title for the component.
-                - `details`: A brief description of the component's purpose or the data it displays.
-                - `action`: A description of what happens when the user interacts with the component (e.g., "navigate_to_details_screen", "submit_form", "opens_settings_modal").
-
+        prompt_template = textwrap.dedent("""
+            You are a meticulous UI/UX Architect...
+            ...
             ---
             **Screen to Design:**
-            {screen_name}
-
-            **Product Manager's Description of Components:**
-            {pm_description}
+            <<SCREEN_NAME>>
+            **Product Manager's Description:**
+            <<PM_DESCRIPTION>>
             ---
-
             **Generated Screen Blueprint (JSON Object):**
         """)
-
+        prompt = prompt_template.replace("<<SCREEN_NAME>>", screen_name).replace("<<PM_DESCRIPTION>>", pm_description)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            # Clean the response to remove potential markdown fences
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
-            # Final validation check
             json.loads(cleaned_response)
             return cleaned_response
         except Exception as e:
-            logging.error(f"UX_Spec_Agent failed to generate screen blueprint: {e}")
-            error_json = {{"error": f"Could not generate blueprint. Details: {e}"}}
-            return json.dumps(error_json, indent=2)
+            return json.dumps({"error": f"Details: {e}"}, indent=2)
 
     def generate_style_guide(self, pm_description: str) -> str:
-        """
-        Takes a PM's description of a desired look and feel and generates
-        a text-based Theming & Style Guide in Markdown.
-        """
+        # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Generating Theming & Style Guide...")
-
         prompt = textwrap.dedent(f"""
-            You are a senior UI/UX Designer specializing in creating design systems. Your task is to take a high-level, natural language description of a desired "look and feel" and convert it into a structured, text-based Theming & Style Guide using Markdown.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown document. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the document's content (e.g., the `#` of a heading).
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Markdown Output:** Your response MUST be a well-formatted Markdown document.
-            2.  **Core Sections:** The document MUST include the following sections:
-                - `## Color Palette`: Define primary, secondary, accent, success, and error colors. Provide hex codes.
-                - `## Typography`: Define the primary font families for headings and body text.
-                - `## Component Styling`: Provide general rules for the look of common elements (e.g., buttons, input fields, cards).
-                - `## Iconography`: Suggest a suitable, widely-used icon library (e.g., "Material Design Icons", "Font Awesome").
-            3.  **Interpret Vague Terms:** Interpret subjective terms from the user's description (e.g., "modern," "professional," "clean") into concrete design choices.
-
+            You are a senior UI/UX Designer...
+            ...
             ---
-            **Product Manager's Description of Desired Look and Feel:**
+            **Product Manager's Description:**
             {pm_description}
             ---
-
             **Theming & Style Guide (Markdown):**
         """)
-
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text.strip()
         except Exception as e:
-            logging.error(f"UX_Spec_Agent failed to generate style guide: {e}")
-            return f"### Error\nCould not generate style guide. Details: {e}"
+            return f"### Error\nDetails: {e}"

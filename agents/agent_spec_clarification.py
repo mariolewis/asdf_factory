@@ -7,6 +7,7 @@ This module contains the SpecClarificationAgent class.
 import logging
 import textwrap
 import re
+import subprocess
 from typing import List
 from klyve_db_manager import KlyveDBManager
 from llm_service import LLMService
@@ -33,14 +34,6 @@ class SpecClarificationAgent:
     def consolidate_requirements(self, project_brief: str, ux_spec_markdown: str, ui_blueprint_json: str) -> str:
         """
         Consolidates three sources of requirements into a single document using an LLM.
-
-        Args:
-            project_brief (str): The original project brief for non-GUI requirements.
-            ux_spec_markdown (str): The UX/UI spec for contextual information like personas.
-            ui_blueprint_json (str): The definitive JSON blueprint for UI structure.
-
-        Returns:
-            A string containing the consolidated requirements document.
         """
         logging.info("SpecClarificationAgent: Consolidating multiple requirement sources...")
 
@@ -89,14 +82,69 @@ class SpecClarificationAgent:
         tags = set(kw.lower() for kw in keywords)
         return list(tags)
 
+    def _validate_and_fix_dot_diagrams(self, markdown_text: str) -> str:
+        """
+        Scans the markdown for DOT blocks, attempts to render them locally to check for syntax errors,
+        and uses the LLM to fix them if they fail.
+        """
+        dot_blocks = list(re.finditer(r"```dot\s*(.*?)```", markdown_text, re.DOTALL))
+        if not dot_blocks:
+            return markdown_text
+
+        dot_executable = "dot"
+
+        for match in reversed(dot_blocks):
+            original_code = match.group(1)
+            try:
+                # Dry run using graphviz 'dot'
+                subprocess.run(
+                    [dot_executable, "-Tpng"],
+                    input=original_code.encode('utf-8'),
+                    capture_output=True,
+                    check=True
+                )
+                continue
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                error_msg = e.stderr.decode('utf-8') if isinstance(e, subprocess.CalledProcessError) else str(e)
+                logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
+
+                # Use standard string to avoid brace collision
+                fix_prompt_template = textwrap.dedent("""
+                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
+                **Error:** <<ERROR_MSG>>
+                **Invalid Code:**
+                ```dot
+                <<ORIGINAL_CODE>>
+                ```
+                **Task:** Fix the syntax error so it compiles.
+                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
+                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
+                """)
+
+                fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
+                fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
+
+                try:
+                    fixed_response = self.llm_service.generate_text(fix_prompt, task_complexity="simple")
+                    code_match = re.search(r"```dot\s*(.*?)```", fixed_response, re.DOTALL)
+                    if code_match:
+                        fixed_code = code_match.group(1)
+                        start, end = match.span(1)
+                        markdown_text = markdown_text[:start] + fixed_code + markdown_text[end:]
+                        logging.info("DOT Diagram successfully fixed by AI.")
+                except Exception as fix_error:
+                    logging.error(f"Failed to apply AI fix to DOT diagram: {fix_error}")
+
+        return markdown_text
+
     def expand_brief_description(self, brief_description: str, is_gui_project: bool = False, template_content: str | None = None) -> str:
         """
-        Expands a brief user description into a detailed draft specification.
+        Expands a brief user description into a detailed draft specification using Professional Graphviz style.
         """
         fallback_instruction = ""
         if is_gui_project:
             fallback_instruction = textwrap.dedent("""
-            4.  **UI/UX Fallback Section:** Because this is a GUI application, you MUST include a section titled "UI Layout & Style Guide". In this section, provide a basic, high-level guide for a consistent look and feel, including suggestions for a color palette, typography, and general layout principles.
+            4.  **UI/UX Fallback Section:** Include a section titled "UI Layout & Style Guide" with high-level look and feel suggestions.
             """)
 
         template_instruction = ""
@@ -104,56 +152,72 @@ class SpecClarificationAgent:
             template_instruction = textwrap.dedent(f"""
             **CRITICAL TEMPLATE INSTRUCTION:**
             Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template.
-            Populate the sections of the template with content derived from the user's brief.
-            DO NOT invent new sections. DO NOT change the names of the headings from the template.
             --- TEMPLATE START ---
             {template_content}
             --- TEMPLATE END ---
             """)
 
-        prompt = textwrap.dedent(f"""
+        # Use standard string (no 'f' prefix)
+        prompt_template = textwrap.dedent("""
             You are an expert Business Analyst. Your task is to expand the following brief description into a detailed, structured Application Specification.
 
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the specification document. Do not include any preamble, introduction, or conversational text.
+            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the specification document. Do not include any preamble.
 
-            {template_instruction}
+            <<TEMPLATE_INSTRUCTION>>
 
             **MANDATORY INSTRUCTIONS:**
+            1.  **STRICT MARKDOWN FORMATTING:** Use '##' for main headings and '###' for sub-headings. Paragraphs MUST be separated by a full blank line.
+            2.  **Technology Agnostic:** Requirements must be purely functional. Do NOT recommend specific stacks unless explicitly requested.
 
-            **CRITICAL DIAGRAMMING RULE:**
-            - **To maximize clarity, you SHOULD generate a "High-Level Use Case Diagram"** to visually represent the main actors (personas) and their primary interactions (use cases) with the system.
-            - You MUST generate this diagram using the **DOT language** inside a ```dot ... ``` code block.
-            - The graph MUST be defined (e.g., `digraph G { ... }`).
-            - **Layout:** You **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`).
-            - **Styling:**
-                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`).
-                - You **MUST NOT** specify any `fontname` or `fontsize`.
-                - You **MUST NOT** add attributes for `size` or `ratio`.
-            - **Syntax:**
-                - **Nodes MUST use simple string labels (e.g., `Node1 [label="My Label"]`).**
-                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
-                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`.
+            **SECTION REQUIREMENTS:**
+            If no template is provided, you MUST generate a document containing the following sections in this exact order:
 
-            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-            2.  **Technology Agnostic:** Your response MUST be purely functional and non-functional. You MUST NOT include any recommendations for specific programming languages, frameworks, databases, or technology stacks.
-            3.  **User-Specified Tech:** The only exception is if the user's brief explicitly commands the use of a specific technology. In that case, you must include it.
-            4.  **Logical Data Schema:** If the description implies data storage, include a 'Data Schema' section. Describe the tables and columns using logical data types (e.g., Text, Number, Date), not physical SQL types (e.g., VARCHAR, INT).
-            {fallback_instruction}
+            `## 1. Executive Summary`
+            High-level project overview.
+
+            `## 2. User Personas`
+            Detailed profiles of key users.
+
+            `## 3. Functional Requirements (Epics & Features)`
+            **CRITICAL:** Start this section by generating a **"High-Level Use Case Diagram"**.
+
+            **DIAGRAMMING RULE (Professional Graphviz):**
+            - Use the **DOT language** inside a ```dot ... ``` code block.
+            - **CRITICAL:** You MUST use `digraph G {` (directed graph). Do NOT use `graph {`.
+            - **Layout & Style:** Use these exact settings for a professional look:
+                `graph [fontname="Arial", fontsize=12, rankdir=LR, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=12, shape=note, style="filled,rounded", fillcolor="#FFF9C4", color="#FBC02D", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
+            - **Content:** Diagram the interactions between the Actors (from Section 2) and the Core Epics.
+
+            `## 4. Non-Functional Requirements`
+            Performance, Security, Reliability.
+
+            `## 5. Data Requirements`
+            High-level entities (not a full schema).
+
+            <<FALLBACK_INSTRUCTION>>
+
             The user's brief description is:
             ---
-            {brief_description}
+            <<BRIEF_DESCRIPTION>>
             ---
         """)
+
+        # Manually inject variables
+        prompt = prompt_template.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
+        prompt = prompt.replace("<<FALLBACK_INSTRUCTION>>", fallback_instruction)
+        prompt = prompt.replace("<<BRIEF_DESCRIPTION>>", brief_description)
 
         try:
             logging.info("Calling LLM service to expand brief description...")
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 
-            if not response_text:
-                raise ValueError("The LLM service returned an empty response.")
+            # Apply Self-Correction Loop
+            validated_text = self._validate_and_fix_dot_diagrams(response_text)
 
-            logging.info("Successfully received expanded specification from LLM service.")
-            return response_text
+            logging.info("Successfully received and validated expanded specification.")
+            return validated_text
         except Exception as e:
             logging.error(f"LLM service call failed during spec expansion: {e}")
             raise
@@ -165,7 +229,6 @@ class SpecClarificationAgent:
         kb_prefix = ""
         logging.info(f"SpecClarificationAgent: Identifying issues for iteration {iteration_count}.")
 
-        # Knowledge base query remains the same
         tags = self._extract_tags_from_spec(spec_text)
         if tags:
             try:
@@ -179,7 +242,7 @@ class SpecClarificationAgent:
 
         convergence_directive = ""
         if iteration_count > 1:
-            convergence_directive = textwrap.dedent("""
+            convergence_directive = textwrap.dedent(f"""
             **IMPORTANT - CONVERGENCE DIRECTIVE:**
             This is refinement iteration {iteration_count}. You MUST focus ONLY on high or medium-severity issues such as logical contradictions, missing critical functionality, or significant ambiguities. IGNORE low-severity stylistic points or trivial suggestions.
             """)
@@ -192,7 +255,7 @@ class SpecClarificationAgent:
 
             **MANDATORY INSTRUCTIONS:**
 
-            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+            1.  **STRICT MARKDOWN FORMATTING:** Use '##' for main headings.
             2.  Identify any ambiguities, contradictions, underspecified features, or missing information.
             3.  For each issue you identify, you MUST propose 1-2 concrete potential solutions or clarifying options for the Product Manager to consider.
             4.  Structure your response as a numbered list. For each item, clearly state the "Issue" and then provide the "Proposed Solutions".
@@ -206,7 +269,6 @@ class SpecClarificationAgent:
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-
             if not response_text:
                 raise ValueError("The LLM service returned an empty response when identifying issues.")
 
@@ -223,7 +285,7 @@ class SpecClarificationAgent:
         """
         fallback_instruction = ""
         if is_gui_project:
-            fallback_instruction = textwrap.dedent(f"""
+            fallback_instruction = textwrap.dedent("""
             **IMPORTANT:** This is a GUI application. Ensure your revised output includes a complete section titled "UI Layout & Style Guide" based on all available information.
             """)
 
@@ -237,42 +299,62 @@ class SpecClarificationAgent:
             --- TEMPLATE END ---
             """)
 
-        prompt = textwrap.dedent(f"""
+        # Use standard string to avoid brace collisions
+        prompt_template = textwrap.dedent("""
             You are an expert software architect revising a document. Your task is to take the body of a software specification and refine it based on a list of identified issues and specific feedback from a Product Manager.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Refine Body Only**: The text you receive is only the body of a document. Your task is to incorporate the PM's clarifications to resolve the identified issues.
-            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw, refined text of the document's body. Do not add a header, preamble, introduction, or any conversational text.
+            2.  **RAW MARKDOWN ONLY**: Your entire response MUST be only the raw, refined text of the document's body. Do not add a header, preamble, introduction, or any conversational text.
             3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting (e.g., '##' for headings).
 
-            {fallback_instruction}
-            {template_instruction}
+            **DIAGRAMMING RULE (Professional Graphviz):**
+            - If you update or regenerate the diagram, you MUST use the **DOT language** inside a ```dot ... ``` code block.
+            - **SCOPE:** Maintain a **"High-Level Use Case Diagram"**. Map **Actors** to **Core Epics/Features**. Do NOT attempt to diagram every granular User Story. Keep it readable.
+            - **CRITICAL:** You MUST use `digraph G {` (directed graph). Do NOT use `graph {`.
+            - **Layout & Style:** Use these exact settings:
+                `graph [fontname="Arial", fontsize=12, rankdir=LR, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=12, shape=note, style="filled,rounded", fillcolor="#FFF9C4", color="#FBC02D", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
+
+            <<FALLBACK_INSTRUCTION>>
+            <<TEMPLATE_INSTRUCTION>>
 
             **--- INPUT 1: Current Draft Body ---**
             ```markdown
-            {current_draft_text}
+            <<CURRENT_DRAFT>>
             ```
 
             **--- INPUT 2: Issues Previously Identified ---**
             ```
-            {issues_found}
+            <<ISSUES_FOUND>>
             ```
 
             **--- INPUT 3: Product Manager's Clarifications to Implement ---**
             ```
-            {pm_clarification}
+            <<PM_CLARIFICATION>>
             ```
 
             **--- Refined Document Body (Raw Markdown Output) ---**
         """)
+
+        prompt = prompt_template.replace("<<FALLBACK_INSTRUCTION>>", fallback_instruction)
+        prompt = prompt.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
+        prompt = prompt.replace("<<CURRENT_DRAFT>>", current_draft_text)
+        prompt = prompt.replace("<<ISSUES_FOUND>>", issues_found)
+        prompt = prompt.replace("<<PM_CLARIFICATION>>", pm_clarification)
 
         try:
             logging.info("Calling LLM service to refine the specification...")
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             if not response_text:
                 raise ValueError("The LLM service returned an empty response during refinement.")
+
+            # Apply Self-Correction Loop
+            validated_text = self._validate_and_fix_dot_diagrams(response_text)
+
             logging.info("Successfully received refined specification from LLM service.")
-            return response_text
+            return validated_text
         except Exception as e:
             logging.error(f"LLM service call failed during spec refinement: {e}")
             raise

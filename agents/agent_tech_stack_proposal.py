@@ -8,6 +8,9 @@ import logging
 import textwrap
 import json
 from llm_service import LLMService
+import subprocess
+import re
+from pathlib import Path
 
 class TechStackProposalAgent:
     """
@@ -64,11 +67,65 @@ class TechStackProposalAgent:
             logging.error(f"Failed to validate guidelines: {e}")
             return {"compatible": False, "recommendation": f"An unexpected error occurred during validation: {e}"}
 
+    def _validate_and_fix_dot_diagrams(self, markdown_text: str) -> str:
+        """
+        Scans the markdown for DOT blocks, attempts to render them locally to check for syntax errors,
+        and uses the LLM to fix them if they fail.
+        """
+        # Find all DOT blocks
+        dot_blocks = list(re.finditer(r"```dot\s*(.*?)```", markdown_text, re.DOTALL))
+        if not dot_blocks:
+            return markdown_text
+
+        dot_executable = "dot"
+
+        for match in reversed(dot_blocks):
+            original_code = match.group(1)
+            try:
+                # Dry run using graphviz 'dot'
+                subprocess.run(
+                    [dot_executable, "-Tpng"],
+                    input=original_code.encode('utf-8'),
+                    capture_output=True,
+                    check=True
+                )
+                continue
+            except (subprocess.CalledProcessError, FileNotFoundError) as e:
+                error_msg = e.stderr.decode('utf-8') if isinstance(e, subprocess.CalledProcessError) else str(e)
+                logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
+
+                # Use standard string to avoid brace collision
+                fix_prompt_template = textwrap.dedent("""
+                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
+                **Error:** <<ERROR_MSG>>
+                **Invalid Code:**
+                ```dot
+                <<ORIGINAL_CODE>>
+                ```
+                **Task:** Fix the syntax error so it compiles.
+                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
+                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
+                """)
+
+                fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
+                fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
+
+                try:
+                    fixed_response = self.llm_service.generate_text(fix_prompt, task_complexity="simple")
+                    code_match = re.search(r"```dot\s*(.*?)```", fixed_response, re.DOTALL)
+                    if code_match:
+                        fixed_code = code_match.group(1)
+                        start, end = match.span(1)
+                        markdown_text = markdown_text[:start] + fixed_code + markdown_text[end:]
+                        logging.info("DOT Diagram successfully fixed by AI.")
+                except Exception as fix_error:
+                    logging.error(f"Failed to apply AI fix to DOT diagram: {fix_error}")
+
+        return markdown_text
 
     def propose_stack(self, functional_spec_text: str, target_os: str, template_content: str | None = None, pm_guidelines: str | None = None) -> str:
         """
-        Analyzes a functional specification and proposes a tech stack tailored
-        for a specific operating system, including a development setup guide.
+        Proposes a tech stack and architecture using Professional Graphviz style.
         """
         logging.info(f"TechStackProposalAgent: Proposing technology stack for OS: {target_os}...")
 
@@ -76,9 +133,7 @@ class TechStackProposalAgent:
         if template_content:
             template_instruction = textwrap.dedent(f"""
             **CRITICAL TEMPLATE INSTRUCTION:**
-            The following template provides both the required structure for the document AND **mandatory technical guidelines**.
-            You MUST adhere to all rules, constraints, and technology choices already present in the template content.
-            Your task is to **complete** this template by filling in the remaining details based on the application's specific requirements, while ensuring full compliance with the guidelines provided within the template itself.
+            Adhere strictly to the structure of the provided template.
             --- TEMPLATE START ---
             {template_content}
             --- TEMPLATE END ---
@@ -87,78 +142,77 @@ class TechStackProposalAgent:
         pm_guidelines_section = ""
         if pm_guidelines:
             pm_guidelines_section = textwrap.dedent(f"""
-            **--- PM Directive for Technology Stack (This is a mandatory constraint) ---**
+            **--- PM Directive for Technology Stack (Mandatory Constraint) ---**
             {pm_guidelines}
             """)
 
-        prompt = textwrap.dedent(f"""
-            You are an expert Solutions Architect. Your task is to create the BODY of a formal and appropriately detailed Technical Specification for a **{target_os}** environment, based on the provided Functional Specification.
+        # Use standard string (no 'f' prefix) to avoid brace collision
+        prompt_template = textwrap.dedent("""
+            You are an expert Solutions Architect. Your task is to create the BODY of a formal Technical Specification for a **<<TARGET_OS>>** environment.
 
-            **CRITICAL INSTRUCTIONS:** - Your entire response MUST be only the raw Markdown content of the document's BODY.
-            - Do NOT add a header, preamble, introduction, or any conversational text.
+            **CRITICAL INSTRUCTIONS:** - Your entire response MUST be only the raw Markdown content.
+            - Do NOT add a header or preamble.
 
-            **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
+            <<TEMPLATE_INSTRUCTION>>
 
-            {template_instruction}
+            **MANDATORY SECTIONS & DIAGRAMS:**
+            You MUST generate the document using the following sections. You MUST insert specific diagrams contextually as described below.
 
-            **--- Mandatory Analysis and Scoping Instructions ---**
-            1.  **Analyze Application Archetype:** First, you MUST analyze the provided Functional Specification to determine the application's core nature (e.g., simple CLI tool, complex data pipeline, real-time GUI, desktop CRUD app, web service).
-            2.  **Tailor Document Structure:** Second, based on the archetype you identify, you MUST generate a Technical Specification BODY that includes only the relevant sections. For a simple CLI tool, you might only need 'Technology Stack' and 'Development Environment'. For a complex web service, you would also need 'High-Level Architecture', 'Data Architecture', and 'NFRs'. The level of detail must be appropriate for the project's scope.
-            3.  **Adhere to Constraints:** You MUST treat any content in the provided Template and any guidelines from the PM Directive as mandatory constraints, building your technical proposal around them.
+            `## 1. High-Level Architecture`
+            - Describe the overall system design (e.g., MVC, Microservices).
+            - **DIAGRAM 1 (Architecture):** Immediately after the description, generate a **"System Context Diagram"**.
+                - **Scope:** Show ONLY the 5-7 highest-level components (e.g., Frontend, Backend API, Database, External Service).
+                - **Syntax:** Use `digraph G {` inside a ```dot ... ``` block.
+                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom) to ensure the diagram fits vertically on a portrait page.
+                - **Style:** Use these settings: `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white", compound=true]; node [fontname="Arial", shape=component, style="filled,rounded", fillcolor="#E1F5FE", color="#0277BD", penwidth=1.5, margin="0.2,0.1"];`
 
-            A comprehensive Technical Specification often includes the following sections. You MUST evaluate which of these are relevant and include them in your response.
-            - **High-Level Architecture**
-            - **Component Architecture Design**
-            - **Technology Stack Selection**
-            - **Data & Integration Architecture**
-            - **Non-Functional Requirements (NFRs)**
-            - **Development Environment Setup Guide**
+            `## 2. Component Architecture Design`
+            - Detailed breakdown of internal modules.
 
-            **CRITICAL DIAGRAMMING RULE:**
-            - **To maximize clarity, you SHOULD generate 2-3 key diagrams.**
-            - **Your diagram choices MUST be relevant to the project's archetype.** For example, an `Architecture Diagram`, a `Data Flow Diagram`, or a `Data Model Diagram` (as appropriate).
-            - You MUST generate diagrams using the **DOT language** inside a ```dot ... ``` code block.
-            - The graph MUST be defined (e.g., `digraph G { ... }`).
-            - **Layout:** For architectural layers or flows, you **MUST** prefer a vertical layout (Top-to-Bottom, e.g., `rankdir=TD`) to ensure the diagram fits a portrait document.
-            - **Styling:**
-                - You **MAY** use `fillcolor` to add *light pastel* colors to nodes (e.g., `fillcolor="#F0F8FF"`) to differentiate logical groups.
-                - You **MUST NOT** specify any `fontname` or `fontsize`. The renderer will use a default.
-                - You **MUST NOT** add attributes for `size`, `ratio`, or `dimensions`. Let the renderer auto-size.
-            - **Syntax:**
-                - **Nodes MUST use simple string labels.**
-                - **FOR MULTI-LINE LABELS (like database tables):** You MUST use a simple string with newline characters (`\n`). **Example:** `MyTable [label="Products\n- ProductID (PK)\n- Name\n- Price"]`
-                - **YOU MUST NOT** use complex, record-based, or HTML-like labels (e.g., `label=<...>`, `label="{{...|...}}"`, or `shape=record`).
-                - **Ensure all nodes are defined only once.** Do not place a node in multiple subgraphs or ranksets.
-                - **Use simple edge syntax:** `NodeA -> NodeB [label="edge label"]`. Do NOT use HTML-like labels or `<-` arrows.
-            - Do NOT use ASCII art.
+            `## 3. Technology Stack Selection`
+            - Languages, Frameworks, Libraries.
 
-            - **DO NOT** write "helper" text like `[Diagram]`. This will break the system.
-            - Your response for a diagram MUST be *ONLY* the code block, starting with ````dot` and ending with ````.
+            `## 4. Data & Integration Architecture`
+            - Database choice, Schema design strategy.
+            - **DIAGRAM 2 (Data Flow):** Immediately after the description, generate a **"High-Level Data Flow Diagram"**.
+                - **Scope:** Show how data moves between the User, the App, and the Database. Max 5-8 nodes.
+                - **Syntax:** Use `digraph G {` inside a ```dot ... ``` block.
+                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom). Do NOT use Left-to-Right (`LR`).
+                - **Style:** Use these settings: `graph [fontname="Arial", rankdir=TB, splines=ortho, bgcolor="white"]; node [fontname="Arial", shape=cylinder, style="filled", fillcolor="#FFF3E0", color="#EF6C00"];`
 
-            **EXAMPLE of CORRECT (and ONLY) OUTPUT for a diagram:**
-            ```dot
-            digraph G {{
-                A[Start] -> B[DoSomething];
-                B -> C[End];
-            }}
-            ```
+            `## 5. Non-Functional Requirements (NFRs)`
+            - Scalability, Security, Performance.
 
-            {pm_guidelines_section}
+            `## 6. Development Environment Setup Guide`
+            - Prerequisites and installation steps.
 
-            **--- Functional Specification (The "What") ---**
-            {functional_spec_text}
+            <<PM_GUIDELINES_SECTION>>
+
+            **--- Functional Specification ---**
+            <<FUNCTIONAL_SPEC_TEXT>>
             ---
 
             **--- Generated Technical Specification Body (Raw Markdown) ---**
         """)
 
+        # Safe injection
+        prompt = prompt_template.replace("<<TARGET_OS>>", target_os)
+        prompt = prompt.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
+        prompt = prompt.replace("<<PM_GUIDELINES_SECTION>>", pm_guidelines_section)
+        prompt = prompt.replace("<<FUNCTIONAL_SPEC_TEXT>>", functional_spec_text)
+
         try:
+            # Note: Increased timeout is handled in llm_service.py
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            logging.info("Successfully received OS-aware technology stack proposal from API.")
-            return response_text
+
+            # Apply Self-Correction Loop
+            validated_text = self._validate_and_fix_dot_diagrams(response_text)
+
+            logging.info("Successfully received and validated technical specification.")
+            return validated_text
         except Exception as e:
             logging.error(f"TechStackProposalAgent API call failed: {e}")
-            raise e # Re-raise the exception
+            raise e
 
     def refine_stack(self, current_draft: str, pm_feedback: str, target_os: str, functional_spec_text: str, ai_issues_text: str, template_content: str | None = None) -> str:
         """
@@ -176,42 +230,63 @@ class TechStackProposalAgent:
             --- TEMPLATE END ---
             """)
 
-        prompt = textwrap.dedent(f"""
+        # Use standard string (no 'f' prefix) to avoid brace collision
+        prompt_template = textwrap.dedent("""
             You are a senior Solutions Architect revising a document. Your task is to refine the body of a Technical Specification based on a list of identified issues and specific feedback from a Product Manager.
 
             **MANDATORY INSTRUCTIONS:**
             1.  **Refine Body Only**: The text you receive is the body of a document. Your task is to incorporate the PM's clarifications to resolve the identified issues.
-            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw, refined text of the document's body. Do NOT add a header, preamble, or any conversational text.
-            3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting (e.g., '##' for main headings, '###' for sub-headings, and '*' for list items). Paragraphs MUST be separated by a full blank line.
+            2.  **RAW MARKDOWN ONLY**: Your entire response MUST be only the raw, refined text of the document's body. Do NOT add a header, preamble, or any conversational text.
+            3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting.
 
-            {template_instruction}
+            **DIAGRAMMING RULE (Professional Graphviz):**
+            - If the feedback requires updating a diagram, use the **DOT language** inside a ```dot ... ``` code block.
+            - **SCOPE:** Keep diagrams high-level (Context/Architecture). Do not explode the node count.
+            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
+            - **Layout & Style:** Use these exact settings:
+                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=12, shape=component, style="filled,rounded", fillcolor="#E1F5FE", color="#0277BD", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
+
+            <<TEMPLATE_INSTRUCTION>>
 
             **--- CONTEXT: Full Application Specification ---**
-            {functional_spec_text}
+            <<FUNCTIONAL_SPEC>>
             ---
 
             **--- INPUT 1: Current Draft Body ---**
             ```markdown
-            {current_draft}
+            <<CURRENT_DRAFT>>
             ```
 
             **--- INPUT 2: AI-Generated Issues That the PM is Responding To ---**
             ```markdown
-            {ai_issues_text}
+            <<AI_ISSUES>>
             ```
 
             **--- INPUT 3: PM Feedback to Address ---**
             ```
-            {pm_feedback}
+            <<PM_FEEDBACK>>
             ```
 
-            **--- Refined Document Body for {target_os} (Raw Markdown) ---**
+            **--- Refined Document Body for <<TARGET_OS>> (Raw Markdown) ---**
         """)
+
+        prompt = prompt_template.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
+        prompt = prompt.replace("<<FUNCTIONAL_SPEC>>", functional_spec_text)
+        prompt = prompt.replace("<<CURRENT_DRAFT>>", current_draft)
+        prompt = prompt.replace("<<AI_ISSUES>>", ai_issues_text)
+        prompt = prompt.replace("<<PM_FEEDBACK>>", pm_feedback)
+        prompt = prompt.replace("<<TARGET_OS>>", target_os)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+
+            # Apply Self-Correction Loop
+            validated_text = self._validate_and_fix_dot_diagrams(response_text)
+
             logging.info("Successfully refined technical specification from API.")
-            return response_text
+            return validated_text
         except Exception as e:
             logging.error(f"TechStackProposalAgent refinement failed: {e}")
             raise e

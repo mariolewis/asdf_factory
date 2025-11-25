@@ -80,39 +80,31 @@ def generate_plotly_png(plotly_fig) -> BytesIO:
 def preprocess_markdown_for_display(markdown_text: str) -> str:
     """
     Scans Markdown for DOT blocks, renders them as images,
-    and replaces the block with an <img> tag.
+    and replaces the block with a CENTERED <img> tag.
     """
     import re
 
     def render_dot_block(match):
-        dot_text = match.group(1)
+        code_text = match.group(1)
         try:
-            # Generate the PNG data
-            image_bytes_io = generate_dot_png(dot_text)
-
-            # Save to a unique temp file
-            img_hash = hash(dot_text)
+            image_bytes_io = generate_dot_png(code_text)
+            img_hash = hash(code_text)
             img_path = TEMP_IMAGE_DIR / f"dot_{img_hash}.png"
             with open(img_path, "wb") as f:
                 f.write(image_bytes_io.getbuffer())
-
-            # Return an <img> tag pointing to the temp file
-            # Use Path.as_uri() to get the correct 'file:///' format
             img_src = img_path.as_uri()
-            return f'<img src="{img_src}" alt="DOT Diagram">'
-
+            # CHANGED: Added <div align="center"> wrapper
+            return f'<div align="center"><img src="{img_src}" alt="DOT Diagram"></div>'
         except Exception as e:
             logging.error(f"Failed to render DOT block for GUI: {e}")
-            # Fallback to displaying the code
             return f"""
 <pre style="background-color: #2b2b2b; color: #CC7832; padding: 10px; border-radius: 5px;">
 <b>--- DOT Diagram (Render Failed) ---</b>
-{html.escape(dot_text)}
+{html.escape(code_text)}
 <br><b>Error:</b> {html.escape(str(e))}
 </pre>
 """
 
-    # Regex to find ```dot ... ``` blocks
     pattern = re.compile(r"```dot\s*(.*?)```", re.DOTALL)
-    processed_markdown = re.sub(pattern, render_dot_block, markdown_text)
-    return processed_markdown
+    markdown_text = re.sub(pattern, render_dot_block, markdown_text)
+    return markdown_text
