@@ -70,7 +70,7 @@ class OpenAIAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -101,7 +101,7 @@ class AnthropicAdapter(LLMService):
                 model=model_to_use,
                 max_tokens=4096,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=300
             )
             response_text = message.content[0].text
             if not response_text:
@@ -134,7 +134,7 @@ class GrokAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -167,7 +167,7 @@ class DeepseekAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -227,7 +227,7 @@ class LocalPhi3Adapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -261,7 +261,7 @@ class CustomEndpointAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=180
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:

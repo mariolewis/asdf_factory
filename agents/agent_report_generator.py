@@ -27,6 +27,7 @@ import plotly.graph_objects as go
 import plotly.io as pio
 import markdown
 from bs4 import BeautifulSoup
+from PIL import Image
 
 class ReportGeneratorAgent:
     """
@@ -196,23 +197,21 @@ class ReportGeneratorAgent:
 
     def generate_text_document_docx(self, title: str, content: str, is_html: bool = False) -> BytesIO:
         """
-        Generates a generic .docx file for text-based project documents.
-        Restores the hard Page Break to separate the Title Page from content.
+        Generates a generic .docx file. Includes Title Page and SAFER SMART SCALING for diagrams.
         """
         document = self._get_styled_document()
 
         # 1. Add Title Page
         try:
-            # Try to use the specific 'Title' style from the template
             document.add_paragraph(title, style='Title')
         except Exception:
-            # Fallback to standard Title heading (Level 0)
             document.add_heading(title, level=0)
-
-        # Add a spacer
         document.add_paragraph()
 
-        document.add_page_break()
+        # Force Title Page Break
+        from docx.enum.section import WD_SECTION, WD_ORIENT
+        document.add_section(WD_SECTION.NEW_PAGE)
+        document.add_paragraph("")
 
         # 2. Check for pre-formatted HTML
         if is_html:
@@ -235,33 +234,26 @@ class ReportGeneratorAgent:
                     search_node = root_tags[0]
 
                 for tag in search_node.find_all(True, recursive=False):
-                    style_name = 'Normal' # Default
+                    style_name = 'Normal'
 
                     if tag.name == 'h1':
                         style_name = 'Heading 1'
                         self._add_styled_paragraph(document, tag.get_text(), style_name)
-
                     elif tag.name == 'h2':
                         style_name = 'Heading 2'
                         self._add_styled_paragraph(document, tag.get_text(), style_name)
-
                     elif tag.name == 'h3':
                         style_name = 'Heading 3'
                         self._add_styled_paragraph(document, tag.get_text(), style_name)
-
                     elif tag.name == 'p':
                         style_name = 'Normal'
                         self._add_styled_paragraph(document, tag.get_text(), style_name)
-
                     elif tag.name == 'ul':
                         style_name = 'Bullet List'
-                        for li in tag.find_all('li'):
-                            self._add_styled_paragraph(document, li.get_text(), style_name)
-
+                        for li in tag.find_all('li'): self._add_styled_paragraph(document, li.get_text(), style_name)
                     elif tag.name == 'ol':
                         style_name = 'List Numbered'
-                        for li in tag.find_all('li'):
-                            self._add_styled_paragraph(document, li.get_text(), style_name)
+                        for li in tag.find_all('li'): self._add_styled_paragraph(document, li.get_text(), style_name)
 
                     elif tag.name == 'pre':
                         code_text = tag.get_text().strip()
@@ -270,115 +262,49 @@ class ReportGeneratorAgent:
                             try:
                                 image_bytes_io = generate_dot_png(code_text)
 
-                                # Center the image
+                                # --- SMART SCALING LOGIC ---
+                                try:
+                                    with Image.open(image_bytes_io) as img:
+                                        width_px, height_px = img.size
+                                        aspect_ratio = width_px / height_px
+                                    image_bytes_io.seek(0)
+                                except Exception:
+                                    aspect_ratio = 0.5
+
+                                # Landscape Page Dimensions
+                                PAGE_WIDTH_AVAIL = 9.0
+                                # CHANGED: Reduced max height to 5.5 to prevent truncation
+                                PAGE_HEIGHT_AVAIL = 5.5
+                                PAGE_ASPECT = PAGE_WIDTH_AVAIL / PAGE_HEIGHT_AVAIL
+
+                                # Create Landscape Section
+                                section = document.add_section(WD_SECTION.NEW_PAGE)
+                                section.orientation = WD_ORIENT.LANDSCAPE
+                                section.page_width = Inches(11.0) # Standard Letter Landscape
+                                section.page_height = Inches(8.5)
+                                section.left_margin = Inches(0.5)
+                                section.right_margin = Inches(0.5)
+                                section.top_margin = Inches(0.5)
+                                section.bottom_margin = Inches(0.5)
+
                                 p = document.add_paragraph()
                                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
                                 r = p.add_run()
-                                r.add_picture(image_bytes_io, width=Inches(6.0))
-                                document.add_paragraph()
-                            except Exception as e:
-                                logging.error(f"Failed to render DOT diagram for docx: {e}")
-                                self._add_styled_paragraph(document, f"[Error rendering DOT diagram: {e}]", 'Code Block')
-                        else:
-                            style_name = 'Code Block'
-                            self._add_styled_paragraph(document, code_text, style_name)
 
-                    elif tag.name == 'hr':
-                        document.add_page_break()
+                                if aspect_ratio > PAGE_ASPECT:
+                                    r.add_picture(image_bytes_io, width=Inches(PAGE_WIDTH_AVAIL))
+                                else:
+                                    r.add_picture(image_bytes_io, height=Inches(PAGE_HEIGHT_AVAIL))
 
-            except Exception as e:
-                logging.error(f"Fatal error during Markdown-to-HTML parsing: {e}")
-                self._add_styled_paragraph(document, content, 'Normal')
+                                # Restore Portrait
+                                next_section = document.add_section(WD_SECTION.NEW_PAGE)
+                                next_section.orientation = WD_ORIENT.PORTRAIT
+                                next_section.page_width = Inches(8.5)
+                                next_section.page_height = Inches(11.0)
+                                next_section.left_margin = Inches(1.0)
+                                next_section.right_margin = Inches(1.0)
+                                # --- END SMART SCALING ---
 
-        doc_buffer = BytesIO()
-        document.save(doc_buffer)
-        doc_buffer.seek(0)
-        return doc_buffer
-
-    def generate_text_document_docx(self, title: str, content: str, is_html: bool = False) -> BytesIO:
-        """
-        Generates a generic .docx file for text-based project documents.
-        Includes a dedicated Title Page using a Section Break.
-        """
-        document = self._get_styled_document()
-
-        # 1. Add Title Page Content
-        try:
-            document.add_paragraph(title, style='Title')
-        except Exception:
-            logging.warning("Style 'Title' not found. Using default Heading 1.")
-            document.add_heading(title, level=1)
-
-        # Add timestamp or extra meta info here if desired
-        document.add_paragraph()
-
-        # 2. Force a Section Break (Next Page) to create a true Title Page
-        # This isolates the title page formatting from the rest of the doc
-        from docx.enum.section import WD_SECTION
-        section = document.add_section(WD_SECTION.NEW_PAGE)
-
-        # 3. Check for pre-formatted HTML (for manual test plans)
-        if is_html:
-            try:
-                parser = HtmlToDocx()
-                parser.add_html_to_document(content, document)
-            except Exception as e:
-                logging.error(f"Failed to parse HTML for DOCX: {e}. Falling back to plain text.")
-                document.add_paragraph(content, style='Normal')
-
-        # 4. Standard Markdown Processing
-        else:
-            try:
-                html_content = markdown.markdown(content, extensions=['fenced_code', 'tables', 'sane_lists'])
-                soup = BeautifulSoup(html_content, 'html.parser')
-
-                root_tags = soup.find_all(True, recursive=False)
-                search_node = soup
-                if len(root_tags) == 1 and root_tags[0].name not in ['h1', 'h2', 'h3', 'p', 'ul', 'ol', 'pre', 'hr']:
-                    search_node = root_tags[0]
-
-                for tag in search_node.find_all(True, recursive=False):
-                    style_name = 'Normal' # Default
-
-                    if tag.name == 'h1':
-                        style_name = 'Heading 1'
-                        self._add_styled_paragraph(document, tag.get_text(), style_name)
-
-                    elif tag.name == 'h2':
-                        style_name = 'Heading 2'
-                        self._add_styled_paragraph(document, tag.get_text(), style_name)
-
-                    elif tag.name == 'h3':
-                        style_name = 'Heading 3'
-                        self._add_styled_paragraph(document, tag.get_text(), style_name)
-
-                    elif tag.name == 'p':
-                        style_name = 'Normal'
-                        self._add_styled_paragraph(document, tag.get_text(), style_name)
-
-                    elif tag.name == 'ul':
-                        style_name = 'Bullet List'
-                        for li in tag.find_all('li'):
-                            self._add_styled_paragraph(document, li.get_text(), style_name)
-
-                    elif tag.name == 'ol':
-                        style_name = 'List Numbered'
-                        for li in tag.find_all('li'):
-                            self._add_styled_paragraph(document, li.get_text(), style_name)
-
-                    elif tag.name == 'pre':
-                        code_text = tag.get_text().strip()
-
-                        if code_text.startswith(('digraph', 'graph')):
-                            try:
-                                image_bytes_io = generate_dot_png(code_text)
-
-                                # Center the image
-                                p = document.add_paragraph()
-                                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                                r = p.add_run()
-                                r.add_picture(image_bytes_io, width=Inches(6.0))
-                                document.add_paragraph()
                             except Exception as e:
                                 logging.error(f"Failed to render DOT diagram for docx: {e}")
                                 self._add_styled_paragraph(document, f"[Error rendering DOT diagram: {e}]", 'Code Block')

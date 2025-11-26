@@ -125,19 +125,14 @@ class UX_Spec_Agent:
             `## 4. User Stories (grouped by Feature)`
 
             `## 5. Inferred Screens & Components`
-            **CRITICAL:** In this section, you MUST first list the screens. **IMMEDIATELY AFTER** the list of screens, you MUST generate a **"Core Journey Diagram"**.
+            **CRITICAL:** In this section, you MUST first generate a **"Core Journey Diagram"**. **IMMEDIATELY AFTER** the **"Core Journey Diagram"**, you MUST generate a list of screens.
 
             **DIAGRAMMING RULE (Professional Graphviz):**
-            - You MUST generate the diagram using the **DOT language** inside a ```dot ... ``` code block.
-            - **SCOPE:** Diagram ONLY the **"Happy Path"** or the most critical user journey. **Limit to 10-15 key screens** to ensure the diagram remains readable on a single page. Do not map minor edge cases.
-            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
-            - **Layout & Style:** Use these exact settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-            - **Content:**
-                - Define nodes: `InventoryView [label="Inventory List"];`
-                - Define edges: `InventoryView -> AddProductForm [label="Add"];`
+            - Use the **DOT language** inside a ```dot ... ``` code block.
+            - **SCOPE:** Diagram ONLY the main **"Happy Path"** (Critical User Flow) of the Core Journey. Max 10-12 nodes.
+            - **CRITICAL:** Use `digraph G {` (directed graph).
+            - **Layout:** Use `rankdir=TB` (Top-to-Bottom). This ensures the diagram fits vertically on the page.
+            - **Style:** `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"]; node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"]; edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
 
             `## 6. Prescriptive Style Guide (for Code Agent)`
             **CRITICAL:** Generate specific, tech-agnostic rules using this exact format:
@@ -199,7 +194,7 @@ class UX_Spec_Agent:
             --- TEMPLATE END ---
             """)
 
-        # Use standard string to avoid brace collisions
+        # Use standard string
         prompt_template = textwrap.dedent("""
             You are a senior UX Designer revising a document. Your task is to refine an existing draft of a UX/UI Specification based on specific feedback from a Product Manager.
 
@@ -213,13 +208,11 @@ class UX_Spec_Agent:
             3.  **RAW MARKDOWN ONLY**: Return only the raw content.
 
             **DIAGRAMMING RULE (Professional Graphviz):**
-            - If the feedback requires updating the diagram, use the **DOT language** inside a ```dot ... ``` code block.
-            - **SCOPE:** Maintain the scope of a **"Core Journey Diagram"** (Happy Path only, max 10-15 nodes). Do not expand it to cover every edge case unless explicitly requested.
-            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
-            - **Layout & Style:** Use these exact settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
+            - Use the **DOT language** inside a ```dot ... ``` code block.
+            - **SCOPE:** Maintain the scope of the **"Core Journey Diagram"**.
+            - **CRITICAL:** Use `digraph G {` (directed graph).
+            - **Layout:** Use `rankdir=TB` (Top-to-Bottom). This ensures the diagram fits vertically on the page.
+            - **Style:** `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"]; node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"]; edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
 
             **--- INPUT 1: Current Draft ---**
             ```markdown
@@ -242,7 +235,7 @@ class UX_Spec_Agent:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             draft = response_text.strip()
 
-            # VALIDATION LOOP: Check and fix any DOT diagrams before returning
+            # VALIDATION LOOP
             validated_draft = self._validate_and_fix_dot_diagrams(draft)
 
             return validated_draft

@@ -184,11 +184,12 @@ class SpecClarificationAgent:
             **DIAGRAMMING RULE (Professional Graphviz):**
             - Use the **DOT language** inside a ```dot ... ``` code block.
             - **CRITICAL:** You MUST use `digraph G {` (directed graph). Do NOT use `graph {`.
+            - **DISCLAIMER:** Immediately BEFORE the diagram, add this line in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
             - **Layout & Style:** Use these exact settings for a professional look:
                 `graph [fontname="Arial", fontsize=12, rankdir=LR, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
                 `node [fontname="Arial", fontsize=12, shape=note, style="filled,rounded", fillcolor="#FFF9C4", color="#FBC02D", penwidth=1.5, margin="0.2,0.1"];`
                 `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-            - **Content:** Diagram the interactions between the Actors (from Section 2) and the Core Epics.
+            - **Content:** Diagram the interactions between the Actors (from Section 2) and the Core Epics and their Features.
 
             `## 4. Non-Functional Requirements`
             Performance, Security, Reliability.
@@ -299,7 +300,7 @@ class SpecClarificationAgent:
             --- TEMPLATE END ---
             """)
 
-        # Use standard string to avoid brace collisions
+        # Use standard string
         prompt_template = textwrap.dedent("""
             You are an expert software architect revising a document. Your task is to take the body of a software specification and refine it based on a list of identified issues and specific feedback from a Product Manager.
 
@@ -312,9 +313,10 @@ class SpecClarificationAgent:
             - If you update or regenerate the diagram, you MUST use the **DOT language** inside a ```dot ... ``` code block.
             - **SCOPE:** Maintain a **"High-Level Use Case Diagram"**. Map **Actors** to **Core Epics/Features**. Do NOT attempt to diagram every granular User Story. Keep it readable.
             - **CRITICAL:** You MUST use `digraph G {` (directed graph). Do NOT use `graph {`.
+            - **DISCLAIMER:** Immediately BEFORE the diagram, ensure this line is present in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
             - **Layout & Style:** Use these exact settings:
                 `graph [fontname="Arial", fontsize=12, rankdir=LR, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=12, shape=note, style="filled,rounded", fillcolor="#FFF9C4", color="#FBC02D", penwidth=1.5, margin="0.2,0.1"];`
+                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
                 `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
 
             <<FALLBACK_INSTRUCTION>>

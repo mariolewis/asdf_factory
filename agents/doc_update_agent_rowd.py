@@ -99,8 +99,11 @@ class DocUpdateAgentRoWD:
 
             **DIAGRAMMING RULE (Professional Graphviz):**
             - If the specification contains a diagram (DOT code block), you MUST preserve it and update it to reflect the new architecture/flows.
-            - If you generate or update a diagram, you MUST use these settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+            - **SCOPE:** Keep the diagram High-Level. Do not diagram every single new file. Focus on Modules and Core Components.
+            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
+            - **DISCLAIMER:** Immediately BEFORE the diagram, ensure this line is present in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
+            - **Layout & Style:** Use these exact settings:
+                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
                 `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
                 `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
 
@@ -146,59 +149,3 @@ class DocUpdateAgentRoWD:
         except Exception as e:
             logging.error(f"Error updating RoWD for artifact: {artifact_data.get('artifact_id')}. Error: {e}")
             return False
-
-    def update_specification_text(self, original_spec: str, implementation_plan: str, current_date: str) -> str:
-        """
-        Updates a specification document based on a completed implementation plan.
-        """
-        logging.info("Invoking LLM to update specification document post-implementation.")
-        try:
-            # FIXED: Use standard string
-            prompt_template = textwrap.dedent("""
-            You are an expert technical writer responsible for keeping documentation in sync with source code.
-            An existing specification document needs to be updated to reflect a series of code changes that were just implemented.
-
-            **Your Task:**
-            Review the original specification and the development plan. Return a new, complete version of the specification that incorporates the changes and new features described in the plan, along with an updated date and version.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Incorporate Changes:** Integrate the changes from the development plan into the original document.
-            2.  **Increment Version:** Find a version number in the document's header and increment it.
-            3.  **Update Date:** Replace the 'Date:' line with: <<CURRENT_DATE>>.
-            4.  **Clean Output:** Your output MUST be only the raw text of the new specification.
-
-            **DIAGRAMMING RULE (Professional Graphviz):**
-            - If the specification contains a diagram (DOT code block), you MUST preserve it and update it to reflect the new architecture/flows.
-            - If you generate or update a diagram, you MUST use these settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-
-            **--- INPUT 1: Original Specification Document ---**
-            ```
-            <<ORIGINAL_SPEC>>
-            ```
-
-            **--- INPUT 2: The Executed Development Plan (JSON) ---**
-            ```json
-            <<IMPLEMENTATION_PLAN>>
-            ```
-
-            **--- OUTPUT: New, Updated Specification Document ---**
-            """)
-
-            prompt = prompt_template.replace("<<CURRENT_DATE>>", current_date)
-            prompt = prompt.replace("<<ORIGINAL_SPEC>>", original_spec)
-            prompt = prompt.replace("<<IMPLEMENTATION_PLAN>>", implementation_plan)
-
-            response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
-            if not response_text or response_text.startswith("Error:"):
-                raise ValueError(f"LLM returned an error or empty response for spec update: {response_text}")
-
-            # Apply Self-Correction Loop
-            validated_text = self._validate_and_fix_dot_diagrams(response_text)
-            return validated_text
-
-        except Exception as e:
-            logging.error(f"Failed to update specification document via LLM: {e}")
-            return original_spec

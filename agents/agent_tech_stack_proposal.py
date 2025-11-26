@@ -163,7 +163,8 @@ class TechStackProposalAgent:
             - **DIAGRAM 1 (Architecture):** Immediately after the description, generate a **"System Context Diagram"**.
                 - **Scope:** Show ONLY the 5-7 highest-level components (e.g., Frontend, Backend API, Database, External Service).
                 - **Syntax:** Use `digraph G {` inside a ```dot ... ``` block.
-                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom) to ensure the diagram fits vertically on a portrait page.
+                - **DISCLAIMER:** Immediately BEFORE the diagram, add this line in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
+                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom) to ensure the diagram fits vertically.
                 - **Style:** Use these settings: `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white", compound=true]; node [fontname="Arial", shape=component, style="filled,rounded", fillcolor="#E1F5FE", color="#0277BD", penwidth=1.5, margin="0.2,0.1"];`
 
             `## 2. Component Architecture Design`
@@ -177,7 +178,8 @@ class TechStackProposalAgent:
             - **DIAGRAM 2 (Data Flow):** Immediately after the description, generate a **"High-Level Data Flow Diagram"**.
                 - **Scope:** Show how data moves between the User, the App, and the Database. Max 5-8 nodes.
                 - **Syntax:** Use `digraph G {` inside a ```dot ... ``` block.
-                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom). Do NOT use Left-to-Right (`LR`).
+                - **DISCLAIMER:** Immediately BEFORE the diagram, add this line in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
+                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom).
                 - **Style:** Use these settings: `graph [fontname="Arial", rankdir=TB, splines=ortho, bgcolor="white"]; node [fontname="Arial", shape=cylinder, style="filled", fillcolor="#FFF3E0", color="#EF6C00"];`
 
             `## 5. Non-Functional Requirements (NFRs)`
@@ -230,7 +232,7 @@ class TechStackProposalAgent:
             --- TEMPLATE END ---
             """)
 
-        # Use standard string (no 'f' prefix) to avoid brace collision
+        # Use standard string
         prompt_template = textwrap.dedent("""
             You are a senior Solutions Architect revising a document. Your task is to refine the body of a Technical Specification based on a list of identified issues and specific feedback from a Product Manager.
 
@@ -243,8 +245,9 @@ class TechStackProposalAgent:
             - If the feedback requires updating a diagram, use the **DOT language** inside a ```dot ... ``` code block.
             - **SCOPE:** Keep diagrams high-level (Context/Architecture). Do not explode the node count.
             - **CRITICAL:** You MUST use `digraph G {` (directed graph).
+            - **DISCLAIMER:** Immediately BEFORE the diagram, ensure this line is present in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
             - **Layout & Style:** Use these exact settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TD, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
                 `node [fontname="Arial", fontsize=12, shape=component, style="filled,rounded", fillcolor="#E1F5FE", color="#0277BD", penwidth=1.5, margin="0.2,0.1"];`
                 `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
 

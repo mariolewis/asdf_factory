@@ -88,7 +88,7 @@ class SpecSynthesisAgent:
     def _validate_and_fix_dot_diagrams(self, markdown_text: str) -> str:
         """
         Scans the markdown for DOT blocks, attempts to render them locally to check for syntax errors,
-        and uses the LLM to fix them if they fail.
+        and uses the LLM to fix them if they fail. Neutralizes blocks that cannot be fixed.
         """
         # Find all DOT blocks
         dot_blocks = list(re.finditer(r"```dot\s*(.*?)```", markdown_text, re.DOTALL))
@@ -97,22 +97,26 @@ class SpecSynthesisAgent:
 
         dot_executable = "dot"
 
+        # Iterate in reverse to allow string replacement without messing up indices
         for match in reversed(dot_blocks):
-            original_code = match.group(1)
+            original_code = match.group(1).strip()
+            if not original_code:
+                continue
+
             try:
-                # Dry run using graphviz 'dot'
+                # Dry run
                 subprocess.run(
                     [dot_executable, "-Tpng"],
                     input=original_code.encode('utf-8'),
                     capture_output=True,
                     check=True
                 )
-                continue
+                continue # Code is valid
             except (subprocess.CalledProcessError, FileNotFoundError) as e:
                 error_msg = e.stderr.decode('utf-8') if isinstance(e, subprocess.CalledProcessError) else str(e)
                 logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
 
-                # Use standard string to avoid brace collision
+                # Use standard string
                 fix_prompt_template = textwrap.dedent("""
                 You are a Graphviz DOT expert. The following DOT code caused a syntax error.
                 **Error:** <<ERROR_MSG>>
@@ -128,22 +132,47 @@ class SpecSynthesisAgent:
                 fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
                 fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
 
+                fix_succeeded = False
                 try:
                     fixed_response = self.llm_service.generate_text(fix_prompt, task_complexity="simple")
                     code_match = re.search(r"```dot\s*(.*?)```", fixed_response, re.DOTALL)
+
                     if code_match:
-                        fixed_code = code_match.group(1)
-                        start, end = match.span(1)
-                        markdown_text = markdown_text[:start] + fixed_code + markdown_text[end:]
-                        logging.info("DOT Diagram successfully fixed by AI.")
-                except Exception as fix_error:
-                    logging.error(f"Failed to apply AI fix to DOT diagram: {fix_error}")
+                        fixed_code = code_match.group(1).strip()
+                        # Verify the fix
+                        try:
+                            subprocess.run(
+                                [dot_executable, "-Tpng"],
+                                input=fixed_code.encode('utf-8'),
+                                capture_output=True,
+                                check=True
+                            )
+                            # Fix worked: Replace content
+                            start, end = match.span(1)
+                            markdown_text = markdown_text[:start] + "\n" + fixed_code + "\n" + markdown_text[end:]
+                            logging.info("DOT Diagram successfully fixed and verified.")
+                            fix_succeeded = True
+                        except subprocess.CalledProcessError:
+                            logging.error("AI Fix failed verification.")
+                except Exception as fix_err:
+                    logging.error(f"Failed during AI fix attempt: {fix_err}")
+
+                # NEUTRALIZE: If fix failed, convert ```dot to ```text so doc gen doesn't crash
+                if not fix_succeeded:
+                    logging.warning("Neutralizing broken DOT block to prevent document crash.")
+                    # Replace the opening ```dot with ```text
+                    start_tag_start = match.start()
+                    # We know the match starts with ```dot, so we replace the first 6 chars
+                    markdown_text = markdown_text[:start_tag_start] + "```text" + markdown_text[start_tag_start+6:]
 
         return markdown_text
 
     def _generate_db_schema_spec(self, detection_stage: str, files_content: dict, project_name: str) -> str:
         """
-        Generates the Database Schema Specification document using an LLM.
+        Generates the Database Schema Specification document using a 2-step LLM process
+        to avoid timeouts on large schemas.
+        Step 1: Generate the ER Diagram (DOT).
+        Step 2: Generate the Detailed Text Reference.
         """
         logging.info(f"Generating Database Schema Specification from {detection_stage} context...")
 
@@ -157,49 +186,81 @@ class SpecSynthesisAgent:
         else: # KEYWORD
             prompt_focus = "The provided context contains source code with database keywords. Infer the schema from ORM models or SQL strings."
 
-        # FIXED: Use standard string (no 'f' prefix) to avoid brace collision
-        prompt_template = textwrap.dedent("""
-            You are an expert database administrator. Analyze the provided file contents and generate a clear, professional "Database Schema Specification" document in Markdown format.
+        # --- STEP 1: Generate Diagram Only ---
+        logging.info("DB Spec Step 1/2: Generating ER Diagram...")
+        diagram_prompt = textwrap.dedent("""
+            You are an expert database administrator. Analyze the provided code/schema context and generate a Professional Graphviz DOT code block for the Entity-Relationship Diagram (ERD).
+
+            **DIAGRAMMING RULE (Professional Graphviz ERD):**
+            - Use the **DOT language** inside a ```dot ... ``` code block.
+            - **CRITICAL:** Do NOT use `shape=record`. Use `shape=box`.
+            - **NO PORTS:** Connect Node to Node only.
+            - **Syntax:** Format tables as boxes with the table name and columns separated by a line.
+                - Example: `Users [label="Users\n----------------\n+ ID (PK)\l+ Email\l+ PasswordHash\l"];`
+            - **Layout & Style:**
+                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
+                `node [fontname="Arial", fontsize=11, shape=box, style="filled,rounded", fillcolor="#F0F4C3", color="#827717", penwidth=1.5, margin="0.2,0.1"];`
+                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
+
+            **OUTPUT:** Return ONLY the ```dot ... ``` code block. No other text.
+
+            **--- Context ---**
+            <<CONTEXT_STR>>
+        """)
+
+        diagram_prompt = diagram_prompt.replace("<<CONTEXT_STR>>", context_str)
+
+        try:
+            diagram_response = self.llm_service.generate_text(diagram_prompt, task_complexity="complex")
+            # Validate/Fix diagram
+            validated_diagram = self._validate_and_fix_dot_diagrams(diagram_response)
+        except Exception as e:
+            logging.error(f"Failed to generate DB Diagram: {e}")
+            validated_diagram = "\n*Error generating ER Diagram.*\n"
+
+        # --- STEP 2: Generate Text Reference Only ---
+        logging.info("DB Spec Step 2/2: Generating Textual Reference...")
+        text_prompt = textwrap.dedent("""
+            You are an expert database administrator. Analyze the provided code/schema context and generate the textual content for the "Database Schema Specification".
 
             **MANDATORY INSTRUCTIONS:**
             1. **Analyze Content:** <<PROMPT_FOCUS>>
             2. **STRICT MARKDOWN FORMATTING:** Use '##' for main headings and '###' for sub-headings.
-            3. **Raw Output:** Your entire response MUST be only the raw Markdown content.
-
-            **DIAGRAMMING RULE (Professional Graphviz ERD):**
-            - You MUST generate an **Entity-Relationship Diagram (ERD)**.
-            - Use the **DOT language** inside a ```dot ... ``` code block.
-            - **Layout & Style:** Use these exact settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=LR, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=11, shape=record, style="filled,rounded", fillcolor="#F0F4C3", color="#827717", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-            - **Syntax:** Use "record" shapes for tables. Example:
-                `Users [label="{{Users|+ ID (PK)\l+ Email\l+ PasswordHash\l}}"];`
+            3. **Structure:**
+                - **Introduction:** Brief overview of the data model.
+                - **Detailed Schema Reference:** For *every* table found:
+                    - Subsection `### Table Name`
+                    - Brief description.
+                    - Column List: List each column as a bullet point using this format: "* **Name** (Type) - Description. (Constraints)*"
+            4. **OUTPUT:** Return ONLY the raw Markdown text. Do NOT include any diagrams.
 
             **--- Project Name ---**
             <<PROJECT_NAME>>
 
-            **--- Relevant File Contents ---**
+            **--- Context ---**
             <<CONTEXT_STR>>
-
-            **--- Draft Database Schema Specification (Markdown) ---**
         """)
 
-        # Safe injection
-        prompt = prompt_template.replace("<<PROMPT_FOCUS>>", prompt_focus)
-        prompt = prompt.replace("<<PROJECT_NAME>>", project_name)
-        prompt = prompt.replace("<<CONTEXT_STR>>", context_str)
+        text_prompt = text_prompt.replace("<<PROMPT_FOCUS>>", prompt_focus)
+        text_prompt = text_prompt.replace("<<PROJECT_NAME>>", project_name)
+        text_prompt = text_prompt.replace("<<CONTEXT_STR>>", context_str)
 
         try:
-            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-
-            # Apply Self-Correction Loop
-            validated_text = self._validate_and_fix_dot_diagrams(response_text)
-
-            return validated_text.strip()
+            text_response = self.llm_service.generate_text(text_prompt, task_complexity="complex")
         except Exception as e:
-            logging.error(f"Failed to generate Database Schema Spec: {e}")
-            raise e
+            logging.error(f"Failed to generate DB Text: {e}")
+            text_response = "Error generating schema details."
+
+        # --- COMBINE ---
+        # Insert diagram after the header (or at the top if no header found easily,
+        # but text_response usually starts with Title or Intro).
+        # We will prepend the Diagram to the text response for simplicity,
+        # or insert it after the first paragraph if we want to be fancy.
+        # Simple approach: Intro Header -> Diagram -> Detailed Text.
+
+        final_spec = f"# Database Schema Specification: {project_name}\n\n## Entity-Relationship Diagram\n\n{validated_diagram}\n\n{text_response}"
+
+        return final_spec
 
     def synthesize_all_specs(self, project_id: str):
         """
@@ -306,13 +367,21 @@ class SpecSynthesisAgent:
             "UX/UI": "Focus on user personas, journeys, and screen layouts."
         }
 
-        # Define specific placement rules for each document type
+        # Dynamic Placement & Scope Rules
         placement_map = {
             "Application": "inside the 'System Overview' or 'Functional Architecture' section, immediately after the header.",
             "Technical": "inside the 'High-Level Architecture' section, immediately after the header.",
             "UX/UI": "inside the 'Navigation Structure' or 'Site Map' section, immediately after the header."
         }
         placement_rule = placement_map.get(spec_type, "at the beginning of the detailed architecture section.")
+
+        # Dynamic Layout Rules
+        if spec_type == "UX/UI":
+            scope_rule = "**SCOPE:** Create a **'Core Journey Diagram'**. Map ONLY the Happy Path. Max 10-15 nodes."
+        else:
+            scope_rule = "**SCOPE:** Create a **'High-Level Module View'**. Group classes/files into logical modules. Do NOT create a node for every single file."
+
+        rank_dir_rule = "TB"
 
         # Use standard string (no 'f' prefix) to avoid brace collision
         prompt_template = textwrap.dedent("""
@@ -325,9 +394,10 @@ class SpecSynthesisAgent:
             **DIAGRAMMING RULE (Professional Graphviz):**
             - Generate 1 key diagram relevant to the spec type.
             - Use the **DOT language** inside a ```dot ... ``` code block.
-            - **SCOPE:** Create a **"High-Level Module View"**. Group classes/files into logical modules/namespaces. Do NOT create a node for every single file.
+            - <<SCOPE_RULE>>
             - **CRITICAL:** You MUST use `digraph G {` (directed graph). Do NOT use `graph {`.
             - **PLACEMENT:** You MUST place this diagram <<PLACEMENT_INSTRUCTION>>
+            - **DISCLAIMER:** Immediately BEFORE the diagram, add this line in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
             - **Layout & Style:** Use these exact settings:
                 `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
                 `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#F3E5F5", color="#7B1FA2", penwidth=1.5, margin="0.2,0.1"];`
@@ -347,7 +417,9 @@ class SpecSynthesisAgent:
         # Safe injection
         prompt = prompt_template.replace("<<SPEC_TYPE>>", spec_type)
         prompt = prompt.replace("<<PROMPT_DETAIL>>", prompt_details.get(spec_type, ""))
+        prompt = prompt.replace("<<SCOPE_RULE>>", scope_rule)
         prompt = prompt.replace("<<PLACEMENT_INSTRUCTION>>", placement_rule)
+        prompt = prompt.replace("<<RANK_DIR>>", rank_dir_rule)
         prompt = prompt.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
         prompt = prompt.replace("<<PROJECT_NAME>>", project_name)
         prompt = prompt.replace("<<SUMMARIES_CONTEXT>>", summaries_context)
