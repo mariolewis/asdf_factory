@@ -1,5 +1,6 @@
 # gui/settings_dialog.py
 
+import config
 import logging
 import shutil
 import os
@@ -262,14 +263,22 @@ class SettingsDialog(QDialog):
 
         factory_tab_layout = QFormLayout(self.factory_behavior_tab)
         factory_tab_layout.addRow("Max Debug Attempts:", self.max_debug_spin_box)
+
+        # Context Window Layout
         context_limit_layout = QHBoxLayout()
         context_limit_layout.addWidget(self.context_limit_input)
         context_limit_layout.addWidget(self.calibrate_button)
         factory_tab_layout.addRow("Context Window Limit:", context_limit_layout)
         self.calibrate_button.setToolTip("Queries the selected LLM to determine and set its optimal context limit with a safety margin.")
-        factory_tab_layout.addRow("Logging Level:", self.logging_combo_box)
+
+        # --- CONDITIONAL LOGGING ROW ---
+        if config.is_dev_mode():
+            factory_tab_layout.addRow("Logging Level:", self.logging_combo_box)
+
         factory_tab_layout.addRow("Default Project Path:", self.project_path_input)
         factory_tab_layout.addRow("Default Export Path:", self.archive_path_input)
+
+        # IDE Path Layout
         ide_path_layout = QHBoxLayout()
         ide_path_layout.addWidget(self.ide_path_input)
         ide_path_layout.addWidget(self.ide_path_browse_button)

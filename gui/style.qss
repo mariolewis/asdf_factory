@@ -225,14 +225,6 @@ QTreeView::branch {
     background-color: transparent;
 }
 
-QTreeView::branch:closed:has-children {
-    image: url(:/icons/icons/chevron_right_light.svg);
-}
-
-QTreeView::branch:open:has-children {
-    image: url(:/icons/icons/chevron_down_light.svg);
-}
-
 /* --- Report Details Panel Title --- */
 QLabel#reportTitleLabel {
     font-size: 18pt;
@@ -427,13 +419,13 @@ QTreeView::branch {
 QTreeView::branch:has-children:!has-siblings:closed,
 QTreeView::branch:closed:has-children:has-siblings {
     border-image: none;
-    image: url(./gui/icons/chevron_right.svg);
+    image: url(gui/icons/chevron_right.svg);
 }
 
 QTreeView::branch:open:has-children:!has-siblings,
 QTreeView::branch:open:has-children:has-siblings {
     border-image: none;
-    image: url(./gui/icons/chevron_down.svg);
+    image: url(gui/icons/chevron_down.svg);
 }
 
 /* Override for Sprint Planning advisory panel to remove title margin */

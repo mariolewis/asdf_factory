@@ -144,7 +144,6 @@
      <string>&amp;View</string>
     </property>
     <addaction name="actionToggleProjectPanel"/>
-    <addaction name="actionToggleNotificationPanel"/>
    </widget>
    <widget class="QMenu" name="menuProject">
     <property name="title">
@@ -330,11 +329,6 @@
   <action name="actionToggleProjectPanel">
    <property name="text">
     <string>Toggle Project Panel</string>
-   </property>
-  </action>
-  <action name="actionToggleNotificationPanel">
-   <property name="text">
-    <string>Toggle Notification Panel</string>
    </property>
   </action>
  </widget>

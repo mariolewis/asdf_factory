@@ -1,5 +1,6 @@
 # main_window.py
 
+import config
 import logging
 from pathlib import Path
 from datetime import datetime
@@ -14,7 +15,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QStac
                                QInputDialog, QMessageBox, QFileSystemModel, QMenu, QStatusBar,
                                QHBoxLayout, QVBoxLayout, QHeaderView, QAbstractItemView,
                                QStyle, QToolButton, QButtonGroup, QPushButton,
-                               QSpacerItem, QSizePolicy, QFileDialog)
+                               QSpacerItem, QSizePolicy, QFileDialog,
+                               QTextEdit, QLineEdit, QPlainTextEdit)
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem, QIcon
 from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize, QTimer, QEvent
 from PySide6.QtCore import QThreadPool
@@ -98,14 +100,12 @@ class KlyveMainWindow(QMainWindow):
 
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+
         self.ui.horizontalLayout.setContentsMargins(0, 0, 0, 0)
         self.ui.horizontalLayout.setSpacing(0)
-
-        # Force the layout stretch factors programmatically
-        self.ui.centralwidget.layout().setStretch(0, 0) # Index 0 is verticalActionBar (no stretch)
-        self.ui.centralwidget.layout().setStretch(1, 1) # Index 1 is mainSplitter (takes all stretch)
-        self.ui.verticalLayout_actionBar.setContentsMargins(2, 8, 2, 8) # left, top, right, bottom
-
+        self.ui.centralwidget.layout().setStretch(0, 0)
+        self.ui.centralwidget.layout().setStretch(1, 1)
+        self.ui.verticalLayout_actionBar.setContentsMargins(2, 8, 2, 8)
         self.ui.mainSplitter.setChildrenCollapsible(False)
         self.ui.mainSplitter.setSizes([350, 850])
 
@@ -114,16 +114,13 @@ class KlyveMainWindow(QMainWindow):
         self._create_menus_and_toolbar()
         self._connect_signals()
 
-        #self._add_permanent_branding()
-
         self.setWindowTitle(f"Klyve - Autonomous Software Factory")
 
         self.update_ui_after_state_change()
+
         self._check_mandatory_settings()
-        # Add instance variable for the status widget
         self.persistent_status_widget = None
 
-        # Install event filters to protect the persistent status widget
         self.ui.menubar.installEventFilter(self)
         self.ui.toolBar.installEventFilter(self)
         self.ui.verticalActionBar.installEventFilter(self)
@@ -236,115 +233,125 @@ class KlyveMainWindow(QMainWindow):
 
     def _create_menus_and_toolbar(self):
         """Programmatically creates dynamic menus and toolbar actions."""
-        # Define the path to the custom icons directory
-        icons_path = Path(__file__).parent / "gui" / "icons"
 
-        # Add custom icons to top toolbar actions
-        self.ui.actionProceed.setIcon(QIcon(str(icons_path / "proceed.png")))
-        # NOTE: The old actionRun_Tests is removed from the toolbar later, so we don't set its icon here.
+        try:
+            # Define the path to the custom icons directory
+            icons_path = Path(__file__).parent / "gui" / "icons"
 
-        # Create QToolButtons with custom icons for the Vertical Action Bar
-        self.button_group_sidebar = QButtonGroup(self)
-        self.button_group_sidebar.setExclusive(True)
+            # Add custom icons to top toolbar actions
+            self.ui.actionProceed.setIcon(QIcon(str(icons_path / "proceed.png")))
 
-        self.button_view_explorer = QToolButton()
-        self.button_view_explorer.setToolTip("Show Project Files")
-        self.button_view_explorer.setIcon(QIcon(str(icons_path / "explorer.png")))
-        self.button_view_explorer.setCheckable(True)
-        self.button_view_explorer.setChecked(True)
-        self.ui.verticalLayout_actionBar.addWidget(self.button_view_explorer)
-        self.button_group_sidebar.addButton(self.button_view_explorer)
+            # Create QToolButtons with custom icons for the Vertical Action Bar
+            self.button_group_sidebar = QButtonGroup(self)
+            self.button_group_sidebar.setExclusive(True)
 
-        self.button_raise_request = QToolButton()
-        self.button_raise_request.setToolTip("Add a new Backlog Item or Bug Report")
-        self.button_raise_request.setIcon(QIcon(str(icons_path / "add_request.png")))
-        self.ui.verticalLayout_actionBar.addWidget(self.button_raise_request)
+            self.button_view_explorer = QToolButton()
+            self.button_view_explorer.setToolTip("Show Project Files")
+            self.button_view_explorer.setIcon(QIcon(str(icons_path / "explorer.png")))
+            self.button_view_explorer.setCheckable(True)
+            self.button_view_explorer.setChecked(True)
+            self.ui.verticalLayout_actionBar.addWidget(self.button_view_explorer)
+            self.button_group_sidebar.addButton(self.button_view_explorer)
 
-        self.button_view_reports = QToolButton()
-        self.button_view_reports.setToolTip("View Project Reports")
-        self.button_view_reports.setIcon(QIcon(str(icons_path / "reports.png")))
-        self.button_view_reports.setCheckable(True)
-        self.ui.verticalLayout_actionBar.addWidget(self.button_view_reports)
-        self.button_group_sidebar.addButton(self.button_view_reports)
+            self.button_raise_request = QToolButton()
+            self.button_raise_request.setToolTip("Add a new Backlog Item or Bug Report")
+            self.button_raise_request.setIcon(QIcon(str(icons_path / "add_request.png")))
+            self.ui.verticalLayout_actionBar.addWidget(self.button_raise_request)
 
-        self.button_view_documents = QToolButton()
-        self.button_view_documents.setToolTip("View Project Documents")
-        self.button_view_documents.setIcon(QIcon(str(icons_path / "documents.png")))
-        self.button_view_documents.setCheckable(True)
-        self.ui.verticalLayout_actionBar.addWidget(self.button_view_documents)
-        self.button_group_sidebar.addButton(self.button_view_documents)
+            self.button_view_reports = QToolButton()
+            self.button_view_reports.setToolTip("View Project Reports")
+            self.button_view_reports.setIcon(QIcon(str(icons_path / "reports.png")))
+            self.button_view_reports.setCheckable(True)
+            self.ui.verticalLayout_actionBar.addWidget(self.button_view_reports)
+            self.button_group_sidebar.addButton(self.button_view_reports)
 
-        self.ui.verticalLayout_actionBar.addStretch()
+            self.button_view_documents = QToolButton()
+            self.button_view_documents.setToolTip("View Project Documents")
+            self.button_view_documents.setIcon(QIcon(str(icons_path / "documents.png")))
+            self.button_view_documents.setCheckable(True)
+            self.ui.verticalLayout_actionBar.addWidget(self.button_view_documents)
+            self.button_group_sidebar.addButton(self.button_view_documents)
 
-        # --- Active Sprint Button (Initially Hidden) ---
-        self.button_view_sprint = QToolButton()
-        self.button_view_sprint.setToolTip("Return to Active Sprint")
-        self.button_view_sprint.setIcon(QIcon(str(icons_path / "sprint_active.png"))) # We will need to add this icon
-        self.button_view_sprint.setCheckable(True)
-        self.button_view_sprint.setVisible(False) # Hidden by default
-        # Insert it before the stretch so it's with the other buttons
-        self.ui.verticalLayout_actionBar.insertWidget(self.ui.verticalLayout_actionBar.count() - 1, self.button_view_sprint)
-        self.button_group_sidebar.addButton(self.button_view_sprint)
+            self.ui.verticalLayout_actionBar.addStretch()
 
-        # Configure the existing "Manage CRs / Bugs" action, add it to the menu and toolbar
-        icon = QIcon(str(icons_path / "manage_crs.png"))
-        icon.addFile(str(icons_path / "manage_crs.png"), QSize(), QIcon.Normal, QIcon.Off) # Ensure color is preserved
-        self.ui.actionManage_CRs_Bugs.setIcon(icon)
-        self.ui.actionNew_Project.setIcon(QIcon(str(icons_path / "new_project.png")))
-        self.ui.actionOpen_Project.setIcon(QIcon(str(icons_path / "open_project.png")))
-        self.ui.actionSettings.setIcon(QIcon(str(icons_path / "settings.png")))
-        self.ui.actionRun_Tests.setIcon(QIcon(str(icons_path / "run_tests.png")))
-        self.ui.menuProject.addAction(self.ui.actionManage_CRs_Bugs)
-        self.ui.toolBar.addAction(self.ui.actionManage_CRs_Bugs)
+            # --- Active Sprint Button (Initially Hidden) ---
+            self.button_view_sprint = QToolButton()
+            self.button_view_sprint.setToolTip("Return to Active Sprint")
+            self.button_view_sprint.setIcon(QIcon(str(icons_path / "sprint_active.png")))
+            self.button_view_sprint.setCheckable(True)
+            self.button_view_sprint.setVisible(False)
+            self.ui.verticalLayout_actionBar.insertWidget(self.ui.verticalLayout_actionBar.count() - 1, self.button_view_sprint)
+            self.button_group_sidebar.addButton(self.button_view_sprint)
 
-        # --- Testing Submenu & Toolbar Button ---
-        self.menuTesting = QMenu("Testing", self)
-        self.actionRunBackendRegression = QAction("Run Backend Regression Tests", self)
-        self.actionRunBackendIntegration = QAction("Run Backend Integration Tests", self)
-        self.actionInitiateManualUI = QAction("Initiate Manual UI Testing", self)
-        self.actionInitiateAutomatedUI = QAction("Initiate Automated UI Testing", self)
+            # Configure the existing "Manage CRs / Bugs" action
+            icon = QIcon(str(icons_path / "manage_crs.png"))
+            icon.addFile(str(icons_path / "manage_crs.png"), QSize(), QIcon.Normal, QIcon.Off)
+            self.ui.actionManage_CRs_Bugs.setIcon(icon)
+            self.ui.actionNew_Project.setIcon(QIcon(str(icons_path / "new_project.png")))
+            self.ui.actionOpen_Project.setIcon(QIcon(str(icons_path / "open_project.png")))
+            self.ui.actionSettings.setIcon(QIcon(str(icons_path / "settings.png")))
+            self.ui.actionRun_Tests.setIcon(QIcon(str(icons_path / "run_tests.png")))
+            self.ui.menuProject.addAction(self.ui.actionManage_CRs_Bugs)
+            self.ui.toolBar.addAction(self.ui.actionManage_CRs_Bugs)
 
-        self.menuTesting.addAction(self.actionRunBackendRegression)
-        self.menuTesting.addAction(self.actionRunBackendIntegration)
-        self.menuTesting.addSeparator()
-        self.menuTesting.addAction(self.actionInitiateManualUI)
-        self.menuTesting.addAction(self.actionInitiateAutomatedUI)
+            # --- Testing Submenu & Toolbar Button ---
+            self.menuTesting = QMenu("Testing", self)
+            self.actionRunBackendRegression = QAction("Run Backend Regression Tests", self)
+            self.actionRunBackendIntegration = QAction("Run Backend Integration Tests", self)
+            self.actionInitiateManualUI = QAction("Initiate Manual UI Testing", self)
+            self.actionInitiateAutomatedUI = QAction("Initiate Automated UI Testing", self)
 
-        self.ui.menuProject.addMenu(self.menuTesting)
-        self.ui.menuProject.addSeparator()
+            self.menuTesting.addAction(self.actionRunBackendRegression)
+            self.menuTesting.addAction(self.actionRunBackendIntegration)
+            self.menuTesting.addSeparator()
+            self.menuTesting.addAction(self.actionInitiateManualUI)
+            self.menuTesting.addAction(self.actionInitiateAutomatedUI)
 
-        self.ui.toolBar.removeAction(self.ui.actionRun_Tests) # Remove the old direct action
-        self.test_tool_button = QToolButton(self)
-        self.test_tool_button.setIcon(QIcon(str(icons_path / "run_tests.png")))
-        self.test_tool_button.setToolTip("Run Tests")
-        self.test_tool_button.setMenu(self.menuTesting)
-        self.test_tool_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-        self.ui.toolBar.addWidget(self.test_tool_button)
+            self.ui.menuProject.addMenu(self.menuTesting)
+            self.ui.menuProject.addSeparator()
 
-        # --- Project Settings Menu Action ---
-        self.actionProject_Settings = QAction("Project Settings...", self)
-        self.ui.menuProject.addAction(self.actionProject_Settings)
+            self.ui.toolBar.removeAction(self.ui.actionRun_Tests)
+            self.test_tool_button = QToolButton(self)
+            self.test_tool_button.setIcon(QIcon(str(icons_path / "run_tests.png")))
+            self.test_tool_button.setToolTip("Run Tests")
+            self.test_tool_button.setMenu(self.menuTesting)
+            self.test_tool_button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+            self.ui.toolBar.addWidget(self.test_tool_button)
 
-        self.actionView_Sprint_History = QAction("View Sprint History...", self)
-        self.ui.menuProject.addAction(self.actionView_Sprint_History)
+            # --- Project Settings Menu Action ---
+            self.actionProject_Settings = QAction("Project Settings...", self)
+            self.ui.menuProject.addAction(self.actionProject_Settings)
 
-        # Debug menu setup
-        for phase in FactoryPhase:
-            if phase.name == "IDLE": continue
-            action = QAction(phase.name.replace("_", " ").title(), self)
-            action.triggered.connect(lambda checked=False, p=phase.name: self.on_debug_jump_to_phase(p))
-            self.ui.menuDebug.addAction(action)
+            self.actionView_Sprint_History = QAction("View Sprint History...", self)
+            self.ui.menuProject.addAction(self.actionView_Sprint_History)
 
-        # Status bar setup
-        self.status_project_label = QLabel("Project: N/A")
-        self.status_phase_label = QLabel("Phase: Idle")
-        self.status_git_label = QLabel("Branch: N/A")
-        self.ui.statusbar.addPermanentWidget(self.status_project_label)
-        self.ui.statusbar.addPermanentWidget(self.status_phase_label)
-        self.ui.statusbar.addPermanentWidget(self.status_git_label)
+            # --- SAFE DEBUG MENU SETUP ---
+            if config.is_dev_mode():
+                for phase in FactoryPhase:
+                    if phase.name == "IDLE": continue
+                    action = QAction(phase.name.replace("_", " ").title(), self)
+                    action.triggered.connect(lambda checked=False, p=phase.name: self.on_debug_jump_to_phase(p))
+                    self.ui.menuDebug.addAction(action)
+            else:
+                # Remove Debug menu options in production
+                self.menuBar().removeAction(self.ui.menuDebug.menuAction())
 
-        # Display the initial 'Ready' state on startup
-        self.statusBar().showMessage("Ready", 5000)
+            # Status bar setup
+            self.status_project_label = QLabel("Project: N/A")
+            self.status_phase_label = QLabel("Phase: Idle")
+            self.status_git_label = QLabel("Branch: N/A")
+            self.ui.statusbar.addPermanentWidget(self.status_project_label)
+            self.ui.statusbar.addPermanentWidget(self.status_phase_label)
+            self.ui.statusbar.addPermanentWidget(self.status_git_label)
+
+            # Display the initial 'Ready' state on startup
+            self.statusBar().showMessage("Ready", 5000)
+
+        except Exception as e:
+            logging.error(f"CRITICAL FAILURE in _create_menus_and_toolbar: {e}", exc_info=True)
+            # Re-raise so we can catch it at the top level if needed,
+            # or swallow it here to allow the app to limp along.
+            # For diagnosis, we swallow it but log heavily.
 
         # --- EULA Action Definition ---
         #self.ui.actionLicense = QAction(QIcon(), "License Agreement", self)
@@ -361,7 +368,6 @@ class KlyveMainWindow(QMainWindow):
 
     def _connect_signals(self):
         """Connects all UI signals to their corresponding slots."""
-        # File Menu & Top Toolbar Actions
         self.ui.actionNew_Project.triggered.connect(self.on_new_project)
         self.ui.actionOpen_Project.triggered.connect(self.on_open_project)
         self.ui.actionImport_Archived_Project.triggered.connect(self.on_load_project)
@@ -370,63 +376,36 @@ class KlyveMainWindow(QMainWindow):
         self.ui.actionSettings.triggered.connect(self.show_settings_dialog)
         self.ui.actionExit.triggered.connect(self.close)
 
-        # Edit Menu Connections
         self.ui.actionUndo.triggered.connect(self.on_undo)
         self.ui.actionRedo.triggered.connect(self.on_redo)
         self.ui.actionCut.triggered.connect(self.on_cut)
         self.ui.actionCopy.triggered.connect(self.on_copy)
         self.ui.actionPaste.triggered.connect(self.on_paste)
+        self.ui.actionToggleProjectPanel.triggered.connect(self.on_view_explorer)
+        # self.ui.actionToggleNotificationPanel.triggered.connect(self.on_toggle_notification_panel)
 
-        # --- View Menu Connections ---
-        self.ui.actionToggleProjectPanel.triggered.connect(self.on_view_explorer) # Re-uses existing handler
-        self.ui.actionToggleNotificationPanel.triggered.connect(self.on_toggle_notification_panel)
-
-        # Project Menu Actions
         self.ui.actionView_Documents.triggered.connect(self.on_view_documents)
         self.ui.actionView_Reports.triggered.connect(self.on_view_reports)
         self.actionProject_Settings.triggered.connect(self.on_show_project_settings)
         self.actionView_Sprint_History.triggered.connect(self.on_view_sprint_history)
 
-        # Run Menu & Top Toolbar Actions
         self.ui.actionProceed.triggered.connect(self.on_proceed)
 
-        # Testing Actions
         self.actionRunBackendRegression.triggered.connect(self.on_run_backend_regression)
         self.actionRunBackendIntegration.triggered.connect(self.on_run_backend_integration)
         self.actionInitiateManualUI.triggered.connect(self.on_initiate_manual_ui)
         self.actionInitiateAutomatedUI.triggered.connect(self.on_initiate_automated_ui)
 
         self.ui.actionReport_Bug.triggered.connect(self.on_report_bug)
-
-        # --- Help Menu and License Insertion (Final Clean Version) ---
-
-        # 1. Define the License Action (Must be done in self.ui)
-        #self.ui.actionLicense = QAction(QIcon(), "License Agreement", self)
-        #self.ui.actionLicense.setObjectName("actionLicense")
-
-        # 2. Find the Help Menu object by accessing the QMenuBar
-        # We iterate over the top-level menu actions to find the correct menu
-        help_menu = None
-        for action in self.menuBar().actions():
-            if action.text() == "&Help" and action.menu():
-                help_menu = action.menu()
-                break
-
-        # 3. Insert the License action BEFORE the existing About action
-        #if help_menu:
-        #    help_menu.insertAction(self.ui.actionAbout_Klyve, self.ui.actionLicense)
-
-        # 4. Connect the actions
-        #self.ui.actionLicense.triggered.connect(self._show_license_agreement)
         self.ui.actionAbout_Klyve.triggered.connect(self.on_about)
-        # --- END Help Menu Fix ---
 
-        # --- Vertical Action Bar Connections ---
         self.button_view_explorer.clicked.connect(self.on_view_explorer)
         self.button_raise_request.clicked.connect(self.on_raise_cr)
         self.button_view_reports.clicked.connect(self.on_view_reports)
         self.button_view_documents.clicked.connect(self.on_view_documents)
         self.button_view_sprint.clicked.connect(self.on_unified_return_clicked)
+
+        self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
 
         # Connect signals that trigger a FULL UI refresh and page transition
         for page in [self.env_setup_page, self.spec_elaboration_page, self.tech_spec_page, self.build_script_page, self.test_env_page, self.coding_standard_page, self.planning_page, self.genesis_page, self.load_project_page, self.preflight_check_page, self.ux_spec_page]:
@@ -444,11 +423,9 @@ class KlyveMainWindow(QMainWindow):
             if hasattr(page, 'ux_spec_complete'): page.ux_spec_complete.connect(self.update_ui_after_state_change)
 
         self.dockerization_page.dockerization_complete.connect(self.update_ui_after_state_change)
-
         self.codebase_analysis_page.analysis_complete.connect(self.update_ui_after_state_change)
         self.project_dashboard_page.maintain_selected.connect(self.on_brownfield_maintain_selected)
         self.project_dashboard_page.quickfix_selected.connect(self.on_brownfield_quickfix_selected)
-
         self.intake_assessment_page.full_lifecycle_selected.connect(self.on_intake_full_lifecycle_selected)
         self.intake_assessment_page.direct_to_development_selected.connect(self.on_intake_direct_to_dev_selected)
         self.intake_assessment_page.back_selected.connect(self.on_intake_back_selected)
@@ -474,23 +451,20 @@ class KlyveMainWindow(QMainWindow):
         self.cr_management_page.delete_cr.connect(self.on_cr_delete_action)
         self.cr_management_page.analyze_cr.connect(self.on_cr_analyze_action)
         self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
-        self.cr_management_page.implement_cr.connect(self.on_cr_implement_action)
         self.cr_management_page.import_from_tool.connect(self.on_import_from_tool)
         self.cr_management_page.sync_items_to_tool.connect(self.on_sync_items_to_tool)
         self.cr_management_page.save_new_order.connect(self.orchestrator.handle_save_cr_order)
         self.cr_management_page.request_ui_refresh.connect(self.update_ui_after_state_change)
-        self.ui.actionManage_CRs_Bugs.triggered.connect(self.on_manage_crs)
+
         self.backlog_ratification_page.backlog_ratified.connect(self.on_backlog_ratified)
         self.sprint_planning_page.sprint_cancelled.connect(self.on_sprint_cancelled)
         self.sprint_planning_page.sprint_started.connect(self.on_start_sprint)
         self.sprint_review_page.return_to_backlog.connect(self.on_return_to_backlog)
 
-        # --- Sprint Integration Test Connections ---
         self.sprint_integration_test_page.run_test_clicked.connect(self.on_sprint_integration_run)
         self.sprint_integration_test_page.skip_clicked.connect(self.on_sprint_integration_skip)
         self.sprint_integration_test_page.pause_clicked.connect(self.on_sprint_integration_pause)
 
-        # --- Sprint Validation Connections ---
         self.sprint_validation_page.proceed_to_planning.connect(self.on_validation_proceed)
         self.sprint_validation_page.return_to_backlog.connect(self.on_validation_cancel)
         self.sprint_validation_page.rerun_stale_analysis.connect(self.on_validation_rerun_stale)
@@ -603,11 +577,11 @@ class KlyveMainWindow(QMainWindow):
         if widget:
             widget.paste()
 
-    def on_toggle_notification_panel(self):
-        """Toggles the visibility of the bottom notification/log panel."""
+    #def on_toggle_notification_panel(self):
+    #    """Toggles the visibility of the bottom notification/log panel."""
         # The actual panel does not exist yet and will be added in a future task.
         # This handler serves as a placeholder.
-        QMessageBox.information(self, "Not Implemented", "The notification panel will be implemented in a future update.")
+    #    QMessageBox.information(self, "Not Implemented", "The notification panel will be implemented in a future update.")
 
     def update_static_ui_elements(self):
         """

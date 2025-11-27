@@ -8,6 +8,8 @@ from PySide6.QtCore import Qt, QTimer
 import logging
 from datetime import datetime, timezone
 
+# Import the new config module
+import config
 from klyve_db_manager import KlyveDBManager
 from master_orchestrator import MasterOrchestrator
 from main_window import KlyveMainWindow
@@ -71,132 +73,153 @@ def initialize_database(db_manager: KlyveDBManager):
             db_manager.set_config_value(key, value, desc)
             logging.info(f"Initialized missing config key '{key}' with default value.")
 
+def _setup_logging(db_manager):
+    """
+    Configures logging based on the operating mode.
+    User Mode: No logging (NullHandler).
+    Dev Mode: Console logging ONLY (No file).
+    """
+    # 1. Reset any existing logging configuration
+    root = logging.getLogger()
+    if root.handlers:
+        for handler in root.handlers:
+            root.removeHandler(handler)
+
+    # 2. Configure based on mode
+    if config.is_dev_mode():
+        # Dev Mode: Console Output Only
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s')
+        console_handler = logging.StreamHandler()
+        console_handler.setFormatter(formatter)
+
+        log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
+        log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
+        log_level = log_level_map.get(log_level_str, logging.INFO)
+
+        logging.basicConfig(level=log_level, handlers=[console_handler], force=True)
+        print(f"--- KLYVE DEV MODE ACTIVE (Console Logging Enabled: {log_level_str}) ---")
+    else:
+        # User Mode: Strict Silence
+        # We use NullHandler to prevent "No handlers could be found" warnings from libraries
+        logging.basicConfig(level=logging.CRITICAL, handlers=[logging.NullHandler()], force=True)
+        logging.disable(logging.CRITICAL)
+
 def _initialize_klyve(app, splash):
-    # This function is executed after a brief delay to ensure the splash screen
-    # is visible during the main I/O and component initialization phase.
-
-    # --- 0. Prevent Premature Exit ---
-    # Critical: Prevent app from quitting when the EULA dialog closes (and splash is hidden)
-    app.setQuitOnLastWindowClosed(False)
-
-    # --- 1. Setup Database ---
-    db_dir = Path("data")
-    db_dir.mkdir(exist_ok=True)
-    db_path = db_dir / "klyve.db"
-
-    # Initialize DB Manager
-    db_manager = KlyveDBManager(db_path=str(db_path))
-    initialize_database(db_manager)
-
-    # --- 2. Setup Logging ---
-    log_level_str = db_manager.get_config_value("LOGGING_LEVEL") or "Standard"
-    log_level_map = {"Standard": logging.INFO, "Detailed": logging.DEBUG, "Debug": logging.DEBUG}
-    log_level = log_level_map.get(log_level_str, logging.INFO)
-
-    logging.basicConfig(
-        level=log_level,
-        format='%(asctime)s - %(levelname)s - [%(module)s:%(lineno)d] - %(message)s',
-        force=True
-    )
-    logging.info(f"Klyve started. Logging level: '{log_level_str}'")
-
-    # --- 3. Robust Stylesheet Loading (MOVED UP) ---
-    # We load this BEFORE the EULA check so the dialog is styled correctly.
     try:
-        style_file = Path(__file__).parent / "gui" / "style.qss"
-        if style_file.exists():
-            with open(style_file, "r") as f:
-                app.setStyleSheet(f.read())
-                logging.info("Successfully loaded global stylesheet.")
-        else:
-            logging.warning(f"Stylesheet not found at: {style_file}")
-    except Exception as e:
-        logging.error(f"Failed to load stylesheet: {e}")
+        # --- 0. Prevent Premature Exit ---
+        app.setQuitOnLastWindowClosed(False)
 
-    # --- 4. Legal Guardrail (EULA Check) ---
-    if not db_manager.get_config_value("EULA_ACCEPTED_TIMESTAMP"):
-        logging.info("EULA not yet accepted. Showing Legal Dialog.")
+        # --- 1. Setup Database Paths ---
+        db_dir = Path("data")
+        db_dir.mkdir(exist_ok=True)
+        db_path = db_dir / "klyve.db"
+
+        # Initialize DB Manager (needed to read config for logging)
+        db_manager = KlyveDBManager(db_path=str(db_path))
+
+        # --- 2. Setup Logging ---
+        _setup_logging(db_manager)
+
+        # --- 3. Initialize Database Content ---
+        initialize_database(db_manager)
+
+        # --- 4. Robust Stylesheet Loading ---
+        try:
+            style_file = Path(__file__).parent / "gui" / "style.qss"
+            if style_file.exists():
+                with open(style_file, "r") as f:
+                    app.setStyleSheet(f.read())
+                    logging.info("Successfully loaded global stylesheet.")
+            else:
+                logging.warning(f"Stylesheet not found at: {style_file}")
+        except Exception as e:
+            logging.error(f"Failed to load stylesheet: {e}")
+
+        # --- 5. Legal Guardrail (EULA Check) ---
+        if not db_manager.get_config_value("EULA_ACCEPTED_TIMESTAMP"):
+            logging.info("EULA not yet accepted. Showing Legal Dialog.")
+            if splash and splash.isVisible():
+                splash.hide()
+
+            legal_dialog = LegalDialog()
+            result = legal_dialog.exec()
+
+            if result != QDialog.Accepted:
+                logging.info("User declined EULA or closed dialog. Exiting application.")
+                sys.exit(0)
+
+            acceptance_time = datetime.now(timezone.utc).isoformat()
+            db_manager.set_config_value("EULA_ACCEPTED_TIMESTAMP", acceptance_time, "Timestamp of EULA acceptance.")
+
+            if splash:
+                splash.show()
+
+        # --- 6. Initialize Core Components ---
+        orchestrator = MasterOrchestrator(db_manager=db_manager)
+        # FIX: Attach window to 'app' to prevent Garbage Collection from deleting it
+        # when this function ends.
+        app._main_window = KlyveMainWindow(orchestrator=orchestrator)
+        window = app._main_window
+
+        # --- 7. Launch ---
+        window.showMaximized()
+        app.setQuitOnLastWindowClosed(True)
+
         if splash and splash.isVisible():
-            splash.hide() # Hide splash so dialog is accessible
+            QTimer.singleShot(0, lambda: splash.finish(window))
 
-        legal_dialog = LegalDialog()
-        result = legal_dialog.exec()
+    except Exception as e:
+        # CRITICAL SAFETY NET
+        error_msg = f"Initialization Failure:\n{str(e)}"
 
-        if result != QDialog.Accepted:
-            logging.info("User declined EULA or closed dialog. Exiting application.")
-            sys.exit(0)
+        # Only dump stack trace to console if in Dev Mode
+        if config.is_dev_mode():
+            logging.disable(logging.NOTSET)
+            logging.error(error_msg, exc_info=True)
 
-        # If accepted, save the timestamp
-        acceptance_time = datetime.now(timezone.utc).isoformat()
-        db_manager.set_config_value("EULA_ACCEPTED_TIMESTAMP", acceptance_time, "Timestamp of EULA acceptance.")
-
-        if splash:
-            splash.show() # Restore splash while the rest of the app loads
-
-    # --- 5. Initialize Core Components ---
-    orchestrator = MasterOrchestrator(db_manager=db_manager)
-    window = KlyveMainWindow(orchestrator=orchestrator)
-
-    # --- 6. Launch ---
-    window.showMaximized()
-
-    # Restore standard quit behavior now that the main window is open
-    app.setQuitOnLastWindowClosed(True)
-
-    # Defer the splash screen closing to ensure the main window has time to paint.
-    if splash and splash.isVisible():
-        QTimer.singleShot(0, lambda: splash.finish(window))
-
-        # --- END OF INITIALIZE FUNCTION ---
+        if splash and splash.isVisible():
+            splash.hide()
+        QMessageBox.critical(None, "Critical Startup Error", error_msg)
+        sys.exit(1)
 
 if __name__ == "__main__":
-    # Import traceback for logging fatal errors
     import traceback
 
     try:
         QApplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
         app = QApplication(sys.argv)
 
-        # --- 1. Setup Application Assets (Icon & Splash) ---
-        # Define paths
+        # --- 1. Setup Application Assets ---
         assets_dir = Path(__file__).parent / "gui"
         icon_path = assets_dir / "icons" / "klyve_logo.ico"
         splash_path = assets_dir / "images" / "splash_screen.png"
 
-        # A. Window Icon
         if icon_path.exists():
             app.setWindowIcon(QIcon(str(icon_path)))
-            # logging.info("Application icon loaded.")
-        else:
-            # This is expected right now, so we won't log a warning to keep console clean
-            pass
 
-        # B. Splash Screen
-        splash = None # Initialize variable to avoid scope errors later
+        splash = None
         if splash_path.exists():
             try:
                 splash_pix = QPixmap(str(splash_path))
                 splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
                 splash.show()
-                app.processEvents() # Critical: Forces the splash to paint immediately
-                logging.info("Splash screen displayed.")
+                app.processEvents()
             except Exception as e:
-                logging.error(f"Failed to load splash screen: {e}")
+                print(f"Failed to load splash screen: {e}")
 
+        # Start initialization after a brief delay to allow splash to render
         QTimer.singleShot(3000, lambda: _initialize_klyve(app, splash))
-        #_initialize_klyve(app, splash)
 
         sys.exit(app.exec())
 
     except Exception as e:
-        # --- FATAL ERROR HANDLER ---
-        # If anything above fails, log it and show a popup to the user.
-        error_msg = f"A critical error occurred causing Klyve to shut down.\n\nError: {e}"
-        logging.critical("CRITICAL STARTUP FAILURE", exc_info=True)
+        # Only print to console if in Dev Mode
+        if config.is_dev_mode():
+            print(f"CRITICAL STARTUP FAILURE: {e}")
+            traceback.print_exc()
 
-        # We need a temporary app instance to show the message box if the main one failed
         if not QApplication.instance():
             temp_app = QApplication(sys.argv)
 
-        QMessageBox.critical(None, "Critical Startup Error", error_msg)
+        QMessageBox.critical(None, "Critical Startup Error", f"A critical error occurred:\n{e}")
         sys.exit(1)

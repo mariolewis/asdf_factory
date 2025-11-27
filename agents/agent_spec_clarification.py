@@ -76,12 +76,6 @@ class SpecClarificationAgent:
             logging.error(f"Failed during requirements consolidation: {e}")
             return f"### Error\nAn unexpected error occurred during requirements consolidation: {e}"
 
-    def _extract_tags_from_spec(self, spec_text: str) -> list[str]:
-        """A simple helper to extract potential search tags from spec text."""
-        keywords = re.findall(r'\b[A-Z][a-zA-Z]{3,}\b', spec_text)
-        tags = set(kw.lower() for kw in keywords)
-        return list(tags)
-
     def _validate_and_fix_dot_diagrams(self, markdown_text: str) -> str:
         """
         Scans the markdown for DOT blocks, attempts to render them locally to check for syntax errors,
@@ -227,19 +221,7 @@ class SpecClarificationAgent:
         """
         Analyzes a specification draft to identify ambiguities, narrowing focus on later iterations.
         """
-        kb_prefix = ""
         logging.info(f"SpecClarificationAgent: Identifying issues for iteration {iteration_count}.")
-
-        tags = self._extract_tags_from_spec(spec_text)
-        if tags:
-            try:
-                kb_results = self.db_manager.query_kb_by_tags(tags)
-                if kb_results:
-                    solution = kb_results[0]['solution']
-                    logging.info(f"SpecClarificationAgent: Found relevant clarification in Knowledge Base (ID: {kb_results[0]['entry_id']}).")
-                    kb_prefix = f"**Suggestion from Knowledge Base:**\nA similar issue was previously resolved with the following clarification: *'{solution}'*\\n\\n---\n\n"
-            except Exception as e:
-                logging.warning(f"SpecClarificationAgent: Failed to query Knowledge Base. Error: {e}")
 
         convergence_directive = ""
         if iteration_count > 1:
@@ -274,7 +256,7 @@ class SpecClarificationAgent:
                 raise ValueError("The LLM service returned an empty response when identifying issues.")
 
             logging.info("Successfully received issue analysis from LLM service.")
-            return kb_prefix + response_text
+            return response_text
 
         except Exception as e:
             logging.error(f"LLM service call failed during issue identification: {e}")
