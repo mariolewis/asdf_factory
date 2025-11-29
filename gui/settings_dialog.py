@@ -92,7 +92,7 @@ class SettingsDialog(QDialog):
         # --- LLM Providers Tab Widgets ---
         self.llm_providers_tab = QWidget()
         self.provider_combo_box = QComboBox()
-        self.provider_combo_box.addItems(["Gemini", "ChatGPT", "Claude", "Grok", "Deepseek", "Llama", "Phi-3 (Local)", "Any Other"])
+        self.provider_combo_box.addItems(["ChatGPT", "Claude", "Deepseek", "Gemini", "Grok", "Llama", "Phi-3 (Local)", "Any Other (OpenAI Compatible)"])
         self.provider_stacked_widget = QStackedWidget()
 
         self.gemini_page = QWidget()
@@ -704,7 +704,7 @@ class SettingsDialog(QDialog):
             "Claude": self.claude_page, "Grok": self.grok_page,
             "Deepseek": self.deepseek_page, "Llama": self.llama_page,
             "Phi-3 (Local)": self.phi3local_page,
-            "Any Other": self.anyother_page
+            "Any Other (OpenAI Compatible)": self.anyother_page
         }
         page_to_show = page_map.get(provider_name)
         if page_to_show:

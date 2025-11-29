@@ -23,35 +23,42 @@ def initialize_database(db_manager: KlyveDBManager):
     db_manager.create_tables()
 
     defaults = {
-        "SELECTED_LLM_PROVIDER": ("Gemini", "The currently active LLM provider."),
+        # Neutralized Defaults
+        "SELECTED_LLM_PROVIDER": ("ChatGPT", "The currently active LLM provider."), # First alphabetically
+        "CONTEXT_WINDOW_CHAR_LIMIT": ("100000", "Max characters for complex analysis context."), # Safe neutral baseline
+
+        # Blanked Models
         "GEMINI_API_KEY": ("", "API Key for Google Gemini."),
-        "GEMINI_REASONING_MODEL": ("gemini-2.5-pro", "The sophisticated model for complex tasks."),
-        "GEMINI_FAST_MODEL": ("gemini-2.5-flash-preview-05-20", "The faster model for simpler tasks."),
+        "GEMINI_REASONING_MODEL": ("", "The sophisticated model for complex tasks."),
+        "GEMINI_FAST_MODEL": ("", "The faster model for simpler tasks."),
         "OPENAI_API_KEY": ("", "API Key for OpenAI/ChatGPT."),
-        "OPENAI_REASONING_MODEL": ("gpt-4-turbo", "Default reasoning model for OpenAI."),
-        "OPENAI_FAST_MODEL": ("gpt-3.5-turbo", "Default fast model for OpenAI."),
+        "OPENAI_REASONING_MODEL": ("", "Default reasoning model for OpenAI."),
+        "OPENAI_FAST_MODEL": ("", "Default fast model for OpenAI."),
         "ANTHROPIC_API_KEY": ("", "API Key for Anthropic Claude."),
-        "ANTHROPIC_REASONING_MODEL": ("claude-3-opus-20240229", "Default reasoning model for Anthropic."),
-        "ANTHROPIC_FAST_MODEL": ("claude-3-haiku-20240307", "Default fast model for Anthropic."),
+        "ANTHROPIC_REASONING_MODEL": ("", "Default reasoning model for Anthropic."),
+        "ANTHROPIC_FAST_MODEL": ("", "Default fast model for Anthropic."),
         "CUSTOM_ENDPOINT_URL": ("", "Endpoint URL for custom/enterprise LLMs."),
         "CUSTOM_ENDPOINT_API_KEY": ("", "API Key for custom/enterprise LLMs."),
         "CUSTOM_REASONING_MODEL": ("", "Reasoning model name for custom endpoint."),
         "CUSTOM_FAST_MODEL": ("", "Fast model name for custom endpoint."),
         "GROK_API_KEY": ("", "API Key for Grok."),
-        "GROK_REASONING_MODEL": ("llama3-70b-8192", "Default reasoning model for Grok."),
-        "GROK_FAST_MODEL": ("llama3-8b-8192", "Default fast model for Grok."),
+        "GROK_REASONING_MODEL": ("", "Default reasoning model for Grok."),
+        "GROK_FAST_MODEL": ("", "Default fast model for Grok."),
         "DEEPSEEK_API_KEY": ("", "API Key for Deepseek."),
-        "DEEPSEEK_REASONING_MODEL": ("deepseek-chat", "Default reasoning model for Deepseek."),
-        "DEEPSEEK_FAST_MODEL": ("deepseek-coder", "Default fast model for Deepseek."),
+        "DEEPSEEK_REASONING_MODEL": ("", "Default reasoning model for Deepseek."),
+        "DEEPSEEK_FAST_MODEL": ("", "Default fast model for Deepseek."),
         "LLAMA_API_KEY": ("", "API Key for Llama (via Replicate)."),
-        "LLAMA_REASONING_MODEL": ("meta/meta-llama-3-70b-instruct", "Default reasoning model for Llama."),
-        "LLAMA_FAST_MODEL": ("meta/meta-llama-3-8b-instruct", "Default fast model for Llama."),
+        "LLAMA_REASONING_MODEL": ("", "Default reasoning model for Llama."),
+        "LLAMA_FAST_MODEL": ("", "Default fast model for Llama."),
+
+        # Operational Settings
         "MAX_DEBUG_ATTEMPTS": ("2", "Max automated fix attempts before escalating to the PM."),
-        "CONTEXT_WINDOW_CHAR_LIMIT": ("2500000", "Max characters for complex analysis context."),
         "LOGGING_LEVEL": ("Standard", "Verbosity of Klyve's internal logs."),
         "DEFAULT_PROJECT_PATH": ("", "Default parent directory for new target projects."),
         "DEFAULT_ARCHIVE_PATH": ("", "Default folder for saving project exports."),
         "SELECTED_DOCX_STYLE_PATH": ("data/templates/styles/default_docx_template.docx", "Path to the .docx file used for styling exported documents."),
+
+        # Context Limits (Retained as reference, but main limit is lower)
         "GEMINI_CONTEXT_LIMIT": ("2500000", "Default context limit for Gemini."),
         "OPENAI_CONTEXT_LIMIT": ("380000", "Default context limit for OpenAI."),
         "ANTHROPIC_CONTEXT_LIMIT": ("600000", "Default context limit for Anthropic."),
@@ -60,6 +67,7 @@ def initialize_database(db_manager: KlyveDBManager):
         "GROK_CONTEXT_LIMIT": ("256000", "Default context limit for Grok models."),
         "DEEPSEEK_CONTEXT_LIMIT": ("16384", "Default context limit for Deepseek models."),
         "LLAMA_CONTEXT_LIMIT": ("8000", "Default context limit for Llama models."),
+
         "INTEGRATION_PROVIDER": ("None", "The selected external project management tool provider."),
         "INTEGRATION_URL": ("", "The base URL for the external tool's API."),
         "INTEGRATION_USERNAME": ("", "The username or email for the integration account."),
