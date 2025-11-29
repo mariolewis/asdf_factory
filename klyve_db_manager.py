@@ -1,5 +1,17 @@
-import sqlite3
 import logging
+import config
+
+# Conditional Import: Use SQLCipher for Production, Standard SQLite for Dev
+if config.is_dev_mode():
+    import sqlite3
+    logging.info("Developer Mode detected: Using standard sqlite3 (Unencrypted).")
+else:
+    try:
+        from sqlcipher3 import dbapi2 as sqlite3
+        logging.info("Production Mode detected: Using sqlcipher3 (Encrypted).")
+    except ImportError:
+        import sqlite3
+        logging.critical("CRITICAL: Production mode active but 'sqlcipher3' module not found. Falling back to standard sqlite3 (UNENCRYPTED).")
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional, List
@@ -48,6 +60,14 @@ class KlyveDBManager:
     def _get_connection(self):
         """Creates and configures a new database connection."""
         conn = sqlite3.connect(self.db_path, timeout=10, check_same_thread=False)
+
+        # Apply encryption key if in Production Mode
+        if not config.is_dev_mode():
+            # Fix for Freeze: Lower iteration count for performance in per-query architecture
+            conn.execute("PRAGMA kdf_iter = 4000")
+            key = config.get_db_key()
+            conn.execute(f"PRAGMA key = '{key}'")
+
         conn.row_factory = sqlite3.Row
         return conn
 
@@ -357,6 +377,36 @@ class KlyveDBManager:
             current_desc_row = self._execute_query("SELECT description FROM FactoryConfig WHERE key = ?", (key,), fetch="one")
             description = current_desc_row[0] if current_desc_row and current_desc_row[0] else ""
         self._execute_query("INSERT OR REPLACE INTO FactoryConfig (key, value, description) VALUES (?, ?, ?)", (key, str(value), description))
+
+    def bulk_set_config_values(self, settings_dict: dict):
+        """
+        Updates multiple configuration values in a single transaction.
+        Crucial for performance in Production Mode (Encryption) to avoid
+        paying the decryption cost for every single setting.
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+
+                # 1. Fetch existing descriptions to preserve them
+                cursor.execute("SELECT key, description FROM FactoryConfig")
+                existing_map = {row['key']: row['description'] for row in cursor.fetchall()}
+
+                # 2. Prepare batch data
+                data_to_insert = []
+                for key, value in settings_dict.items():
+                    # Use existing description if available, else empty string
+                    desc = existing_map.get(key, "")
+                    data_to_insert.append((key, str(value), desc))
+
+                # 3. Execute batch update
+                cursor.executemany("INSERT OR REPLACE INTO FactoryConfig (key, value, description) VALUES (?, ?, ?)", data_to_insert)
+                conn.commit()
+                logging.info(f"Bulk updated {len(data_to_insert)} config keys in a single transaction.")
+
+        except sqlite3.Error as e:
+            logging.error(f"Bulk config update failed: {e}")
+            raise
 
     def get_config_value(self, key: str) -> Optional[str]:
         row = self._execute_query("SELECT value FROM FactoryConfig WHERE key = ?", (key,), fetch="one")

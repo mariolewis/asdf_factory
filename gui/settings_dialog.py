@@ -811,8 +811,9 @@ class SettingsDialog(QDialog):
                 "INTEGRATION_USERNAME": self.jira_username_input.text(),
                 "INTEGRATION_API_TOKEN": self.jira_token_input.text()
             }
-            for key, value in settings_to_save.items():
-                db_manager.set_config_value(key, value)
+            # Use bulk update to avoid repeated encryption overhead
+            db_manager.bulk_set_config_values(settings_to_save)
+
             self.orchestrator._llm_service = None
             logging.info("Settings saved. LLM service will be re-initialized on next use.")
             self.accept()

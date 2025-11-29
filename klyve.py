@@ -117,11 +117,11 @@ def _initialize_klyve(app, splash):
         # Initialize DB Manager (needed to read config for logging)
         db_manager = KlyveDBManager(db_path=str(db_path))
 
-        # --- 2. Setup Logging ---
-        _setup_logging(db_manager)
-
-        # --- 3. Initialize Database Content ---
+        # --- 2. Initialize Database Content (Create Tables First) ---
         initialize_database(db_manager)
+
+        # --- 3. Setup Logging ---
+        _setup_logging(db_manager)
 
         # --- 4. Robust Stylesheet Loading ---
         try:
