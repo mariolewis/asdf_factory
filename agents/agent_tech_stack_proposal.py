@@ -7,7 +7,7 @@ This module contains the TechStackProposalAgent class.
 import logging
 import textwrap
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import subprocess
 import re
 from pathlib import Path
@@ -40,8 +40,7 @@ class TechStackProposalAgent:
         prompt = vault.get_prompt("agent_tech_stack_proposal__prompt_39").format(app_spec_text=app_spec_text, guidelines=guidelines)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
-            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            result = json.loads(cleaned_response)
+            result = parse_llm_json(response_text)
             if "compatible" in result and "recommendation" in result:
                 return result
             raise ValueError("LLM response was missing required keys.")

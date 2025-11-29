@@ -1,6 +1,6 @@
 import logging
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 # ... (module docstring)
@@ -33,7 +33,7 @@ class ImpactAnalysisAgent_AppTarget:
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            analysis_result = json.loads(cleaned_response)
+            analysis_result = parse_llm_json(cleaned_response)
 
             if all(k in analysis_result for k in ["impact_rating", "impact_summary", "impacted_artifact_ids", "technical_preview"]):
                 return analysis_result

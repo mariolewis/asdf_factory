@@ -12,7 +12,7 @@ that exceed a configurable complexity threshold.
 import logging
 import textwrap
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class ProjectScopingAgent:
@@ -57,7 +57,7 @@ class ProjectScopingAgent:
                     raise ValueError("No JSON object found in the LLM response.")
 
                 json_str = json_match.group(0)
-                result = json.loads(json_str)
+                result = parse_llm_json(json_str)
 
                 if "complexity_analysis" not in result or "risk_assessment" not in result:
                     raise ValueError("LLM response was valid JSON but missed required keys ('complexity_analysis' or 'risk_assessment').")

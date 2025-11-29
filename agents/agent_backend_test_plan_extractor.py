@@ -3,7 +3,7 @@
 import logging
 import textwrap
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class BackendTestPlanExtractorAgent:
@@ -44,7 +44,7 @@ class BackendTestPlanExtractorAgent:
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            json.loads(cleaned_response) # Final validation
+            parse_llm_json(cleaned_response) # Final validation
             return cleaned_response
 
         except Exception as e:

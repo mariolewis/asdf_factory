@@ -4,7 +4,7 @@ import logging
 import textwrap
 import json
 import re
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 from klyve_db_manager import KlyveDBManager
 import vault
 
@@ -55,7 +55,7 @@ class PlanningAgent_AppTarget:
                 raise ValueError("LLM response did not contain a valid JSON array.")
 
             cleaned_response = json_match.group(0)
-            parsed_json = json.loads(cleaned_response)
+            parsed_json = parse_llm_json(cleaned_response)
             logging.info(f"Successfully generated {len(parsed_json)} backlog items.")
             return cleaned_response
         except Exception as e:
@@ -88,7 +88,7 @@ class PlanningAgent_AppTarget:
 
             cleaned_response = json_match.group(0)
             # Final validation check
-            json.loads(cleaned_response)
+            parse_llm_json(cleaned_response)
             return cleaned_response
         except Exception as e:
             logging.error(f"Failed to generate reference backlog: {e}", exc_info=True)
@@ -128,7 +128,7 @@ class PlanningAgent_AppTarget:
 
             # A more robust cleaning and validation step
             cleaned_response = response_json_str.strip().removeprefix("```json").removesuffix("```").strip()
-            parsed = json.loads(cleaned_response)
+            parsed = parse_llm_json(cleaned_response)
 
             if not isinstance(parsed, dict) or "development_plan" not in parsed:
                 raise ValueError("LLM returned invalid JSON structure for development plan.")
@@ -166,7 +166,7 @@ class PlanningAgent_AppTarget:
             # --- END OF CORRECTION ---
 
             # Final validation check
-            json.loads(cleaned_response)
+            parse_llm_json(cleaned_response)
             logging.info("Successfully refined development plan from API.")
             return cleaned_response
         except Exception as e:

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class VerificationAgent_AppTarget:
@@ -49,7 +49,7 @@ class VerificationAgent_AppTarget:
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            details = json.loads(cleaned_response)
+            details = parse_llm_json(cleaned_response)
             if "command" in details and "required_tools" in details:
                 return details
             else:

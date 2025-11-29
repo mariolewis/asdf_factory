@@ -1,6 +1,6 @@
 import logging
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 """
@@ -43,7 +43,7 @@ class FixPlannerAgent_AppTarget:
 
             # Validate that the response is a JSON array
             if cleaned_response.startswith('[') and cleaned_response.endswith(']'):
-                json.loads(cleaned_response) # Final validation check
+                parse_llm_json(cleaned_response) # Final validation check
                 return cleaned_response
             else:
                 logging.error(f"FixPlannerAgent received non-JSON-array response: {cleaned_response}")

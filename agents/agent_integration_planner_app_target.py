@@ -1,6 +1,6 @@
 import logging
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class IntegrationPlannerAgent:
@@ -39,7 +39,7 @@ class IntegrationPlannerAgent:
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip()
-            json.loads(cleaned_response) # Validate if the response is a valid JSON object
+            parse_llm_json(cleaned_response) # Validate if the response is a valid JSON object
             return cleaned_response
 
         except json.JSONDecodeError as e:

@@ -1,6 +1,6 @@
 import logging
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class OrchestrationCodeAgent:

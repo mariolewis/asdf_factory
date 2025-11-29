@@ -3,7 +3,7 @@
 import logging
 import textwrap
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class SprintPreExecutionCheckAgent:
@@ -45,7 +45,7 @@ class SprintPreExecutionCheckAgent:
             # Clean the response to remove potential markdown fences
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
             # Final validation check
-            json.loads(cleaned_response)
+            parse_llm_json(cleaned_response)
             return cleaned_response
         except Exception as e:
             logging.error(f"SprintPreExecutionCheckAgent failed: {e}")

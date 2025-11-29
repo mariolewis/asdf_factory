@@ -271,3 +271,45 @@ class CustomEndpointAdapter(LLMService):
             logging.error(f"Custom Endpoint API call failed: {e}")
             # Re-raise the exception to be caught by the worker
             raise e
+
+import json
+import ast
+import re
+
+def parse_llm_json(llm_output: str):
+    """
+    Robustly extracts and parses JSON from LLM output.
+    Handles markdown fences, single quotes (lazy JSON), and trailing commas.
+    """
+    # 1. Strip Markdown Fences
+    clean_text = llm_output.strip()
+    if "```" in clean_text:
+        # Regex to find content inside ```json ... ``` or just ``` ... ```
+        match = re.search(r"```(?:json)?(.*?)```", clean_text, re.DOTALL)
+        if match:
+            clean_text = match.group(1).strip()
+
+    # 2. Attempt Strict Parsing
+    try:
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        pass
+
+    # 3. Attempt Python Literal Evaluation (Handles single quotes)
+    try:
+        # Safety check: ensure it looks like a dict/list before eval
+        if clean_text.startswith("{") or clean_text.startswith("["):
+            return ast.literal_eval(clean_text)
+    except (ValueError, SyntaxError):
+        pass
+
+    # 4. Last Resort: Regex cleanup for common JSON errors (e.g., trailing commas)
+    # This is risky, so we only do it if the above fail.
+    try:
+        # Remove trailing commas before closing braces/brackets
+        clean_text = re.sub(r",\s*([\]}])", r"\1", clean_text)
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        pass
+
+    raise ValueError(f"Could not parse valid JSON/Dict from response: {llm_output[:50]}...")

@@ -10,7 +10,7 @@ import logging
 import json
 import textwrap
 from typing import Tuple, Optional
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class BuildScriptGeneratorAgent:
@@ -48,8 +48,7 @@ class BuildScriptGeneratorAgent:
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
-            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            result = json.loads(cleaned_response)
+            result = parse_llm_json(response_text)
 
             filename = result.get("filename")
             content = result.get("content")

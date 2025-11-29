@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import Path
 from datetime import datetime
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 
 class AutomatedUITestScriptAgent:
     """
@@ -55,8 +55,7 @@ class AutomatedUITestScriptAgent:
             prompt = self._build_prompt(sprint_items_json, ux_blueprint_json)
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 
-            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            result_json = json.loads(cleaned_response)
+            result_json = parse_llm_json(response_text)
 
             script_code = result_json.get("script_code")
             test_plan = result_json.get("test_plan")

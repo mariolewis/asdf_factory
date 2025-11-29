@@ -1,7 +1,7 @@
 import logging
 import json
 import textwrap
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 """
@@ -61,7 +61,7 @@ class RefactoringPlannerAgent_AppTarget:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
             if cleaned_response.startswith("[") and cleaned_response.endswith("]"):
-                response_data = json.loads(cleaned_response)
+                response_data = parse_llm_json(cleaned_response)
                 if isinstance(response_data, list) and len(response_data) > 0 and response_data[0].get("error"):
                     raise ValueError(response_data[0]["error"])
                 return cleaned_response
@@ -83,7 +83,7 @@ class RefactoringPlannerAgent_AppTarget:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
             if cleaned_response.startswith("[") and cleaned_response.endswith("]"):
-                json.loads(cleaned_response) # Final validation
+                parse_llm_json(cleaned_response) # Final validation
                 return cleaned_response
             else:
                 raise ValueError("AI response was not in the expected JSON array format.")

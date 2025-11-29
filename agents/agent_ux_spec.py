@@ -11,7 +11,7 @@ import json
 import re
 import subprocess
 from pathlib import Path
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class UX_Spec_Agent:
@@ -146,7 +146,7 @@ class UX_Spec_Agent:
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
-            json.loads(cleaned_response)
+            parse_llm_json(cleaned_response)
             return cleaned_response
         except Exception as e:
             logging.error(f"UX_Spec_Agent failed to parse spec: {e}")
@@ -181,7 +181,7 @@ class UX_Spec_Agent:
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
-            json.loads(cleaned_response)
+            parse_llm_json(cleaned_response)
             return cleaned_response
         except Exception as e:
             return json.dumps({"error": f"Details: {e}"}, indent=2)

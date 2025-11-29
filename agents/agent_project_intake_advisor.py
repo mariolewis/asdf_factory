@@ -4,7 +4,7 @@ import logging
 import textwrap
 import re
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class ProjectIntakeAdvisorAgent:
@@ -46,8 +46,8 @@ class ProjectIntakeAdvisorAgent:
                 raise ValueError("LLM response did not contain a valid JSON object.")
 
             cleaned_json = json_match.group(0)
-            # Validate that it's proper JSON
-            json.loads(cleaned_json)
+            # Validate using robust parser
+            parse_llm_json(cleaned_json)
             return cleaned_json
         except Exception as e:
             logging.error(f"ProjectIntakeAdvisorAgent failed to get or parse LLM response: {{e}}")

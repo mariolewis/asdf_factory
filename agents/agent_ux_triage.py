@@ -7,7 +7,7 @@ This module contains the UX_Triage_Agent class.
 import logging
 import textwrap
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class UX_Triage_Agent:
@@ -40,7 +40,7 @@ class UX_Triage_Agent:
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response_text = response_text.strip().replace("```json", "").replace("```", "")
-            result = json.loads(cleaned_response_text)
+            result = parse_llm_json(cleaned_response_text)
             logging.info("Successfully received initial UX triage analysis.")
             return result
         except Exception as e:

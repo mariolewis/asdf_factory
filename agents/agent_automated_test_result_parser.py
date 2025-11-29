@@ -2,7 +2,7 @@
 import logging
 import textwrap
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 
 class AutomatedTestResultParserAgent:
     """
@@ -48,8 +48,7 @@ class AutomatedTestResultParserAgent:
             prompt = self._build_prompt(test_output)
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
 
-            cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            result = json.loads(cleaned_response)
+            result = parse_llm_json(response_text)
 
             if "success" in result and "summary" in result:
                 logging.info(f"Test parsing complete. Success: {result['success']}")

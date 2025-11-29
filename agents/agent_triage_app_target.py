@@ -5,7 +5,7 @@ import re
 from klyve_db_manager import KlyveDBManager
 import textwrap
 import json
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class TriageAgent_AppTarget:
@@ -36,7 +36,7 @@ class TriageAgent_AppTarget:
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            file_paths = json.loads(cleaned_response)
+            file_paths = parse_llm_json(cleaned_response)
             if isinstance(file_paths, list):
                 logging.info(f"Stack trace analysis identified {len(file_paths)} relevant files.")
                 return file_paths

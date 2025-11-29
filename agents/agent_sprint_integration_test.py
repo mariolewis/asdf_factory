@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Tuple, Optional
 
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 from klyve_db_manager import KlyveDBManager
 
 class SprintIntegrationTestAgent:
@@ -77,7 +77,7 @@ class SprintIntegrationTestAgent:
                 raise ValueError("LLM response did not contain a valid JSON object for the test plan.")
 
             try:
-                result = json.loads(json_match.group(0))
+                result = parse_llm_json(json_match.group(0))
             except json.JSONDecodeError:
                 # Fallback: parse as Python dictionary (handles single quotes)
                 result = ast.literal_eval(json_match.group(0))

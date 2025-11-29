@@ -4,7 +4,7 @@ import logging
 import json
 import textwrap
 from typing import Optional, List, Dict
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 import vault
 
 class TestEnvironmentAdvisorAgent:
@@ -35,7 +35,7 @@ class TestEnvironmentAdvisorAgent:
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
-            tasks = json.loads(cleaned_response)
+            tasks = parse_llm_json(cleaned_response)
             if isinstance(tasks, list):
                 return tasks
             return None

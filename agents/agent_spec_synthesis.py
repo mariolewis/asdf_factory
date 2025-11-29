@@ -9,7 +9,7 @@ import re
 from gui.utils import render_markdown_to_html
 from pathlib import Path
 from PySide6.QtGui import QTextDocument
-from llm_service import LLMService
+from llm_service import LLMService, parse_llm_json
 from klyve_db_manager import KlyveDBManager
 from agents.agent_report_generator import ReportGeneratorAgent
 from master_orchestrator import MasterOrchestrator
