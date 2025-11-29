@@ -97,7 +97,7 @@ API Keys: Your API keys are stored locally in an encrypted database on your mach
 (End of Privacy Policy)"""
 
 THIRD_PARTY_NOTICES_TEXT = """THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
-Generated: 2025-11-26
+Generated: 2025-11-29
 =========================================================================
 This software includes components developed by third parties.
 The following are the license notices and copyright information for these components.
@@ -350,6 +350,17 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
+
+
+-------------------------------------------------------------------------
+COMPONENT: deepseek (1.0.0)
+URL: https://github.com/deskpai/deepseek
+LICENSE SUMMARY: Apache-2.0
+-------------------------------------------------------------------------
+
+License file not automatically found.
+
+Please refer to the project homepage for license terms: https://github.com/deskpai/deepseek
 
 
 -------------------------------------------------------------------------
@@ -5373,8 +5384,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 -------------------------------------------------------------------------
 COMPONENT: pillow (12.0.0)
-URL: https://pillow.readthedocs.io/en/stable/about.html
-LICENSE SUMMARY: MIT-CMU
+URL: N/A
+LICENSE SUMMARY: See full text below
 -------------------------------------------------------------------------
 
 The Python Imaging Library (PIL) is
@@ -8573,6 +8584,35 @@ SOFTWARE.
 
 
 -------------------------------------------------------------------------
+COMPONENT: sqlcipher3-wheels (0.5.2)
+URL: N/A
+LICENSE SUMMARY: zlib/libpng
+-------------------------------------------------------------------------
+
+Copyright (c) 2004-2007 Gerhard Häring
+
+This software is provided 'as-is', without any express or implied warranty. In
+no event will the authors be held liable for any damages arising from the use
+of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it freely,
+subject to the following restrictions:
+
+    1. The origin of this software must not be misrepresented; you must not
+       claim that you wrote the original software. If you use this software in
+       a product, an acknowledgment in the product documentation would be
+       appreciated but is not required.
+
+    2. Altered source versions must be plainly marked as such, and must not be
+       misrepresented as being the original software.
+
+    3. This notice may not be removed or altered from any source distribution.
+
+
+
+
+-------------------------------------------------------------------------
 COMPONENT: tenacity (9.1.2)
 URL: https://github.com/jd/tenacity
 LICENSE SUMMARY: Apache 2.0
@@ -9291,6 +9331,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
 
 
 """
