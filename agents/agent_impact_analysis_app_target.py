@@ -1,6 +1,7 @@
 import logging
 import json
 from llm_service import LLMService
+import vault
 
 # ... (module docstring)
 
@@ -28,28 +29,7 @@ class ImpactAnalysisAgent_AppTarget:
         import textwrap
         logging.info(f"Running robust full analysis for: {change_request_desc[:80]}...")
         try:
-            prompt = textwrap.dedent(f"""
-                You are a system architect analyzing a change request. Your task is to determine the parameters to call a function `record_analysis(rating, summary, ids, preview)`.
-
-                **MANDATORY INSTRUCTIONS:**
-                1.  **Prioritize the Change Request:** Your analysis MUST focus primarily on the 'Change Request Description'. The 'Final Application Specification' is for context only. If the CR is small, your analysis MUST be small.
-                2.  **Content Separation:** The `summary` parameter MUST be a prose paragraph. The `preview` parameter MUST be a Markdown bulleted list of specific files/components.
-                3.  **JSON Output:** Your entire response MUST be a single, valid JSON object representing the arguments for the function call. Do not include any other text.
-
-                **--- Function and Parameters ---**
-                `record_analysis(impact_rating, impact_summary, impacted_artifact_ids, technical_preview)`
-                - `impact_rating`: (String) "Minor", "Medium", or "Major".
-                - `impact_summary`: (String) A prose paragraph describing the scope.
-                - `impacted_artifact_ids`: (Array of Strings) IDs from the RoWD of components to be changed. Can be empty.
-                - `technical_preview`: (String) A Markdown bulleted list of files/components to be created or modified.
-
-                **--- INPUTS ---**
-                1. Change Request Description: {change_request_desc}
-                2. Finalized Application Specification (for context): {final_spec_text}
-                3. Record-of-Work-Done (RoWD) - Existing Artifacts: {rowd_json}
-
-                **--- JSON Arguments for `record_analysis` function ---**
-            """)
+            prompt = vault.get_prompt("agent_impact_analysis_app_target__prompt_31").format(change_request_desc=change_request_desc, final_spec_text=final_spec_text, rowd_json=rowd_json)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")

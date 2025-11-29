@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Tuple, Dict, List
 from llm_service import LLMService
+import vault
 
 class VerificationAgent_AppTarget:
     """
@@ -44,22 +45,7 @@ class VerificationAgent_AppTarget:
                 "You MUST generate a command that uses one of these specific tools. Do not suggest a tool that is not in this list."
             )
 
-        prompt = textwrap.dedent(f"""
-            Analyze the following Technical Specification and the list of installed tools to determine the command needed to run unit tests.
-
-            {context_instruction}
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **Structure:** The JSON object must have two keys: "command" (a string with the exact test command, e.g., "pytest") and "required_tools" (a JSON array of strings).
-            3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object.
-
-            **--- Technical Specification ---**
-            {tech_spec_text}
-            **--- End Specification ---**
-
-            **--- JSON Output ---**
-        """)
+        prompt = vault.get_prompt("agent_verification_app_target__prompt_47").format(context_instruction=context_instruction, tech_spec_text=tech_spec_text)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")

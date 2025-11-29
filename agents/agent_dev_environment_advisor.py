@@ -5,6 +5,7 @@ import json
 import textwrap
 from typing import Optional, List, Dict
 from llm_service import LLMService
+import vault
 
 class DevEnvironmentAdvisorAgent:
     """
@@ -30,22 +31,7 @@ class DevEnvironmentAdvisorAgent:
         """
         logging.info(f"Generating development environment setup tasks for OS: {target_os}")
 
-        prompt = textwrap.dedent(f"""
-            You are an expert DevOps engineer. Your task is to parse ONLY the "Development Environment Setup Guide" section from the provided Technical Specification and create a step-by-step plan for a "{target_os}" environment.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of objects `[]`.
-            2.  **Object Schema:** Each object MUST have two keys: "tool_name" (a string, e.g., "Python 3.9", "Node.js") and "instructions" (a string detailing the setup steps for that tool).
-            3.  **Focus:** You MUST ignore all other sections of the document (like testing, architecture, etc.) and focus exclusively on the development environment setup. If no such section exists, return an empty array.
-            4.  **Use Markdown:** The "instructions" value MUST be formatted using simple Markdown for clarity (e.g., bulleted lists with `*`, bolding with `**`, and code snippets with backticks).
-            5.  **No Other Text:** Do not include any text or explanations outside of the raw JSON array.
-
-            **--- Technical Specification ---**
-            {tech_spec_text}
-            **--- End of Specification ---**
-
-            **JSON Array Output:**
-        """)
+        prompt = vault.get_prompt("agent_dev_environment_advisor__prompt_33").format(target_os=target_os, tech_spec_text=tech_spec_text)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")

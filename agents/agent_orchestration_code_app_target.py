@@ -1,6 +1,7 @@
 import logging
 import json
 from llm_service import LLMService
+import vault
 
 class OrchestrationCodeAgent:
     """
@@ -32,29 +33,7 @@ class OrchestrationCodeAgent:
                  have been applied.
         """
         try:
-            prompt = f"""
-            You are an expert, precise, and careful software engineer performing a code refactoring task.
-            Your task is to apply a series of specific modifications to an original source code file.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Apply ONLY the specified modifications.** Do not add, change, or delete any other part of the code. Do not add any new logic or comments.
-            2.  **Output the Complete File:** Your entire response MUST be the complete, full text of the source code file after the modifications have been applied. Do not output only the changed snippets, diffs, or any explanations.
-            3.  **Preserve Formatting:** Maintain the original code's indentation and formatting as much as possible.
-
-            **--- INPUTS ---**
-
-            **1. Original Source Code:**
-            ```
-            {original_code}
-            ```
-
-            **2. Modifications to Apply (JSON):**
-            ```json
-            {modifications_json}
-            ```
-
-            **--- Full Source Code After Modifications ---**
-            """
+            prompt = vault.get_prompt("agent_orchestration_code_app_target__prompt_35").format(original_code=original_code, modifications_json=modifications_json)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             # The raw text of the response is the full, modified code file.

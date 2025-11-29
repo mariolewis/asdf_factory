@@ -1,5 +1,6 @@
 import logging
 from llm_service import LLMService
+import vault
 
 # ... (module docstring & logging config)
 
@@ -30,29 +31,7 @@ class TestResultEvaluationAgent_AppTarget:
         structured, easy-to-read summary.
         """
         try:
-            prompt = f"""
-            You are a highly efficient Software Quality Assurance (QA) Analyst.
-            Your task is to analyze the provided UI test results and produce a clear, structured summary of ONLY the failed test cases.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Identify Failures:** Carefully parse the input text, which is a completed test plan. Identify all rows where the result or status is marked as "Fail", "Failed", or "Failure".
-            2.  **Ignore Passes:** Do not include any information about tests that passed. Your output must only contain the failures.
-            3.  **Structured Summary:** For each failed test case, you MUST extract and present the following information in a clear, readable format:
-                -   The Test Case ID
-                -   The Test Scenario
-                -   The full Steps to Reproduce the failure
-                -   The Expected Result
-                -   The Actual Result that was recorded
-            4.  **No Failures Scenario:** If you analyze the input and find that absolutely no tests have failed, your entire response must be the single phrase: "ALL_TESTS_PASSED". Do not include any other text.
-            5.  **Output Format:** Structure the output for the failures logically. Use Markdown for clarity (e.g., headings for each failed test case).
-
-            **--- Completed UI Test Results ---**
-            ```
-            {test_results_text}
-            ```
-
-            **--- Summary of Failed Tests ---**
-            """
+            prompt = vault.get_prompt("agent_test_result_evaluation_app_target__prompt_33").format(test_results_text=test_results_text)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             return response_text.strip()

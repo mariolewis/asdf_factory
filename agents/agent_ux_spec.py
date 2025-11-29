@@ -12,6 +12,7 @@ import re
 import subprocess
 from pathlib import Path
 from llm_service import LLMService
+import vault
 
 class UX_Spec_Agent:
     """
@@ -56,17 +57,7 @@ class UX_Spec_Agent:
                 logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
 
                 # Use standard string to avoid brace collision
-                fix_prompt_template = textwrap.dedent("""
-                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
-                **Error:** <<ERROR_MSG>>
-                **Invalid Code:**
-                ```dot
-                <<ORIGINAL_CODE>>
-                ```
-                **Task:** Fix the syntax error so it compiles.
-                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
-                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
-                """)
+                fix_prompt_template = vault.get_prompt("agent_ux_spec__fix_prompt_template_59")
 
                 fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
                 fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
@@ -94,71 +85,10 @@ class UX_Spec_Agent:
 
         template_instruction = ""
         if template_content:
-            template_instruction = textwrap.dedent(f"""
-            **CRITICAL TEMPLATE INSTRUCTION:**
-            Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template.
-            Populate the sections of the template with content derived from the inputs.
-            DO NOT invent new sections. DO NOT change the names of the headings from the template.
-            --- TEMPLATE START ---
-            {template_content}
-            --- TEMPLATE END ---
-            """)
+            template_instruction = vault.get_prompt("agent_ux_spec__template_instruction_97").format(template_content=template_content)
 
         # Use standard string to avoid brace collisions
-        prompt_template = textwrap.dedent("""
-            You are a senior UX Designer and Business Analyst. Your task is to create a single, comprehensive, and consolidated UX/UI Specification document in Markdown format.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown document. Do not include any preamble, introduction, or conversational text.
-
-            <<TEMPLATE_INSTRUCTION>>
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze Holistically:** Analyze the provided Project Brief and User Personas to understand the application's goals and target audience.
-            2.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. Paragraphs MUST be separated by a full blank line.
-
-            **SECTION REQUIREMENTS:**
-            If no template is provided, you MUST generate a document containing the following sections in this exact order:
-
-            `## 1. User Personas`
-            `## 2. Epics`
-            `## 3. Features (grouped by Epic)`
-            `## 4. User Stories (grouped by Feature)`
-
-            `## 5. Inferred Screens & Components`
-            **CRITICAL:** In this section, you MUST first generate a **"Core Journey Diagram"**. **IMMEDIATELY AFTER** the **"Core Journey Diagram"**, you MUST generate a list of screens.
-
-            **DIAGRAMMING RULE (Professional Graphviz):**
-            - Use the **DOT language** inside a ```dot ... ``` code block.
-            - **SCOPE:** Diagram ONLY the main **"Happy Path"** (Critical User Flow) of the Core Journey. Max 10-12 nodes.
-            - **CRITICAL:** Use `digraph G {` (directed graph).
-            - **Layout:** Use `rankdir=TB` (Top-to-Bottom). This ensures the diagram fits vertically on the page.
-            - **Style:** `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"]; node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"]; edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-
-            `## 6. Prescriptive Style Guide (for Code Agent)`
-            **CRITICAL:** Generate specific, tech-agnostic rules using this exact format:
-                ### A. Color Palette
-                * `accent_color`: `"#007ACC"`
-                * `primary_text_color`: `"#F0F0F0"`
-                * `secondary_text_color`: `"#A9B7C6"`
-                * `primary_background_color`: `"#202021"`
-                * `secondary_background_color`: `"#2A2A2B"`
-                * `error_color`: `"#CC7832"`
-                ### B. Typography
-                * `font_family`: `"Inter, Segoe UI, sans-serif"`
-                ### C. Component Rules
-                * **Primary Button:** `background: accent_color; color: primary_text_color; min-height: 35px;`
-                * **Text Input:** `background: primary_background_color; border: 1px solid secondary_background_color; padding: 8px;`
-
-            ---
-            **INPUT 1: Project Brief**
-            <<PROJECT_BRIEF>>
-
-            **INPUT 2: Confirmed User Personas**
-            <<PERSONAS_STR>>
-            ---
-
-            **Consolidated UX/UI Specification (Markdown):**
-        """)
+        prompt_template = vault.get_prompt("agent_ux_spec__prompt_template_108")
 
         # Manually inject variables
         prompt = prompt_template.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
@@ -186,46 +116,10 @@ class UX_Spec_Agent:
 
         template_instruction = ""
         if template_content:
-            template_instruction = textwrap.dedent(f"""
-            **CRITICAL TEMPLATE INSTRUCTION:**
-            The original draft was based on a template. Your refined output MUST also strictly and exactly follow the structure, headings, and formatting of that same template.
-            --- TEMPLATE START ---
-            {template_content}
-            --- TEMPLATE END ---
-            """)
+            template_instruction = vault.get_prompt("agent_ux_spec__template_instruction_189").format(template_content=template_content)
 
         # Use standard string
-        prompt_template = textwrap.dedent("""
-            You are a senior UX Designer revising a document. Your task is to refine an existing draft of a UX/UI Specification based on specific feedback from a Product Manager.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the refined document. Do not include any preamble.
-
-            <<TEMPLATE_INSTRUCTION>>
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Preserve Header**: The document has a standard header. Preserve it.
-            2.  **Modify Body Only**: Incorporate the PM's feedback.
-            3.  **RAW MARKDOWN ONLY**: Return only the raw content.
-
-            **DIAGRAMMING RULE (Professional Graphviz):**
-            - Use the **DOT language** inside a ```dot ... ``` code block.
-            - **SCOPE:** Maintain the scope of the **"Core Journey Diagram"**.
-            - **CRITICAL:** Use `digraph G {` (directed graph).
-            - **Layout:** Use `rankdir=TB` (Top-to-Bottom). This ensures the diagram fits vertically on the page.
-            - **Style:** `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"]; node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"]; edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-
-            **--- INPUT 1: Current Draft ---**
-            ```markdown
-            <<CURRENT_DRAFT>>
-            ```
-
-            **--- INPUT 2: PM Feedback to Address ---**
-            ```
-            <<PM_FEEDBACK>>
-            ```
-
-            **--- Refined UX/UI Specification Document (Markdown) ---**
-        """)
+        prompt_template = vault.get_prompt("agent_ux_spec__prompt_template_198")
 
         prompt = prompt_template.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
         prompt = prompt.replace("<<CURRENT_DRAFT>>", current_draft)
@@ -247,17 +141,7 @@ class UX_Spec_Agent:
     def parse_final_spec_and_generate_blueprint(self, final_spec_markdown: str) -> str:
         # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Parsing final spec to generate JSON blueprint...")
-        prompt_template = textwrap.dedent("""
-            You are a meticulous data extraction system. Your task is to analyze a final UX/UI Specification...
-            **MANDATORY INSTRUCTIONS:**
-            1. **JSON Output:** Your response MUST be a single, valid JSON object.
-            ...
-            ---
-            **INPUT: Final UX/UI Specification (Markdown)**
-            <<FINAL_SPEC_MARKDOWN>>
-            ---
-            **OUTPUT: Structural UI Blueprint (JSON Object):**
-        """)
+        prompt_template = vault.get_prompt("agent_ux_spec__prompt_template_250")
         prompt = prompt_template.replace("<<FINAL_SPEC_MARKDOWN>>", final_spec_markdown)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
@@ -272,18 +156,7 @@ class UX_Spec_Agent:
         # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Generating user journeys...")
         personas_str = "- " + "\n- ".join(personas)
-        prompt = textwrap.dedent(f"""
-            You are a senior UX Designer...
-            **MANDATORY INSTRUCTIONS:**
-            1. **Identify Journeys:**...
-            ---
-            **Project Brief:**
-            {project_brief}
-            **User Personas:**
-            {personas_str}
-            ---
-            **Core User Journeys (Numbered List):**
-        """)
+        prompt = vault.get_prompt("agent_ux_spec__prompt_275").format(project_brief=project_brief, personas_str=personas_str)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text.strip()
@@ -293,16 +166,7 @@ class UX_Spec_Agent:
     def identify_screens_from_journeys(self, user_journeys: str) -> str:
         # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Identifying screens from user journeys...")
-        prompt = textwrap.dedent(f"""
-            You are a senior UI/UX Architect...
-            **MANDATORY INSTRUCTIONS:**
-            1. **Analyze:** Read the user journeys...
-            ---
-            **Core User Journeys:**
-            {user_journeys}
-            ---
-            **Required Screens/Views (Numbered List):**
-        """)
+        prompt = vault.get_prompt("agent_ux_spec__prompt_296").format(user_journeys=user_journeys)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text.strip()
@@ -312,17 +176,7 @@ class UX_Spec_Agent:
     def generate_screen_blueprint(self, screen_name: str, pm_description: str) -> str:
         # ... (Keep existing logic)
         logging.info(f"UX_Spec_Agent: Generating blueprint for screen: {screen_name}")
-        prompt_template = textwrap.dedent("""
-            You are a meticulous UI/UX Architect...
-            ...
-            ---
-            **Screen to Design:**
-            <<SCREEN_NAME>>
-            **Product Manager's Description:**
-            <<PM_DESCRIPTION>>
-            ---
-            **Generated Screen Blueprint (JSON Object):**
-        """)
+        prompt_template = vault.get_prompt("agent_ux_spec__prompt_template_315")
         prompt = prompt_template.replace("<<SCREEN_NAME>>", screen_name).replace("<<PM_DESCRIPTION>>", pm_description)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
@@ -335,15 +189,7 @@ class UX_Spec_Agent:
     def generate_style_guide(self, pm_description: str) -> str:
         # ... (Keep existing logic)
         logging.info("UX_Spec_Agent: Generating Theming & Style Guide...")
-        prompt = textwrap.dedent(f"""
-            You are a senior UI/UX Designer...
-            ...
-            ---
-            **Product Manager's Description:**
-            {pm_description}
-            ---
-            **Theming & Style Guide (Markdown):**
-        """)
+        prompt = vault.get_prompt("agent_ux_spec__prompt_338").format(pm_description=pm_description)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text.strip()

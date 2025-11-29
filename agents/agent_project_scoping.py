@@ -13,6 +13,7 @@ import logging
 import textwrap
 import json
 from llm_service import LLMService
+import vault
 
 class ProjectScopingAgent:
     """
@@ -46,43 +47,7 @@ class ProjectScopingAgent:
 
 
         # After (REPLACE the old prompt with this new one)
-        prompt = textwrap.dedent(f"""
-            You are the Klyve's internal Resource Forecaster. Your task is to perform a holistic analysis on the provided specification to produce a realistic and consistent Delivery Assessment.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **Analyze Holistically:** You MUST read the entire specification text to inform all of your ratings.
-            3.  **Qualitative Rubric:** You MUST use the following qualitative guidelines to determine your ratings for the `complexity_analysis`:
-                - **`feature_scope`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". A simple utility is "Low". A standard multi-feature app is "Medium". A large system with distinct modules is "High". An enterprise-scale system (e.g., ERP) is "Very Large".
-                - **`data_schema`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". A few simple tables is "Low". A standard relational schema is "Medium". A schema with complex joins or non-relational data is "High". A distributed, high-throughput, or extremely complex domain model is "Very Large".
-                - **`ui_ux`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". A simple CLI/form-based UI is "Low". A standard multi-screen CRUD application is "Medium". A highly interactive dashboard with real-time data is "High". A system with specialized graphical editors or novel interaction paradigms is "Very Large".
-                - **`integrations`**: Your rating MUST be one of "Low", "Medium", "High", or "Very Large". No external calls is "Low". A few standard REST APIs is "Medium". Multiple disparate systems or legacy platforms is "High". Integration with hardware, proprietary protocols, or a large microservice mesh is "Very Large".
-            4. **Risk Assessment Logic:** After the complexity analysis, you MUST determine the `overall_risk_level` using this two-step logic:
-                a. **Baseline Risk from Size:** Determine a baseline risk (Low, Medium, High, Critical) based on the sheer length and density of the specification text.
-                b. **Adjust Risk for Complexity:** You MUST increase the final `overall_risk_level` above the baseline if your `complexity_analysis` reveals significant inherent difficulty (e.g., two or more "High" ratings).
-            5. **JSON Schema & Summary:** Adhere to the required JSON schema and write a non-technical summary for the PM.
-            6.  **JSON Schema:** The JSON object MUST strictly adhere to the following schema:
-                {{
-                "complexity_analysis": {{
-                    "feature_scope": {{"rating": "...", "justification": "..."}},
-                    "data_schema": {{"rating": "...", "justification": "..."}},
-                    "ui_ux": {{"rating": "...", "justification": "..."}},
-                    "integrations": {{"rating": "...", "justification": "..."}}
-                }},
-                "risk_assessment": {{
-                    "overall_risk_level": "...",
-                    "summary": "...",
-                    "token_consumption_outlook": "...",
-                    "recommendations": ["..."]
-                }}
-                }}
-            ---
-            SPECIFICATION TEXT:
-            {spec_text}
-            ---
-
-            JSON OUTPUT:
-        """)
+        prompt = vault.get_prompt("agent_project_scoping__prompt_49").format(spec_text=spec_text)
 
         for attempt in range(3):
             try:

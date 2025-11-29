@@ -8,6 +8,7 @@ import re
 import subprocess
 from pathlib import Path
 from llm_service import LLMService
+import vault
 
 class DocUpdateAgentRoWD:
     """
@@ -49,17 +50,7 @@ class DocUpdateAgentRoWD:
                 logging.warning(f"DOT Validation Failed in DocUpdate. Attempting AI Fix. Error: {error_msg}")
 
                 # Use standard string to avoid brace collision
-                fix_prompt_template = textwrap.dedent("""
-                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
-                **Error:** <<ERROR_MSG>>
-                **Invalid Code:**
-                ```dot
-                <<ORIGINAL_CODE>>
-                ```
-                **Task:** Fix the syntax error so it compiles.
-                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
-                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
-                """)
+                fix_prompt_template = vault.get_prompt("doc_update_agent_rowd__fix_prompt_template_52")
 
                 fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
                 fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
@@ -84,41 +75,7 @@ class DocUpdateAgentRoWD:
         logging.info("Invoking LLM to update specification document post-implementation.")
         try:
             # Use standard string to avoid f-string brace collision
-            prompt_template = textwrap.dedent("""
-            You are an expert technical writer responsible for keeping documentation in sync with source code.
-            An existing specification document needs to be updated to reflect a series of code changes that were just implemented.
-
-            **Your Task:**
-            Review the original specification and the development plan. Return a new, complete version of the specification that incorporates the changes and new features described in the plan, along with an updated date and version.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Incorporate Changes:** Integrate the changes from the development plan into the original document.
-            2.  **Increment Version:** Find a version number in the document's header and increment it.
-            3.  **Update Date:** Replace the 'Date:' line with: <<CURRENT_DATE>>.
-            4.  **Clean Output:** Your output MUST be only the raw text of the new specification.
-
-            **DIAGRAMMING RULE (Professional Graphviz):**
-            - If the specification contains a diagram (DOT code block), you MUST preserve it and update it to reflect the new architecture/flows.
-            - **SCOPE:** Keep the diagram High-Level. Do not diagram every single new file. Focus on Modules and Core Components.
-            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
-            - **DISCLAIMER:** Immediately BEFORE the diagram, ensure this line is present in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
-            - **Layout & Style:** Use these exact settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#E8F4FA", color="#007ACC", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-
-            **--- INPUT 1: Original Specification Document ---**
-            ```
-            <<ORIGINAL_SPEC>>
-            ```
-
-            **--- INPUT 2: The Executed Development Plan (JSON) ---**
-            ```json
-            <<IMPLEMENTATION_PLAN>>
-            ```
-
-            **--- OUTPUT: New, Updated Specification Document ---**
-            """)
+            prompt_template = vault.get_prompt("doc_update_agent_rowd__prompt_template_87")
 
             prompt = prompt_template.replace("<<CURRENT_DATE>>", current_date)
             prompt = prompt.replace("<<ORIGINAL_SPEC>>", original_spec)

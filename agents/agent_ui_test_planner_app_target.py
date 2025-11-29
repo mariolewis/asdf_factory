@@ -1,5 +1,6 @@
 import logging
 from llm_service import LLMService
+import vault
 
 """
 This module contains the UITestPlannerAgent_AppTarget class.
@@ -41,37 +42,7 @@ class UITestPlannerAgent_AppTarget:
                 Returns an error message string if an API call fails.
         """
         try:
-            prompt = f"""
-            You are a meticulous Software Quality Assurance (QA) Specialist.
-            Your task is to create a detailed, human-readable UI test plan based on the provided project documentation.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the Markdown table for the test plan. Do not include any preamble, introduction, or conversational text. The first character of your response must be the first character of the table's header.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Primary Source:** You MUST use the **UX/UI Specification** as the primary source for creating test cases, as it contains the most detailed descriptions of screens, components, and user flows.
-            2.  **Format:** Your entire response MUST be a single Markdown table.
-            3.  **Table Columns:** The table MUST have the columns: "Test Case ID", "Feature", "Test Scenario", "Steps to Reproduce", "Expected Result", and a blank "Actual Result" column for the user to fill in.
-            4.  **Comprehensive Coverage:** Your test cases must cover all user-facing features, screens, and components described in the UX/UI Specification. Use the other specifications for additional context on business logic and technical constraints.
-            5.  **Clarity:** Provide clear, numbered steps that a non-technical user can follow.
-            6.  **STRICT MARKDOWN FORMATTING:** For any content within the table cells that requires a list (like "Steps to Reproduce"), each item MUST start on a new line with a number and a space (e.g., "1. First step.").
-
-            **--- INPUT 1: UX/UI Specification (Primary Source) ---**
-            ```
-            {ux_spec_text}
-            ```
-
-            **--- INPUT 2: Functional Specification (Context) ---**
-            ```
-            {functional_spec_text}
-            ```
-
-            **--- INPUT 3: Technical Specification (Context) ---**
-            ```
-            {technical_spec_text}
-            ```
-
-            **--- Generated UI Test Plan (Markdown Table) ---**
-            """
+            prompt = vault.get_prompt("agent_ui_test_planner_app_target__prompt_44").format(ux_spec_text=ux_spec_text, functional_spec_text=functional_spec_text, technical_spec_text=technical_spec_text)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
 

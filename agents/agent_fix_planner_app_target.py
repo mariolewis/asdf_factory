@@ -1,6 +1,7 @@
 import logging
 import json
 from llm_service import LLMService
+import vault
 
 """
 This module contains the FixPlannerAgent_AppTarget class.
@@ -34,28 +35,7 @@ class FixPlannerAgent_AppTarget:
         Generates a detailed, sequential JSON plan to fix a diagnosed bug.
         """
         try:
-            prompt = f"""
-            You are a Principal Software Architect specializing in code remediation. Your task is to take a root cause analysis of a bug and the relevant faulty code, and create a precise, sequential development plan in JSON format to fix the bug.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`. Each element in the array must be a JSON object `{{}}` representing one micro-task.
-            2.  **One File Per Task:** Each task must modify ONLY ONE file. If the fix requires changing two files, you must create two separate task objects in the JSON array.
-            3.  **JSON Object Schema:** Each task object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, `test_file_path`.
-            4.  **Be Specific:** The `task_description` must be extremely specific, stating exactly what lines to add, remove, or change in the specified `component_file_path`.
-            5.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
-
-            **--- INPUT 1: Root Cause Hypothesis (The problem to solve) ---**
-            ```
-            {root_cause_hypothesis}
-            ```
-
-            **--- INPUT 2: Current Faulty Source Code (The code to be fixed) ---**
-            ```
-            {relevant_code}
-            ```
-
-            **--- Detailed Fix Plan (JSON Array Output) ---**
-            """
+            prompt = vault.get_prompt("agent_fix_planner_app_target__prompt_37").format(root_cause_hypothesis=root_cause_hypothesis, relevant_code=relevant_code)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             # Clean the response to remove potential markdown fences

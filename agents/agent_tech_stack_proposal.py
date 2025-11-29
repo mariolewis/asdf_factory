@@ -11,6 +11,7 @@ from llm_service import LLMService
 import subprocess
 import re
 from pathlib import Path
+import vault
 
 class TechStackProposalAgent:
     """
@@ -36,26 +37,7 @@ class TechStackProposalAgent:
         compatibility with the application specification.
         """
         logging.info("Validating PM-provided technology guidelines...")
-        prompt = textwrap.dedent(f"""
-            You are a senior Solutions Architect. Your task is to validate a set of technology guidelines provided by a Product Manager against the project's application specification.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze for Conflicts:** Check for any direct contradictions between the guidelines and the functional requirements (e.g., specifying a web-only framework for a required desktop application).
-            2.  **Analyze for Internal Consistency:** Check for poor or incompatible technology pairings within the guidelines themselves (e.g., pairing a Python backend with a .NET-exclusive UI framework).
-            3.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            4.  **JSON Schema:** The JSON object MUST have two keys:
-                - `compatible`: A boolean (`true` if no issues are found, `false` otherwise).
-                - `recommendation`: A string. If incompatible, this must be a concise, helpful explanation of the issue and a suggested, compatible alternative. If compatible, it should be a simple confirmation message.
-            5.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object.
-
-            **--- INPUT 1: Application Specification ---**
-            {app_spec_text}
-
-            **--- INPUT 2: PM's Technology Guidelines to Validate ---**
-            {guidelines}
-
-            **--- JSON Validation Result ---**
-        """)
+        prompt = vault.get_prompt("agent_tech_stack_proposal__prompt_39").format(app_spec_text=app_spec_text, guidelines=guidelines)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
@@ -95,17 +77,7 @@ class TechStackProposalAgent:
                 logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
 
                 # Use standard string to avoid brace collision
-                fix_prompt_template = textwrap.dedent("""
-                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
-                **Error:** <<ERROR_MSG>>
-                **Invalid Code:**
-                ```dot
-                <<ORIGINAL_CODE>>
-                ```
-                **Task:** Fix the syntax error so it compiles.
-                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
-                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
-                """)
+                fix_prompt_template = vault.get_prompt("agent_tech_stack_proposal__fix_prompt_template_98")
 
                 fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
                 fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
@@ -131,13 +103,7 @@ class TechStackProposalAgent:
 
         template_instruction = ""
         if template_content:
-            template_instruction = textwrap.dedent(f"""
-            **CRITICAL TEMPLATE INSTRUCTION:**
-            Adhere strictly to the structure of the provided template.
-            --- TEMPLATE START ---
-            {template_content}
-            --- TEMPLATE END ---
-            """)
+            template_instruction = vault.get_prompt("agent_tech_stack_proposal__template_instruction_134").format(template_content=template_content)
 
         pm_guidelines_section = ""
         if pm_guidelines:
@@ -147,55 +113,7 @@ class TechStackProposalAgent:
             """)
 
         # Use standard string (no 'f' prefix) to avoid brace collision
-        prompt_template = textwrap.dedent("""
-            You are an expert Solutions Architect. Your task is to create the BODY of a formal Technical Specification for a **<<TARGET_OS>>** environment.
-
-            **CRITICAL INSTRUCTIONS:** - Your entire response MUST be only the raw Markdown content.
-            - Do NOT add a header or preamble.
-
-            <<TEMPLATE_INSTRUCTION>>
-
-            **MANDATORY SECTIONS & DIAGRAMS:**
-            You MUST generate the document using the following sections. You MUST insert specific diagrams contextually as described below.
-
-            `## 1. High-Level Architecture`
-            - Describe the overall system design (e.g., MVC, Microservices).
-            - **DIAGRAM 1 (Architecture):** Immediately after the description, generate a **"System Context Diagram"**.
-                - **Scope:** Show ONLY the 5-7 highest-level components (e.g., Frontend, Backend API, Database, External Service).
-                - **Syntax:** Use `digraph G {` inside a ```dot ... ``` block.
-                - **DISCLAIMER:** Immediately BEFORE the diagram, add this line in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
-                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom) to ensure the diagram fits vertically.
-                - **Style:** Use these settings: `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white", compound=true]; node [fontname="Arial", shape=component, style="filled,rounded", fillcolor="#E1F5FE", color="#0277BD", penwidth=1.5, margin="0.2,0.1"];`
-
-            `## 2. Component Architecture Design`
-            - Detailed breakdown of internal modules.
-
-            `## 3. Technology Stack Selection`
-            - Languages, Frameworks, Libraries.
-
-            `## 4. Data & Integration Architecture`
-            - Database choice, Schema design strategy.
-            - **DIAGRAM 2 (Data Flow):** Immediately after the description, generate a **"High-Level Data Flow Diagram"**.
-                - **Scope:** Show how data moves between the User, the App, and the Database. Max 5-8 nodes.
-                - **Syntax:** Use `digraph G {` inside a ```dot ... ``` block.
-                - **DISCLAIMER:** Immediately BEFORE the diagram, add this line in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
-                - **CRITICAL LAYOUT RULE:** You MUST use `rankdir=TB` (Top-to-Bottom).
-                - **Style:** Use these settings: `graph [fontname="Arial", rankdir=TB, splines=ortho, bgcolor="white"]; node [fontname="Arial", shape=cylinder, style="filled", fillcolor="#FFF3E0", color="#EF6C00"];`
-
-            `## 5. Non-Functional Requirements (NFRs)`
-            - Scalability, Security, Performance.
-
-            `## 6. Development Environment Setup Guide`
-            - Prerequisites and installation steps.
-
-            <<PM_GUIDELINES_SECTION>>
-
-            **--- Functional Specification ---**
-            <<FUNCTIONAL_SPEC_TEXT>>
-            ---
-
-            **--- Generated Technical Specification Body (Raw Markdown) ---**
-        """)
+        prompt_template = vault.get_prompt("agent_tech_stack_proposal__prompt_template_150")
 
         # Safe injection
         prompt = prompt_template.replace("<<TARGET_OS>>", target_os)
@@ -224,56 +142,10 @@ class TechStackProposalAgent:
 
         template_instruction = ""
         if template_content:
-            template_instruction = textwrap.dedent(f"""
-            **CRITICAL TEMPLATE INSTRUCTION:**
-            The original draft was based on a template. Your refined output MUST also strictly and exactly follow the structure, headings, and formatting of that same template.
-            --- TEMPLATE START ---
-            {template_content}
-            --- TEMPLATE END ---
-            """)
+            template_instruction = vault.get_prompt("agent_tech_stack_proposal__template_instruction_227").format(template_content=template_content)
 
         # Use standard string
-        prompt_template = textwrap.dedent("""
-            You are a senior Solutions Architect revising a document. Your task is to refine the body of a Technical Specification based on a list of identified issues and specific feedback from a Product Manager.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Refine Body Only**: The text you receive is the body of a document. Your task is to incorporate the PM's clarifications to resolve the identified issues.
-            2.  **RAW MARKDOWN ONLY**: Your entire response MUST be only the raw, refined text of the document's body. Do NOT add a header, preamble, or any conversational text.
-            3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting.
-
-            **DIAGRAMMING RULE (Professional Graphviz):**
-            - If the feedback requires updating a diagram, use the **DOT language** inside a ```dot ... ``` code block.
-            - **SCOPE:** Keep diagrams high-level (Context/Architecture). Do not explode the node count.
-            - **CRITICAL:** You MUST use `digraph G {` (directed graph).
-            - **DISCLAIMER:** Immediately BEFORE the diagram, ensure this line is present in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
-            - **Layout & Style:** Use these exact settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=12, shape=component, style="filled,rounded", fillcolor="#E1F5FE", color="#0277BD", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-
-            <<TEMPLATE_INSTRUCTION>>
-
-            **--- CONTEXT: Full Application Specification ---**
-            <<FUNCTIONAL_SPEC>>
-            ---
-
-            **--- INPUT 1: Current Draft Body ---**
-            ```markdown
-            <<CURRENT_DRAFT>>
-            ```
-
-            **--- INPUT 2: AI-Generated Issues That the PM is Responding To ---**
-            ```markdown
-            <<AI_ISSUES>>
-            ```
-
-            **--- INPUT 3: PM Feedback to Address ---**
-            ```
-            <<PM_FEEDBACK>>
-            ```
-
-            **--- Refined Document Body for <<TARGET_OS>> (Raw Markdown) ---**
-        """)
+        prompt_template = vault.get_prompt("agent_tech_stack_proposal__prompt_template_236")
 
         prompt = prompt_template.replace("<<TEMPLATE_INSTRUCTION>>", template_instruction)
         prompt = prompt.replace("<<FUNCTIONAL_SPEC>>", functional_spec_text)
@@ -315,20 +187,7 @@ class TechStackProposalAgent:
             {previous_analysis}
             """)
 
-        prompt = textwrap.dedent(f"""
-            You are an expert requirements analyst. Your task is to review the following technical specification draft.
-            Your goal is to identify ambiguities and guide the Product Manager to a clear, actionable resolution.
-
-            {convergence_directive}
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **STRICT MARKDOWN FORMATTING:** Your entire response must be in raw Markdown.
-            2.  If issues are found, structure your response as a numbered list. For each item, clearly state the "Issue" and then provide the "Proposed Solutions".
-
-            **--- Technical Specification Draft to Analyze ---**
-            {tech_spec_draft}
-            ---
-        """)
+        prompt = vault.get_prompt("agent_tech_stack_proposal__prompt_318").format(convergence_directive=convergence_directive, tech_spec_draft=tech_spec_draft)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text.strip()

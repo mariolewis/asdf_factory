@@ -1,5 +1,6 @@
 import logging
 from llm_service import LLMService
+import vault
 
 """
 This module contains the LogicAgent_AppTarget class.
@@ -39,26 +40,7 @@ class LogicAgent_AppTarget:
                  Returns an error message string if an API call fails.
         """
         try:
-            prompt = f"""
-            You are an expert software architect. Your task is to take a detailed "micro-specification"
-            for a single software component and break it down into a clear, language-agnostic,
-            step-by-step logical plan or pseudocode. This plan will be given to another AI agent that
-            will write the actual code.
-
-            **Key Requirements for the Output:**
-            - The plan must be detailed enough for a developer (or another AI) to write code from it without having to make major assumptions.
-            - It must cover the main logic, data handling, and any error conditions mentioned in the spec.
-            - It must be language-agnostic. Do not use Python, Java, or any other specific language syntax. Use clear, English-based pseudocode.
-            - Be explicit and low-level in your instructions. Detail loops, conditionals, function/method calls, and variable assignments. Avoid high-level abstract descriptions.
-            - Structure the output with clear steps.
-
-            **Micro-Specification to Process:**
-            ---
-            {micro_spec_content}
-            ---
-
-            **Generated Logical Plan:**
-            """
+            prompt = vault.get_prompt("logic_agent_app_target__prompt_42").format(micro_spec_content=micro_spec_content)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             return response_text

@@ -4,6 +4,7 @@ import logging
 import textwrap
 import json
 from llm_service import LLMService
+import vault
 
 class PlanAuditorAgent:
     """
@@ -75,30 +76,5 @@ class PlanAuditorAgent:
 
         specific_instructions = audit_instructions.get(audit_type, "Error: Unknown audit type.")
 
-        prompt = textwrap.dedent(f"""
-            You are an expert AI software architect acting as an on-demand auditor. Your task is to perform a '{audit_type}' audit on a given JSON implementation plan.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze Holistically:** Review the entire implementation plan in the context of the project's Technical Specification.
-            2.  **Follow Specific Audit Logic:** You MUST follow the specific instructions for the '{audit_type}' audit provided below.
-            3.  **Provide Actionable Feedback:** Your findings MUST be constructive. For each issue found, provide a clear explanation and a concrete recommendation for how to improve the plan.
-            4.  **Markdown Format:** Your entire response MUST be formatted in clear, readable Markdown. Use headings for "Findings" and "Recommendations".
-            5.  **No Issues Scenario:** If you find no issues, your response should be a single sentence: "No significant {audit_type.lower()} issues were found in the plan."
-
-            ---
-            **AUDIT TYPE AND INSTRUCTIONS:**
-            {specific_instructions}
-            ---
-            **INPUT 1: Technical Specification (for context)**
-            ```
-            {tech_spec}
-            ```
-            ---
-            **INPUT 2: Implementation Plan to be Audited (JSON)**
-            ```json
-            {plan_json}
-            ```
-            ---
-            **AUDIT REPORT (Markdown Format):**
-        """)
+        prompt = vault.get_prompt("agent_plan_auditor__prompt_78").format(audit_type=audit_type, audit_type_lower=audit_type.lower(), specific_instructions=specific_instructions, tech_spec=tech_spec, plan_json=plan_json)
         return prompt

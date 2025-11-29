@@ -8,6 +8,7 @@ import logging
 import textwrap
 import json
 from llm_service import LLMService
+import vault
 
 class UX_Triage_Agent:
     """
@@ -34,36 +35,7 @@ class UX_Triage_Agent:
         """
         logging.info("UX_Triage_Agent: Analyzing project brief...")
 
-        prompt = textwrap.dedent(f"""
-            You are an expert Solutions Architect. Your task is to perform an initial analysis of a project brief to guide the development workflow.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **Analysis:** Based on the brief, you must determine:
-                a. If the application requires a Graphical User Interface (GUI).
-                b. The necessity of a dedicated UX/UI design phase.
-                c. A brief justification for your necessity rating.
-                d. A list of 1-3 inferred, high-level user personas/roles if it is a GUI application.
-            3.  **JSON Schema:** The JSON object MUST strictly adhere to this schema:
-                {{
-                  "requires_gui": boolean,
-                  "ux_phase_necessity": "Recommended" | "Optional" | "Not Recommended",
-                  "justification": "...",
-                  "inferred_personas": ["...", "..."]
-                }}
-            4.  **Necessity Criteria:**
-                - "Recommended": For complex apps with high data density, specialized workflows, or multiple user roles (e.g., financial trading platform, industrial control system).
-                - "Optional": For standard business/consumer apps where a dedicated design phase would improve polish and differentiation (e.g., sales reporting tool, simple inventory system).
-                - "Not Recommended": For non-GUI applications (APIs, CLIs) or simple, single-purpose utilities (e.g., a calculator).
-            5.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object.
-
-            ---
-            PROJECT BRIEF:
-            {project_brief}
-            ---
-
-            JSON OUTPUT:
-        """)
+        prompt = vault.get_prompt("agent_ux_triage__prompt_37").format(project_brief=project_brief)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")

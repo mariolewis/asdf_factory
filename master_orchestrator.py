@@ -58,6 +58,7 @@ from agents.agent_dev_environment_advisor import DevEnvironmentAdvisorAgent
 from agents.agent_project_intake_advisor import ProjectIntakeAdvisorAgent
 from agents.agent_sprint_integration_test import SprintIntegrationTestAgent
 from agents.agent_traceability_report import RequirementTraceabilityAgent
+import vault
 
 class EnvironmentFailureException(Exception):
     """Custom exception for unrecoverable environment errors."""
@@ -3381,27 +3382,7 @@ class MasterOrchestrator:
         rowd_json = json.dumps([dict(row) for row in all_artifacts_rows], indent=2)
         new_artifacts_json = json.dumps(new_artifacts, indent=2)
 
-        prompt = textwrap.dedent(f"""
-            You are an expert software architect. Your task is to identify which existing files in a project need to be modified to integrate a set of new components.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze Context:** Review the full Record-of-Work-Done (RoWD) which describes all existing components, and the JSON for the new components to be integrated.
-            2.  **Identify Integration Points:** Determine which existing files are the most logical places to "wire in" the new components. These are typically higher-level files like a main application, a service registry, a router, or a central module.
-            3.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of strings. Each string in the array must be the exact `file_path` of an existing file that needs to be modified.
-            4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
-
-            **--- INPUT 1: All Existing Components (RoWD) ---**
-            ```json
-            {rowd_json}
-            ```
-
-            **--- INPUT 2: New Components to Integrate ---**
-            ```json
-            {new_artifacts_json}
-            ```
-
-            **--- REQUIRED OUTPUT: JSON Array of File Paths ---**
-        """)
+        prompt = vault.get_prompt("master_orchestrator__prompt_3384").format(rowd_json=rowd_json, new_artifacts_json=new_artifacts_json)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
@@ -4729,12 +4710,18 @@ class MasterOrchestrator:
         """
         status = self.task_awaiting_approval.get("sprint_test_status", "FAILURE")
         if status == 'SUCCESS':
-            self.set_phase("AWAITING_UI_TEST_DECISION")
+            # FIX: Check if this is a GUI project before entering UI testing
+            project_details = self.db_manager.get_project_by_id(self.project_id)
+            if project_details and project_details['is_gui_project'] == 1:
+                self.set_phase("AWAITING_UI_TEST_DECISION")
+            else:
+                logging.info("Non-GUI project detected. Skipping UI Testing phase.")
+                self.set_phase("SPRINT_REVIEW")
         else:
             output = self.task_awaiting_approval.get("sprint_test_output", "No output available.")
             self.escalate_for_manual_debug(output, is_phase_failure_override=True)
 
-    def _run_automated_ui_test_phase(self, progress_callback=None):
+    def _run_automated_ui_test_phase(self, progress_callback=None, **kwargs):
         """
         Orchestrates the entire automated UI testing workflow, including the
         generation of a final, human-readable test report.
@@ -5510,25 +5497,7 @@ class MasterOrchestrator:
         """
         logging.info("Orchestrator: Extracting distinct specifications from consolidated text...")
 
-        prompt = textwrap.dedent(f"""
-            You are an expert document parser. Your task is to analyze the provided text, which may contain multiple software specification documents, and extract each one verbatim into a JSON object.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Output:** Your entire response MUST be a single, valid JSON object.
-            2.  **Verbatim Extraction:** You MUST perform a verbatim, exact copy of the text for each section. Do NOT summarize, alter, omit, or rephrase any content.
-            3.  **Find Sections:** Identify the start of each distinct document (e.g., "Application Specification", "Technical Specification", "Coding Standard"). Copy all text from that heading until the start of the next major specification heading or the end of the input.
-            4.  **JSON Schema:** The JSON object MUST have the following keys. If a corresponding section is not found in the input text, the value for that key MUST be an empty string "".
-                - "application_spec"
-                - "technical_spec"
-                - "coding_standard"
-            5.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON object itself.
-
-            **--- CONSOLIDATED DOCUMENT TEXT ---**
-            {brief_text}
-            **--- END OF TEXT ---**
-
-            **JSON OUTPUT:**
-        """)
+        prompt = vault.get_prompt("master_orchestrator__prompt_5513").format(brief_text=brief_text)
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
@@ -6874,20 +6843,7 @@ class MasterOrchestrator:
             logging.warning("Cannot detect technologies: tech_spec_text is empty.")
             return []
         try:
-            prompt = textwrap.dedent(f"""
-                Analyze the following technical specification document. Your single task is to identify every distinct programming language (e.g., Python, JavaScript, C#, HTML, CSS, SQL) mentioned.
-
-                **MANDATORY INSTRUCTIONS:**
-                1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of strings.
-                2.  **One Language Per String:** Each string in the array must be the name of one programming language.
-                3.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself. If no languages are found, return an empty array `[]`.
-
-                **--- Technical Specification ---**
-                {tech_spec_text}
-                **--- End Specification ---**
-
-                **--- REQUIRED OUTPUT: JSON Array of Language Names ---**
-            """)
+            prompt = vault.get_prompt("master_orchestrator__prompt_6877").format(tech_spec_text=tech_spec_text)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")
@@ -6994,22 +6950,7 @@ class MasterOrchestrator:
             if not self.llm_service:
                 raise Exception("LLM Service is not initialized.")
 
-            prompt = textwrap.dedent("""
-                You are a helpful assistant with web browsing capabilities. Your only task is to browse the internet to find the standard, published maximum context window size in tokens for your own model.
-
-                **MANDATORY INSTRUCTIONS:**
-                1.  **Web Search:** You MUST perform a web search to find the official documentation for your model's context window.
-                2.  **NUMERIC OUTPUT ONLY:** Your entire response MUST be ONLY the integer representing the token limit.
-                3.  **DO NOT INCLUDE:** Do not include commas, units (like "tokens"), explanations, caveats, or any other words or characters. Just the raw number.
-
-                **Example of a PERFECT response:**
-                2048000
-
-                **Example of a FAILED response:**
-                The context window is 2,048,000 tokens.
-
-                **Your Numeric-Only Response:**
-            """)
+            prompt = vault.get_prompt("master_orchestrator__prompt_6997")
 
             if progress_callback:
                 progress_callback(("INFO", "Determining appropriate character context window..."))

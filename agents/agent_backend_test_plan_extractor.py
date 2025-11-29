@@ -4,6 +4,7 @@ import logging
 import textwrap
 import json
 from llm_service import LLMService
+import vault
 
 class BackendTestPlanExtractorAgent:
     """
@@ -39,20 +40,7 @@ class BackendTestPlanExtractorAgent:
             code_context += f"--- File: {path} ---\n```{technology_list[0].lower()}\n{content}\n```\n\n"
 
         try:
-            prompt = textwrap.dedent(f"""
-                You are an expert QA Engineer who specializes in reverse-engineering test plans from existing code. Your task is to analyze a set of test files for a project using the following technologies: {', '.join(technology_list)}. You must produce a structured JSON test plan.
-
-                **MANDATORY INSTRUCTIONS:**
-                1.  **Analyze the Code:** Read all the provided test files. Identify each individual test case, its purpose, and what it asserts.
-                2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of objects `[]`.
-                3.  **JSON Object Schema:** Each object in the array represents one test case and MUST have the keys: `test_case_id` (a short, unique identifier you create, e.g., "TC-01"), `scenario` (a one-sentence description of what the test does), and `expected_result` (a one-sentence description of the expected outcome, inferred from the test's assertions).
-                4.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
-
-                **--- INPUT: Test Code Files (Languages: {', '.join(technology_list)}) ---**
-                {code_context}
-
-                **--- OUTPUT: Structured Test Plan (JSON Array) ---**
-            """)
+            prompt = vault.get_prompt("agent_backend_test_plan_extractor__prompt_42").format(join_technology_list=', '.join(technology_list), code_context=code_context)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().replace("```json", "").replace("```", "")

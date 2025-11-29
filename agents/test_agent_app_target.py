@@ -1,5 +1,6 @@
 import logging
 from llm_service import LLMService
+import vault
 
 """
 This module contains the TestAgent_AppTarget class.
@@ -30,35 +31,7 @@ class TestAgent_AppTarget:
         """
         import re
         try:
-            prompt = f"""
-            You are an expert Software Quality Assurance (QA) Engineer specializing in automated testing.
-            Your task is to write a comprehensive suite of unit tests for the provided source code, based on its specification and adhering to a strict coding standard.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Target Language:** The component is written in **{target_language}**. Your unit tests MUST be written for this language and its standard testing frameworks (e.g., pytest for Python, JUnit/Mockito for Java/Kotlin).
-            2.  **Comprehensive Coverage:** Your tests MUST cover the "happy path," edge cases (e.g., null inputs, empty lists, boundary values), and error handling.
-            3.  **Adherence to Coding Standard:** The unit test code you generate MUST follow all rules in the provided coding standard.
-            4.  **RAW CODE ONLY:** Your entire response MUST BE ONLY the raw source code for the unit tests. Do not include any conversational text or markdown fences like ```python.
-
-            **--- INPUTS ---**
-
-            **1. The Component's Specification (What it should do):**
-            ```
-            {component_spec}
-            ```
-
-            **2. The Component's Source Code (Language: {target_language}):**
-            ```
-            {source_code}
-            ```
-
-            **3. The Coding Standard to Follow:**
-            ```
-            {coding_standard}
-            ```
-
-            **--- Generated Unit Test Source Code (Language: {target_language}) ---**
-            """
+            prompt = vault.get_prompt("test_agent_app_target__prompt_33").format(target_language=target_language, component_spec=component_spec, source_code=source_code, coding_standard=coding_standard)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 
@@ -114,28 +87,7 @@ class TestAgent_AppTarget:
             ```
             """
 
-            prompt = f"""
-            You are an expert Software Quality Assurance (QA) Engineer specializing in automated integration testing.
-            Your task is to write a comprehensive suite of integration tests for the provided software components, based on the overall integration goal.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Focus on Interaction:** Your tests MUST validate the interactions BETWEEN the provided components. Verify that they pass data correctly and that their combined behavior matches the integration specification.
-            2.  **Adherence to Coding Standard:** The test code you generate MUST follow all established coding standards.
-            3.  **Use Standard Testing Frameworks:** Assume the use of standard testing frameworks for the target language (e.g., pytest for Python, JUnit/Mockito for Java/Kotlin).
-            4.  **Raw Code Output:** Your entire response MUST BE ONLY the raw source code for the integration tests. Do not include any conversational text or explanations outside of the code itself. The code you generate MUST include comments and docstrings as required by the coding standard.
-
-            **--- INPUTS ---**
-
-            **1. The Overall Integration Specification (What the components should achieve together):**
-            ```
-            {integration_spec}
-            ```
-
-            **2. The Interacting Components:**
-            {component_context}
-
-            **--- Generated Integration Test Source Code ---**
-            """
+            prompt = vault.get_prompt("test_agent_app_target__prompt_117").format(integration_spec=integration_spec, component_context=component_context)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             return response_text

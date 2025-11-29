@@ -8,6 +8,7 @@ This agent implements F-Phase 2.A from the PRD.
 import logging
 import textwrap
 from llm_service import LLMService
+import vault
 
 class CodingStandardAgent_AppTarget:
     """
@@ -43,42 +44,9 @@ class CodingStandardAgent_AppTarget:
 
         template_instruction = ""
         if template_content:
-            template_instruction = textwrap.dedent(f"""
-            **CRITICAL TEMPLATE INSTRUCTION:**
-            Your entire output MUST strictly and exactly follow the structure, headings, and formatting of the provided template.
-            Populate the sections of the template with content derived from the technical specification.
-            DO NOT invent new sections. DO NOT change the names of the headings from the template.
-            --- TEMPLATE START ---
-            {template_content}
-            --- TEMPLATE END ---
-            """)
+            template_instruction = vault.get_prompt("agent_coding_standard_app_target__template_instruction_46").format(template_content=template_content)
 
-        prompt = textwrap.dedent(f"""
-            You are a lead software architect with extensive experience in establishing best practices.
-            Your task is to generate a detailed, professional coding standard document based on the provided Technical Specification. The goal is to produce code that is highly readable, modular, and easily maintainable.
-
-            **CRITICAL INSTRUCTION:** Your entire response MUST be only the raw content of the coding standard document. Do not include any preamble, introduction, or conversational text.
-            **CRITICAL FOCUS INSTRUCTION:** Your entire output MUST be a coding standard specifically and exclusively for the **{technology_name}** language. You MUST ignore all other languages or technologies mentioned in the Technical Specification.
-
-            {template_instruction}
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-            2.  **Analyze Tech Stack:** Analyze the Technical Specification to identify the primary programming language, frameworks, and key libraries.
-            3.  **Generate Comprehensive Standard:** Your response MUST be a complete coding standard document formatted in Markdown. It must include, at a minimum, the following sections as specified in the PRD:
-                -   **Formatting and Naming Conventions:** Rules for code layout, indentation, line length, and clear naming conventions for variables, functions, and classes.
-                -   **Structural Principles:** A rule mandating the Single Responsibility Principle and guidelines on modular code organization.
-                -   **Documentation Standards:** Requirements for documenting 'what' a component does (e.g., docstrings with parameters) and 'why' an implementation choice was made (inline comments for complex logic).
-                -   **Data and Interface Contracts:** A rule requiring the use of explicit data structures (like classes or structs) for data exchange between components.
-                -   **Security and Error Handling:** A mandatory requirement for using parameterized queries to prevent SQL injection and best practices for graceful error handling.
-            4.  **Clarity and Detail:** Be specific and provide examples where appropriate.
-
-            **--- INPUT: Technical Specification ---**
-            {tech_spec_text}
-            **--- End of Specification ---**
-
-            **--- Generated Coding Standard Document ---**
-        """)
+        prompt = vault.get_prompt("agent_coding_standard_app_target__prompt_56").format(technology_name=technology_name, template_instruction=template_instruction, tech_spec_text=tech_spec_text)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
@@ -101,26 +69,7 @@ class CodingStandardAgent_AppTarget:
         """
         logging.info("CodingStandardAgent: Refining coding standard based on PM feedback...")
 
-        prompt = textwrap.dedent(f"""
-            You are a lead software architect revising a document. Your task is to refine an existing draft of a Coding Standard based on specific feedback from a Product Manager.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Modify Body Only**: Your changes should only be in the body of the document based on the PM's feedback. Do not regenerate the entire document from scratch.
-            2.  **RAW MARKDOWN ONLY:** Your entire response MUST be only the raw content of the refined document's body. Do NOT add a header, preamble, conversational text, or markdown fences.
-            3.  **STRICT MARKDOWN FORMATTING:** You MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-
-            **--- INPUT 1: Current Draft ---**
-            ```markdown
-            {current_draft}
-            ```
-
-            **--- INPUT 2: PM Feedback to Address ---**
-            ```
-            {pm_feedback}
-            ```
-
-            **--- Refined Coding Standard Document ---**
-        """)
+        prompt = vault.get_prompt("agent_coding_standard_app_target__prompt_104").format(current_draft=current_draft, pm_feedback=pm_feedback)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")

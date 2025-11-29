@@ -3,6 +3,7 @@
 import logging
 import textwrap
 import json
+import ast
 import re
 from pathlib import Path
 from typing import Tuple, Optional
@@ -75,7 +76,11 @@ class SprintIntegrationTestAgent:
             if not json_match:
                 raise ValueError("LLM response did not contain a valid JSON object for the test plan.")
 
-            result = json.loads(json_match.group(0))
+            try:
+                result = json.loads(json_match.group(0))
+            except json.JSONDecodeError:
+                # Fallback: parse as Python dictionary (handles single quotes)
+                result = ast.literal_eval(json_match.group(0))
             script_code = result.get("test_script_code")
             execution_command = result.get("execution_command")
 

@@ -5,6 +5,7 @@ import json
 import textwrap
 from typing import Optional, List, Dict
 from llm_service import LLMService
+import vault
 
 class TestEnvironmentAdvisorAgent:
     """
@@ -29,22 +30,7 @@ class TestEnvironmentAdvisorAgent:
         """
         logging.info(f"Generating test environment setup tasks for OS: {target_os}")
 
-        prompt = textwrap.dedent(f"""
-            You are an expert DevOps engineer. Based on the provided technical specification for a "{target_os}" environment, provide a step-by-step plan for setting up the testing toolchain.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array of objects `[]`.
-            2.  **Object Schema:** Each object MUST have two keys: "tool_name" (a string) and "instructions" (a string).
-            3.  **Grouping:** Group all actions for a single tool (e.g., installing pytest and its plugins) into a single object.
-            4.  **STRICT MARKDOWN FORMATTING:** The "instructions" value MUST use Markdown for all formatting. Use '##' for main headings and '###' for sub-headings. For lists, each item MUST start on a new line with an asterisk and a space (e.g., "* List item text."). Paragraphs MUST be separated by a full blank line. This is mandatory.
-            5.  **No Other Text:** Do not include any text or explanations outside of the raw JSON array.
-
-            **--- Technical Specification ---**
-            {tech_spec_text}
-            **--- End of Specification ---**
-
-            **JSON Array Output:**
-        """)
+        prompt = vault.get_prompt("agent_test_environment_advisor__prompt_32").format(target_os=target_os, tech_spec_text=tech_spec_text)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
@@ -70,17 +56,7 @@ class TestEnvironmentAdvisorAgent:
         """
         logging.info("Getting help for a specific setup task...")
 
-        prompt = textwrap.dedent(f"""
-            You are a helpful and clear technical support assistant. A user is having trouble with the following software installation instruction on a "{target_os}" operating system.
-
-            Please provide more detailed clarification, suggest alternative installation methods, or list common troubleshooting steps (like checking the system's PATH, permissions, or firewall settings) to help them resolve the issue. Format your response clearly using Markdown.
-
-            **--- User's problematic instruction ---**
-            {task_instructions}
-            **--- End of instruction ---**
-
-            **Helpful Response:**
-        """)
+        prompt = vault.get_prompt("agent_test_environment_advisor__prompt_73").format(target_os=target_os, task_instructions=task_instructions)
 
         try:
             # This is the corrected line, using self.llm_service and generate_text

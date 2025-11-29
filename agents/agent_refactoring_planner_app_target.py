@@ -2,6 +2,7 @@ import logging
 import json
 import textwrap
 from llm_service import LLMService
+import vault
 
 """
 This module contains the RefactoringPlannerAgent_AppTarget class.
@@ -55,40 +56,7 @@ class RefactoringPlannerAgent_AppTarget:
 
             detected_technologies_json = kwargs.get("detected_technologies_json", "[]")
 
-            prompt = f"""
-            You are an expert Solutions Architect. Your task is to create a detailed, sequential development plan in JSON format to implement a given change request.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **Analyze Dependencies & Prioritize Inputs:** You MUST analyze the 'Change Request to Implement' and determine the most logical implementation sequence. When generating tasks, you MUST prioritize information as follows:
-                - If the 'UX/UI Specification' is provided, you MUST use its JSON blueprint as the definitive source for all UI-related tasks. Your `task_description` must ensure the implementation matches the component types, labels, and actions specified in the blueprint.
-                - If the 'Database Schema Specification' is provided, you MUST use it as the definitive source for any database-related tasks. Ensure your `task_description` correctly references table names, column names, and data types from this document.
-                - Use the other specifications for business logic and general technical context.
-            2.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`.
-            3.  **JSON Object Schema:** Each JSON object MUST have the keys: `micro_spec_id`, `task_description`, `component_name`, `component_type`, `component_file_path`, and `parent_cr_ids`. For tasks modifying EXISTING components, you MUST also include the `artifact_id`.
-            4.  **Relevant Languages:** For *each* task object, you MUST add a `relevant_languages` key. The value MUST be a JSON list of strings (e.g., `["Python"]`, `["JavaScript", "HTML", "CSS"]`, `["Python", "SQL"]`) identifying all languages required to implement that specific task, based on the file path and the project's 'Detected Technologies'.
-            5.  **Traceability:** The `parent_cr_ids` array MUST contain the integer ID(s) from the `ITEM_ID` field of the original backlog item(s) this task helps to implement.
-            6.  **Test Generation:** You MUST include the `test_file_path` key for any task involving application logic. Omit it only for non-testable tasks (e.g., simple configuration).
-            7.  **Use Canonical Paths:** For any task modifying an EXISTING component, the `component_file_path` and `artifact_id` MUST exactly match the `file_path` and `artifact_id` from the provided RoWD.
-            8.  **No Other Text:** Do not include any text or markdown formatting outside of the raw JSON array itself.
-
-            **--- INPUTS ---**
-            **1. Technical Specification:**
-            {tech_spec_text}
-
-            **2. Change Request to Implement (Contains one or more ITEM_IDs):**
-            {change_request_desc}
-
-            **3. Record-of-Work-Done (RoWD) - Existing Artifacts (JSON):**
-            {rowd_json}
-
-            **4. Source Code Context:**
-            {source_code_context_str}
-            {detected_technologies_json}
-            {ux_spec_context}
-            {db_spec_context}
-
-            **--- Detailed Refactoring Plan (JSON Array Output) ---**
-            """
+            prompt = vault.get_prompt("agent_refactoring_planner_app_target__prompt_58").format(tech_spec_text=tech_spec_text, change_request_desc=change_request_desc, rowd_json=rowd_json, source_code_context_str=source_code_context_str, detected_technologies_json=detected_technologies_json, ux_spec_context=ux_spec_context, db_spec_context=db_spec_context)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
@@ -111,41 +79,7 @@ class RefactoringPlannerAgent_AppTarget:
         """
         logging.info("RefactoringPlannerAgent: Refining development plan based on PM feedback...")
         try:
-            prompt = textwrap.dedent(f"""
-                You are an expert Solutions Architect revising a development plan.
-                Your task is to generate a new, refined JSON development plan by incorporating a Product Manager's feedback into a previous version.
-
-                **MANDATORY INSTRUCTIONS:**
-                1.  **Prioritize PM Feedback:** The PM's feedback is the primary directive.
-                You MUST restructure, add, remove, or consolidate tasks as requested.
-                2.  **Maintain Traceability:** Every task object in your final JSON array response MUST contain the `parent_cr_ids` key.
-                The value should be an array of integers derived from the `ITEM_ID` fields in the 'Change Request' input, reflecting which original item(s) the task implements.
-                This is a critical requirement.
-                3.  **Relevant Languages:** You MUST ensure every task object in the final refined plan also contains the `relevant_languages` key (a JSON list of strings, e.g., `["Python"]`, `["Python", "SQL"]`).
-                4.  **JSON Array Output:** Your entire response MUST be a single, valid JSON array `[]`, adhering to the original schema.
-                5.  **No Other Text:** Do not include any text, comments, or markdown formatting outside of the raw JSON array itself.
-
-                **--- CONTEXT: Project Specifications ---**
-                Full Technical Specification: {tech_spec_text}
-                Record-of-Work-Done (RoWD): {rowd_json}
-
-                **--- INPUT 1: Original Change Request (for parent_cr_ids context) ---**
-                ```
-                {change_request_desc}
-                ```
-
-                **--- INPUT 2: Current Plan Draft (JSON) ---**
-                ```json
-                {current_plan_json}
-                ```
-
-                **--- INPUT 3: PM Feedback to Address (Primary Directive) ---**
-                ```
-                {pm_feedback}
-                ```
-
-                **--- Refined Refactoring Plan (JSON Array Output) ---**
-            """)
+            prompt = vault.get_prompt("agent_refactoring_planner_app_target__prompt_114").format(tech_spec_text=tech_spec_text, rowd_json=rowd_json, change_request_desc=change_request_desc, current_plan_json=current_plan_json, pm_feedback=pm_feedback)
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
             cleaned_response = response_text.strip().removeprefix("```json").removesuffix("```").strip()
             if cleaned_response.startswith("[") and cleaned_response.endswith("]"):

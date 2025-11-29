@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Optional
 from llm_service import LLMService
+import vault
 
 """
 This module contains the CodeAgent_AppTarget class.
@@ -54,31 +55,7 @@ class CodeAgent_AppTarget:
                 ```
                 """
 
-            prompt = f"""
-            You are an expert software developer. Your only function is to write raw source code.
-            Your output is being saved directly to a file and executed. Any non-code text, including conversational text, explanations, or markdown fences like ```python, will cause a critical system failure.
-
-            **MANDATORY INSTRUCTIONS:**
-            1.  **RAW CODE ONLY:** Your entire response MUST BE ONLY the raw source code for the component. The first character of your response must be the first character of the code.
-            2.  **CODING STANDARD:** You MUST strictly follow all rules in the provided Coding Standard. This standard may contain rules for *multiple* technologies (e.g., Python and embedded SQL, or HTML/CSS/JS in a .vue file, or some other combination). You must correctly apply all relevant rules to the code you generate.
-            3.  **LOGIC:** The code MUST implement ONLY the logic described in the provided Logical Plan.
-
-            {correction_context}
-
-            **--- INPUT 1: The Logical Plan to Implement ---**
-            ```
-            {logic_plan}
-            ```
-
-            **--- INPUT 2: The Coding Standard to Follow (MANDATORY) ---**
-            ```
-            {coding_standard}
-            ```
-
-            {style_guide_context}
-
-            **--- Generated Source Code ---**
-            """
+            prompt = vault.get_prompt("code_agent_app_target__prompt_57").format(correction_context=correction_context, logic_plan=logic_plan, coding_standard=coding_standard, style_guide_context=style_guide_context)
 
             response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
 

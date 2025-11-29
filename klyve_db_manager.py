@@ -1,5 +1,6 @@
 import logging
 import config
+import vault
 
 # Conditional Import: Use SQLCipher for Production, Standard SQLite for Dev
 if config.is_dev_mode():
@@ -65,7 +66,8 @@ class KlyveDBManager:
         if not config.is_dev_mode():
             # Fix for Freeze: Lower iteration count for performance in per-query architecture
             conn.execute("PRAGMA kdf_iter = 4000")
-            key = config.get_db_key()
+            # [SECURED] Key retrieved from Iron Vault
+            key = vault.get_db_key()
             conn.execute(f"PRAGMA key = '{key}'")
 
         conn.row_factory = sqlite3.Row

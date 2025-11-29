@@ -13,6 +13,7 @@ from llm_service import LLMService
 from klyve_db_manager import KlyveDBManager
 from agents.agent_report_generator import ReportGeneratorAgent
 from master_orchestrator import MasterOrchestrator
+import vault
 
 
 class SpecSynthesisAgent:
@@ -117,17 +118,7 @@ class SpecSynthesisAgent:
                 logging.warning(f"DOT Validation Failed. Attempting AI Fix. Error: {error_msg}")
 
                 # Use standard string
-                fix_prompt_template = textwrap.dedent("""
-                You are a Graphviz DOT expert. The following DOT code caused a syntax error.
-                **Error:** <<ERROR_MSG>>
-                **Invalid Code:**
-                ```dot
-                <<ORIGINAL_CODE>>
-                ```
-                **Task:** Fix the syntax error so it compiles.
-                **CRITICAL RULE:** Ensure the graph type is `digraph` (directed graph) if using `->` arrows. Do not use `graph` with `->`.
-                **Output:** Return ONLY the fixed DOT code inside a ```dot ... ``` block.
-                """)
+                fix_prompt_template = vault.get_prompt("agent_spec_synthesis__fix_prompt_template_120")
 
                 fix_prompt = fix_prompt_template.replace("<<ERROR_MSG>>", error_msg)
                 fix_prompt = fix_prompt.replace("<<ORIGINAL_CODE>>", original_code)
@@ -182,31 +173,13 @@ class SpecSynthesisAgent:
 
         prompt_focus = ""
         if detection_stage == 'SCHEMA_FILE':
-            prompt_focus = "The provided context contains .sql files. Parse these files and reverse-engineer the schema."
+            prompt_focus = vault.get_prompt("agent_spec_synthesis__prompt_focus_185")
         else: # KEYWORD
-            prompt_focus = "The provided context contains source code with database keywords. Infer the schema from ORM models or SQL strings."
+            prompt_focus = vault.get_prompt("agent_spec_synthesis__prompt_focus_187")
 
         # --- STEP 1: Generate Diagram Only ---
         logging.info("DB Spec Step 1/2: Generating ER Diagram...")
-        diagram_prompt = textwrap.dedent("""
-            You are an expert database administrator. Analyze the provided code/schema context and generate a Professional Graphviz DOT code block for the Entity-Relationship Diagram (ERD).
-
-            **DIAGRAMMING RULE (Professional Graphviz ERD):**
-            - Use the **DOT language** inside a ```dot ... ``` code block.
-            - **CRITICAL:** Do NOT use `shape=record`. Use `shape=box`.
-            - **NO PORTS:** Connect Node to Node only.
-            - **Syntax:** Format tables as boxes with the table name and columns separated by a line.
-                - Example: `Users [label="Users\n----------------\n+ ID (PK)\l+ Email\l+ PasswordHash\l"];`
-            - **Layout & Style:**
-                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=11, shape=box, style="filled,rounded", fillcolor="#F0F4C3", color="#827717", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-
-            **OUTPUT:** Return ONLY the ```dot ... ``` code block. No other text.
-
-            **--- Context ---**
-            <<CONTEXT_STR>>
-        """)
+        diagram_prompt = vault.get_prompt("agent_spec_synthesis__diagram_prompt_191")
 
         diagram_prompt = diagram_prompt.replace("<<CONTEXT_STR>>", context_str)
 
@@ -220,26 +193,7 @@ class SpecSynthesisAgent:
 
         # --- STEP 2: Generate Text Reference Only ---
         logging.info("DB Spec Step 2/2: Generating Textual Reference...")
-        text_prompt = textwrap.dedent("""
-            You are an expert database administrator. Analyze the provided code/schema context and generate the textual content for the "Database Schema Specification".
-
-            **MANDATORY INSTRUCTIONS:**
-            1. **Analyze Content:** <<PROMPT_FOCUS>>
-            2. **STRICT MARKDOWN FORMATTING:** Use '##' for main headings and '###' for sub-headings.
-            3. **Structure:**
-                - **Introduction:** Brief overview of the data model.
-                - **Detailed Schema Reference:** For *every* table found:
-                    - Subsection `### Table Name`
-                    - Brief description.
-                    - Column List: List each column as a bullet point using this format: "* **Name** (Type) - Description. (Constraints)*"
-            4. **OUTPUT:** Return ONLY the raw Markdown text. Do NOT include any diagrams.
-
-            **--- Project Name ---**
-            <<PROJECT_NAME>>
-
-            **--- Context ---**
-            <<CONTEXT_STR>>
-        """)
+        text_prompt = vault.get_prompt("agent_spec_synthesis__text_prompt_223")
 
         text_prompt = text_prompt.replace("<<PROMPT_FOCUS>>", prompt_focus)
         text_prompt = text_prompt.replace("<<PROJECT_NAME>>", project_name)
@@ -353,13 +307,7 @@ class SpecSynthesisAgent:
 
         template_instruction = ""
         if template_content:
-            template_instruction = textwrap.dedent(f"""
-            **CRITICAL TEMPLATE INSTRUCTION:**
-            Strictly follow the structure of the provided template.
-            --- TEMPLATE START ---
-            {template_content}
-            --- TEMPLATE END ---
-            """)
+            template_instruction = vault.get_prompt("agent_spec_synthesis__template_instruction_356").format(template_content=template_content)
 
         prompt_details = {
             "Application": "Focus on user-facing features and user stories.",
@@ -384,35 +332,7 @@ class SpecSynthesisAgent:
         rank_dir_rule = "TB"
 
         # Use standard string (no 'f' prefix) to avoid brace collision
-        prompt_template = textwrap.dedent("""
-            You are an expert technical writer. Synthesize the code summaries into a high-level **<<SPEC_TYPE>> Specification**.
-
-            **MANDATORY INSTRUCTIONS:**
-            1. **Synthesize Document:** Write a structured specification in Markdown. <<PROMPT_DETAIL>>
-            2. **Raw Output:** Return only the Markdown content.
-
-            **DIAGRAMMING RULE (Professional Graphviz):**
-            - Generate 1 key diagram relevant to the spec type.
-            - Use the **DOT language** inside a ```dot ... ``` code block.
-            - <<SCOPE_RULE>>
-            - **CRITICAL:** You MUST use `digraph G {` (directed graph). Do NOT use `graph {`.
-            - **PLACEMENT:** You MUST place this diagram <<PLACEMENT_INSTRUCTION>>
-            - **DISCLAIMER:** Immediately BEFORE the diagram, add this line in italics: *"Note: The scope of this graphic has been limited to include only key components and interactions for the sake of clarity."*
-            - **Layout & Style:** Use these exact settings:
-                `graph [fontname="Arial", fontsize=12, rankdir=TB, splines=ortho, nodesep=0.8, ranksep=1.0, bgcolor="white"];`
-                `node [fontname="Arial", fontsize=12, shape=box, style="filled,rounded", fillcolor="#F3E5F5", color="#7B1FA2", penwidth=1.5, margin="0.2,0.1"];`
-                `edge [fontname="Arial", fontsize=10, color="#555555", penwidth=1.5, arrowsize=0.8];`
-
-            <<TEMPLATE_INSTRUCTION>>
-
-            **--- Project Name ---**
-            <<PROJECT_NAME>>
-
-            **--- Code Summaries ---**
-            <<SUMMARIES_CONTEXT>>
-
-            **--- Draft <<SPEC_TYPE>> Specification (Markdown) ---**
-        """)
+        prompt_template = vault.get_prompt("agent_spec_synthesis__prompt_template_387")
 
         # Safe injection
         prompt = prompt_template.replace("<<SPEC_TYPE>>", spec_type)

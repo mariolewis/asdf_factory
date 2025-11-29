@@ -11,6 +11,7 @@ import json
 import textwrap
 from typing import Tuple, Optional
 from llm_service import LLMService
+import vault
 
 class BuildScriptGeneratorAgent:
     """
@@ -43,22 +44,7 @@ class BuildScriptGeneratorAgent:
         """
         logging.info(f"Generating build script for tech stack on OS: {target_os}")
 
-        prompt = textwrap.dedent(f"""
-            You are an expert build engineer. Your task is to generate a standard, starter build script based on the provided technology stack description, specifically for a "{target_os}" environment.
-
-            You MUST return your response as a single, valid JSON object with two keys:
-            - "filename": The conventional name for the build script (e.g., "pom.xml", "build.gradle.kts", "requirements.txt").
-            - "content": A string containing the complete text of a high-quality starter build script. Ensure any shell commands or paths are correct for the specified "{target_os}" environment.
-
-            Do not include any other text or explanations outside of the raw JSON object.
-
-            **Technology Stack Description:**
-            ---
-            {tech_stack_description}
-            ---
-
-            **JSON Output:**
-        """)
+        prompt = vault.get_prompt("agent_build_script_generator__prompt_46").format(target_os=target_os, tech_stack_description=tech_stack_description)
 
         try:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
