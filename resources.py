@@ -14,12 +14,13 @@ BY USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THE TERMS OF THIS AGREEMENT. IF 
 1.3 Unsigned Software Warning: You acknowledge that this Software may not be digitally signed by a trusted certificate authority. You assume all risks associated with bypassing operating system security warnings (such as Windows SmartScreen or Linux security prompts) to install and run the Software.
 
 2. GRANT OF LICENSE AND RESTRICTIONS
-2.1 Grant of License: Subject to the terms of this Agreement, the Developer grants you a revocable, non-exclusive, non-transferable, limited license to install and use the Software on devices owned or controlled by you.
-2.2 Permitted Use: You may use the Software to create, modify, and maintain software applications ("Projects") for your own personal use or for commercial gain (e.g., developing software for clients).
-2.3 Restrictions on Redistribution: You may not rent, lease, lend, sell, redistribute, or sublicense the Software itself (the tool) to any third party. While you may sell the products you create using the Software, you may not sell, bundle, or repackage the Software itself for financial gain or otherwise make the Software available to third parties as a standalone product.
+2.1 Except for the third party dependencies used by the Software, all of the Software is copyrighted and rights to it reserved by the Developer.
+2.2 Grant of License: Subject to the terms of this Agreement, the Developer grants you a revocable, non-exclusive, non-transferable, limited license to install and use the Software on devices owned or controlled by you.
+2.3 Permitted Use: You may use the Software to create, modify, and maintain software applications ("Projects") for your own personal use or for commercial gain (e.g., developing software for your clients).
+2.4 Restrictions on Redistribution: You may not rent, lease, lend, sell, redistribute, or sublicense the Software itself (the tool) to any third party. While you may sell the products you create using the Software, you may not sell, bundle, or repackage the Software itself for financial gain or otherwise make the Software available to third parties as a standalone product.
 
 3. INTELLECTUAL PROPERTY RIGHTS
-3.1 Ownership of Software: The License granted herein is not a transfer of ownership of the Software. The Developer retains all right, title, and interest in and to the Software, including all intellectual property rights therein. The Software is protected by copyright laws and international treaty provisions.
+3.1 Ownership of Software: The License granted herein is not a transfer of ownership of the Software. The Developer retains all right, title, and interest in and to the Software, including all intellectual property rights therein except for those of the third party software declared in the Third Party Notices. The Software is protected by copyright laws and international treaty provisions.
 3.2 Ownership of User Projects: You (the User) retain full ownership of all software, source code, specifications, plans, and documentation that are created, generated, or modified by the Software ("Project Artifacts"). The Developer claims no intellectual property rights over your inputs or the resulting output.
 
 4. TECHNICAL RESTRICTIONS
@@ -29,14 +30,14 @@ BY USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THE TERMS OF THIS AGREEMENT. IF 
 4.4 Feedback: If you provide the Developer with any suggestions, bug reports, or other feedback regarding the Software ("Feedback"), you hereby grant the Developer a perpetual, irrevocable, royalty-free, worldwide license to use, reproduce, modify, and incorporate such Feedback into the Software without any obligation or compensation to you.
 
 5. AI FEATURES AND DATA TRANSMISSION
-5.1 AI Generation Disclaimer: The Software utilizes Artificial Intelligence ("AI") to assist in various stages of the software development lifecycle, including but not limited to specification, planning, code generation, and testing. You acknowledge that AI systems are probabilistic and may produce results containing errors, omissions, security vulnerabilities, or non-functional code.
+5.1 AI Generation Disclaimer: The Software utilizes Artificial Intelligence ("AI") to assist in various stages of the software development lifecycle, including but not limited to specification, planning, code generation, reporting and testing. You acknowledge that AI systems are probabilistic and may produce results containing errors, omissions, security vulnerabilities, or non-functional code.
 5.2 User Responsibility & Brownfield Risk: You agree that you are solely responsible for reviewing, testing, and validating all artifacts generated or modified by the Software. When using the Software to modify existing applications ("Brownfield Projects"), you acknowledge the risk that the Software may corrupt, delete, or introduce errors into your existing codebase. You assume full responsibility for the integrity of your files and data before, during, and after the use of the Software. The Developer assumes no liability for any damage to new or existing code resulting from the use of the Software.
 5.3 Data Transmission Consent: You acknowledge and agree that the Software operates by transmitting portions of your project data to third-party Large Language Model ("LLM") providers via their APIs.
 5.4 Third-Party Providers: By providing your own API key, you agree that the processing of your data is subject to the terms of service of that specific LLM provider.
 
 6. THIRD-PARTY COMPONENTS
-6.1 Open Source Libraries: The Software includes or bundles various third-party open-source software components. These components are subject to their own respective license agreements, which may grant you specific rights regarding those components.
-6.2 License Access: A list of these components and their full license texts is available within the Software via the "About" menu or in the Third_Party_Notices.txt file located in the installation directory. Your use of the Software constitutes acceptance of these third-party terms.
+6.1 Open Source Libraries: The Software includes or bundles various third-party free or open-source software components. These components are subject to their own respective license agreements, which may grant you specific rights regarding those components.
+6.2 License Access: A list of these components and their full license texts is available within the Software via the "Help - About Klyve" menu. Your use of the Software constitutes acceptance of these third-party terms.
 
 7. LIMITATION OF LIABILITY
 7.1 No Consequential Damages: To the maximum extent permitted by applicable law, in no event shall the Developer be liable for any special, incidental, indirect, or consequential damages whatsoever (including, but not limited to, damages for loss of business profits, business interruption, loss of business information, or any other pecuniary loss) arising out of the use of or inability to use the Software or the failure to provide support services, even if the Developer has been advised of the possibility of such damages.
@@ -48,7 +49,7 @@ BY USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THE TERMS OF THIS AGREEMENT. IF 
 
 9. INDEMNIFICATION AND DISPUTE RESOLUTION
 9.1 Indemnification: You agree to indemnify, defend, and hold harmless the Developer from and against any and all claims, liabilities, damages, losses, and expenses (including reasonable legal fees) arising out of or in any way connected with: (a) your access to or use of the Software; (b) your violation of this Agreement; or (c) the Project Artifacts you generate using the Software.
-9.2 Governing Law: This Agreement shall be governed by and construed in accordance with the laws of India. The courts in Bangalore, Karnataka shall have exclusive jurisdiction over any disputes arising out of or in connection with this Agreement.
+9.2 Disputes: This Agreement shall be governed by and construed in accordance with the laws of India. The courts in Bangalore, Karnataka shall have exclusive jurisdiction over any disputes arising out of or in connection with this Agreement.
 9.3 Class Action Waiver: To the fullest extent permitted by applicable law, you agree that any dispute resolution proceedings will be conducted only on an individual basis and not in a class, consolidated, or representative action. You expressly waive any right to participate in a class action lawsuit or class-wide arbitration against the Developer.
 
 10. GENERAL PROVISIONS
@@ -9313,6 +9314,72 @@ LICENSE SUMMARY: MIT License
 MIT License
 
 Copyright (c) 2023 DeepSeek
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------
+COMPONENT: Inno Setup 6.6.1
+URL: https://jrsoftware.org/
+LICENSE: Inno Setup License
+-------------------------------------------------------------------------
+
+Except where otherwise noted, all of the documentation and software included in the Inno
+Setup package is copyrighted by Jordan Russell.
+
+Copyright (C) 1997-2025 Jordan Russell. All rights reserved.
+Portions Copyright (C) 2000-2025 Martijn Laan. All rights reserved.
+
+This software is provided "as-is," without any express or implied warranty. In no event shall
+the author be held liable for any damages arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose, including commercial
+applications, and to alter and redistribute it, provided that the following conditions are met:
+
+1. All redistributions of source code files must retain all copyright notices that are currently
+   in place, and this list of conditions without modification.
+
+2. All redistributions in binary form must retain all occurrences of the above copyright notice
+   and web site addresses that are currently in place (for example, in the About boxes).
+
+3. The origin of this software must not be misrepresented; you must not claim that you wrote
+   the original software. If you use this software to distribute a product, an acknowledgment
+   in the product documentation would be appreciated but is not required.
+
+4. Modified versions in source or binary form must be plainly marked as such, and must not
+   be misrepresented as being the original software.
+
+-------------------------------------------------------------------------
+COMPONENT: AppImageTool
+URL: https://github.com/AppImage/appimagetool/releases/
+LICENSE: MIT License
+-------------------------------------------------------------------------
+
+MIT License
+
+If not stated otherwise within the individual file or subdirectory, the
+original source code in this repository is licensed as below. This does not
+necessarily apply for all dependencies. For the sake of clarity, this license
+does NOT apply to the contents of AppImages that anyone may create.
+Software contained inside an AppImage may be licensed under any license at the
+discretion of the respecive rights holder(s).
+
+Copyright (c) 2004-20 Simon Peter
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
