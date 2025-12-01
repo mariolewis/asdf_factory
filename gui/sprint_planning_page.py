@@ -361,6 +361,9 @@ class SprintPlanningPage(QWidget):
         self.ui.auditResultTextEdit.setText(error_msg)
 
         self.ui.runAuditButton.setEnabled(True)
+        # Re-enable if a plan already exists
+        if self.implementation_plan_json:
+            self.ui.refinePlanButton.setEnabled(True)
 
     def _handle_audit_result(self, report_markdown: str):
         """Displays the audit result in the text edit."""
@@ -369,6 +372,7 @@ class SprintPlanningPage(QWidget):
         self.ui.auditResultTextEdit.setHtml(render_markdown_to_html(report_markdown))
 
         self.ui.runAuditButton.setEnabled(True)
+        self.ui.refinePlanButton.setEnabled(True)
 
     def on_security_audit_clicked(self):
         self._run_audit_task("Security")

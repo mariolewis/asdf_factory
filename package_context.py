@@ -25,7 +25,20 @@ IGNORED_PATHS = {
     'dist',
     'build',
     'bat',
-    'package_context.py' # Ignore the script itself
+    'dependencies',
+    'backups',
+    'tools',
+    'resources.py'
+    'package_context.py',
+    'setup_cython.py',
+    'setup_vault.py',
+    'generate_clean_requirements.py',
+    'generate_legal_notices.py',
+    'license additions.txt',
+    'pack_legal_resources.py',
+    'Privacy_Policy.txt',
+    'Third_Party_Notices.txt',
+    'audit_unused_dependencies.py'
 }
 # -------------------
 

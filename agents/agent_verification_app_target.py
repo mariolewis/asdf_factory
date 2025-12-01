@@ -97,13 +97,18 @@ class VerificationAgent_AppTarget:
                 command_to_run = f'bash -c "{full_command}"'
 
             logging.info(f"Executing full insulated command: '{command_to_run}'")
+            # Prepare suppression flags for Windows
+            run_kwargs = {}
+            if sys.platform == "win32":
+                run_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
             result = subprocess.run(
                 test_command_str,
                 shell=True,
                 cwd=project_root,
                 capture_output=True,
                 text=True,
-                check=False
+                check=False,
+                **run_kwargs
             )
             output = result.stdout + "\n" + result.stderr
 

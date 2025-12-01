@@ -1,3 +1,4 @@
+import config
 # agents/agent_spec_synthesis.py
 
 import logging
@@ -6,6 +7,7 @@ import json
 import os
 import subprocess
 import re
+import sys
 from gui.utils import render_markdown_to_html
 from pathlib import Path
 from PySide6.QtGui import QTextDocument
@@ -96,7 +98,13 @@ class SpecSynthesisAgent:
         if not dot_blocks:
             return markdown_text
 
-        dot_executable = "dot"
+        dot_executable = config.get_graphviz_binary()
+
+        # Prepare suppression flags for Windows
+        run_kwargs = {}
+        if sys.platform == "win32":
+            # subprocess.CREATE_NO_WINDOW = 0x08000000
+            run_kwargs['creationflags'] = 0x08000000
 
         # Iterate in reverse to allow string replacement without messing up indices
         for match in reversed(dot_blocks):
@@ -110,7 +118,8 @@ class SpecSynthesisAgent:
                     [dot_executable, "-Tpng"],
                     input=original_code.encode('utf-8'),
                     capture_output=True,
-                    check=True
+                    check=True,
+                    **run_kwargs
                 )
                 continue # Code is valid
             except (subprocess.CalledProcessError, FileNotFoundError) as e:
@@ -136,7 +145,8 @@ class SpecSynthesisAgent:
                                 [dot_executable, "-Tpng"],
                                 input=fixed_code.encode('utf-8'),
                                 capture_output=True,
-                                check=True
+                                check=True,
+                                **run_kwargs
                             )
                             # Fix worked: Replace content
                             start, end = match.span(1)

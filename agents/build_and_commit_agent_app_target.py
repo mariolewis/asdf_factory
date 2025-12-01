@@ -3,6 +3,7 @@ This module contains the BuildAndCommitAgentAppTarget class.
 """
 import subprocess
 import os
+import sys
 from pathlib import Path
 import logging
 import git
@@ -208,18 +209,18 @@ class BuildAndCommitAgentAppTarget:
         try:
             logging.info(f"Running test suite with command: '{test_command}'")
             # For Windows, create a startupinfo object to hide the console window
-            startupinfo = None
-            if os.name == 'nt':
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            # Prepare suppression flags for Windows
+            run_kwargs = {}
+            if sys.platform == "win32":
+                run_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
 
             result = subprocess.run(
                 test_command.split(),
                 cwd=self.repo_path,
                 capture_output=True,
                 text=True,
-                check=False, # We handle the success/failure check manually
-                startupinfo=startupinfo
+                check=False,
+                **run_kwargs
             )
 
             if result.returncode == 0:

@@ -1849,7 +1849,12 @@ class KlyveMainWindow(QMainWindow):
             if len(command) == 1:
                 command.append(str(project_root))
 
-            subprocess.Popen(command)
+            # Prepare suppression flags for Windows
+            run_kwargs = {}
+            if sys.platform == "win32":
+                run_kwargs['creationflags'] = 0x08000000
+
+            subprocess.Popen(command, **run_kwargs)
             logging.info(f"Launched IDE with command: {command}")
 
         except Exception as e:

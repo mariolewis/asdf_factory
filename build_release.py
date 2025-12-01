@@ -1,0 +1,220 @@
+import os
+import sys
+import shutil
+import subprocess
+import re
+from pathlib import Path
+
+# Configuration
+PROJECT_NAME = "Klyve"
+MAIN_SCRIPT = "klyve.py"
+BUILD_DIR = Path("build_stage")
+DIST_DIR = Path("dist")
+
+def clean_build_env():
+    """Removes previous build artifacts."""
+    print(f"--- Cleaning {BUILD_DIR} and {DIST_DIR} ---")
+    if BUILD_DIR.exists():
+        try:
+            shutil.rmtree(BUILD_DIR)
+        except PermissionError:
+            print(f"Warning: Could not fully delete {BUILD_DIR}. Is it open?")
+
+    if DIST_DIR.exists():
+        try:
+            shutil.rmtree(DIST_DIR)
+        except PermissionError:
+            print(f"Warning: Could not fully delete {DIST_DIR}. Is it open?")
+
+    BUILD_DIR.mkdir(exist_ok=True)
+
+def stage_project(project_root):
+    """Copies source code to a staging area to modify it safely."""
+    print(f"--- Staging Project to {BUILD_DIR} ---")
+
+    def ignore_patterns(path, names):
+        return [n for n in names if n in [
+            '.git', '__pycache__', 'venv', 'env',
+            'dist', 'build', 'backups', 'tests',
+            BUILD_DIR.name,
+            '.idea', '.vscode', 'data'
+        ]]
+
+    dest_src = BUILD_DIR / "src"
+    if dest_src.exists():
+        shutil.rmtree(dest_src)
+
+    shutil.copytree(project_root, dest_src, ignore=ignore_patterns)
+
+    print("--- Staging Data Files ---")
+    src_data = project_root / "data"
+    dst_data = dest_src / "data"
+    dst_data.mkdir(exist_ok=True)
+
+    if (src_data / "prompts").exists():
+        shutil.copytree(src_data / "prompts", dst_data / "prompts")
+    if (src_data / "prompts_manifest.json").exists():
+        shutil.copy2(src_data / "prompts_manifest.json", dst_data / "prompts_manifest.json")
+    if (src_data / "templates").exists():
+        shutil.copytree(src_data / "templates", dst_data / "templates")
+
+    return dest_src
+
+def sanitize_config(staged_root):
+    """Reads config.py and REMOVES the get_db_key() function implementation."""
+    print("--- Sanitizing config.py (Removing plaintext keys) ---")
+    config_path = staged_root / "config.py"
+    content = config_path.read_text(encoding='utf-8')
+
+    pattern = r"def get_db_key\(\) -> str:.*?(?=\ndef|$)"
+    replacement = 'def get_db_key() -> str:\n    raise RuntimeError("CRITICAL: Attempted to access insecure key in Production Build. Use Vault instead.")'
+
+    new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
+    config_path.write_text(new_content, encoding='utf-8')
+
+def run_nuitka(staged_root):
+    """Runs the Nuitka compiler with aggressive optimization."""
+    print("--- Compiling with Nuitka (Optimized) ---")
+
+    abs_dist = DIST_DIR.resolve()
+
+    cmd = [
+        sys.executable, "-m", "nuitka",
+        "--standalone",
+        "--enable-plugin=pyside6",
+        "--include-data-dir=data/templates=data/templates",
+        "--windows-icon-from-ico=gui/icons/klyve_logo.ico",
+
+        # UPDATED: Use modern console mode flag
+        "--windows-console-mode=disable",
+
+        # --- INCLUSIONS (Keep Critical Deps) ---
+        "--include-module=master_orchestrator",
+        "--include-module=klyve_db_manager",
+        "--include-module=llm_service",
+        "--include-package=agents",
+        "--include-package=gui",
+        "--include-module=sqlcipher3",
+        "--include-module=sqlite3",
+        "--include-module=uuid",
+        "--include-module=json",
+        "--include-module=logging",
+        "--include-module=shutil",
+        "--include-module=base64",
+        "--include-module=re",
+        "--include-module=subprocess",
+        "--include-module=threading",
+        "--include-module=traceback",
+        "--include-module=git",
+        "--include-module=gitdb",
+        "--include-module=openai",
+        "--include-module=anthropic",
+        "--include-module=google.generativeai",
+        "--include-module=replicate",
+        "--include-module=requests",
+        "--include-module=pandas",
+        "--include-module=openpyxl",
+        "--include-module=docx",
+        "--include-module=htmldocx",
+        "--include-module=markdown",
+        "--include-module=bs4",
+        "--include-module=graphviz",
+        "--include-module=plotly",
+        "--include-module=kaleido",
+        "--include-module=PIL",
+        "--include-module=pypdf",
+
+        # --- EXCLUSIONS (Debloat - CORRECTED FLAGS) ---
+        "--nofollow-import-to=numba",
+        "--nofollow-import-to=llvmlite",
+        "--nofollow-import-to=zmq",
+        "--nofollow-import-to=IPython",
+        "--nofollow-import-to=jupyter",
+        "--nofollow-import-to=scipy",
+        "--nofollow-import-to=matplotlib",
+        "--nofollow-import-to=setuptools",
+        "--nofollow-import-to=distutils",
+        "--nofollow-import-to=tkinter",
+
+        f"--output-dir={str(abs_dist)}",
+        "klyve.py"
+    ]
+
+    print(f"Executing Nuitka build...")
+    result = subprocess.run(cmd, cwd=staged_root)
+    if result.returncode != 0:
+        print("❌ Nuitka compilation failed.")
+        sys.exit(1)
+
+def copy_vault_extension(staged_root):
+    """Manually copies the compiled vault extension."""
+    print("--- Bundling Iron Vault ---")
+    dist_root = DIST_DIR / "klyve.dist"
+    pyd_files = list(staged_root.glob("vault*.pyd")) + list(staged_root.glob("vault*.so"))
+    if not pyd_files:
+        print("❌ FATAL: Could not find compiled vault extension in staging.")
+        sys.exit(1)
+    src_pyd = pyd_files[0]
+    ext_suffix = src_pyd.suffix
+    dst_pyd = dist_root / f"vault{ext_suffix}"
+    shutil.copy2(src_pyd, dst_pyd)
+    print(f"✅ Copied {src_pyd.name} to {dst_pyd}")
+
+def bundle_dependencies(project_root):
+    """Copies the Graphviz sidecar."""
+    print("--- Bundling Sidecar Dependencies ---")
+    src_gv = project_root / "dependencies" / "graphviz"
+    dist_gv = DIST_DIR / "klyve.dist" / "dependencies" / "graphviz"
+    if not src_gv.exists():
+        print("❌ Error: Graphviz dependency not found.")
+        sys.exit(1)
+    if dist_gv.exists(): shutil.rmtree(dist_gv)
+    shutil.copytree(src_gv, dist_gv)
+    print(f"✅ Graphviz bundled to {dist_gv}")
+
+def bundle_gui_assets(project_root):
+    """Copies non-code GUI assets (styles, icons) to the dist folder."""
+    print("--- Bundling GUI Assets ---")
+    src_style = project_root / "gui" / "style.qss"
+    src_icons = project_root / "gui" / "icons"
+    src_images = project_root / "gui" / "images"
+    dist_gui = DIST_DIR / "klyve.dist" / "gui"
+    dist_gui.mkdir(exist_ok=True)
+
+    if src_style.exists():
+        shutil.copy2(src_style, dist_gui / "style.qss")
+        print(f"✅ Copied style.qss")
+
+    if src_icons.exists():
+        dst_icons = dist_gui / "icons"
+        if dst_icons.exists(): shutil.rmtree(dst_icons)
+        shutil.copytree(src_icons, dst_icons)
+        print(f"✅ Copied icons")
+
+    if src_images.exists():
+        dst_images = dist_gui / "images"
+        if dst_images.exists(): shutil.rmtree(dst_images)
+        shutil.copytree(src_images, dst_images)
+        print(f"✅ Copied images")
+
+def main():
+    project_root = Path(__file__).parent
+    clean_build_env()
+    staged_src = stage_project(project_root)
+    print("--- Generating Production Vault ---")
+    subprocess.run([sys.executable, "tools/build_vault.py"], cwd=staged_src, check=True)
+    print("--- Compiling Vault Extension ---")
+    subprocess.run([sys.executable, "setup_cython.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
+    # NOTE: We also compile the Vault here to ensure it's ready for copying
+    subprocess.run([sys.executable, "setup_vault.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
+
+    sanitize_config(staged_src)
+    run_nuitka(staged_src)
+    copy_vault_extension(staged_src)
+    bundle_dependencies(project_root)
+    bundle_gui_assets(project_root)
+    print("\n✨ BUILD COMPLETE ✨")
+    print(f"Artifacts located in: {DIST_DIR / 'klyve.dist'}")
+
+if __name__ == "__main__":
+    main()

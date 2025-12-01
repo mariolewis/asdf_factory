@@ -1,3 +1,4 @@
+import config
 # agents/agent_spec_clarification.py
 
 """
@@ -8,6 +9,7 @@ import logging
 import textwrap
 import re
 import subprocess
+import sys
 from typing import List
 from klyve_db_manager import KlyveDBManager
 from llm_service import LLMService
@@ -58,7 +60,13 @@ class SpecClarificationAgent:
         if not dot_blocks:
             return markdown_text
 
-        dot_executable = "dot"
+        dot_executable = config.get_graphviz_binary()
+
+        # Prepare suppression flags for Windows
+        run_kwargs = {}
+        if sys.platform == "win32":
+            # subprocess.CREATE_NO_WINDOW = 0x08000000
+            run_kwargs['creationflags'] = 0x08000000
 
         for match in reversed(dot_blocks):
             original_code = match.group(1)
@@ -68,7 +76,8 @@ class SpecClarificationAgent:
                     [dot_executable, "-Tpng"],
                     input=original_code.encode('utf-8'),
                     capture_output=True,
-                    check=True
+                    check=True,
+                    **run_kwargs
                 )
                 continue
             except (subprocess.CalledProcessError, FileNotFoundError) as e:
@@ -86,6 +95,13 @@ class SpecClarificationAgent:
                     code_match = re.search(r"```dot\s*(.*?)```", fixed_response, re.DOTALL)
                     if code_match:
                         fixed_code = code_match.group(1)
+                        subprocess.run(
+                            [dot_executable, "-Tpng"],
+                            input=fixed_code.encode('utf-8'),
+                            capture_output=True,
+                            check=True,
+                            **run_kwargs
+                        )
                         start, end = match.span(1)
                         markdown_text = markdown_text[:start] + fixed_code + markdown_text[end:]
                         logging.info("DOT Diagram successfully fixed by AI.")

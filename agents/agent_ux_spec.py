@@ -4,12 +4,13 @@
 This module contains the UX_Spec_Agent class, responsible for the iterative
 generation of the UX/UI Specification document.
 """
-
+import config
 import logging
 import textwrap
 import json
 import re
 import subprocess
+import sys
 from pathlib import Path
 from llm_service import LLMService, parse_llm_json
 import vault
@@ -39,7 +40,13 @@ class UX_Spec_Agent:
         if not dot_blocks:
             return markdown_text
 
-        dot_executable = "dot"
+        dot_executable = config.get_graphviz_binary()
+
+        # Prepare suppression flags for Windows
+        run_kwargs = {}
+        if sys.platform == "win32":
+            # subprocess.CREATE_NO_WINDOW = 0x08000000
+            run_kwargs['creationflags'] = 0x08000000
 
         for match in reversed(dot_blocks):
             original_code = match.group(1)
@@ -49,7 +56,8 @@ class UX_Spec_Agent:
                     [dot_executable, "-Tpng"],
                     input=original_code.encode('utf-8'),
                     capture_output=True,
-                    check=True
+                    check=True,
+                    **run_kwargs
                 )
                 continue
             except (subprocess.CalledProcessError, FileNotFoundError) as e:

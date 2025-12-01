@@ -112,15 +112,58 @@ def _setup_logging(db_manager):
         logging.basicConfig(level=logging.CRITICAL, handlers=[logging.NullHandler()], force=True)
         logging.disable(logging.CRITICAL)
 
+
+def global_exception_handler(exctype, value, tb):
+    """
+    Sanitizes error tracebacks to hide internal file paths before logging.
+    """
+    # Format the traceback
+    raw_tb = "".join(traceback.format_exception(exctype, value, tb))
+
+    # Sanitize Paths (Hide user/project structure)
+    # We replace the project root with <FROZEN_ROOT>
+    try:
+        if getattr(sys, 'frozen', False):
+            base_dir = str(Path(sys.executable).parent)
+        else:
+            base_dir = str(Path(__file__).parent)
+
+        # Simple string replacement for the base dir
+        sanitized_tb = raw_tb.replace(base_dir, "<CORE>")
+
+        # Regex for other absolute paths (Drive letters)
+        sanitized_tb = re.sub(r'[a-zA-Z]:\\[\\\w\s\.\-]*\\klyve', '<CORE>', sanitized_tb)
+
+    except Exception:
+        sanitized_tb = raw_tb # Fallback
+
+    # Log it
+    logging.critical("Uncaught Exception:", exc_info=(exctype, value, tb))
+
+    # In Dev Mode, print to stderr. In Prod, suppress console output of raw paths.
+    if config.is_dev_mode():
+        sys.__excepthook__(exctype, value, tb)
+    else:
+        # Show a sanitized GUI dialog if possible
+        error_msg = f"An internal error occurred.\nType: {exctype.__name__}\nDetails: {str(value)}\n\nSee logs for details."
+        try:
+            if QApplication.instance():
+                QMessageBox.critical(None, "Critical Error", error_msg)
+        except:
+            pass
+        sys.exit(1)
+
+
 def _initialize_klyve(app, splash):
     try:
         # --- 0. Prevent Premature Exit ---
         app.setQuitOnLastWindowClosed(False)
 
         # --- 1. Setup Database Paths ---
-        db_dir = Path("data")
-        db_dir.mkdir(exist_ok=True)
-        db_path = db_dir / "klyve.db"
+        # Use config to get the absolute path relative to the binary location
+        db_path_str = config.get_resource_path("data/klyve.db")
+        db_path = Path(db_path_str)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Initialize DB Manager (needed to read config for logging)
         db_manager = KlyveDBManager(db_path=str(db_path))
@@ -133,7 +176,7 @@ def _initialize_klyve(app, splash):
 
         # --- 4. Robust Stylesheet Loading ---
         try:
-            style_file = Path(__file__).parent / "gui" / "style.qss"
+            style_file = Path(config.get_resource_path("gui/style.qss"))
             if style_file.exists():
                 with open(style_file, "r") as f:
                     app.setStyleSheet(f.read())
@@ -196,11 +239,12 @@ if __name__ == "__main__":
     try:
         QApplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
         app = QApplication(sys.argv)
+        sys.excepthook = global_exception_handler
 
         # --- 1. Setup Application Assets ---
-        assets_dir = Path(__file__).parent / "gui"
-        icon_path = assets_dir / "icons" / "klyve_logo.ico"
-        splash_path = assets_dir / "images" / "splash_screen.png"
+        # Assets resolved via config for frozen support
+        icon_path = Path(config.get_resource_path("gui/icons/klyve_logo.ico"))
+        splash_path = Path(config.get_resource_path("gui/images/splash_screen.png"))
 
         if icon_path.exists():
             app.setWindowIcon(QIcon(str(icon_path)))
@@ -228,6 +272,7 @@ if __name__ == "__main__":
 
         if not QApplication.instance():
             temp_app = QApplication(sys.argv)
+        sys.excepthook = global_exception_handler
 
         QMessageBox.critical(None, "Critical Startup Error", f"A critical error occurred:\n{e}")
         sys.exit(1)

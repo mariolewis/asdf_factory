@@ -1,3 +1,4 @@
+import config
 # agents/agent_tech_stack_proposal.py
 
 """
@@ -7,6 +8,7 @@ This module contains the TechStackProposalAgent class.
 import logging
 import textwrap
 import json
+import sys
 from llm_service import LLMService, parse_llm_json
 import subprocess
 import re
@@ -58,7 +60,13 @@ class TechStackProposalAgent:
         if not dot_blocks:
             return markdown_text
 
-        dot_executable = "dot"
+        dot_executable = config.get_graphviz_binary()
+
+        # Prepare suppression flags for Windows
+        run_kwargs = {}
+        if sys.platform == "win32":
+            # subprocess.CREATE_NO_WINDOW = 0x08000000
+            run_kwargs['creationflags'] = 0x08000000
 
         for match in reversed(dot_blocks):
             original_code = match.group(1)
@@ -68,7 +76,8 @@ class TechStackProposalAgent:
                     [dot_executable, "-Tpng"],
                     input=original_code.encode('utf-8'),
                     capture_output=True,
-                    check=True
+                    check=True,
+                    **run_kwargs
                 )
                 continue
             except (subprocess.CalledProcessError, FileNotFoundError) as e:

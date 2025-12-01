@@ -6,6 +6,7 @@ from PySide6.QtCore import Signal
 from pathlib import Path
 import os
 import subprocess
+import sys
 
 from gui.ui_env_setup_page import Ui_EnvSetupPage
 from master_orchestrator import MasterOrchestrator
@@ -128,15 +129,20 @@ class EnvSetupPage(QWidget):
             # If it's not already a git repo, initialize it.
             repo_message = ""
             if not (project_path / ".git").is_dir():
-                subprocess.run(['git', 'init'], cwd=project_path, check=True, capture_output=True, text=True)
+                # Prepare suppression flags for Windows
+                run_kwargs = {}
+                if sys.platform == "win32":
+                    run_kwargs['creationflags'] = 0x08000000
+
+                subprocess.run(['git', 'init'], cwd=project_path, check=True, capture_output=True, text=True, **run_kwargs)
                 gitignore_path = project_path / ".gitignore"
                 gitignore_content = (
                     "# Environments\n.env\n.venv\nvenv/\nenv/\n\n"
                     "# IDE / Editor specific\n.vscode/\n.idea/\n"
                 )
                 gitignore_path.write_text(gitignore_content, encoding='utf-8')
-                subprocess.run(['git', 'add', '.gitignore'], cwd=project_path, check=True)
-                subprocess.run(['git', 'commit', '-m', 'Initial commit: Add .gitignore'], cwd=project_path, check=True)
+                subprocess.run(['git', 'add', '.gitignore'], cwd=project_path, check=True, **run_kwargs)
+                subprocess.run(['git', 'commit', '-m', 'Initial commit: Add .gitignore'], cwd=project_path, check=True, **run_kwargs)
                 repo_message = "Successfully initialized new Git repository."
             else:
                 repo_message = "Confirmed existing Git repository."
