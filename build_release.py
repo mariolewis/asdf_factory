@@ -11,6 +11,11 @@ MAIN_SCRIPT = "klyve.py"
 BUILD_DIR = Path("build_stage")
 DIST_DIR = Path("dist")
 
+# --- LGPL CONFIGURATION ---
+# We point to the parent 'site-packages' folder so we can grab both PySide6 and shiboken6
+# Note: We use the path you provided, stripped back one level to find both folders.
+CLEAN_PYSIDE_ROOT = Path(r"E:\Python311\Lib\site-packages")
+
 def clean_build_env():
     """Removes previous build artifacts."""
     print(f"--- Cleaning {BUILD_DIR} and {DIST_DIR} ---")
@@ -74,19 +79,25 @@ def sanitize_config(staged_root):
 
 def run_nuitka(staged_root):
     """Runs the Nuitka compiler with aggressive optimization."""
-    print("--- Compiling with Nuitka (Optimized) ---")
+    print("--- Compiling with Nuitka (LGPL Compliant Mode) ---")
 
     abs_dist = DIST_DIR.resolve()
 
     cmd = [
         sys.executable, "-m", "nuitka",
         "--standalone",
-        "--enable-plugin=pyside6",
+        # NOTE: Plugin disabled to allow manual PySide6 handling for LGPL
+        # "--enable-plugin=pyside6",
         "--include-data-dir=data/templates=data/templates",
         "--windows-icon-from-ico=gui/icons/klyve_logo.ico",
 
-        # UPDATED: Use modern console mode flag
+        # Use 'force' for debugging crashes, 'disable' for release
         "--windows-console-mode=disable",
+
+        # --- LGPL COMPLIANCE: EXCLUDE QT ---
+        # This forces Nuitka to ignore Qt so we can copy the clean folders manually later
+        "--nofollow-import-to=PySide6",
+        "--nofollow-import-to=shiboken6",
 
         # --- INCLUSIONS (Keep Critical Deps) ---
         "--include-module=master_orchestrator",
@@ -124,7 +135,7 @@ def run_nuitka(staged_root):
         "--include-module=PIL",
         "--include-module=pypdf",
 
-        # --- EXCLUSIONS (Debloat - CORRECTED FLAGS) ---
+        # --- EXCLUSIONS (Debloat) ---
         "--nofollow-import-to=numba",
         "--nofollow-import-to=llvmlite",
         "--nofollow-import-to=zmq",
@@ -197,14 +208,71 @@ def bundle_gui_assets(project_root):
         shutil.copytree(src_images, dst_images)
         print(f"✅ Copied images")
 
+def post_build_cleanup(dist_dir):
+    """Replaces Nuitka-bundled Qt components with clean, swappable versions for LGPL compliance."""
+    print("--- 🧹 Performing LGPL Compliance Setup ---")
+
+    # Define source paths (Using the constant defined at top of file)
+    src_pyside = CLEAN_PYSIDE_ROOT / "PySide6"
+    src_shiboken = CLEAN_PYSIDE_ROOT / "shiboken6"
+
+    # Define destination paths
+    dst_pyside = dist_dir / "PySide6"
+    dst_shiboken = dist_dir / "shiboken6"
+
+    # Copy PySide6
+    if dst_pyside.exists(): shutil.rmtree(dst_pyside)
+    if src_pyside.exists():
+        shutil.copytree(src_pyside, dst_pyside)
+        print(f"✅ Copied clean PySide6 from {src_pyside}")
+    else:
+        print(f"❌ ERROR: Could not find clean PySide6 at {src_pyside}")
+        sys.exit(1)
+
+    # Copy shiboken6
+    if dst_shiboken.exists(): shutil.rmtree(dst_shiboken)
+    if src_shiboken.exists():
+        shutil.copytree(src_shiboken, dst_shiboken)
+        print(f"✅ Copied clean shiboken6 from {src_shiboken}")
+    else:
+        # Note: Sometimes shiboken is inside PySide6, but usually it's a sibling.
+        # If this fails, check your folder structure.
+        print(f"⚠️ Warning: Could not find clean shiboken6 at {src_shiboken}")
+
+    # NUKE any root-level Qt DLLs to force loading from the subfolders
+    print("--- Cleaning Root DLL Conflicts ---")
+    removed_count = 0
+    for dll in dist_dir.glob("Qt6*.dll"):
+        try:
+            dll.unlink()
+            print(f"   Removed conflict: {dll.name}")
+            removed_count += 1
+        except Exception as e:
+            print(f"   Failed to remove {dll.name}: {e}")
+
+    # Also clean shiboken6.dll if it leaked into root
+    for dll in dist_dir.glob("shiboken6.dll"):
+        try:
+            dll.unlink()
+            print(f"   Removed conflict: {dll.name}")
+        except: pass
+
+    if removed_count == 0:
+        print("   (No conflicting DLLs found in root - this is good)")
+
+    print("--- LGPL Setup Complete ---")
+
 def main():
     project_root = Path(__file__).parent
     clean_build_env()
     staged_src = stage_project(project_root)
+
     print("--- Generating Production Vault ---")
     subprocess.run([sys.executable, "tools/build_vault.py"], cwd=staged_src, check=True)
+
     print("--- Compiling Vault Extension ---")
     subprocess.run([sys.executable, "setup_cython.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
+
     # NOTE: We also compile the Vault here to ensure it's ready for copying
     subprocess.run([sys.executable, "setup_vault.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
 
@@ -213,6 +281,10 @@ def main():
     copy_vault_extension(staged_src)
     bundle_dependencies(project_root)
     bundle_gui_assets(project_root)
+
+    # --- NEW: Run LGPL Cleanup ---
+    post_build_cleanup(DIST_DIR / "klyve.dist")
+
     print("\n✨ BUILD COMPLETE ✨")
     print(f"Artifacts located in: {DIST_DIR / 'klyve.dist'}")
 

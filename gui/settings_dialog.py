@@ -91,6 +91,14 @@ class SettingsDialog(QDialog):
 
         # --- LLM Providers Tab Widgets ---
         self.llm_providers_tab = QWidget()
+
+        self.llm_explanation_label = QLabel(
+            "Klyve uses a 'Reasoning' model for complex tasks and a 'Fast' model for speed. "
+            "You can further reduce its LLM usage cost by configuring the Fast Model for both."
+        )
+        self.llm_explanation_label.setWordWrap(True)
+        self.llm_explanation_label.setObjectName("settingsInstructionLabel")
+
         self.provider_combo_box = QComboBox()
         self.provider_combo_box.addItems(["ChatGPT", "Claude", "Deepseek", "Gemini", "Grok", "Llama", "Phi-3 (Local)", "Any Other (OpenAI Compatible)"])
         self.provider_stacked_widget = QStackedWidget()
@@ -162,6 +170,8 @@ class SettingsDialog(QDialog):
         # --- Templates Tab Widgets ---
         self.templates_tab = QWidget()
         self.template_instruction_label = QLabel("Here you can manage global document templates. A template provides a standard structure for a specification document. When a template is set, the AI will use it to structure its output according to it.")
+        self.template_instruction_label.setWordWrap(True)
+        self.template_instruction_label.setObjectName("settingsInstructionLabel")
         self.template_type_combo = QComboBox()
         self.template_type_combo.addItems(["Application Specification", "Technical Specification", "UX/UI Specification"])
         self.template_path_input = QLineEdit()
@@ -175,6 +185,8 @@ class SettingsDialog(QDialog):
         self.docxStylesTab = QWidget()
         self.docxStyleInstructionLabel = QLabel("Manage .docx templates for visual styling. The active template will be used to format all exported documents.\n"
                                                 "Templates MUST contain the following named styles: Title, Heading 1, Heading 2, Heading 3, Normal, Bullet List, List Numbered, Code Block.")
+        self.docxStyleInstructionLabel.setWordWrap(True)
+        self.docxStyleInstructionLabel.setObjectName("settingsInstructionLabel")
         self.docxStyleListWidget = QListWidget()
         self.addDocxStyleButton = QPushButton("Add New Style...")
         self.removeDocxStyleButton = QPushButton("Remove Selected")
@@ -207,6 +219,9 @@ class SettingsDialog(QDialog):
     def _create_layouts(self):
         """Creates and arranges layouts for the dialog."""
         llm_tab_layout = QVBoxLayout(self.llm_providers_tab)
+
+        llm_tab_layout.addWidget(self.llm_explanation_label)
+
         provider_form_layout = QFormLayout()
         provider_form_layout.addRow("Select LLM Provider:", self.provider_combo_box)
         llm_tab_layout.addLayout(provider_form_layout)
@@ -259,17 +274,23 @@ class SettingsDialog(QDialog):
         self.provider_stacked_widget.addWidget(self.llama_page)
 
         llm_tab_layout.addWidget(self.provider_stacked_widget)
-        llm_tab_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
-
-        factory_tab_layout = QFormLayout(self.factory_behavior_tab)
-        factory_tab_layout.addRow("Max Debug Attempts:", self.max_debug_spin_box)
 
         # Context Window Layout
         context_limit_layout = QHBoxLayout()
         context_limit_layout.addWidget(self.context_limit_input)
         context_limit_layout.addWidget(self.calibrate_button)
-        factory_tab_layout.addRow("Context Window Limit:", context_limit_layout)
+        # Use a FormLayout wrapper to align the label with the provider forms above
+        context_wrapper_layout = QFormLayout()
+        context_wrapper_layout.addRow("Context Window Limit:", context_limit_layout)
+        llm_tab_layout.addLayout(context_wrapper_layout)
+
         self.calibrate_button.setToolTip("Queries the selected LLM to determine and set its optimal context limit with a safety margin.")
+
+        llm_tab_layout.addSpacerItem(QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding))
+
+        # --- Factory Behavior Tab Layout ---
+        factory_tab_layout = QFormLayout(self.factory_behavior_tab)
+        factory_tab_layout.addRow("Max Debug Attempts:", self.max_debug_spin_box)
 
         # --- CONDITIONAL LOGGING ROW ---
         if config.is_dev_mode():
@@ -684,6 +705,7 @@ class SettingsDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         self.provider_list.currentRowChanged.connect(self.on_integration_provider_changed)
         self.calibrate_button.clicked.connect(self.on_calibrate_clicked)
+        self.ide_path_browse_button.clicked.connect(self._on_browse_for_ide)
 
         self.revoke_consent_button.clicked.connect(self.on_revoke_consent_clicked)
 
@@ -765,61 +787,127 @@ class SettingsDialog(QDialog):
 
     def save_settings_and_accept(self):
         """
-        Saves all settings to the database, sets a flag if the provider
-        changed, and then accepts (closes) the dialog immediately.
+        Validates critical LLM settings if changed, then saves to DB.
         """
         logging.info("Attempting to save settings from dialog...")
-        db_manager = self.orchestrator.db_manager
-        new_provider = self.provider_combo_box.currentText()
-        self.provider_changed = new_provider != self.initial_provider
 
+        # 1. Harvest values from UI
+        settings_to_save = {
+            "SELECTED_LLM_PROVIDER": self.provider_combo_box.currentText(),
+            "GEMINI_API_KEY": self.gemini_api_key_input.text().strip(),
+            "GEMINI_REASONING_MODEL": self.gemini_reasoning_model_input.text().strip(),
+            "GEMINI_FAST_MODEL": self.gemini_fast_model_input.text().strip(),
+            "OPENAI_API_KEY": self.openai_api_key_input.text().strip(),
+            "OPENAI_REASONING_MODEL": self.openai_reasoning_model_input.text().strip(),
+            "OPENAI_FAST_MODEL": self.openai_fast_model_input.text().strip(),
+            "ANTHROPIC_API_KEY": self.anthropic_api_key_input.text().strip(),
+            "ANTHROPIC_REASONING_MODEL": self.anthropic_reasoning_model_input.text().strip(),
+            "ANTHROPIC_FAST_MODEL": self.anthropic_fast_model_input.text().strip(),
+            "GROK_API_KEY": self.grok_api_key_input.text().strip(),
+            "GROK_REASONING_MODEL": self.grok_reasoning_model_input.text().strip(),
+            "GROK_FAST_MODEL": self.grok_fast_model_input.text().strip(),
+            "DEEPSEEK_API_KEY": self.deepseek_api_key_input.text().strip(),
+            "DEEPSEEK_REASONING_MODEL": self.deepseek_reasoning_model_input.text().strip(),
+            "DEEPSEEK_FAST_MODEL": self.deepseek_fast_model_input.text().strip(),
+            "LLAMA_API_KEY": self.llama_api_key_input.text().strip(),
+            "LLAMA_REASONING_MODEL": self.llama_reasoning_model_input.text().strip(),
+            "LLAMA_FAST_MODEL": self.llama_fast_model_input.text().strip(),
+            "CUSTOM_ENDPOINT_URL": self.custom_endpoint_url_input.text().strip(),
+            "CUSTOM_ENDPOINT_API_KEY": self.custom_endpoint_api_key_input.text().strip(),
+            "CUSTOM_REASONING_MODEL": self.custom_reasoning_model_input.text().strip(),
+            "CUSTOM_FAST_MODEL": self.custom_fast_model_input.text().strip(),
+            # ... (Keep non-LLM settings like PATHs, LOGGING_LEVEL etc. as they were)
+            "MAX_DEBUG_ATTEMPTS": str(self.max_debug_spin_box.value()),
+            "CONTEXT_WINDOW_CHAR_LIMIT": self.context_limit_input.text(),
+            "LOGGING_LEVEL": self.logging_combo_box.currentText(),
+            "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
+            "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text(),
+            "IDE_EXECUTABLE_PATH": self.ide_path_input.text(),
+            "SELECTED_DOCX_STYLE_PATH": self.active_style_path,
+            "INTEGRATION_PROVIDER": self.provider_list.currentItem().text(),
+            "INTEGRATION_URL": self.jira_url_input.text(),
+            "INTEGRATION_USERNAME": self.jira_username_input.text(),
+            "INTEGRATION_API_TOKEN": self.jira_token_input.text()
+        }
+
+        # 2. Check for LLM Changes
+        llm_keys = [
+            "SELECTED_LLM_PROVIDER",
+            "GEMINI_API_KEY", "GEMINI_REASONING_MODEL", "GEMINI_FAST_MODEL",
+            "OPENAI_API_KEY", "OPENAI_REASONING_MODEL", "OPENAI_FAST_MODEL",
+            "ANTHROPIC_API_KEY", "ANTHROPIC_REASONING_MODEL", "ANTHROPIC_FAST_MODEL",
+            "GROK_API_KEY", "GROK_REASONING_MODEL", "GROK_FAST_MODEL",
+            "DEEPSEEK_API_KEY", "DEEPSEEK_REASONING_MODEL", "DEEPSEEK_FAST_MODEL",
+            "LLAMA_API_KEY", "LLAMA_REASONING_MODEL", "LLAMA_FAST_MODEL",
+            "CUSTOM_ENDPOINT_URL", "CUSTOM_ENDPOINT_API_KEY", "CUSTOM_REASONING_MODEL", "CUSTOM_FAST_MODEL"
+        ]
+
+        llm_changed = False
+        for key in llm_keys:
+            # Compare UI value vs DB value (stored in self.all_config on init)
+            # Default to "" if key missing in DB
+            old_val = self.all_config.get(key, "")
+            new_val = settings_to_save.get(key, "")
+            if old_val != new_val:
+                llm_changed = True
+                logging.info(f"Setting changed: {key}")
+                break
+
+        if not llm_changed:
+            # No critical changes, save non-LLM settings and close
+            logging.info("No LLM settings changed. Saving without verification.")
+            self._commit_and_close(settings_to_save)
+        else:
+            # Critical changes detected. Verify before saving.
+            self.setEnabled(False)
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+
+            # Pass the *entire* settings dict so the worker has context
+            worker = Worker(self._task_verify_connection, settings_to_save)
+            worker.signals.result.connect(lambda res: self._handle_verification_result(res, settings_to_save))
+            worker.signals.error.connect(self._handle_verification_error)
+            self.threadpool.start(worker)
+
+    def _task_verify_connection(self, settings_dict, **kwargs):
+        """Worker task to verify connection params."""
+        return self.orchestrator.verify_connection_with_params(settings_dict)
+
+    def _handle_verification_result(self, result_tuple, settings_to_save):
+        """Handles success/failure of the verification check."""
+        self.setEnabled(True)
+        QApplication.restoreOverrideCursor()
+
+        success, message = result_tuple
+
+        if success:
+            # Verification passed! Now we save.
+            logging.info("Verification successful. Saving settings.")
+            # Optional: Set flag for main window to know provider changed (for calibration)
+            # Logic: If provider NAME changed, we set provider_changed=True
+            new_provider = settings_to_save["SELECTED_LLM_PROVIDER"]
+            if new_provider != self.initial_provider:
+                self.provider_changed = True
+
+            self._commit_and_close(settings_to_save)
+        else:
+            # Verification failed! Do NOT save. Keep dialog open.
+            QMessageBox.critical(self, "Connection Failed",
+                                 f"Could not connect to the selected provider with these settings.\n\nError: {message}\n\nPlease check your API Key and Model Names.")
+
+    def _handle_verification_error(self, error_tuple):
+        """Handles a crash in the verification worker."""
+        self.setEnabled(True)
+        QApplication.restoreOverrideCursor()
+        QMessageBox.critical(self, "Verification Error", f"An unexpected error occurred during verification:\n{error_tuple[1]}")
+
+    def _commit_and_close(self, settings_to_save):
+        """Helper to write to DB and close dialog."""
         try:
-            # The full settings_to_save dictionary remains the same as before
-            settings_to_save = {
-                "SELECTED_LLM_PROVIDER": self.provider_combo_box.currentText(),
-                "GEMINI_API_KEY": self.gemini_api_key_input.text(),
-                "GEMINI_REASONING_MODEL": self.gemini_reasoning_model_input.text(),
-                "GEMINI_FAST_MODEL": self.gemini_fast_model_input.text(),
-                "OPENAI_API_KEY": self.openai_api_key_input.text(),
-                "OPENAI_REASONING_MODEL": self.openai_reasoning_model_input.text(),
-                "OPENAI_FAST_MODEL": self.openai_fast_model_input.text(),
-                "ANTHROPIC_API_KEY": self.anthropic_api_key_input.text(),
-                "ANTHROPIC_REASONING_MODEL": self.anthropic_reasoning_model_input.text(),
-                "ANTHROPIC_FAST_MODEL": self.anthropic_fast_model_input.text(),
-                "GROK_API_KEY": self.grok_api_key_input.text(),
-                "GROK_REASONING_MODEL": self.grok_reasoning_model_input.text(),
-                "GROK_FAST_MODEL": self.grok_fast_model_input.text(),
-                "DEEPSEEK_API_KEY": self.deepseek_api_key_input.text(),
-                "DEEPSEEK_REASONING_MODEL": self.deepseek_reasoning_model_input.text(),
-                "DEEPSEEK_FAST_MODEL": self.deepseek_fast_model_input.text(),
-                "LLAMA_API_KEY": self.llama_api_key_input.text(),
-                "LLAMA_REASONING_MODEL": self.llama_reasoning_model_input.text(),
-                "LLAMA_FAST_MODEL": self.llama_fast_model_input.text(),
-                "CUSTOM_ENDPOINT_URL": self.custom_endpoint_url_input.text(),
-                "CUSTOM_ENDPOINT_API_KEY": self.custom_endpoint_api_key_input.text(),
-                "CUSTOM_REASONING_MODEL": self.custom_reasoning_model_input.text(),
-                "CUSTOM_FAST_MODEL": self.custom_fast_model_input.text(),
-                "MAX_DEBUG_ATTEMPTS": str(self.max_debug_spin_box.value()),
-                "CONTEXT_WINDOW_CHAR_LIMIT": self.context_limit_input.text(),
-                "LOGGING_LEVEL": self.logging_combo_box.currentText(),
-                "DEFAULT_PROJECT_PATH": self.project_path_input.text(),
-                "DEFAULT_ARCHIVE_PATH": self.archive_path_input.text(),
-                "IDE_EXECUTABLE_PATH": self.ide_path_input.text(),
-                "SELECTED_DOCX_STYLE_PATH": self.active_style_path,
-                "INTEGRATION_PROVIDER": self.provider_list.currentItem().text(),
-                "INTEGRATION_URL": self.jira_url_input.text(),
-                "INTEGRATION_USERNAME": self.jira_username_input.text(),
-                "INTEGRATION_API_TOKEN": self.jira_token_input.text()
-            }
-            # Use bulk update to avoid repeated encryption overhead
-            db_manager.bulk_set_config_values(settings_to_save)
-
-            self.orchestrator._llm_service = None
-            logging.info("Settings saved. LLM service will be re-initialized on next use.")
+            self.orchestrator.db_manager.bulk_set_config_values(settings_to_save)
+            self.orchestrator._llm_service = None # Force re-init with new settings
             self.accept()
         except Exception as e:
-            logging.error(f"Failed to save settings: {e}", exc_info=True)
-            QMessageBox.critical(self, "Error", f"Failed to save settings:\n{e}")
+             QMessageBox.critical(self, "Save Error", f"Failed to write settings to database:\n{e}")
 
     def on_revoke_consent_clicked(self):
         """

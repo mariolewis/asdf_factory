@@ -581,3 +581,10 @@ QPushButton#revokeConsentButton:hover {
 QPushButton#revokeConsentButton:pressed {
     background-color: #4A2020;
 }
+
+/* ---- Settings Dialog Instructions ---- */
+QLabel#settingsInstructionLabel {
+    color: #A9B7C6;      /* Secondary Text Color */
+    font-style: italic;
+    margin-bottom: 10px;
+}

@@ -161,9 +161,13 @@ def _initialize_klyve(app, splash):
 
         # --- 1. Setup Database Paths ---
         # Use config to get the absolute path relative to the binary location
-        db_path_str = config.get_resource_path("data/klyve.db")
-        db_path = Path(db_path_str)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+                # [FIX] Store DB in User Home to support Read-Only AppImages/Program Files
+        user_data_dir = Path.home() / ".klyve" / "data"
+        user_data_dir.mkdir(parents=True, exist_ok=True)
+        db_path = user_data_dir / "klyve.db"
+
+        # Copy default DB if it exists in resources but not in user home (Optional bootstrapping)
+        # For now, we just let the app create a new one.
 
         # Initialize DB Manager (needed to read config for logging)
         db_manager = KlyveDBManager(db_path=str(db_path))

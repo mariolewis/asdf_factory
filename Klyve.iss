@@ -3,7 +3,7 @@
 
 #define MyAppName "Klyve"
 #define MyAppVersion "1.0 Beta"
-#define MyAppPublisher "Klyve Factory"
+#define MyAppPublisher "Mario Lewis"
 #define MyAppExeName "klyve.exe"
 #define BuildSourceDir "dist\klyve.dist"
 
@@ -29,6 +29,8 @@ ArchitecturesInstallIn64BitMode=x64
 ; Icon
 SetupIconFile=gui\icons\klyve_logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+LicenseFile=EULA.txt
+;
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -37,6 +39,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
+; Legal Documents
+Source: "Third_Party_Notices.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Privacy_Policy.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "EULA.txt"; DestDir: "{app}"; Flags: ignoreversion
+
 ; The Main Executable
 Source: "{#BuildSourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
