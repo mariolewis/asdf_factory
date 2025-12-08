@@ -1,6 +1,7 @@
 # main.py
 
 import sys
+import os
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen, QDialog
 from PySide6.QtGui import QIcon, QPixmap
@@ -259,6 +260,24 @@ if __name__ == "__main__":
         if splash_path.exists():
             try:
                 splash_pix = QPixmap(str(splash_path))
+
+                # --- UPDATED LOGIC FOR PYSIDE 6 ---
+                # 1. Get the screen's pixel ratio (e.g., 1.0, 1.25, 1.5, 2.0)
+                dpr = app.devicePixelRatio()
+
+                # 2. Define how wide the splash should LOOK (Logical pixels)
+                target_logical_width = 480
+
+                # 3. Calculate how many REAL pixels we need for sharpness
+                target_physical_width = int(target_logical_width * dpr)
+
+                # 4. Resize the high-res image to the physical target
+                splash_pix = splash_pix.scaledToWidth(target_physical_width, Qt.TransformationMode.SmoothTransformation)
+
+                # 5. Tell Qt this pixmap is High-DPI (so it fits into the logical width)
+                splash_pix.setDevicePixelRatio(dpr)
+                # --- END UPDATED LOGIC ---
+
                 splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
                 center_window(splash)
                 splash.show()
