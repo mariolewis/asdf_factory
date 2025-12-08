@@ -85,6 +85,18 @@ class Ui_AboutDialog(object):
         self.verticalLayout_5.addWidget(self.noticesTextEdit)
 
         self.tabWidget.addTab(self.noticesTab, "")
+        self.creditsTab = QWidget()
+        self.creditsTab.setObjectName(u"creditsTab")
+        self.verticalLayout_credits = QVBoxLayout(self.creditsTab)
+        self.verticalLayout_credits.setContentsMargins(0, 0, 0, 0)
+        self.verticalLayout_credits.setObjectName(u"verticalLayout_credits")
+        self.creditsTextEdit = QTextEdit(self.creditsTab)
+        self.creditsTextEdit.setObjectName(u"creditsTextEdit")
+        self.creditsTextEdit.setReadOnly(True)
+
+        self.verticalLayout_credits.addWidget(self.creditsTextEdit)
+
+        self.tabWidget.addTab(self.creditsTab, "")
 
         self.verticalLayout.addWidget(self.tabWidget)
 
@@ -111,5 +123,6 @@ class Ui_AboutDialog(object):
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.eulaTab), QCoreApplication.translate("AboutDialog", u"EULA", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.privacyTab), QCoreApplication.translate("AboutDialog", u"Privacy Policy", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.noticesTab), QCoreApplication.translate("AboutDialog", u"Third-Party Notices", None))
+        self.tabWidget.setTabText(self.tabWidget.indexOf(self.creditsTab), QCoreApplication.translate("AboutDialog", u"Credits", None))
     # retranslateUi
 

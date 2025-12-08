@@ -11,7 +11,7 @@
 ; NOTE: The value of AppId uniquely identifies this application.
 ; Do not use the same AppId value in installers for other applications.
 ; (Generated a generic GUID for you)
-AppId={{A1B2C3D4-E5F6-7890-1234-56789ABCDEF0}
+AppId={A1B2C3D4-E5F6-7890-1234-56789ABCDEF0}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}

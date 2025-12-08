@@ -1,0 +1,28 @@
+cd ~/klyve_linux_build
+
+source venv/bin/activate
+
+cp package_linux.sh /mnt/c/Users/Mario/Documents/klyve
+
+cp build_release_linux.py /mnt/c/Users/Mario/Documents/klyve
+
+python tools/dev_manager.py status
+python tools/dev_manager.py unlock
+
+rsync -av --progress /mnt/e/Projects/klyve_factory/ . \
+    --exclude 'dist' \
+    --exclude 'build' \
+    --exclude 'build_stage' \
+    --exclude 'venv' \
+    --exclude '__pycache__' \
+    --exclude '*.pyd' \
+    --exclude '*.dll' \
+    --exclude '*.exe' \
+    --exclude '.git' \
+    --exclude 'Linux'
+
+db file on Linux: ~/.klyve/data/klyve.db (full path: /home/mario/.klyve/data)
+
+
+
+

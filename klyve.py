@@ -14,6 +14,7 @@ from klyve_db_manager import KlyveDBManager
 from master_orchestrator import MasterOrchestrator
 from main_window import KlyveMainWindow
 from gui.legal_dialog import LegalDialog
+from gui.utils import center_window
 
 def initialize_database(db_manager: KlyveDBManager):
     """
@@ -197,6 +198,7 @@ def _initialize_klyve(app, splash):
                 splash.hide()
 
             legal_dialog = LegalDialog()
+            center_window(legal_dialog)
             result = legal_dialog.exec()
 
             if result != QDialog.Accepted:
@@ -258,6 +260,7 @@ if __name__ == "__main__":
             try:
                 splash_pix = QPixmap(str(splash_path))
                 splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+                center_window(splash)
                 splash.show()
                 app.processEvents()
             except Exception as e:

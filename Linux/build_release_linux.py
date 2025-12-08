@@ -5,50 +5,42 @@ import subprocess
 import re
 from pathlib import Path
 
-# Configuration
+# --- Configuration ---
 PROJECT_NAME = "Klyve"
-MAIN_SCRIPT = "klyve.py"
 BUILD_DIR = Path("build_stage")
 DIST_DIR = Path("dist")
 
-# --- LGPL CONFIGURATION ---
-# We point to the parent 'site-packages' folder so we can grab both PySide6 and shiboken6
-# Note: We use the path you provided, stripped back one level to find both folders.
-CLEAN_PYSIDE_ROOT = Path(r"E:\Python311\Lib\site-packages")
+# --- LGPL CONFIGURATION (Dynamic Detection) ---
+try:
+    import PySide6
+    # Go up two levels from __init__.py to find the 'site-packages' root
+    CLEAN_PYSIDE_ROOT = Path(PySide6.__file__).parent.parent
+    print(f"ℹ️  Detected PySide6 source at: {CLEAN_PYSIDE_ROOT}")
+except ImportError:
+    print("❌ FATAL: PySide6 not found in current environment. Cannot build.")
+    sys.exit(1)
 
 def clean_build_env():
     """Removes previous build artifacts."""
     print(f"--- Cleaning {BUILD_DIR} and {DIST_DIR} ---")
-    if BUILD_DIR.exists():
-        try:
-            shutil.rmtree(BUILD_DIR)
-        except PermissionError:
-            print(f"Warning: Could not fully delete {BUILD_DIR}. Is it open?")
-
-    if DIST_DIR.exists():
-        try:
-            shutil.rmtree(DIST_DIR)
-        except PermissionError:
-            print(f"Warning: Could not fully delete {DIST_DIR}. Is it open?")
-
+    if BUILD_DIR.exists(): shutil.rmtree(BUILD_DIR)
+    if DIST_DIR.exists(): shutil.rmtree(DIST_DIR)
     BUILD_DIR.mkdir(exist_ok=True)
 
 def stage_project(project_root):
-    """Copies source code to a staging area to modify it safely."""
+    """Copies source code to a staging area."""
     print(f"--- Staging Project to {BUILD_DIR} ---")
 
     def ignore_patterns(path, names):
         return [n for n in names if n in [
             '.git', '__pycache__', 'venv', 'env',
-            'dist', 'build', 'backups', 'tests',
-            BUILD_DIR.name,
-            '.idea', '.vscode', 'data'
+            'dist', 'build', 'backups', 'tests', 'test',
+            'squashfs-root',
+            BUILD_DIR.name, '.idea', '.vscode', 'data'
         ]]
 
     dest_src = BUILD_DIR / "src"
-    if dest_src.exists():
-        shutil.rmtree(dest_src)
-
+    if dest_src.exists(): shutil.rmtree(dest_src)
     shutil.copytree(project_root, dest_src, ignore=ignore_patterns)
 
     print("--- Staging Data Files ---")
@@ -66,21 +58,18 @@ def stage_project(project_root):
     return dest_src
 
 def sanitize_config(staged_root):
-    """Reads config.py and REMOVES the get_db_key() function implementation."""
-    print("--- Sanitizing config.py (Removing plaintext keys) ---")
+    """Removes plaintext keys from config.py."""
+    print("--- Sanitizing config.py ---")
     config_path = staged_root / "config.py"
     content = config_path.read_text(encoding='utf-8')
-
     pattern = r"def get_db_key\(\) -> str:.*?(?=\ndef|$)"
-    replacement = 'def get_db_key() -> str:\n    raise RuntimeError("CRITICAL: Attempted to access insecure key in Production Build. Use Vault instead.")'
-
+    replacement = 'def get_db_key() -> str:\n    raise RuntimeError("CRITICAL: Production Key Access Denied.")'
     new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
     config_path.write_text(new_content, encoding='utf-8')
 
 def run_nuitka(staged_root):
-    """Runs the Nuitka compiler with aggressive optimization."""
-    print("--- Compiling with Nuitka (LGPL Compliant Mode) ---")
-
+    """Runs Nuitka (Linux Optimized) - LGPL Mode."""
+    print("--- Compiling with Nuitka (Linux Optimized + LGPL) ---")
     abs_dist = DIST_DIR.resolve()
 
     cmd = [
@@ -88,18 +77,18 @@ def run_nuitka(staged_root):
         "--standalone",
         # NOTE: Plugin disabled to allow manual PySide6 handling for LGPL
         # "--enable-plugin=pyside6",
-        "--include-data-dir=data/templates=data/templates",
-        "--windows-icon-from-ico=gui/icons/klyve_logo.ico",
 
-        # Use 'force' for debugging crashes, 'disable' for release
-        "--windows-console-mode=disable",
+        # --- Force output filename to match AppRun expectation ---
+        "--output-filename=klyve.bin",
+
+        "--include-data-dir=data/templates=data/templates",
 
         # --- LGPL COMPLIANCE: EXCLUDE QT ---
-        # This forces Nuitka to ignore Qt so we can copy the clean folders manually later
         "--nofollow-import-to=PySide6",
         "--nofollow-import-to=shiboken6",
+        "--nofollow-import-to=google.genai",
 
-        # --- INCLUSIONS (Keep Critical Deps) ---
+        # --- INCLUSIONS (Matching Windows Stability) ---
         "--include-module=master_orchestrator",
         "--include-module=klyve_db_manager",
         "--include-module=llm_service",
@@ -120,7 +109,7 @@ def run_nuitka(staged_root):
         "--include-module=gitdb",
         "--include-module=openai",
         "--include-module=anthropic",
-        "--include-module=google.genai",
+        # "--include-module=google.genai",
         "--include-module=replicate",
         "--include-module=requests",
         "--include-module=pandas",
@@ -135,7 +124,7 @@ def run_nuitka(staged_root):
         "--include-module=PIL",
         "--include-module=pypdf",
 
-        # --- EXCLUSIONS (Debloat) ---
+        # --- EXCLUSIONS (Matching Windows Optimization) ---
         "--nofollow-import-to=numba",
         "--nofollow-import-to=llvmlite",
         "--nofollow-import-to=zmq",
@@ -151,40 +140,71 @@ def run_nuitka(staged_root):
         "klyve.py"
     ]
 
-    print(f"Executing Nuitka build...")
+    print(f"Executing: {' '.join(cmd)}")
     result = subprocess.run(cmd, cwd=staged_root)
     if result.returncode != 0:
         print("❌ Nuitka compilation failed.")
         sys.exit(1)
 
 def copy_vault_extension(staged_root):
-    """Manually copies the compiled vault extension."""
-    print("--- Bundling Iron Vault ---")
+    """Copies the compiled .so vault extension."""
+    print("--- Bundling Iron Vault (.so) ---")
     dist_root = DIST_DIR / "klyve.dist"
-    pyd_files = list(staged_root.glob("vault*.pyd")) + list(staged_root.glob("vault*.so"))
-    if not pyd_files:
-        print("❌ FATAL: Could not find compiled vault extension in staging.")
-        sys.exit(1)
-    src_pyd = pyd_files[0]
-    ext_suffix = src_pyd.suffix
-    dst_pyd = dist_root / f"vault{ext_suffix}"
-    shutil.copy2(src_pyd, dst_pyd)
-    print(f"✅ Copied {src_pyd.name} to {dst_pyd}")
 
-def bundle_dependencies(project_root):
-    """Copies the Graphviz sidecar."""
-    print("--- Bundling Sidecar Dependencies ---")
-    src_gv = project_root / "dependencies" / "graphviz"
-    dist_gv = DIST_DIR / "klyve.dist" / "dependencies" / "graphviz"
-    if not src_gv.exists():
-        print("❌ Error: Graphviz dependency not found.")
+    # Find compiled Linux extension
+    so_files = list(staged_root.glob("vault*.so"))
+
+    if not so_files:
+        print("❌ FATAL: Could not find compiled vault.so in staging.")
         sys.exit(1)
-    if dist_gv.exists(): shutil.rmtree(dist_gv)
-    shutil.copytree(src_gv, dist_gv)
-    print(f"✅ Graphviz bundled to {dist_gv}")
+
+    src_so = so_files[0]
+    dst_so = dist_root / "vault.so"
+
+    shutil.copy2(src_so, dst_so)
+    print(f"✅ Copied {src_so.name} to {dst_so}")
+
+def bundle_linux_dependencies(project_root):
+    """Bundles system Graphviz for Linux sidecar."""
+    print("--- Bundling Linux Dependencies ---")
+
+    dist_gv_bin = DIST_DIR / "klyve.dist" / "dependencies" / "graphviz" / "bin"
+    dist_gv_bin.mkdir(parents=True, exist_ok=True)
+
+    # Locate system dot
+    dot_path = shutil.which("dot")
+    if dot_path:
+        shutil.copy2(dot_path, dist_gv_bin / "dot")
+        print(f"✅ Bundled system 'dot' from {dot_path}")
+    else:
+        print("⚠️ Warning: 'dot' not found on system. Graphviz features may fail.")
+
+def bundle_google_genai(project_root):
+    """Manually bundles google.genai to bypass Nuitka compilation hang."""
+    print("--- Bundling google.genai (Raw Source) ---")
+
+    try:
+        import google.genai
+        # Find the actual source directory on disk
+        src_path = Path(google.genai.__file__).parent
+
+        # Destination: dist/klyve.dist/google/genai
+        dst_path = DIST_DIR / "klyve.dist" / "google" / "genai"
+
+        if dst_path.exists(): shutil.rmtree(dst_path)
+
+        # Copy the package
+        shutil.copytree(src_path, dst_path)
+        print(f"✅ Copied google.genai from {src_path}")
+
+    except ImportError:
+        print("⚠️ Warning: google.genai not found. Build may fail at runtime.")
+    except Exception as e:
+        print(f"❌ Error bundling google.genai: {e}")
+        sys.exit(1)
 
 def bundle_gui_assets(project_root):
-    """Copies non-code GUI assets (styles, icons) to the dist folder."""
+    """Copies assets."""
     print("--- Bundling GUI Assets ---")
     src_style = project_root / "gui" / "style.qss"
     src_icons = project_root / "gui" / "icons"
@@ -192,31 +212,23 @@ def bundle_gui_assets(project_root):
     dist_gui = DIST_DIR / "klyve.dist" / "gui"
     dist_gui.mkdir(exist_ok=True)
 
-    if src_style.exists():
-        shutil.copy2(src_style, dist_gui / "style.qss")
-        print(f"✅ Copied style.qss")
-
+    if src_style.exists(): shutil.copy2(src_style, dist_gui / "style.qss")
     if src_icons.exists():
-        dst_icons = dist_gui / "icons"
-        if dst_icons.exists(): shutil.rmtree(dst_icons)
-        shutil.copytree(src_icons, dst_icons)
-        print(f"✅ Copied icons")
-
+        dst = dist_gui / "icons"
+        if dst.exists(): shutil.rmtree(dst)
+        shutil.copytree(src_icons, dst)
     if src_images.exists():
-        dst_images = dist_gui / "images"
-        if dst_images.exists(): shutil.rmtree(dst_images)
-        shutil.copytree(src_images, dst_images)
-        print(f"✅ Copied images")
+        dst = dist_gui / "images"
+        if dst.exists(): shutil.rmtree(dst)
+        shutil.copytree(src_images, dst)
 
 def post_build_cleanup(dist_dir):
-    """Replaces Nuitka-bundled Qt components with clean, swappable versions for LGPL compliance."""
-    print("--- 🧹 Performing LGPL Compliance Setup ---")
+    """Replaces Nuitka-bundled Qt with clean system versions for LGPL."""
+    print("--- 🧹 Performing LGPL Compliance Setup (Linux) ---")
 
-    # Define source paths (Using the constant defined at top of file)
     src_pyside = CLEAN_PYSIDE_ROOT / "PySide6"
     src_shiboken = CLEAN_PYSIDE_ROOT / "shiboken6"
 
-    # Define destination paths
     dst_pyside = dist_dir / "PySide6"
     dst_shiboken = dist_dir / "shiboken6"
 
@@ -235,30 +247,21 @@ def post_build_cleanup(dist_dir):
         shutil.copytree(src_shiboken, dst_shiboken)
         print(f"✅ Copied clean shiboken6 from {src_shiboken}")
     else:
-        # Note: Sometimes shiboken is inside PySide6, but usually it's a sibling.
-        # If this fails, check your folder structure.
         print(f"⚠️ Warning: Could not find clean shiboken6 at {src_shiboken}")
 
-    # NUKE any root-level Qt DLLs to force loading from the subfolders
-    print("--- Cleaning Root DLL Conflicts ---")
-    removed_count = 0
-    for dll in dist_dir.glob("Qt6*.dll"):
+    # Remove conflicting root libraries (Linux uses .so)
+    print("--- Cleaning Root Library Conflicts ---")
+    for so in dist_dir.glob("libQt6*.so*"):
         try:
-            dll.unlink()
-            print(f"   Removed conflict: {dll.name}")
-            removed_count += 1
-        except Exception as e:
-            print(f"   Failed to remove {dll.name}: {e}")
-
-    # Also clean shiboken6.dll if it leaked into root
-    for dll in dist_dir.glob("shiboken6.dll"):
-        try:
-            dll.unlink()
-            print(f"   Removed conflict: {dll.name}")
+            so.unlink()
+            print(f"   Removed conflict: {so.name}")
         except: pass
 
-    if removed_count == 0:
-        print("   (No conflicting DLLs found in root - this is good)")
+    for so in dist_dir.glob("libshiboken6.so*"):
+        try:
+            so.unlink()
+            print(f"   Removed conflict: {so.name}")
+        except: pass
 
     print("--- LGPL Setup Complete ---")
 
@@ -271,21 +274,24 @@ def main():
     subprocess.run([sys.executable, "tools/build_vault.py"], cwd=staged_src, check=True)
 
     print("--- Compiling Vault Extension ---")
-    subprocess.run([sys.executable, "setup_cython.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
-
-    # NOTE: We also compile the Vault here to ensure it's ready for copying
     subprocess.run([sys.executable, "setup_vault.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
+
+    print("--- Compiling Core Logic ---")
+    subprocess.run([sys.executable, "setup_cython.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
 
     sanitize_config(staged_src)
     run_nuitka(staged_src)
     copy_vault_extension(staged_src)
-    bundle_dependencies(project_root)
+    bundle_linux_dependencies(project_root)
     bundle_gui_assets(project_root)
+
+    # --- NEW: Bundle the skipped library ---
+    bundle_google_genai(project_root)
 
     # --- NEW: Run LGPL Cleanup ---
     post_build_cleanup(DIST_DIR / "klyve.dist")
 
-    print("\n✨ BUILD COMPLETE ✨")
+    print("\n✨ LINUX BUILD COMPLETE ✨")
     print(f"Artifacts located in: {DIST_DIR / 'klyve.dist'}")
 
 if __name__ == "__main__":

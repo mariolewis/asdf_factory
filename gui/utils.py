@@ -94,3 +94,24 @@ def render_markdown_to_html(markdown_text: str) -> str:
         # Fallback to plain text, escaped
         escaped_content = html.escape(markdown_text) # Use original text for fallback
         return f"<h3 style='color:red;'>Markdown Rendering Error</h3><pre>{escaped_content}</pre>"
+
+def center_window(widget):
+    """
+    Centers a top-level widget on the screen.
+    This explicit centering is required for consistent behavior across platforms
+    (Windows, Linux/WSL), as some window managers default to random placement.
+    """
+    from PySide6.QtGui import QGuiApplication
+
+    screen = QGuiApplication.primaryScreen()
+    if not screen:
+        return
+
+    screen_geometry = screen.availableGeometry()
+    # Force the widget to calculate its layout size first
+    widget.adjustSize()
+    widget_geometry = widget.frameGeometry()
+
+    center_point = screen_geometry.center()
+    widget_geometry.moveCenter(center_point)
+    widget.move(widget_geometry.topLeft())

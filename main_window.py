@@ -114,7 +114,7 @@ class KlyveMainWindow(QMainWindow):
         self._create_menus_and_toolbar()
         self._connect_signals()
 
-        self.setWindowTitle(f"Klyve - Autonomous Software Factory")
+        self.setWindowTitle(f"Klyve - The Intelligent Software Factory")
 
         self.update_ui_after_state_change()
 

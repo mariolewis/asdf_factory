@@ -14,6 +14,7 @@ class AboutDialog(QDialog):
         self.ui.setupUi(self)
 
         self._setup_branding()
+        self._setup_credits()
         self._load_legal_text()
 
         self.ui.buttonBox.rejected.connect(self.accept) # Close button acts as accept/close
@@ -48,6 +49,48 @@ class AboutDialog(QDialog):
         </html>
         """
         self.ui.brandingLabel.setText(about_html)
+
+    def _setup_credits(self):
+        """Populates the Credits tab."""
+        credits_html = """
+        <html>
+        <head>
+            <style>
+                /* Match the QSS font settings exactly to ensure uniformity */
+                body {
+                    color: #F0F0F0;
+                    font-family: "Inter", "Segoe UI", sans-serif;
+                    font-size: 10pt;
+                    font-weight: 400;
+                }
+                h3 {
+                    color: #007ACC;
+                    font-family: "Inter", "Segoe UI", sans-serif;
+                    margin-bottom: 5px;
+                    font-weight: 700;
+                }
+                ul {
+                    margin-top: 0px;
+                    -qt-list-indent: 1;
+                }
+                li {
+                    margin-bottom: 8px;
+                }
+            </style>
+        </head>
+        <body>
+            <h3>Special Thanks & Acknowledgments</h3>
+            <p>Klyve is built in part upon the excellent work of the open-source community.</p>
+            <ul>
+                <li><b>The Qt Company:</b><br>This application uses the Qt framework licensed under the GNU LGPL v3. (www.qt.io)</li>
+                <li><b>FreeType Project:</b><br>Portions of this software are copyright &copy; 1996-2000 The FreeType Project (www.freetype.org). All rights reserved.</li>
+                <li><b>Independent JPEG Group:</b><br>This software is based in part on the work of the Independent JPEG Group (ijg.org).</li>
+                <li><b>Jordan Russell's Software:</b><br>Inno Setup installation builder provided by Jordan Russell. Copyright &copy; 1997-2025 Jordan Russell. Portions Copyright &copy; 2000-2025 Martijn Laan. (jrsoftware.org)</li>
+                </ul>
+        </body>
+        </html>
+        """
+        self.ui.creditsTextEdit.setHtml(credits_html)
 
     def _load_legal_text(self):
         """Loads secure text resources into the tabs."""
