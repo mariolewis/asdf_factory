@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import re
 from pathlib import Path
+from PIL import Image
 
 # --- Configuration ---
 PROJECT_NAME = "Klyve"
@@ -265,6 +266,48 @@ def post_build_cleanup(dist_dir):
 
     print("--- LGPL Setup Complete ---")
 
+def generate_linux_icon(project_root):
+    """
+    Extracts the highest-resolution image from the ICO file and saves it as a PNG.
+    This removes the dependency on ImageMagick in the shell script.
+    """
+    print("--- Generating Linux Icon (ICO -> PNG) ---")
+
+    icon_src = project_root / "gui" / "icons" / "klyve_logo.ico"
+    # Ensure destination directory exists (it should, but safety first)
+    icon_dst_dir = DIST_DIR / "klyve.dist"
+    icon_dst_dir.mkdir(parents=True, exist_ok=True)
+
+    icon_dst = icon_dst_dir / "klyve_logo.png"
+
+    if not icon_src.exists():
+        print(f"⚠️ Warning: Source icon not found at {icon_src}")
+        return
+
+    try:
+        img = Image.open(icon_src)
+        # Determine best size (largest width)
+        max_size = (0, 0)
+        best_icon = img
+
+        # Pillow ICO handling allows seeking through contained images to find the largest
+        try:
+            i = 0
+            while True:
+                img.seek(i)
+                if img.size[0] > max_size[0]:
+                    max_size = img.size
+                    best_icon = img.copy() # Copy to preserve this frame
+                i += 1
+        except EOFError:
+            pass # End of frames
+
+        best_icon.save(icon_dst, format="PNG")
+        print(f"✅ Generated high-res PNG icon: {icon_dst}")
+
+    except Exception as e:
+        print(f"❌ Failed to generate Linux icon: {e}")
+
 def main():
     project_root = Path(__file__).parent
     clean_build_env()
@@ -285,10 +328,13 @@ def main():
     bundle_linux_dependencies(project_root)
     bundle_gui_assets(project_root)
 
-    # --- NEW: Bundle the skipped library ---
+    # --- Generate the icon using Python ---
+    generate_linux_icon(project_root)
+
+    # --- Bundle the skipped library ---
     bundle_google_genai(project_root)
 
-    # --- NEW: Run LGPL Cleanup ---
+    # --- Run LGPL Cleanup ---
     post_build_cleanup(DIST_DIR / "klyve.dist")
 
     print("\n✨ LINUX BUILD COMPLETE ✨")
