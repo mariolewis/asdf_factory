@@ -43,6 +43,7 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "Third_Party_Notices.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Privacy_Policy.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "EULA.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "klyve_sbom.spdx.json"; DestDir: "{app}"; Flags: ignoreversion
 
 ; The Main Executable
 Source: "{#BuildSourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion

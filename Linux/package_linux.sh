@@ -106,10 +106,26 @@ else
     echo "⚠️  WARNING: klyve_logo.png not found. AppImage will lack an icon."
 fi
 
+# --- SECURITY PATCH: Remove unused vulnerable Qt multimedia libraries ---
+echo "Removing unused Qt libavcodec binaries..."
+find "$DIST_DIR/PySide6/Qt/lib" -name "libavcodec*" -exec rm -f {} +
+
 # 6. Copy Legal Documents
+echo "Processing Compliance Docs..."
 cp "Third_Party_Notices.txt" "$DIST_DIR/" 2>/dev/null
 cp "Privacy_Policy.txt" "$DIST_DIR/" 2>/dev/null
 cp "EULA.txt" "$DIST_DIR/" 2>/dev/null
+
+# --- Generate Linux-Specific SBOM ---
+echo "Generating Linux SBOM..."
+
+if command -v syft &> /dev/null; then
+    # Scan the AppDir (dist/klyve.dist) and output json inside it
+    syft dir:$DIST_DIR -o spdx-json="$DIST_DIR/klyve_sbom.spdx.json"
+    echo "✅ Linux SBOM generated."
+else
+    echo "⚠️  Syft command not found. SBOM generation skipped."
+fi
 
 # 7. Build the AppImage
 echo "--- Building AppImage ---"

@@ -98,7 +98,7 @@ API Keys: Your API keys are stored locally in an encrypted database on your mach
 (End of Privacy Policy)"""
 
 THIRD_PARTY_NOTICES_TEXT = """THIRD-PARTY SOFTWARE NOTICES AND INFORMATION
-Generated: 04-Dec-2025
+Generated: 08-Dec-2025
 =========================================================================
 This software includes components developed by third parties.
 The following are the license notices and copyright information for these components.
@@ -7145,7 +7145,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 -------------------------------------------------------------------------
-COMPONENT: pypdf (6.1.3)
+COMPONENT: pypdf (6.4.0)
 URL: https://github.com/py-pdf/pypdf
 LICENSE SUMMARY: See full text below
 -------------------------------------------------------------------------
@@ -7198,7 +7198,7 @@ LGPL COMPLIANCE INSTRUCTIONS FOR WINDOWS AND LINUX (APPIMAGE) USERS
 
 You may modify the Qt/PySide6 (6.10.0) libraries used by this application or replace them with higher versions. 
 
-For Windows users, replace the DLLs in the "PySide6" or "shiboken6" subdirectories.
+For Windows users, replace the DLLs in the "PySide6" or "shiboken6" subdirectory.
 
 For Linux users, extract the AppImage and replace the libraries in the 
 "squashfs-root" folder. To do this, please follow these steps:
@@ -7212,7 +7212,7 @@ For Linux users, extract the AppImage and replace the libraries in the
 4. Navigate into this directory:
    $ cd squashfs-root
 
-5. Locate the PySide6 libraries (in /PySide6) and replace them with your modified versions.
+5. Locate the PySide6 libraries (in /PySide6) or Shiboken6 (in /shiboken6) and replace them with your modified versions.
 
 6. Run the application using the internal launcher:
    $ ./AppRun

@@ -98,6 +98,7 @@ def run_nuitka(staged_root):
         # This forces Nuitka to ignore Qt so we can copy the clean folders manually later
         "--nofollow-import-to=PySide6",
         "--nofollow-import-to=shiboken6",
+        "--nofollow-import-to=google.genai",
 
         # --- INCLUSIONS (Keep Critical Deps) ---
         "--include-module=master_orchestrator",
@@ -120,7 +121,7 @@ def run_nuitka(staged_root):
         "--include-module=gitdb",
         "--include-module=openai",
         "--include-module=anthropic",
-        "--include-module=google.genai",
+        #"--include-module=google.genai",
         "--include-module=replicate",
         "--include-module=requests",
         "--include-module=pandas",
@@ -170,6 +171,27 @@ def copy_vault_extension(staged_root):
     dst_pyd = dist_root / f"vault{ext_suffix}"
     shutil.copy2(src_pyd, dst_pyd)
     print(f"✅ Copied {src_pyd.name} to {dst_pyd}")
+
+def bundle_google_genai(project_root):
+    """
+    Manually copies the google.genai package to the dist folder.
+    This bypasses the Nuitka compilation hang on google.genai.types.
+    """
+    print("--- Bundling google.genai (Raw Source) ---")
+
+    # Locate the package in the current environment
+    import google.genai
+    src_path = Path(google.genai.__file__).parent
+
+    # Destination: dist/klyve.dist/google/genai
+    # Note: We must preserve the namespace package structure 'google/genai'
+    dst_path = DIST_DIR / "klyve.dist" / "google" / "genai"
+
+    if dst_path.exists():
+        shutil.rmtree(dst_path)
+
+    shutil.copytree(src_path, dst_path)
+    print(f"✅ Copied google.genai from {src_path}")
 
 def bundle_dependencies(project_root):
     """Copies the Graphviz sidecar."""
@@ -262,6 +284,65 @@ def post_build_cleanup(dist_dir):
 
     print("--- LGPL Setup Complete ---")
 
+def generate_sbom(scan_target):
+    """
+    Generates the SBOM by scanning the final distribution folder.
+    Saves it to the project root so Klyve.iss can find it.
+    """
+    print("--- Generating Windows SBOM ---")
+    # Output file stays in project root for Inno Setup
+    sbom_path = Path("klyve_sbom.spdx.json").resolve()
+
+    # Scan the target directory (dist/klyve.dist)
+    # The scan_target argument passed from main() is already the dist path
+    cmd = ["syft", str(scan_target), "-o", f"spdx-json={sbom_path}"]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            print(f"✅ SBOM generated at: {sbom_path}")
+        else:
+            print(f"⚠️ SBOM warning: {result.stderr}")
+    except Exception as e:
+        print(f"❌ SBOM Error: {e}")
+
+def remove_unused_multimedia_dlls(dist_dir):
+    """
+    Surgically removes unused Qt Multimedia/Image plugins.
+    CRITICAL: Does NOT touch 'dependencies/graphviz', which needs tiff/freetype.
+    """
+    print("--- Security Hardening: Removing unused Qt Binaries ---")
+
+    # 1. Qt Multimedia (Audio/Video) - Safe to remove
+    # 2. Qt TIFF Plugin (qtiff.dll) - Safe to remove if app doesn't load TIFFs
+    patterns_to_remove = [
+        "avcodec-*.dll", "avformat-*.dll", "avutil-*.dll",
+        "swresample-*.dll", "swscale-*.dll",
+        "Qt6Multimedia.dll", "Qt6MultimediaWidgets.dll",
+        "qtiff.dll"
+    ]
+
+    removed_count = 0
+
+    # We explicitly look inside the PySide6 folder to be safe
+    # This ensures we don't accidentally hit Graphviz in 'dependencies'
+    qt_root = dist_dir / "PySide6"
+
+    if not qt_root.exists():
+        print(f"⚠️ Warning: PySide6 folder not found at {qt_root}")
+        return
+
+    for pattern in patterns_to_remove:
+        for dll_path in qt_root.rglob(pattern):
+            try:
+                dll_path.unlink()
+                print(f"   Removed: {dll_path.name}")
+                removed_count += 1
+            except Exception as e:
+                print(f"   ⚠️ Failed to remove {dll_path.name}: {e}")
+
+    print(f"   Removed {removed_count} binaries from Qt.")
+
 def main():
     project_root = Path(__file__).parent
     clean_build_env()
@@ -277,13 +358,26 @@ def main():
     subprocess.run([sys.executable, "setup_vault.py", "build_ext", "--inplace"], cwd=staged_src, check=True)
 
     sanitize_config(staged_src)
+    generate_sbom(project_root)
+
+    # 1. Compile the app (This creates the dist folder)
     run_nuitka(staged_src)
+
+    # 2. Bundle dependencies
     copy_vault_extension(staged_src)
     bundle_dependencies(project_root)
     bundle_gui_assets(project_root)
+    bundle_google_genai(project_root)
 
-    # --- NEW: Run LGPL Cleanup ---
+    # 3. Run LGPL Cleanup
     post_build_cleanup(DIST_DIR / "klyve.dist")
+
+    # 4. REMOVE: Security Hardening (Delete vulnerable DLLs)
+    remove_unused_multimedia_dlls(DIST_DIR / "klyve.dist")
+
+    # 5. GENERATE: SBOM (Scan the final, clean folder)
+    # Note: We scan the DIST folder now, not the project root, to be accurate
+    generate_sbom(DIST_DIR / "klyve.dist")
 
     print("\n✨ BUILD COMPLETE ✨")
     print(f"Artifacts located in: {DIST_DIR / 'klyve.dist'}")
