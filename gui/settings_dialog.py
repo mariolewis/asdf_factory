@@ -841,6 +841,22 @@ class SettingsDialog(QDialog):
         """
         Validates critical LLM settings if changed, then saves to DB.
         """
+        # --- Validation for Manual Context Limits ---
+        current_provider = self.provider_combo_box.currentText()
+        if current_provider in ["Ollama (Local)", "Any Other (OpenAI Compatible)"]:
+            try:
+                limit_val = int(self.context_limit_input.text().strip())
+                if limit_val <= 0:
+                    raise ValueError
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Context Limit Required",
+                    f"For {current_provider}, auto-calibration is disabled.\n\n"
+                    "You must manually enter a safe Character Limit (e.g., 128000) before saving."
+                )
+                return
+        # -------------------------------------------------
         logging.info("Attempting to save settings from dialog...")
 
         # 1. Harvest values from UI
@@ -917,10 +933,11 @@ class SettingsDialog(QDialog):
             QApplication.setOverrideCursor(Qt.WaitCursor)
 
             # Pass the *entire* settings dict so the worker has context
-            worker = Worker(self._task_verify_connection, settings_to_save)
-            worker.signals.result.connect(lambda res: self._handle_verification_result(res, settings_to_save))
-            worker.signals.error.connect(self._handle_verification_error)
-            self.threadpool.start(worker)
+            # KEEP A REFERENCE (self.verification_worker) to prevent premature garbage collection/deletion
+            self.verification_worker = Worker(self._task_verify_connection, settings_to_save)
+            self.verification_worker.signals.result.connect(lambda res: self._handle_verification_result(res, settings_to_save))
+            self.verification_worker.signals.error.connect(self._handle_verification_error)
+            self.threadpool.start(self.verification_worker)
 
     def _task_verify_connection(self, settings_dict, **kwargs):
         """Worker task to verify connection params."""

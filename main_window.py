@@ -1661,19 +1661,31 @@ class KlyveMainWindow(QMainWindow):
             self.update_ui_after_state_change()
 
             if getattr(dialog, 'provider_changed', False):
-                reply = QMessageBox.question(self, "Confirm LLM Change",
-                                            "Changing the LLM provider requires a connection test and may trigger auto-calibration. This could yield unpredictable results in ongoing projects. Proceed?",
-                                            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
-                                            QMessageBox.StandardButton.Yes)
+                # 1. Fetch the new provider to decide behavior
+                db = self.orchestrator.db_manager
+                new_provider = db.get_config_value("SELECTED_LLM_PROVIDER")
 
-                if reply == QMessageBox.StandardButton.Yes:
-                    self.setEnabled(False) # Disable main window
-                    worker = Worker(self._task_connect_and_calibrate)
-                    worker.signals.progress.connect(self._on_calibration_progress)
-                    worker.signals.result.connect(self._handle_calibration_complete)
-                    worker.signals.error.connect(self._on_background_task_error)
-                    worker.signals.finished.connect(self._on_calibration_finished)
-                    self.threadpool.start(worker)
+                # 2. Define providers that rely on manual entry (SKIP calibration)
+                offline_providers = ["Ollama (Local)", "Any Other (OpenAI Compatible)"]
+
+                if new_provider not in offline_providers:
+                    # Cloud provider: Prompt for calibration as usual
+                    reply = QMessageBox.question(self, "Confirm LLM Change",
+                                                "You have changed the LLM Provider. It is recommended to run Auto-Calibration to optimize the context window for this model. Proceed?",
+                                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
+                                                QMessageBox.StandardButton.Yes)
+
+                    if reply == QMessageBox.StandardButton.Yes:
+                        self.setEnabled(False)
+                        worker = Worker(self._task_connect_and_calibrate)
+                        worker.signals.progress.connect(self._on_calibration_progress)
+                        worker.signals.result.connect(self._handle_calibration_complete)
+                        worker.signals.error.connect(self._on_background_task_error)
+                        worker.signals.finished.connect(self._on_calibration_finished)
+                        self.threadpool.start(worker)
+                else:
+                    # Local/Custom provider: Trust the manual entry from the dialog validation
+                    logging.info(f"Provider switched to {new_provider}. Skipping auto-calibration (manual entry preserved).")
 
     def on_show_project_settings(self):
         """Opens the project-specific settings dialog."""
