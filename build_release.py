@@ -98,7 +98,7 @@ def run_nuitka(staged_root):
         # This forces Nuitka to ignore Qt so we can copy the clean folders manually later
         "--nofollow-import-to=PySide6",
         "--nofollow-import-to=shiboken6",
-        "--nofollow-import-to=google.genai",
+        #"--nofollow-import-to=google.genai",
 
         # --- INCLUSIONS (Keep Critical Deps) ---
         "--include-module=master_orchestrator",
@@ -121,7 +121,7 @@ def run_nuitka(staged_root):
         "--include-module=gitdb",
         "--include-module=openai",
         "--include-module=anthropic",
-        #"--include-module=google.genai",
+        "--include-module=google.genai",
         "--include-module=replicate",
         "--include-module=requests",
         "--include-module=pandas",
@@ -367,7 +367,7 @@ def main():
     copy_vault_extension(staged_src)
     bundle_dependencies(project_root)
     bundle_gui_assets(project_root)
-    bundle_google_genai(project_root)
+    #bundle_google_genai(project_root)
 
     # 3. Run LGPL Cleanup
     post_build_cleanup(DIST_DIR / "klyve.dist")

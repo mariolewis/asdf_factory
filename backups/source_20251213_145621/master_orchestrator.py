@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum, auto
 from llm_service import (LLMService, GeminiAdapter, OpenAIAdapter,
                          AnthropicAdapter, GrokAdapter, DeepseekAdapter, LlamaAdapter,
-                         OllamaAdapter, CustomEndpointAdapter)
+                         LocalPhi3Adapter, CustomEndpointAdapter)
 from pathlib import Path
 import textwrap
 import git
@@ -6940,7 +6940,7 @@ class MasterOrchestrator:
         """
         from llm_service import (GeminiAdapter, OpenAIAdapter, AnthropicAdapter,
                                  GrokAdapter, DeepseekAdapter, LlamaAdapter,
-                                 OllamaAdapter, CustomEndpointAdapter)
+                                 LocalPhi3Adapter, CustomEndpointAdapter)
 
         provider_name = settings.get("SELECTED_LLM_PROVIDER")
         logging.info(f"Verifying connection parameters for: {provider_name}")
@@ -6985,12 +6985,8 @@ class MasterOrchestrator:
                     settings.get("LLAMA_REASONING_MODEL"),
                     settings.get("LLAMA_FAST_MODEL")
                 )
-            elif provider_name == "Ollama (Local)":
-                # Extract model names from the temporary settings dict passed from the UI
-                r_model = settings.get("OLLAMA_REASONING_MODEL", "llama3")
-                f_model = settings.get("OLLAMA_FAST_MODEL", "llama3")
-                temp_service = OllamaAdapter(reasoning_model_name=r_model, fast_model_name=f_model)
-
+            elif provider_name == "Phi-3 (Local)":
+                temp_service = LocalPhi3Adapter()
             elif provider_name == "Any Other (OpenAI Compatible)":
                 temp_service = CustomEndpointAdapter(
                     settings.get("CUSTOM_ENDPOINT_URL"),
@@ -7077,8 +7073,8 @@ class MasterOrchestrator:
                     "Gemini": "GEMINI_CONTEXT_LIMIT", "ChatGPT": "OPENAI_CONTEXT_LIMIT",
                     "Claude": "ANTHROPIC_CONTEXT_LIMIT", "Grok": "GROK_CONTEXT_LIMIT",
                     "Deepseek": "DEEPSEEK_CONTEXT_LIMIT", "Llama": "LLAMA_CONTEXT_LIMIT",
-                    "Ollama (Local)": "OLLAMA_CONTEXT_LIMIT",
-                    "Any Other (OpenAI Compatible)": "ENTERPRISE_CONTEXT_LIMIT"
+                    "Phi-3 (Local)": "LOCALPHI3_CONTEXT_LIMIT",
+                    "Any Other": "ENTERPRISE_CONTEXT_LIMIT"
                 }
                 default_key = provider_key_map.get(provider_name)
                 if default_key:
@@ -7107,7 +7103,7 @@ class MasterOrchestrator:
         the configuration stored in the database.
         """
         from llm_service import (LLMService, GeminiAdapter, OpenAIAdapter,
-                                 AnthropicAdapter, OllamaAdapter, CustomEndpointAdapter)
+                                 AnthropicAdapter, LocalPhi3Adapter, CustomEndpointAdapter)
 
         logging.info("Attempting to create and configure LLM service...")
         db = self.db_manager
@@ -7167,21 +7163,17 @@ class MasterOrchestrator:
                 # return None
             return LlamaAdapter(api_key, reasoning_model, fast_model)
 
-        elif provider_name_from_db in ["Ollama (Local)", "Phi-3 (Local)"]:
-            # Fetch user-configured model names (defaults to 'llama3' if not set)
-            r_model = db.get_config_value("OLLAMA_REASONING_MODEL") or "llama3"
-            f_model = db.get_config_value("OLLAMA_FAST_MODEL") or "llama3"
-            return OllamaAdapter(reasoning_model_name=r_model, fast_model_name=f_model)
+        elif provider_name_from_db == "Phi-3 (Local)":
+            return LocalPhi3Adapter()
 
-        elif provider_name_from_db == "Any Other (OpenAI Compatible)": # <--- FIXED STRING
+        elif provider_name_from_db == "Any Other":
             base_url = db.get_config_value("CUSTOM_ENDPOINT_URL")
             api_key = db.get_config_value("CUSTOM_ENDPOINT_API_KEY")
             reasoning_model = db.get_config_value("CUSTOM_REASONING_MODEL")
             fast_model = db.get_config_value("CUSTOM_FAST_MODEL")
-
             if not all([base_url, api_key, reasoning_model, fast_model]):
-                raise ValueError("Custom provider selected, but required settings are missing.")
-
+                raise ValueError("Other provider selected, but one or more required settings are missing.")
+                # return None
             return CustomEndpointAdapter(base_url, api_key, reasoning_model, fast_model)
 
         else:

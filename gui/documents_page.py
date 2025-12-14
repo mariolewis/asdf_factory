@@ -72,7 +72,7 @@ class DocumentsPage(QWidget):
 
     def setup_initial_state(self):
         """Sets the initial state of the widgets on the page."""
-        self.ui.logTextEdit.setPlaceholderText("Enter or paste feedback or review comments here...")
+        self.ui.logTextEdit.setPlaceholderText("Select a document and enter or paste feedback or review comments here...")
         self._update_review_panel_state(is_enabled=False)
 
     def prepare_for_display(self):

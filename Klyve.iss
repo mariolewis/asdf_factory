@@ -2,16 +2,18 @@
 ; SEE THE DOCUMENTATION FOR DETAILS ON CREATING INNO SETUP SCRIPT FILES!
 
 #define MyAppName "Klyve"
-#define MyAppVersion "1.0 Beta"
-#define MyAppPublisher "Mario Lewis"
+#define MyAppVersion "1.0_Beta"
+#define MyAppPublisher "Mario J. Lewis"
 #define MyAppExeName "klyve.exe"
 #define BuildSourceDir "dist\klyve.dist"
+; NEW: Define a strict numerical version for Windows Metadata (Must be X.X.X.X)
+#define MyAppFileVersion "1.0.0.0"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application.
 ; Do not use the same AppId value in installers for other applications.
 ; (Generated a generic GUID for you)
-AppId={A1B2C3D4-E5F6-7890-1234-56789ABCDEF0}
+AppId={{A1B2C3D4-E5F6-7890-1234-56789ABCDEF0}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -30,7 +32,20 @@ ArchitecturesInstallIn64BitMode=x64
 SetupIconFile=gui\icons\klyve_logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 LicenseFile=EULA.txt
-;
+; --- NEW: Windows Explorer Metadata (Mouseover / Details Tab) ---
+
+; 1. The Strict Binary Versions (Must be numbers only: X.X.X.X)
+VersionInfoVersion={#MyAppFileVersion}
+VersionInfoProductVersion={#MyAppFileVersion}
+
+; 2. The Friendly Text Versions (Visible to users, can contain "Beta")
+VersionInfoTextVersion={#MyAppVersion}
+VersionInfoProductTextVersion={#MyAppVersion}
+
+; 3. Company & Description
+VersionInfoCompany={#MyAppPublisher}
+VersionInfoDescription={#MyAppName} Installer
+VersionInfoCopyright=Copyright (C) 2025 {#MyAppPublisher}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -44,6 +59,7 @@ Source: "Third_Party_Notices.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "Privacy_Policy.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "EULA.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "klyve_sbom.spdx.json"; DestDir: "{app}"; Flags: ignoreversion
+Source: ".grype.yaml"; DestDir: "{app}"; Flags: ignoreversion
 
 ; The Main Executable
 Source: "{#BuildSourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -61,5 +77,29 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-// Optional: Add custom logic here if we need to verify VC++ Runtimes
-// For now, Nuitka standalone usually handles dependencies well enough.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataPath: String;
+begin
+  // Only run this when the actual uninstall is finishing
+  if CurUninstallStep = usUninstall then
+  begin
+    // FIX: Use {%USERPROFILE} to access the C:\Users\Name environment variable
+    DataPath := ExpandConstant('{%USERPROFILE}\.klyve');
+
+    // Check if the folder exists before asking
+    if DirExists(DataPath) then
+    begin
+      // Ask the user nicely
+      if MsgBox('Do you also want to delete your Klyve data and projects?' #13#10 +
+                'Select "Yes" to completely wipe all data (recommended for clean re-install).' #13#10 +
+                'Select "No" to keep your data (recommended for upgrades).',
+                mbConfirmation, MB_YESNO) = IDYES then
+      begin
+        // Recursively delete the entire .klyve folder (including \data\klyve.db)
+        // Parameters: Path, IsDir, DeleteFiles, DeleteSubdirs
+        DelTree(DataPath, True, True, True);
+      end;
+    end;
+  end;
+end;

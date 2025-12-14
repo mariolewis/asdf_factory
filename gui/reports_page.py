@@ -1,5 +1,6 @@
 # gui/reports_page.py
 import logging
+import warnings
 from io import BytesIO
 from PySide6.QtWidgets import QWidget, QMessageBox, QAbstractItemView
 from PySide6.QtCore import Signal, Qt
@@ -188,10 +189,13 @@ class ReportsPage(QWidget):
         self.ui.generateReportButton.setEnabled(False)
         self.ui.generateReportButton.setText("Generate Report")
         # self.ui.lastGeneratedLabel.setVisible(False)
-        # Disconnect any previous dynamic connection
+        # Disconnect previous generation slot safely
         try:
-            self.ui.generateReportButton.clicked.disconnect()
-        except (TypeError, RuntimeError): # Catch if no connection exists
+            # Suppress the "Failed to disconnect" warning if no slots are connected
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                self.ui.generateReportButton.clicked.disconnect()
+        except (RuntimeError, TypeError):
             pass
 
     def _on_report_selection_changed(self, current, previous):
@@ -249,10 +253,12 @@ class ReportsPage(QWidget):
         # Configure Generate Button
         self.ui.generateReportButton.setEnabled(True)
         self.ui.generateReportButton.setText(f"Generate {meta['file_type']}")
-        # Disconnect previous slot before connecting new one
+        # Disconnect previous generation slot safely
         try:
-            self.ui.generateReportButton.clicked.disconnect()
-        except Exception:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", RuntimeWarning)
+                self.ui.generateReportButton.clicked.disconnect()
+        except (RuntimeError, TypeError):
             pass
         # Dynamically connect the button to the correct handler based on report name
         # We use a lambda to pass the report name or necessary context if needed

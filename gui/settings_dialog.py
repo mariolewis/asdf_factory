@@ -100,7 +100,7 @@ class SettingsDialog(QDialog):
         self.llm_explanation_label.setObjectName("settingsInstructionLabel")
 
         self.provider_combo_box = QComboBox()
-        self.provider_combo_box.addItems(["ChatGPT", "Claude", "Deepseek", "Gemini", "Grok", "Llama", "Phi-3 (Local)", "Any Other (OpenAI Compatible)"])
+        self.provider_combo_box.addItems(["ChatGPT", "Claude", "Deepseek", "Gemini", "Grok", "Llama", "Ollama (Local)", "Any Other (OpenAI Compatible)"])
         self.provider_stacked_widget = QStackedWidget()
 
         self.gemini_page = QWidget()
@@ -122,6 +122,10 @@ class SettingsDialog(QDialog):
         self.anthropic_fast_model_input = QLineEdit()
 
         self.phi3local_page = QWidget()
+        self.ollama_reasoning_model_input = QLineEdit()
+        self.ollama_reasoning_model_input.setPlaceholderText("e.g. llama3:latest")
+        self.ollama_fast_model_input = QLineEdit()
+        self.ollama_fast_model_input.setPlaceholderText("e.g. llama3:latest")
 
         self.anyother_page = QWidget()
         self.custom_endpoint_url_input = QLineEdit()
@@ -155,6 +159,10 @@ class SettingsDialog(QDialog):
         self.context_limit_input = QLineEdit()
         self.context_limit_input.setReadOnly(False)
         self.calibrate_button = QPushButton("Auto-Calibrate Now")
+        self.context_help_label = QLabel("")
+        self.context_help_label.setWordWrap(True)
+        # Make it look like help text (slightly dimmer)
+        self.context_help_label.setStyleSheet("color: #808080;")
         self.logging_combo_box = QComboBox()
         self.logging_combo_box.addItems(["Standard", "Detailed", "Debug"])
         self.project_path_input = QLineEdit()
@@ -244,8 +252,10 @@ class SettingsDialog(QDialog):
         claude_layout.addRow("Fast Model:", self.anthropic_fast_model_input)
         self.provider_stacked_widget.addWidget(self.claude_page)
 
-        phi3_layout = QVBoxLayout(self.phi3local_page)
-        phi3_layout.addWidget(QLabel("No configuration needed. Ensure your local Ollama server is running."))
+        ollama_layout = QFormLayout(self.phi3local_page)
+        ollama_layout.addRow("Reasoning Model:", self.ollama_reasoning_model_input)
+        ollama_layout.addRow("Fast Model:", self.ollama_fast_model_input)
+        ollama_layout.addRow(QLabel("Note: Ensure your local Ollama server is running.")) # Optional helpful label
         self.provider_stacked_widget.addWidget(self.phi3local_page)
 
         anyother_layout = QFormLayout(self.anyother_page)
@@ -283,6 +293,7 @@ class SettingsDialog(QDialog):
         context_wrapper_layout = QFormLayout()
         context_wrapper_layout.addRow("Context Window Limit:", context_limit_layout)
         llm_tab_layout.addLayout(context_wrapper_layout)
+        llm_tab_layout.addWidget(self.context_help_label)
 
         self.calibrate_button.setToolTip("Queries the selected LLM to determine and set its optimal context limit with a safety margin.")
 
@@ -675,6 +686,9 @@ class SettingsDialog(QDialog):
         self.llama_api_key_input.setText(get_val("LLAMA_API_KEY"))
         self.llama_reasoning_model_input.setText(get_val("LLAMA_REASONING_MODEL"))
         self.llama_fast_model_input.setText(get_val("LLAMA_FAST_MODEL"))
+        self.ollama_reasoning_model_input.setText(get_val("OLLAMA_REASONING_MODEL"))
+        self.ollama_fast_model_input.setText(get_val("OLLAMA_FAST_MODEL"))
+
 
         self.max_debug_spin_box.setValue(int(get_val("MAX_DEBUG_ATTEMPTS", 2)))
         self.context_limit_input.setText(get_val("CONTEXT_WINDOW_CHAR_LIMIT", "2500000"))
@@ -725,12 +739,50 @@ class SettingsDialog(QDialog):
             "Gemini": self.gemini_page, "ChatGPT": self.chatgpt_page,
             "Claude": self.claude_page, "Grok": self.grok_page,
             "Deepseek": self.deepseek_page, "Llama": self.llama_page,
-            "Phi-3 (Local)": self.phi3local_page,
+            "Ollama (Local)": self.phi3local_page,
             "Any Other (OpenAI Compatible)": self.anyother_page
         }
         page_to_show = page_map.get(provider_name)
         if page_to_show:
             self.provider_stacked_widget.setCurrentWidget(page_to_show)
+
+        # --- Dynamic Context Guidance & Safety ---
+        if provider_name == "Ollama (Local)":
+            # 1. Disable the button to prevent user error
+            self.calibrate_button.setEnabled(False)
+            self.calibrate_button.setText("Auto-Calibrate (Disabled)")
+            self.calibrate_button.setToolTip("This feature requires an internet-connected cloud model.")
+
+            # 2. Optimized, compact instruction
+            self.context_help_label.setText(
+                "<b>Offline Model:</b> Auto-calibration disabled. Manually enter limit.<br>"
+                "<b>Safe Defaults:</b> "
+                "8k (Llama 3): <b>26000</b> | 32k (Mistral): <b>100000</b><br>"
+                "128k (Phi-3 / Llama 3.1): <b>400000</b>"
+            )
+
+        elif provider_name == "Any Other (OpenAI Compatible)":
+            # 1. Disable calibration (unsafe to assume web access)
+            self.calibrate_button.setEnabled(False)
+            self.calibrate_button.setText("Auto-Calibrate (Disabled)")
+            self.calibrate_button.setToolTip("Auto-calibration requires specific web-search capabilities.")
+
+            # 2. Guidance
+            self.context_help_label.setText(
+                "<b>Manual Entry Required:</b> Custom endpoints vary widely.<br>"
+                "Please check your model's documentation and enter the safe character limit manually."
+            )
+
+        else:
+            # Re-enable for cloud providers
+            self.calibrate_button.setEnabled(True)
+            self.calibrate_button.setText("Auto-Calibrate Now")
+            self.calibrate_button.setToolTip("Queries the selected LLM to determine optimal limits.")
+
+            self.context_help_label.setText(
+                "<b>Cloud Model Guidance:</b> Click 'Auto-Calibrate' to have Klyve detect the optimal "
+                "limit for this provider via a web search."
+            )
 
     def on_integration_provider_changed(self, index):
         """Switches the configuration page based on the selected provider."""
@@ -812,6 +864,8 @@ class SettingsDialog(QDialog):
             "LLAMA_API_KEY": self.llama_api_key_input.text().strip(),
             "LLAMA_REASONING_MODEL": self.llama_reasoning_model_input.text().strip(),
             "LLAMA_FAST_MODEL": self.llama_fast_model_input.text().strip(),
+            "OLLAMA_REASONING_MODEL": self.ollama_reasoning_model_input.text().strip(),
+            "OLLAMA_FAST_MODEL": self.ollama_fast_model_input.text().strip(),
             "CUSTOM_ENDPOINT_URL": self.custom_endpoint_url_input.text().strip(),
             "CUSTOM_ENDPOINT_API_KEY": self.custom_endpoint_api_key_input.text().strip(),
             "CUSTOM_REASONING_MODEL": self.custom_reasoning_model_input.text().strip(),

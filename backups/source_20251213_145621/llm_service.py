@@ -17,15 +17,17 @@ class LLMService(ABC):
 class GeminiAdapter(LLMService):
     """
     Concrete implementation of the LLMService for Google's Gemini models.
+    Updated for google-genai SDK (v1.0+) with correct millisecond timeout.
     """
-    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str, generation_config: dict = None):
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         from google import genai
         from google.genai import types
 
         if not api_key:
             raise ValueError("API key is required for the GeminiAdapter.")
 
-        # Initialize Client (timeout in ms: 600,000 = 10 mins)
+        # Initialize Client with timeout in MILLISECONDS
+        # 600 seconds * 1000 = 600,000 ms
         self.client = genai.Client(
             api_key=api_key,
             http_options=types.HttpOptions(timeout=600000)
@@ -34,76 +36,59 @@ class GeminiAdapter(LLMService):
         self.reasoning_model_name = reasoning_model_name
         self.fast_model_name = fast_model_name
 
-        # Default to deterministic (temp=0) if not provided
-        self.generation_config = generation_config if generation_config else {
-            "temperature": 0.0
-        }
-
-        # Explicitly disable Automatic Function Calling (AFC)
-        self.tool_config = types.ToolConfig(
-            function_calling_config=types.FunctionCallingConfig(mode='NONE')
-        )
-
-        logging.info(f"GeminiAdapter initialized. Models: {reasoning_model_name}, {fast_model_name}")
+        logging.info(f"GeminiAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
+        """
+        Generates text using the appropriate Gemini model based on task complexity.
+        """
         try:
             model_to_use = self.reasoning_model_name if task_complexity == "complex" else self.fast_model_name
 
             response = self.client.models.generate_content(
                 model=model_to_use,
-                contents=prompt,
-                config=self.generation_config,
-                tool_config=self.tool_config
+                contents=prompt
             )
 
+            # Robust check for valid response content
             if not response.text:
                 finish_reason = "Unknown"
                 if response.candidates and len(response.candidates) > 0:
                     finish_reason = response.candidates[0].finish_reason
 
-                log_msg = f"Gemini empty response. Reason: {finish_reason}. Usage: {response.usage_metadata}"
+                log_msg = (f"Gemini model returned an empty response. "
+                           f"Finish Reason: {finish_reason}. "
+                           f"Usage: {response.usage_metadata}")
                 logging.warning(log_msg)
-                return f"Error: The AI model returned an empty response. Reason: {finish_reason}"
+                return f"Error: The AI model returned an empty response. This could be due to a safety filter or hitting a token limit."
 
             return response.text.strip()
         except Exception as e:
             logging.error(f"Gemini API call failed: {e}", exc_info=True)
+            # Re-raise the exception to be caught by the worker
             raise e
 
 class OpenAIAdapter(LLMService):
     """
-    Concrete implementation of the LLMService for OpenAI's models (GPT-4, o1).
-    Includes logic to handle 'o1' model limitations (no temperature).
+    Concrete implementation of the LLMService for OpenAI's models (e.g., GPT-4).
     """
-    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str, generation_config: dict = None):
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         import openai
         if not api_key:
             raise ValueError("API key is required for the OpenAIAdapter.")
         self.client = openai.OpenAI(api_key=api_key)
         self.reasoning_model = reasoning_model_name
         self.fast_model = fast_model_name
-        self.generation_config = generation_config if generation_config else {}
-        logging.info(f"OpenAIAdapter initialized. Models: {reasoning_model_name}, {fast_model_name}")
+        logging.info(f"OpenAIAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
+        import openai
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-
-            # Smart Default: Use temp=0 for coding, BUT remove it for 'o1' models which crash with temp.
-            call_params = self.generation_config.copy()
-            if "o1" in model_to_use:
-                call_params.pop("temperature", None) # o1 does not support temperature
-                # o1 uses max_completion_tokens, others use max_tokens.
-                # We assume the user/defaults handle this or we rely on model defaults.
-            elif "temperature" not in call_params:
-                call_params["temperature"] = 0.0 # Default to deterministic for standard GPT models
-
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=300,
-                **call_params
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -111,37 +96,30 @@ class OpenAIAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"OpenAI API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
             raise e
 
 class AnthropicAdapter(LLMService):
     """
     Concrete implementation of the LLMService for Anthropic's Claude models.
     """
-    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str, max_tokens: int = 8192, generation_config: dict = None):
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         import anthropic
         if not api_key:
             raise ValueError("API key is required for the AnthropicAdapter.")
         self.client = anthropic.Anthropic(api_key=api_key)
         self.reasoning_model = reasoning_model_name
         self.fast_model = fast_model_name
-        self.max_tokens = max_tokens
-        # Default config to temp 0 if not specified
-        self.generation_config = generation_config if generation_config else {"temperature": 0.0}
-        logging.info(f"AnthropicAdapter initialized. Models: {reasoning_model_name}, {fast_model_name}")
+        logging.info(f"AnthropicAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-
-            # Merge max_tokens into params
-            call_params = self.generation_config.copy()
-
             message = self.client.messages.create(
                 model=model_to_use,
-                max_tokens=self.max_tokens,
+                max_tokens=4096,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=300,
-                **call_params
+                timeout=300
             )
             response_text = message.content[0].text
             if not response_text:
@@ -149,25 +127,24 @@ class AnthropicAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Anthropic API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
             raise e
 
 class GrokAdapter(LLMService):
     """
-    Concrete implementation for xAI's Grok models.
+    Concrete implementation of the LLMService for Grok models via the Groq API.
     """
-    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str, generation_config: dict = None):
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         import openai
         if not api_key:
             raise ValueError("API key is required for the GrokAdapter.")
         self.client = openai.OpenAI(
             api_key=api_key,
-            base_url="https://api.x.ai/v1",
+            base_url="https://api.groq.com/openai/v1",
         )
         self.reasoning_model = reasoning_model_name
         self.fast_model = fast_model_name
-        # Default to temp 0.0 for coding
-        self.generation_config = generation_config if generation_config else {"temperature": 0.0}
-        logging.info(f"GrokAdapter initialized. Models: {reasoning_model_name}, {fast_model_name}")
+        logging.info(f"GrokAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
         try:
@@ -175,8 +152,7 @@ class GrokAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=300,
-                **self.generation_config
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -184,41 +160,32 @@ class GrokAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Grok API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
             raise e
 
 class DeepseekAdapter(LLMService):
     """
-    Concrete implementation for Deepseek models (V3, R1).
+    Concrete implementation of the LLMService for Deepseek models.
     """
-    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str, generation_config: dict = None):
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         import openai
         if not api_key:
             raise ValueError("API key is required for the DeepseekAdapter.")
         self.client = openai.OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com",
+            base_url="https://api.deepseek.com/v1",
         )
         self.reasoning_model = reasoning_model_name
         self.fast_model = fast_model_name
-        self.generation_config = generation_config if generation_config else {}
-        logging.info(f"DeepseekAdapter initialized. Models: {reasoning_model_name}, {fast_model_name}")
+        logging.info(f"DeepseekAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-
-            call_params = self.generation_config.copy()
-            # Deepseek R1 (reasoner) does NOT support temperature
-            if "reasoner" in model_to_use:
-                call_params.pop("temperature", None)
-            elif "temperature" not in call_params:
-                call_params["temperature"] = 0.0
-
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=300,
-                **call_params
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -226,41 +193,29 @@ class DeepseekAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Deepseek API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
             raise e
 
 class LlamaAdapter(LLMService):
     """
-    Concrete implementation for Meta's Llama models via Replicate.
+    Concrete implementation of the LLMService for Meta's Llama models via Replicate.
     """
-    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str, generation_config: dict = None):
+    def __init__(self, api_key: str, reasoning_model_name: str, fast_model_name: str):
         import replicate
         if not api_key:
             raise ValueError("API key is required for the LlamaAdapter (Replicate).")
         self.client = replicate.Client(api_token=api_key)
         self.reasoning_model = reasoning_model_name
         self.fast_model = fast_model_name
-
-        # Replicate defaults are often too restrictive (e.g. 512 tokens).
-        # We explicitly set defaults for coding tasks.
-        defaults = {"temperature": 0.0, "max_tokens": 4096}
-        if generation_config:
-            defaults.update(generation_config)
-        self.generation_config = defaults
-
-        logging.info(f"LlamaAdapter initialized. Models: {reasoning_model_name}, {fast_model_name}")
+        logging.info(f"LlamaAdapter initialized with models: {reasoning_model_name} (Complex) and {fast_model_name} (Simple).")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
         try:
             model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
 
-            input_params = {
-                "prompt": prompt,
-                **self.generation_config
-            }
-
             output_iterator = self.client.run(
                 model_to_use,
-                input=input_params
+                input={"prompt": prompt}
             )
 
             response_parts = [str(part) for part in output_iterator]
@@ -271,54 +226,51 @@ class LlamaAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Llama (Replicate) API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
             raise e
 
-class OllamaAdapter(LLMService):
+class LocalPhi3Adapter(LLMService):
     """
-    Concrete implementation for generic local models via Ollama.
+    Concrete implementation of the LLMService for a local Phi-3 model via Ollama.
     """
-    def __init__(self, reasoning_model_name: str, fast_model_name: str, base_url: str = "http://localhost:11434/v1", generation_config: dict = None):
+    def __init__(self, base_url: str = "http://localhost:11434/v1"):
         import openai
         self.client = openai.OpenAI(base_url=base_url, api_key="ollama")
-        self.reasoning_model = reasoning_model_name
-        self.fast_model = fast_model_name
-        self.generation_config = generation_config if generation_config else {"temperature": 0.0}
-        logging.info(f"OllamaAdapter initialized. Models: {reasoning_model_name}, {fast_model_name}")
+        self.model = "phi3"
+        logging.info(f"LocalPhi3Adapter initialized for model '{self.model}' at {base_url}.")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
         import openai
         try:
-            model_to_use = self.reasoning_model if task_complexity == "complex" else self.fast_model
-
             completion = self.client.chat.completions.create(
-                model=model_to_use,
+                model=self.model,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=300,
-                **self.generation_config
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
-                raise ValueError(f"The local Ollama model ({model_to_use}) returned an empty response.")
+                raise ValueError("The local Phi-3 model returned an empty response.")
             return response_text.strip()
         except openai.APIConnectionError as e:
-            logging.error(f"Ollama Connection Error: {e}")
-            raise ConnectionError(f"Could not connect to Ollama at {self.client.base_url}. Is Ollama running?")
+            logging.error(f"Local Phi-3 (Ollama) API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
+            raise ConnectionError(f"Could not connect to the local Ollama server. Details: {e}")
         except Exception as e:
-            logging.error(f"Ollama API call failed: {e}")
+            logging.error(f"Local Phi-3 (Ollama) API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
             raise e
 
 class CustomEndpointAdapter(LLMService):
     """
     Concrete implementation for a generic, OpenAI-compatible custom endpoint.
     """
-    def __init__(self, base_url: str, api_key: str, reasoning_model_name: str, fast_model_name: str, generation_config: dict = None):
+    def __init__(self, base_url: str, api_key: str, reasoning_model_name: str, fast_model_name: str):
         import openai
         if not all([base_url, api_key, reasoning_model_name, fast_model_name]):
             raise ValueError("All parameters are required for the CustomEndpointAdapter.")
         self.client = openai.OpenAI(base_url=base_url, api_key=api_key)
         self.reasoning_model = reasoning_model_name
         self.fast_model = fast_model_name
-        self.generation_config = generation_config if generation_config else {"temperature": 0.0}
         logging.info(f"CustomEndpointAdapter initialized for endpoint at {base_url}.")
 
     def generate_text(self, prompt: str, task_complexity: str) -> str:
@@ -327,8 +279,7 @@ class CustomEndpointAdapter(LLMService):
             completion = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=[{"role": "user", "content": prompt}],
-                timeout=300,
-                **self.generation_config
+                timeout=300
             )
             response_text = completion.choices[0].message.content
             if not response_text:
@@ -336,6 +287,7 @@ class CustomEndpointAdapter(LLMService):
             return response_text.strip()
         except Exception as e:
             logging.error(f"Custom Endpoint API call failed: {e}")
+            # Re-raise the exception to be caught by the worker
             raise e
 
 import json
@@ -347,24 +299,32 @@ def parse_llm_json(llm_output: str):
     Robustly extracts and parses JSON from LLM output.
     Handles markdown fences, single quotes (lazy JSON), and trailing commas.
     """
+    # 1. Strip Markdown Fences
     clean_text = llm_output.strip()
     if "```" in clean_text:
+        # Regex to find content inside ```json ... ``` or just ``` ... ```
         match = re.search(r"```(?:json)?(.*?)```", clean_text, re.DOTALL)
         if match:
             clean_text = match.group(1).strip()
 
+    # 2. Attempt Strict Parsing
     try:
         return json.loads(clean_text)
     except json.JSONDecodeError:
         pass
 
+    # 3. Attempt Python Literal Evaluation (Handles single quotes)
     try:
+        # Safety check: ensure it looks like a dict/list before eval
         if clean_text.startswith("{") or clean_text.startswith("["):
             return ast.literal_eval(clean_text)
     except (ValueError, SyntaxError):
         pass
 
+    # 4. Last Resort: Regex cleanup for common JSON errors (e.g., trailing commas)
+    # This is risky, so we only do it if the above fail.
     try:
+        # Remove trailing commas before closing braces/brackets
         clean_text = re.sub(r",\s*([\]}])", r"\1", clean_text)
         return json.loads(clean_text)
     except json.JSONDecodeError:

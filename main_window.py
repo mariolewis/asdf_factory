@@ -442,9 +442,11 @@ class KlyveMainWindow(QMainWindow):
         self.delivery_assessment_page.assessment_approved.connect(self.on_assessment_approved)
         self.delivery_assessment_page.project_cancelled.connect(self.on_close_project)
         self.ui.projectFilesTreeView.customContextMenuRequested.connect(self.on_file_tree_context_menu)
-        self.documents_page.back_to_workflow.connect(self.on_back_to_workflow)
-        self.reports_page.back_to_workflow.connect(self.on_back_to_workflow)
-        self.sprint_history_page.back_to_workflow.connect(self.on_back_to_workflow)
+        # --- UPDATED: Redirect 'Back' buttons to the smart unified return logic ---
+        self.documents_page.back_to_workflow.connect(self.on_unified_return_clicked)
+        self.reports_page.back_to_workflow.connect(self.on_unified_return_clicked)
+        self.sprint_history_page.back_to_workflow.connect(self.on_unified_return_clicked)
+        # ------------------------------------------------------------------------
         self.manual_ui_testing_page.go_to_documents.connect(self.on_view_documents)
         self.manual_ui_testing_page.testing_complete.connect(self.update_ui_after_state_change)
         self.project_complete_page.export_project.connect(self.on_stop_export_project)
@@ -507,9 +509,9 @@ class KlyveMainWindow(QMainWindow):
                 api_key_valid = True
             elif provider == "Claude" and config.get("ANTHROPIC_API_KEY"):
                 api_key_valid = True
-            elif provider == "Phi-3 (Local)":
+            elif provider == "Ollama (Local)":
                 api_key_valid = True # No key needed
-            elif provider == "Any Other" and config.get("CUSTOM_ENDPOINT_API_KEY") and config.get("CUSTOM_ENDPOINT_URL"):
+            elif provider == "Any Other (OpenAI Compatible)" and config.get("CUSTOM_ENDPOINT_API_KEY") and config.get("CUSTOM_ENDPOINT_URL"):
                 api_key_valid = True
 
             paths_valid = bool(config.get("DEFAULT_PROJECT_PATH") and config.get("DEFAULT_ARCHIVE_PATH"))
@@ -2386,9 +2388,12 @@ class KlyveMainWindow(QMainWindow):
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to view its documents.")
             return
-        # self.previous_phase = self.orchestrator.current_phase
-        # MODIFIED: Store current phase in orchestrator's new persistent property
-        self.orchestrator.last_operational_phase = self.orchestrator.current_phase
+
+        # FIX: Only update the return point if we are coming from a work phase,
+        # not another ancillary viewing phase. This prevents overwriting the valid return state.
+        if self.orchestrator.current_phase not in [FactoryPhase.VIEWING_DOCUMENTS, FactoryPhase.VIEWING_REPORTS, FactoryPhase.VIEWING_SPRINT_HISTORY]:
+            self.orchestrator.last_operational_phase = self.orchestrator.current_phase
+
         self.orchestrator.set_phase("VIEWING_DOCUMENTS")
         self.update_ui_after_state_change()
 
@@ -2396,9 +2401,11 @@ class KlyveMainWindow(QMainWindow):
         if not self.orchestrator.project_id:
             QMessageBox.warning(self, "No Project", "Please create or load a project to view its reports.")
             return
-        # self.previous_phase = self.orchestrator.current_phase
-        # MODIFIED: Store current phase in orchestrator's new persistent property
-        self.orchestrator.last_operational_phase = self.orchestrator.current_phase
+
+        # FIX: Only update the return point if we are coming from a work phase.
+        if self.orchestrator.current_phase not in [FactoryPhase.VIEWING_DOCUMENTS, FactoryPhase.VIEWING_REPORTS, FactoryPhase.VIEWING_SPRINT_HISTORY]:
+            self.orchestrator.last_operational_phase = self.orchestrator.current_phase
+
         self.orchestrator.set_phase("VIEWING_REPORTS")
         self.update_ui_after_state_change()
 
@@ -2408,9 +2415,10 @@ class KlyveMainWindow(QMainWindow):
             QMessageBox.warning(self, "No Project", "Please load a project to view its sprint history.")
             return
 
-        # self.previous_phase = self.orchestrator.current_phase
-        # MODIFIED: Store current phase in orchestrator's new persistent property
-        self.orchestrator.last_operational_phase = self.orchestrator.current_phase
+        # FIX: Only update the return point if we are coming from a work phase.
+        if self.orchestrator.current_phase not in [FactoryPhase.VIEWING_DOCUMENTS, FactoryPhase.VIEWING_REPORTS, FactoryPhase.VIEWING_SPRINT_HISTORY]:
+            self.orchestrator.last_operational_phase = self.orchestrator.current_phase
+
         self.orchestrator.set_phase("VIEWING_SPRINT_HISTORY")
         self.update_ui_after_state_change()
 
