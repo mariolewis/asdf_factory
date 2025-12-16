@@ -1,6 +1,6 @@
 PRIVACY POLICY FOR KLYVE Version 1.0 (Beta) Last Updated: 08-Dec-2025
 
-1. MY "LOCAL-FIRST" PROMISE I, Mario Joseph Lewis ("Developer"), believe your code and project data belong to you. Klyve ("the Software") is designed as a Local-First application. This means:
+1. MY "LOCAL-FIRST" PROMISE I, Mario J. Lewis ("Developer"), believe your code and project data belong to you. Klyve ("the Software") is designed as a Local-First application. This means:
 
 No Cloud Storage: I do not operate any cloud server to upload and store your project source code, specifications, or planning documents from your local environment.
 

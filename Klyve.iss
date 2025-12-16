@@ -31,6 +31,7 @@ ArchitecturesInstallIn64BitMode=x64
 ; Icon
 SetupIconFile=gui\icons\klyve_logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
+WizardSmallImageFile=gui\icons\klyve_logo_small.bmp
 LicenseFile=EULA.txt
 ; --- NEW: Windows Explorer Metadata (Mouseover / Details Tab) ---
 
@@ -68,6 +69,14 @@ Source: "{#BuildSourceDir}\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignorevers
 ; We exclude the exe here because we included it explicitly above, but Inno handles overwrites fine.
 ; Crucially, we include the data, dependencies, and internal libraries.
 Source: "{#BuildSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[UninstallDelete]
+; Force removal of PySide6 and shiboken6 folders (and any cache files inside them)
+Type: filesandordirs; Name: "{app}\PySide6"
+Type: filesandordirs; Name: "{app}\shiboken6"
+
+; Attempt to remove the main app directory if it is now empty
+Type: dirifempty; Name: "{app}"
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
