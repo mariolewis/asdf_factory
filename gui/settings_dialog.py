@@ -84,6 +84,77 @@ class SettingsDialog(QDialog):
         self._create_layouts()
         self.connect_signals()
 
+    # --- CENTERING HELPERS (Must be included in the class) ---
+    def _exec_centered(self, dialog) -> int:
+        """
+        Helper to center a child dialog.
+        Uses QTimer + frameGeometry() to account for Window Manager borders/title bars.
+        """
+        # 1. Ask Qt to lay out the dialog so we have a rough size
+        dialog.adjustSize()
+
+        def do_center():
+            # 2. Get the screen that contains the Settings Dialog
+            screen = self.screen()
+            if not screen:
+                screen = QApplication.primaryScreen()
+
+            # 3. Get the usable screen rectangle (excluding taskbars)
+            screen_geo = screen.availableGeometry()
+            screen_center = screen_geo.center()
+
+            # 4. Get the full footprint of the dialog (including title bar & borders)
+            # NOTE: This is only accurate inside QTimer (after the OS draws the window)
+            child_geo = dialog.frameGeometry()
+
+            # 5. Math: Align the center of the dialog frame to the center of the screen
+            child_geo.moveCenter(screen_center)
+
+            # 6. Move the dialog to the calculated top-left position
+            dialog.move(child_geo.topLeft())
+
+        # Force this calculation to run immediately AFTER the window is shown
+        QTimer.singleShot(0, do_center)
+
+        return dialog.exec()
+
+    def show_info(self, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
+
+    def show_warning(self, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
+
+    def show_error(self, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
+
+    def ask_question(self, title, text, buttons=QMessageBox.Yes | QMessageBox.No, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
+    # ---------------------------------------------------------
+
     def _create_widgets(self):
         """Creates all the widgets for the dialog."""
         self.main_layout = QVBoxLayout(self)
@@ -424,7 +495,7 @@ class SettingsDialog(QDialog):
 
         except Exception as e:
             logging.error(f"Failed to populate templates tab: {e}")
-            QMessageBox.critical(self, "Error", f"Could not load templates from database: {e}")
+            self.show_error("Error", f"Could not load templates from database: {e}")
 
     def _on_template_browse_clicked(self):
         """Opens a file dialog to select a template file."""
@@ -438,21 +509,19 @@ class SettingsDialog(QDialog):
         source_path_str = self.template_path_input.text()
 
         if not source_path_str:
-            QMessageBox.warning(self, "File Not Selected", "Please browse for a template file to add.")
+            self.show_warning("File Not Selected", "Please browse for a template file to add.")
             return
 
         internal_name = self.template_name_map.get(selected_type)
         if not internal_name:
-            QMessageBox.critical(self, "Error", "An internal error occurred: could not map template type.")
+            self.show_error("Error", "An internal error occurred: could not map template type.")
             return
 
         try:
             # Check if a template of this type already exists
             existing_template = self.orchestrator.db_manager.get_template_by_name(internal_name)
             if existing_template:
-                reply = QMessageBox.question(self, "Confirm Overwrite",
-                                            f"A template for '{selected_type}' already exists. Do you want to replace it?",
-                                            QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+                reply = self.ask_question("Confirm Overwrite", f"A template for '{selected_type}' already exists. Do you want to replace it?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
                 if reply == QMessageBox.No:
                     return
                 # If overwriting, first remove the old record and file
@@ -471,17 +540,17 @@ class SettingsDialog(QDialog):
 
             self._populate_templates_tab()
             self.template_path_input.clear()
-            QMessageBox.information(self, "Success", f"Template for '{selected_type}' was saved successfully.")
+            self.show_info("Success", f"Template for '{selected_type}' was saved successfully.")
 
         except Exception as e:
             logging.error(f"Failed to add/update template: {e}")
-            QMessageBox.critical(self, "Error", f"Could not save template: {e}")
+            self.show_error("Error", f"Could not save template: {e}")
 
     def _on_remove_template_clicked(self):
         """Handles the logic for removing a selected template."""
         selected_items = self.templates_list_widget.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "No Selection", "Please select a template from the list to remove.")
+            self.show_warning("No Selection", "Please select a template from the list to remove.")
             return
 
         item = selected_items[0]
@@ -490,9 +559,7 @@ class SettingsDialog(QDialog):
         template_name = item_data.get("name")
         display_name = self.reverse_template_name_map.get(template_name, template_name)
 
-        reply = QMessageBox.question(self, "Confirm Deletion",
-                                    f"Are you sure you want to permanently delete the template for '{display_name}'?",
-                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        reply = self.ask_question("Confirm Deletion", f"Are you sure you want to permanently delete the template for '{display_name}'?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
             try:
@@ -507,11 +574,11 @@ class SettingsDialog(QDialog):
 
                 # Refresh the table view
                 self._populate_templates_tab()
-                QMessageBox.information(self, "Success", f"Template for '{display_name}' was removed.")
+                self.show_info("Success", f"Template for '{display_name}' was removed.")
 
             except Exception as e:
                 logging.error(f"Failed to remove template: {e}")
-                QMessageBox.critical(self, "Error", f"Could not remove template: {e}")
+                self.show_error("Error", f"Could not remove template: {e}")
 
     def _populate_docx_styles_list(self):
         """Fetches all .docx templates from the styles dir and populates the list."""
@@ -581,25 +648,23 @@ class SettingsDialog(QDialog):
 
         except Exception as e:
             logging.error(f"Failed to copy new style template: {e}")
-            QMessageBox.critical(self, "Error", f"Could not copy template: {e}")
+            self.show_error("Error", f"Could not copy template: {e}")
 
     def _on_remove_style_clicked(self):
         """Handles logic for removing a selected style template."""
         selected_items = self.docxStyleListWidget.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "No Selection", "Please select a style to remove.")
+            self.show_warning("No Selection", "Please select a style to remove.")
             return
 
         item = selected_items[0]
         item_path_str = item.data(Qt.UserRole)
 
         if item_path_str == "data/templates/styles/default_docx_template.docx":
-            QMessageBox.warning(self, "Action Not Allowed", "The default template cannot be removed.")
+            self.show_warning("Action Not Allowed", "The default template cannot be removed.")
             return
 
-        reply = QMessageBox.question(self, "Confirm Deletion",
-                                     f"Are you sure you want to delete '{Path(item_path_str).name}'?",
-                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+        reply = self.ask_question("Confirm Deletion", f"Are you sure you want to delete '{Path(item_path_str).name}'?", QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
         if reply == QMessageBox.Yes:
             try:
@@ -841,6 +906,43 @@ class SettingsDialog(QDialog):
         """
         Validates critical LLM settings if changed, then saves to DB.
         """
+        # --- VALIDATION: Check Path Permissions (Cross-Platform) ---
+        import os
+
+        # 1. Get the paths from the UI
+        proj_path = self.project_path_input.text().strip()
+        arch_path = self.archive_path_input.text().strip()
+
+        # 2. Expand user paths (e.g. '~' on Linux) just in case
+        proj_path = os.path.abspath(os.path.expanduser(proj_path))
+        arch_path = os.path.abspath(os.path.expanduser(arch_path))
+
+        # 3. Validation Helper Function
+        def is_writable(path):
+            # If path exists, check write permission
+            if os.path.exists(path):
+                return os.access(path, os.W_OK)
+            # If path doesn't exist, check if PARENT exists and is writable
+            # (because Klyve will try to create the folder)
+            parent = os.path.dirname(path)
+            return os.access(parent, os.W_OK)
+
+        # 4. Perform Checks
+        if proj_path and not is_writable(proj_path):
+            self.show_error(
+                "Permission Denied",
+                f"You do not have write permissions for the Project Path:\n{proj_path}\n\nPlease choose a location inside your user folder (e.g., /home/username/...)."
+            )
+            return
+
+        if arch_path and not is_writable(arch_path):
+            self.show_error(
+                "Permission Denied",
+                f"You do not have write permissions for the Archive Path:\n{arch_path}\n\nPlease choose a location inside your user folder."
+            )
+            return
+
+        # --- End Validation ---
         # --- Validation for Manual Context Limits ---
         current_provider = self.provider_combo_box.currentText()
         if current_provider in ["Ollama (Local)", "Any Other (OpenAI Compatible)"]:
@@ -849,8 +951,7 @@ class SettingsDialog(QDialog):
                 if limit_val <= 0:
                     raise ValueError
             except ValueError:
-                QMessageBox.warning(
-                    self,
+                self.show_warning(
                     "Context Limit Required",
                     f"For {current_provider}, auto-calibration is disabled.\n\n"
                     "You must manually enter a safe Character Limit (e.g., 128000) before saving."
@@ -962,14 +1063,13 @@ class SettingsDialog(QDialog):
             self._commit_and_close(settings_to_save)
         else:
             # Verification failed! Do NOT save. Keep dialog open.
-            QMessageBox.critical(self, "Connection Failed",
-                                 f"Could not connect to the selected provider with these settings.\n\nError: {message}\n\nPlease check your API Key and Model Names.")
+            self.show_error("Connection Failed", f"Could not connect to the selected provider with these settings.\n\nError: {message}\n\nPlease check your API Key and Model Names.")
 
     def _handle_verification_error(self, error_tuple):
         """Handles a crash in the verification worker."""
         self.setEnabled(True)
         QApplication.restoreOverrideCursor()
-        QMessageBox.critical(self, "Verification Error", f"An unexpected error occurred during verification:\n{error_tuple[1]}")
+        self.show_error("Verification Error", f"An unexpected error occurred during verification:\n{error_tuple[1]}")
 
     def _commit_and_close(self, settings_to_save):
         """Helper to write to DB and close dialog."""
@@ -978,15 +1078,14 @@ class SettingsDialog(QDialog):
             self.orchestrator._llm_service = None # Force re-init with new settings
             self.accept()
         except Exception as e:
-             QMessageBox.critical(self, "Save Error", f"Failed to write settings to database:\n{e}")
+             self.show_error("Save Error", f"Failed to write settings to database:\n{e}")
 
     def on_revoke_consent_clicked(self):
         """
         Handles the revocation of EULA consent.
         Deletes the timestamp key and exits the application.
         """
-        reply = QMessageBox.question(
-            self,
+        reply = self.ask_question(
             "Reset License & Permissions?",
             "Are you sure you want to revoke your authorization for AI data transmission?\n\n"
             "Because Klyve requires this permission to function, this action will also reset your acceptance of the End User License Agreement (EULA).\n\n"
@@ -1005,9 +1104,9 @@ class SettingsDialog(QDialog):
                     conn.commit()
 
                 logging.info("EULA consent revoked by user. Exiting application.")
-                QMessageBox.information(self, "Permissions Reset", "Your permissions have been reset. The application will now exit.")
+                self.show_info("Permissions Reset", "Your permissions have been reset. The application will now exit.")
                 sys.exit(0)
 
             except Exception as e:
                 logging.error(f"Failed to revoke consent: {e}")
-                QMessageBox.critical(self, "Error", f"Failed to revoke settings: {e}")
+                self.show_error("Error", f"Failed to revoke settings: {e}")

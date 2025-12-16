@@ -161,13 +161,18 @@ class CRManagementPage(QWidget):
             complexity = item_data.get('complexity') or ''
             complexity_item = QStandardItem(complexity)
 
+            # --- FIX START: Auto-cleanup Staged Items ---
+            # If an item is marked COMPLETED or CANCELLED, it should no longer be staged for a sprint.
+            # This ensures they are not accidentally pulled into the next sprint plan.
+            if item_data['cr_id'] in self.staged_sprint_items and item_data['status'] in ['COMPLETED', 'CANCELLED']:
+                self.staged_sprint_items.discard(item_data['cr_id'])
+            # --- FIX END ---
+
             # Highlight the row if the item is staged for the sprint
             if item_data['cr_id'] in self.staged_sprint_items:
                 amber_color = QColor("#7D5C28") # As per GUI Design System: Warning Color
                 for cell_item in [num_item, title_item, type_item, status_item, priority_item, complexity_item, last_modified_item]:
                     cell_item.setBackground(amber_color)
-
-            # gui/cr_management_page.py
 
             # Set colors
             if item_data['status'] == 'EXISTING':

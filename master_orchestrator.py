@@ -4565,7 +4565,7 @@ class MasterOrchestrator:
 
             # Step 3: Run the actual tests.
             if progress_callback: progress_callback(("INFO", "Executing test suite..."))
-            success, raw_output = self.run_full_test_suite(progress_callback)
+            success, raw_output = self.run_full_test_suite(progress_callback=progress_callback)
 
             # Step 4 & 5: Format and generate the .docx report.
             if progress_callback: progress_callback(("INFO", "Formatting and saving test report..."))
@@ -6088,7 +6088,7 @@ class MasterOrchestrator:
         Performs a sequence of pre-flight checks on an existing project environment.
         This version uses the most robust GitPython introspection methods.
         """
-        print("\n--- DEBUG: ENTERING _perform_preflight_checks (FINAL VERSION) ---")
+        logging.debug("\n--- DEBUG: ENTERING _perform_preflight_checks (FINAL VERSION) ---")
         import os
         import subprocess
         import git
@@ -6102,11 +6102,11 @@ class MasterOrchestrator:
         project_details = self.db_manager.get_project_by_id(project_id)
         version_control_enabled = project_details['version_control_enabled'] == 1 if project_details else False
 
-        print(f"--- DEBUG: Calculated boolean for version_control_enabled: {version_control_enabled}")
+        logging.debug(f"--- DEBUG: Calculated boolean for version_control_enabled: {version_control_enabled}")
 
         # 2. VCS Validation (Only if enabled for this project)
         if version_control_enabled:
-            print("--- DEBUG: version_control_enabled is True. Proceeding with GitPython checks.")
+            logging.debug("--- DEBUG: version_control_enabled is True. Proceeding with GitPython checks.")
             if not (project_root / '.git').is_dir():
                 return {"status": "GIT_MISSING", "message": "The project folder was found, but the .git directory is missing.", "has_active_plan": has_active_plan}
 
@@ -6117,12 +6117,12 @@ class MasterOrchestrator:
                 is_dirty_tracked = repo.is_dirty()
                 has_untracked_files = bool(repo.untracked_files)
 
-                print(f"--- DEBUG: repo.is_dirty() check returned: {is_dirty_tracked}")
-                print(f"--- DEBUG: repo.untracked_files check returned: {repo.untracked_files}")
+                logging.debug(f"--- DEBUG: repo.is_dirty() check returned: {is_dirty_tracked}")
+                logging.debug(f"--- DEBUG: repo.untracked_files check returned: {repo.untracked_files}")
 
                 if is_dirty_tracked or has_untracked_files:
-                    print("--- DEBUG: State drift detected.")
-                    print("--- DEBUG: EXITING _perform_preflight_checks ---")
+                    logging.debug("--- DEBUG: State drift detected.")
+                    logging.debug("--- DEBUG: EXITING _perform_preflight_checks ---")
                     return {"status": "STATE_DRIFT", "message": "Uncommitted local changes have been detected. To prevent conflicts, please resolve the state of the repository.", "has_active_plan": has_active_plan}
 
             except git.InvalidGitRepositoryError as e:
@@ -6130,11 +6130,11 @@ class MasterOrchestrator:
             except Exception as e:
                  return {"status": "GIT_MISSING", "message": f"An unexpected error occurred with GitPython. Error: {e}", "has_active_plan": has_active_plan}
         else:
-            print("--- DEBUG: version_control_enabled is False. Skipping Git checks.")
+            logging.debug("--- DEBUG: version_control_enabled is False. Skipping Git checks.")
 
         # All checks passed
-        print("--- DEBUG: All checks passed.")
-        print("--- DEBUG: EXITING _perform_preflight_checks ---")
+        logging.debug("--- DEBUG: All checks passed.")
+        logging.debug("--- DEBUG: EXITING _perform_preflight_checks ---")
         return {"status": "ALL_PASS", "message": "Project environment successfully verified.", "vcs_enabled": version_control_enabled, "has_active_plan": has_active_plan}
 
     def handle_discard_changes(self, history_id: int):

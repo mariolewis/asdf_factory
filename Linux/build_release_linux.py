@@ -87,7 +87,8 @@ def run_nuitka(staged_root):
         # --- LGPL COMPLIANCE: EXCLUDE QT ---
         "--nofollow-import-to=PySide6",
         "--nofollow-import-to=shiboken6",
-        "--nofollow-import-to=google.genai",
+        # "--nofollow-import-to=google",
+        # "--nofollow-import-to=google.genai",
 
         # --- INCLUSIONS (Matching Windows Stability) ---
         "--include-module=master_orchestrator",
@@ -111,7 +112,11 @@ def run_nuitka(staged_root):
         "--include-module=openai",
         "--include-module=anthropic",
         # "--include-module=google.genai",
+        "--include-package=google.genai",
         "--include-module=replicate",
+        #"--include-package=charset_normalizer",
+        #"--include-package=pydantic",      # The Python wrapper
+        #"--include-package=pydantic_core",
         "--include-module=requests",
         "--include-module=pandas",
         "--include-module=openpyxl",
@@ -138,7 +143,7 @@ def run_nuitka(staged_root):
         "--nofollow-import-to=tkinter",
 
         f"--output-dir={str(abs_dist)}",
-        "klyve.py"
+        "klyve.py",
     ]
 
     print(f"Executing: {' '.join(cmd)}")
@@ -180,28 +185,34 @@ def bundle_linux_dependencies(project_root):
     else:
         print("⚠️ Warning: 'dot' not found on system. Graphviz features may fail.")
 
-def bundle_google_genai(project_root):
-    """Manually bundles google.genai to bypass Nuitka compilation hang."""
-    print("--- Bundling google.genai (Raw Source) ---")
+
+def bundle_google_libs(project_root):
+    """
+    Installs the full Google stack via pip directly into dist.
+    This bypasses Nuitka compilation completely to avoid OOM crashes.
+    """
+    print("--- Side-loading Google Libraries (Bypassing Compiler) ---")
+    
+    # Target directory: dist/klyve.dist
+    # Note: Ensure DIST_DIR is defined in your script, or use project_root / "dist"
+    target_dir = Path(project_root) / "dist" / "klyve.dist"
+    
+    # We install google-genai (V1), requests (compatibility), and charset-normalizer (warning fix)
+    cmd = [
+        sys.executable, "-m", "pip", "install", 
+        "google-genai", 
+        "requests", 
+        "charset-normalizer",
+        "--target", str(target_dir),
+        "--upgrade",
+        "--no-warn-script-location"
+    ]
 
     try:
-        import google.genai
-        # Find the actual source directory on disk
-        src_path = Path(google.genai.__file__).parent
-
-        # Destination: dist/klyve.dist/google/genai
-        dst_path = DIST_DIR / "klyve.dist" / "google" / "genai"
-
-        if dst_path.exists(): shutil.rmtree(dst_path)
-
-        # Copy the package
-        shutil.copytree(src_path, dst_path)
-        print(f"✅ Copied google.genai from {src_path}")
-
-    except ImportError:
-        print("⚠️ Warning: google.genai not found. Build may fail at runtime.")
-    except Exception as e:
-        print(f"❌ Error bundling google.genai: {e}")
+        subprocess.check_call(cmd)
+        print("✅ Successfully side-loaded Google Stack.")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Error side-loading libraries: {e}")
         sys.exit(1)
 
 def bundle_gui_assets(project_root):
@@ -332,7 +343,8 @@ def main():
     generate_linux_icon(project_root)
 
     # --- Bundle the skipped library ---
-    bundle_google_genai(project_root)
+    # bundle_google_genai(project_root)
+    # bundle_google_libs(project_root)
 
     # --- Run LGPL Cleanup ---
     post_build_cleanup(DIST_DIR / "klyve.dist")

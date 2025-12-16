@@ -418,25 +418,41 @@ class CustomEndpointAdapter(LLMService):
 def parse_llm_json(llm_output: str):
     """
     Robustly extracts and parses JSON from LLM output.
+    Can handle markdown blocks, chatty intros, and trailing commas.
     """
     clean_text = llm_output.strip()
+
+    # 1. Try extracting from Markdown blocks first
     if "```" in clean_text:
         match = re.search(r"```(?:json)?(.*?)```", clean_text, re.DOTALL)
         if match:
             clean_text = match.group(1).strip()
 
+    # 2. Try parsing explicitly
     try:
         return json.loads(clean_text)
     except json.JSONDecodeError:
         pass
 
+    # 3. Fallback: Search for the first '[' or '{' and valid end char
+    # This helps when LLMs say "Here is the JSON: [ ... ]" without backticks.
+    try:
+        # Regex to find the largest bracketed group
+        match = re.search(r"(\{.*\}|\[.*\])", clean_text, re.DOTALL)
+        if match:
+            potential_json = match.group(0)
+            return json.loads(potential_json)
+    except Exception:
+        pass
+
+    # 4. AST Literal Eval (last resort for single-quote JSONs)
     try:
         if clean_text.startswith("{") or clean_text.startswith("["):
             return ast.literal_eval(clean_text)
     except (ValueError, SyntaxError):
         pass
 
-    # Try aggressive cleanup for common trailing comma issues
+    # 5. Aggressive cleanup for trailing commas
     try:
         clean_text = re.sub(r",\s*([\]}])", r"\1", clean_text)
         return json.loads(clean_text)

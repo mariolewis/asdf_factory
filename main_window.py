@@ -583,7 +583,7 @@ class KlyveMainWindow(QMainWindow):
     #    """Toggles the visibility of the bottom notification/log panel."""
         # The actual panel does not exist yet and will be added in a future task.
         # This handler serves as a placeholder.
-    #    QMessageBox.information(self, "Not Implemented", "The notification panel will be implemented in a future update.")
+    #    self.show_info("Not Implemented", "The notification panel will be implemented in a future update.")
 
     def update_static_ui_elements(self):
         """
@@ -663,7 +663,7 @@ class KlyveMainWindow(QMainWindow):
         """Handles the signal to edit an item by opening a pre-populated dialog."""
         details = self.orchestrator.get_cr_details_by_id(cr_id)
         if not details:
-            QMessageBox.critical(self, "Error", f"Could not retrieve details for item ID {cr_id}.")
+            self.show_error("Error", f"Could not retrieve details for item ID {cr_id}.")
             return
 
         # Create the dialog and configure it for editing using the new method
@@ -671,19 +671,19 @@ class KlyveMainWindow(QMainWindow):
         dialog.set_edit_mode(details)
 
         # Show the dialog and save the full results on "OK"
-        if dialog.exec():
+        if self._exec_centered(dialog):
             new_data = dialog.get_data()
             success = self.orchestrator.save_edited_change_request(cr_id, new_data)
 
             if success:
-                QMessageBox.information(self, "Success", f"Item ID {cr_id} was updated successfully.")
+                self.show_info("Success", f"Item ID {cr_id} was updated successfully.")
                 self.update_ui_after_state_change() # Refresh all views
             else:
-                QMessageBox.critical(self, "Error", f"Failed to update item ID {cr_id}.")
+                self.show_error("Error", f"Failed to update item ID {cr_id}.")
 
     def on_cr_delete_action(self, cr_id: int):
         """Handles the signal to delete a CR after user confirmation."""
-        reply = QMessageBox.question(self, "Confirm Deletion",
+        reply = self.ask_question("Confirm Deletion",
                                     f"Are you sure you want to permanently delete this item (ID: {cr_id})?",
                                     QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 
@@ -711,10 +711,10 @@ class KlyveMainWindow(QMainWindow):
     def _handle_analysis_result(self, cr_id: int, success: bool, error=None):
         """Handles showing the result message of the background analysis task."""
         if success:
-            QTimer.singleShot(100, lambda: QMessageBox.information(self, "Success", f"Impact analysis for CR-{cr_id} completed successfully."))
+            QTimer.singleShot(100, lambda: self.show_info("Success", f"Impact analysis for CR-{cr_id} completed successfully."))
         else:
             error_msg = str(error[1]) if error else "An unknown error occurred."
-            QTimer.singleShot(100, lambda: QMessageBox.critical(self, "Analysis Failed", f"Failed to run impact analysis for CR-{cr_id}:\n{error_msg}"))
+            QTimer.singleShot(100, lambda: self.show_error("Analysis Failed", f"Failed to run impact analysis for CR-{cr_id}:\n{error_msg}"))
 
     def on_generate_tech_preview_action(self, item_data: dict):
         """Handles the signal to generate a technical preview in a background thread."""
@@ -737,7 +737,7 @@ class KlyveMainWindow(QMainWindow):
 
         # Check if the agent returned an error message
         if preview_text.strip().startswith("### Error"):
-            QMessageBox.critical(self, "Preview Failed", f"Failed to generate technical preview for CR-{cr_id}:\n{preview_text}")
+            self.show_error("Preview Failed", f"Failed to generate technical preview for CR-{cr_id}:\n{preview_text}")
             return
 
         html_content = preview_text
@@ -760,7 +760,7 @@ class KlyveMainWindow(QMainWindow):
         """Handles the failure of the background backlog generation task."""
         logging.error(f"Brownfield backlog generation failed: {error_tuple[1]}", exc_info=error_tuple)
 
-        QMessageBox.critical(self, "Generation Failed",
+        self.show_error("Generation Failed",
                              f"Failed to generate the project backlog:\n{error_tuple[1]}")
 
         # Reset the orchestrator to the state before generation was attempted
@@ -771,7 +771,7 @@ class KlyveMainWindow(QMainWindow):
         """Handles the failure of the direct-to-development backlog generation task."""
         logging.error(f"Direct-to-dev backlog generation failed: {error_tuple[1]}", exc_info=error_tuple)
 
-        QMessageBox.critical(self, "Generation Failed",
+        self.show_error("Generation Failed",
                              f"Failed to generate the project backlog:\n{error_tuple[1]}")
 
         # Reset the orchestrator to the state before generation was attempted
@@ -814,7 +814,7 @@ class KlyveMainWindow(QMainWindow):
         self.statusBar().clearMessage()
         error_msg = f"An unexpected error occurred in a background task:\n{error_tuple[1]}"
         logging.error(error_msg, exc_info=False)
-        QMessageBox.critical(self, "Background Task Error", error_msg)
+        self.show_error("Background Task Error", error_msg)
 
     def _task_ratify_backlog(self, final_items, **kwargs):
         """Background worker task to save the backlog."""
@@ -828,12 +828,12 @@ class KlyveMainWindow(QMainWindow):
         if success:
             self.update_ui_after_state_change()
         else:
-            QMessageBox.critical(self, "Error", "Failed to save the ratified backlog.")
+            self.show_error("Error", "Failed to save the ratified backlog.")
 
     def on_import_from_tool(self):
         """Handles the user's request to import an item from an external tool."""
         dialog = ImportIssueDialog(self)
-        if dialog.exec():
+        if self._exec_centered(dialog):
             import_data = dialog.get_data()
 
             self.setEnabled(False)
@@ -860,17 +860,17 @@ class KlyveMainWindow(QMainWindow):
                 self.orchestrator.add_imported_backlog_items(new_issues)
 
             # Use QTimer to show the message after the event loop has had a chance to process
-            QTimer.singleShot(100, lambda: QMessageBox.information(self, "Import Complete", f"Successfully imported {total_found} new item(s) into the backlog."))
+            QTimer.singleShot(100, lambda: self.show_info("Import Complete", f"Successfully imported {total_found} new item(s) into the backlog."))
         # The UI refresh is now handled by _on_background_task_finished
 
     def _handle_implementation_result(self, cr_id: int, success: bool, error=None):
         """Handles showing the result message of the background implementation task."""
         if success:
             # The message is now queued. The UI transition is handled by _on_background_task_finished.
-            QTimer.singleShot(100, lambda: QMessageBox.information(self, "Success", f"Implementation plan for CR-{cr_id} created. Transitioning to development phase."))
+            QTimer.singleShot(100, lambda: self.show_info("Success", f"Implementation plan for CR-{cr_id} created. Transitioning to development phase."))
         else:
             error_msg = str(error[1]) if error else "An unknown error occurred."
-            QTimer.singleShot(100, lambda: QMessageBox.critical(self, "Implementation Failed", f"Failed to create an implementation plan for CR-{cr_id}:\n{error_msg}"))
+            QTimer.singleShot(100, lambda: self.show_error("Implementation Failed", f"Failed to create an implementation plan for CR-{cr_id}:\n{error_msg}"))
 
     def _on_pausing_task_finished(self):
         """
@@ -947,6 +947,78 @@ class KlyveMainWindow(QMainWindow):
         else:
             # Delegate to the new general workflow return logic
             self.on_return_to_last_phase()
+
+    def _exec_centered(self, dialog) -> int:
+        """
+        Helper to center a child dialog.
+        Uses QTimer + frameGeometry() to account for Window Manager borders/title bars.
+        """
+        # 1. Ask Qt to lay out the dialog so we have a rough size
+        dialog.adjustSize()
+
+        def do_center():
+            # 2. Get the screen that contains the Main Window
+            screen = self.screen()
+            if not screen:
+                screen = QApplication.primaryScreen()
+
+            # 3. Get the available geometry of that screen (excluding taskbars)
+            screen_geo = screen.availableGeometry()
+            screen_center = screen_geo.center()
+
+            # 4. Get the full footprint of the dialog (including title bar & borders)
+            # NOTE: This is only accurate inside QTimer (after the OS draws the window)
+            child_geo = dialog.frameGeometry()
+
+            # 5. Math: Align the center of the dialog frame to the center of the screen
+            child_geo.moveCenter(screen_center)
+
+            # 6. Move the dialog to the calculated top-left position
+            dialog.move(child_geo.topLeft())
+
+        # Force this calculation to run immediately AFTER the window is shown
+        # giving the Window Manager time to decorate the window first.
+        QTimer.singleShot(0, do_center)
+
+        return dialog.exec()
+
+    # --- Centered QMessageBox Wrappers for Linux/XCB ---
+
+    def show_info(self, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Information)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
+
+    def show_warning(self, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
+
+    def show_error(self, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Critical)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
+
+    def ask_question(self, title, text, buttons=QMessageBox.Yes | QMessageBox.No, default=QMessageBox.NoButton):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Question)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        return self._exec_centered(msg)
 
     def update_ui_after_state_change(self):
         logging.debug("update_ui_after_state_change: Method entered.")
@@ -1336,7 +1408,7 @@ class KlyveMainWindow(QMainWindow):
             initial_brief = task_data.get("pending_brief")
 
             if not initial_brief:
-                QMessageBox.critical(self, "Error", "Could not find the initial brief text to start the analysis.")
+                self.show_error("Error", "Could not find the initial brief text to start the analysis.")
                 self.orchestrator.set_phase("SPEC_ELABORATION")
                 self.window().setEnabled(True) # Re-enable on error
                 self.update_ui_after_state_change()
@@ -1545,7 +1617,7 @@ class KlyveMainWindow(QMainWindow):
     def on_new_project(self):
         """Handles the 'New Project' dialog and routes to the correct workflow."""
         dialog = NewProjectDialog(self)
-        if dialog.exec():
+        if self._exec_centered(dialog):
             # Check the custom result property we set in the dialog
             if getattr(dialog, 'result', 'spec') == 'codebase':
                 project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
@@ -1637,7 +1709,7 @@ class KlyveMainWindow(QMainWindow):
     def on_stop_export_project(self):
         if not self.orchestrator.project_id: return
 
-        reply = QMessageBox.question(self, "Stop & Export Project",
+        reply = self.ask_question("Stop & Export Project",
                                      "This will create a final archive of the project and then remove it from your active workspace. This action is intended for completed projects.\n\n"
                                      "To temporarily save your work, use 'Pause Project' instead.\n\n"
                                      "Do you want to proceed?",
@@ -1655,7 +1727,7 @@ class KlyveMainWindow(QMainWindow):
         dialog = SettingsDialog(self.orchestrator, self)
         dialog.populate_fields()
 
-        if dialog.exec():
+        if self._exec_centered(dialog):
             # This block runs after the user clicks "Save" and the dialog closes.
             self._check_mandatory_settings()
             self.update_ui_after_state_change()
@@ -1670,7 +1742,7 @@ class KlyveMainWindow(QMainWindow):
 
                 if new_provider not in offline_providers:
                     # Cloud provider: Prompt for calibration as usual
-                    reply = QMessageBox.question(self, "Confirm LLM Change",
+                    reply = self.ask_question("Confirm LLM Change",
                                                 "You have changed the LLM Provider. It is recommended to run Auto-Calibration to optimize the context window for this model. Proceed?",
                                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel,
                                                 QMessageBox.StandardButton.Yes)
@@ -1690,18 +1762,18 @@ class KlyveMainWindow(QMainWindow):
     def on_show_project_settings(self):
         """Opens the project-specific settings dialog."""
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please load a project to view its settings.")
+            self.show_warning("No Project", "Please load a project to view its settings.")
             return
 
         current_settings = self.orchestrator.get_project_settings()
         dialog = ProjectSettingsDialog(current_settings, self)
 
-        if dialog.exec():
+        if self._exec_centered(dialog):
             new_settings = dialog.get_data()
             self.orchestrator.save_project_settings(new_settings)
             # Refresh the backlog page UI in case button states need to change
             self.cr_management_page.prepare_for_display()
-            QMessageBox.information(self, "Success", "Project settings have been saved.")
+            self.show_info("Success", "Project settings have been saved.")
 
     def get_app_version(self):
         """Helper method to retrieve the application version (Placeholder)."""
@@ -1711,7 +1783,7 @@ class KlyveMainWindow(QMainWindow):
     def on_about(self):
         """Displays the centralized About & Legal dialog."""
         dialog = AboutDialog(self)
-        dialog.exec()
+        self._exec_centered(dialog)
 
 
     def on_back_to_workflow(self):
@@ -1833,7 +1905,7 @@ class KlyveMainWindow(QMainWindow):
         except Exception as e:
             # This is a safeguard for the launch *setup* logic.
             logging.error(f"Failed to initiate IDE launch: {e}", exc_info=True)
-            QMessageBox.warning(self, "IDE Launch Failed", f"Could not initiate IDE launch. Proceeding to pause.\nError: {e}")
+            self.show_warning("IDE Launch Failed", f"Could not initiate IDE launch. Proceeding to pause.\nError: {e}")
 
         # --- FALLBACK ---
         # If any of the IDE launch conditions fail,
@@ -1873,7 +1945,7 @@ class KlyveMainWindow(QMainWindow):
 
         except Exception as e:
             logging.error(f"Failed to launch IDE subprocess: {e}", exc_info=True)
-            QMessageBox.warning(self, "IDE Launch Failed", f"Could not launch the configured IDE. Proceeding to pause.\nError: {e}")
+            self.show_warning("IDE Launch Failed", f"Could not launch the configured IDE. Proceeding to pause.\nError: {e}")
         # --- FINAL STEP ---
         # Now that the IDE is launched (or failed to launch),
         # we proceed with the original pause logic.
@@ -1886,7 +1958,7 @@ class KlyveMainWindow(QMainWindow):
         """
         exctype, value, traceback_str = error_tuple
         logging.error(f"Worker failed to parse stack trace: {value}\n{traceback_str}")
-        QMessageBox.warning(self, "IDE Launch Failed", f"Could not parse stack trace for IDE. Proceeding to pause.\nError: {value}")
+        self.show_warning("IDE Launch Failed", f"Could not parse stack trace for IDE. Proceeding to pause.\nError: {value}")
 
         # Fallback to standard pause
         self.orchestrator.handle_pm_debug_choice("MANUAL_PAUSE")
@@ -2119,7 +2191,7 @@ class KlyveMainWindow(QMainWindow):
                 self.update_ui_after_state_change() # Go directly to backlog
 
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to finalize sprint statuses:\n{e}")
+            self.show_error("Error", f"Failed to finalize sprint statuses:\n{e}")
             self.update_ui_after_state_change()
 
     def on_save_pre_execution_report_clicked(self):
@@ -2127,7 +2199,7 @@ class KlyveMainWindow(QMainWindow):
         try:
             report_context = self.orchestrator.task_awaiting_approval
             if not report_context:
-                QMessageBox.warning(self, "No Report", "No report data is available to save.")
+                self.show_warning("No Report", "No report data is available to save.")
                 return
 
             project_details = self.orchestrator.db_manager.get_project_by_id(self.orchestrator.project_id)
@@ -2149,7 +2221,7 @@ class KlyveMainWindow(QMainWindow):
                 worker.signals.finished.connect(self._on_background_task_finished)
                 self.threadpool.start(worker)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"An error occurred while preparing to save the report:\n{e}")
+            self.show_error("Error", f"An error occurred while preparing to save the report:\n{e}")
 
     def _task_save_pre_execution_report(self, file_path, report_context, **kwargs):
         """Background worker task to get DOCX data and save it."""
@@ -2164,9 +2236,9 @@ class KlyveMainWindow(QMainWindow):
         """Handles the result of the background save task."""
         success, message = result
         if success:
-            QMessageBox.information(self, "Success", f"Successfully saved report to:\n{message}")
+            self.show_info("Success", f"Successfully saved report to:\n{message}")
         else:
-            QMessageBox.critical(self, "Error", f"Failed to save report: {message}")
+            self.show_error("Error", f"Failed to save report: {message}")
 
     def on_ux_phase_decision_start(self):
         """Handles the PM's choice to start the UX/UI phase."""
@@ -2184,7 +2256,7 @@ class KlyveMainWindow(QMainWindow):
             # The genesis page has its own logic to run the step in a background thread
             self.genesis_page.run_development_step()
         else:
-            QMessageBox.information(self, "Action Not Applicable", "The 'Proceed' action is not applicable in the current phase.")
+            self.show_info("Action Not Applicable", "The 'Proceed' action is not applicable in the current phase.")
 
     def on_run_backend_regression(self):
         """Runs the backend regression test suite."""
@@ -2197,7 +2269,7 @@ class KlyveMainWindow(QMainWindow):
     def on_initiate_manual_ui(self):
         """Initiates the on-demand manual UI testing workflow."""
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please load a project to run tests.")
+            self.show_warning("No Project", "Please load a project to run tests.")
             return
 
         # The orchestrator now performs the check and returns a status
@@ -2206,18 +2278,18 @@ class KlyveMainWindow(QMainWindow):
         if success:
             self.update_ui_after_state_change()
         else:
-            QMessageBox.information(self, "Action Not Available",
+            self.show_info("Action Not Available",
                                     "Cannot initiate UI testing because no code has been generated for this project yet. "
                                     "Please complete at least one development sprint first.")
 
     def on_initiate_automated_ui(self):
         """Placeholder for initiating automated UI testing."""
-        QMessageBox.information(self, "Not Implemented", "On-demand automated UI testing will be implemented in a future update.")
+        self.show_info("Not Implemented", "On-demand automated UI testing will be implemented in a future update.")
 
     def _run_test_suite(self, test_type: str, status_message: str):
         """Generic helper to run a test suite in a background thread."""
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please create or load a project to run tests.")
+            self.show_warning("No Project", "Please create or load a project to run tests.")
             return
 
         db = self.orchestrator.db_manager
@@ -2226,7 +2298,7 @@ class KlyveMainWindow(QMainWindow):
         command = project_details[command_key]
 
         if not command:
-            QMessageBox.warning(self, "Not Configured", f"The command for '{test_type}' tests is not configured in Project Settings.")
+            self.show_warning("Not Configured", f"The command for '{test_type}' tests is not configured in Project Settings.")
             return
 
         self.setEnabled(False)
@@ -2244,7 +2316,7 @@ class KlyveMainWindow(QMainWindow):
         self.statusBar().clearMessage()
         success, output = result
         if success:
-            QMessageBox.information(self, "Tests Passed", "The full test suite passed successfully.")
+            self.show_info("Tests Passed", "The full test suite passed successfully.")
         else:
             # Use a detailed text message box for long error logs
             msg_box = QMessageBox(self)
@@ -2265,7 +2337,7 @@ class KlyveMainWindow(QMainWindow):
         self.setEnabled(True)
         self.statusBar().clearMessage()
         error_msg = f"An unexpected error occurred while running tests:\n{error_tuple[1]}"
-        QMessageBox.critical(self, "Error", error_msg)
+        self.show_error("Error", error_msg)
 
     def _on_calibration_progress(self, progress_data):
         """Updates the main window's status bar with progress from the worker."""
@@ -2302,11 +2374,11 @@ class KlyveMainWindow(QMainWindow):
         self.setEnabled(True)
         status, message = result_tuple
         if status == "SUCCESS":
-            QMessageBox.information(self, "Success", f"Auto-calibration complete. Context limit has been set to {int(message):,} characters.")
+            self.show_info("Success", f"Auto-calibration complete. Context limit has been set to {int(message):,} characters.")
         elif status == "CONNECTION_FAILURE":
-            QMessageBox.critical(self, "Connection Failed", f"Failed to connect to the new LLM provider. Please check your settings.\n\nDetails: {message}")
+            self.show_error("Connection Failed", f"Failed to connect to the new LLM provider. Please check your settings.\n\nDetails: {message}")
         elif status == "CALIBRATION_FAILURE":
-            QMessageBox.warning(self, "Calibration Failed", f"Connection succeeded, but auto-calibration failed:\n{message}")
+            self.show_warning("Calibration Failed", f"Connection succeeded, but auto-calibration failed:\n{message}")
         # Refresh settings data in case the user re-opens the dialog
         self._check_mandatory_settings()
 
@@ -2340,11 +2412,11 @@ class KlyveMainWindow(QMainWindow):
         self.setEnabled(True)
         status, message = result_tuple
         if status == "SUCCESS":
-            QMessageBox.information(self, "Success", f"Auto-calibration complete. Context limit has been set to {int(message):,} characters.")
+            self.show_info("Success", f"Auto-calibration complete. Context limit has been set to {int(message):,} characters.")
         elif status == "CONNECTION_FAILURE":
-            QMessageBox.critical(self, "Connection Failed", f"Failed to connect to the new LLM provider. Please check your settings.\n\nDetails: {message}")
+            self.show_error("Connection Failed", f"Failed to connect to the new LLM provider. Please check your settings.\n\nDetails: {message}")
         elif status == "CALIBRATION_FAILURE":
-            QMessageBox.warning(self, "Calibration Failed", f"Connection succeeded, but auto-calibration failed:\n{message}")
+            self.show_warning("Calibration Failed", f"Connection succeeded, but auto-calibration failed:\n{message}")
         # Refresh the settings dialog's data in case the user re-opens it
         self._check_mandatory_settings()
 
@@ -2365,13 +2437,13 @@ class KlyveMainWindow(QMainWindow):
             self.cr_management_page.on_add_item_clicked()
         else:
             # If not ready, show the informative message box.
-            QMessageBox.warning(self, "Action Not Available",
+            self.show_warning("Action Not Available",
                                 "A project must be open and have a ratified backlog before new items can be added.")
 
     def on_manage_crs(self):
         """Switches to the CR Management page."""
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please create or load a project to manage requests.")
+            self.show_warning("No Project", "Please create or load a project to manage requests.")
             return
 
         self.previous_phase = self.orchestrator.current_phase
@@ -2381,24 +2453,24 @@ class KlyveMainWindow(QMainWindow):
     def on_report_bug(self):
         """Opens the Raise Request dialog with the Bug Report option pre-selected."""
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please create or load a project before reporting a bug.")
+            self.show_warning("No Project", "Please create or load a project before reporting a bug.")
             return
 
         dialog = RaiseRequestDialog(self, initial_request_type="BUG_REPORT")
-        if dialog.exec():
+        if self._exec_centered(dialog):
             data = dialog.get_data()
             # Call the new, unified orchestrator method. Parent is None as it's a top-level request.
             success, _ = self.orchestrator.add_new_backlog_item(data, parent_cr_id=None)
 
             if success:
-                QMessageBox.information(self, "Success", "Bug Report has been successfully logged.")
+                self.show_info("Success", "Bug Report has been successfully logged.")
                 self.update_ui_after_state_change()
             else:
-                QMessageBox.critical(self, "Error", "Failed to save the Bug Report.")
+                self.show_error("Error", "Failed to save the Bug Report.")
 
     def on_view_documents(self):
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please create or load a project to view its documents.")
+            self.show_warning("No Project", "Please create or load a project to view its documents.")
             return
 
         # FIX: Only update the return point if we are coming from a work phase,
@@ -2411,7 +2483,7 @@ class KlyveMainWindow(QMainWindow):
 
     def on_view_reports(self):
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please create or load a project to view its reports.")
+            self.show_warning("No Project", "Please create or load a project to view its reports.")
             return
 
         # FIX: Only update the return point if we are coming from a work phase.
@@ -2424,7 +2496,7 @@ class KlyveMainWindow(QMainWindow):
     def on_view_sprint_history(self):
         """Switches to the Sprint History page."""
         if not self.orchestrator.project_id:
-            QMessageBox.warning(self, "No Project", "Please load a project to view its sprint history.")
+            self.show_warning("No Project", "Please load a project to view its sprint history.")
             return
 
         # FIX: Only update the return point if we are coming from a work phase.
@@ -2458,7 +2530,7 @@ class KlyveMainWindow(QMainWindow):
             elif sys.platform == "darwin": subprocess.run(["open", file_path], check=True)
             else: subprocess.run(["xdg-open", file_path], check=True)
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Could not open file or folder:\n{e}")
+            self.show_error("Error", f"Could not open file or folder:\n{e}")
 
     def on_integration_confirmed(self):
         """Handles the user's choice to proceed with integration despite known issues."""
@@ -2470,10 +2542,10 @@ class KlyveMainWindow(QMainWindow):
     def on_sync_items_to_tool(self, cr_ids: list):
         """Handles the request to sync a list of items to the external tool."""
         if not cr_ids:
-            QMessageBox.warning(self, "No Items to Sync", "No valid, unsynced items were selected.")
+            self.show_warning("No Items to Sync", "No valid, unsynced items were selected.")
             return
 
-        reply = QMessageBox.question(self, "Confirm Sync",
+        reply = self.ask_question("Confirm Sync",
                                      f"You have selected {len(cr_ids)} item(s) to create in the external tool. Proceed?",
                                      QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
 

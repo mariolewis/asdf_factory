@@ -3,7 +3,7 @@
 import sys
 import os
 from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen, QDialog
+from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen, QDialog, QWidget, QStyle
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtCore import Qt, QTimer
 import logging
@@ -16,6 +16,97 @@ from master_orchestrator import MasterOrchestrator
 from main_window import KlyveMainWindow
 from gui.legal_dialog import LegalDialog
 from gui.utils import center_window
+
+# =========================================================================
+# GLOBAL FIX: Monkey Patch QMessageBox for Linux Centering
+# =========================================================================
+
+
+def _create_screen_anchor():
+    """
+    Creates an invisible, full-screen widget to act as a parent.
+    This tricks Wayland into centering child dialogs (Splash/EULA)
+    perfectly on the screen.
+    """
+    anchor = QWidget()
+    anchor.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+    anchor.setAttribute(Qt.WA_TranslucentBackground)
+
+    # Force it to cover the primary screen
+    screen = QApplication.primaryScreen()
+    if screen:
+        anchor.setGeometry(screen.geometry())
+
+    anchor.showFullScreen()
+    return anchor
+
+# =========================================================================
+# GLOBAL FIX: Monkey Patch QMessageBox for Linux Centering
+# =========================================================================
+def _resolve_parent(parent):
+    # 1. Use provided parent
+    if parent and isinstance(parent, QWidget):
+        return parent
+    # 2. Use Main Window attached to App (Best for Runtime)
+    app = QApplication.instance()
+    if app and hasattr(app, '_main_window') and app._main_window:
+        return app._main_window
+    # 3. Fallback
+    return QApplication.activeWindow()
+
+def _center_msg_box(msg, parent):
+    msg.adjustSize()
+    def do_center():
+        target = _resolve_parent(parent)
+        if target:
+            child_geo = msg.frameGeometry()
+            child_geo.moveCenter(target.frameGeometry().center())
+            msg.move(child_geo.topLeft())
+        else:
+            screen = msg.screen() or QApplication.primaryScreen()
+            if screen:
+                child_geo = msg.frameGeometry()
+                child_geo.moveCenter(screen.availableGeometry().center())
+                msg.move(child_geo.topLeft())
+    QTimer.singleShot(0, do_center)
+
+def _patched_message_box(icon, parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+    real_parent = _resolve_parent(parent)
+    msg = QMessageBox(real_parent) # Parented to Main Window
+    msg.setIcon(icon)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    msg.setStandardButtons(buttons)
+    msg.setDefaultButton(default)
+    _center_msg_box(msg, real_parent)
+    return msg.exec()
+
+# Wrappers
+def _patched_information(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+    return _patched_message_box(QMessageBox.Information, parent, title, text, buttons, default)
+def _patched_warning(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+    return _patched_message_box(QMessageBox.Warning, parent, title, text, buttons, default)
+def _patched_critical(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+    return _patched_message_box(QMessageBox.Critical, parent, title, text, buttons, default)
+def _patched_question(parent, title, text, buttons=QMessageBox.Yes | QMessageBox.No, default=QMessageBox.NoButton):
+    return _patched_message_box(QMessageBox.Question, parent, title, text, buttons, default)
+def _patched_about(parent, title, text):
+    real_parent = _resolve_parent(parent)
+    msg = QMessageBox(real_parent)
+    msg.setWindowTitle(title)
+    msg.setText(text)
+    msg.setStandardButtons(QMessageBox.Ok)
+    msg.setIcon(QMessageBox.Information)
+    _center_msg_box(msg, real_parent)
+    msg.exec()
+
+# Apply Patch
+QMessageBox.information = _patched_information
+QMessageBox.warning = _patched_warning
+QMessageBox.critical = _patched_critical
+QMessageBox.question = _patched_question
+QMessageBox.about = _patched_about
+# =========================================================================
 
 def initialize_database(db_manager: KlyveDBManager):
     """
@@ -156,54 +247,43 @@ def global_exception_handler(exctype, value, tb):
         sys.exit(1)
 
 
-def _initialize_klyve(app, splash):
+def _initialize_klyve(app, splash, splash_anchor):
     try:
-        # --- 0. Prevent Premature Exit ---
         app.setQuitOnLastWindowClosed(False)
 
-        # --- 1. Setup Database Paths ---
-        # Use config to get the absolute path relative to the binary location
-                # [FIX] Store DB in User Home to support Read-Only AppImages/Program Files
+        # --- Setup Database & Config ---
         user_data_dir = Path.home() / ".klyve" / "data"
         user_data_dir.mkdir(parents=True, exist_ok=True)
         db_path = user_data_dir / "klyve.db"
-
-        # Copy default DB if it exists in resources but not in user home (Optional bootstrapping)
-        # For now, we just let the app create a new one.
-
-        # Initialize DB Manager (needed to read config for logging)
         db_manager = KlyveDBManager(db_path=str(db_path))
 
-        # --- 2. Initialize Database Content (Create Tables First) ---
         initialize_database(db_manager)
-
-        # --- 3. Setup Logging ---
         _setup_logging(db_manager)
 
-        # --- 4. Robust Stylesheet Loading ---
         try:
             style_file = Path(config.get_resource_path("gui/style.qss"))
             if style_file.exists():
                 with open(style_file, "r") as f:
                     app.setStyleSheet(f.read())
-                    logging.info("Successfully loaded global stylesheet.")
-            else:
-                logging.warning(f"Stylesheet not found at: {style_file}")
         except Exception as e:
             logging.error(f"Failed to load stylesheet: {e}")
 
         # --- 5. Legal Guardrail (EULA Check) ---
         if not db_manager.get_config_value("EULA_ACCEPTED_TIMESTAMP"):
-            logging.info("EULA not yet accepted. Showing Legal Dialog.")
+            logging.info("EULA not yet accepted.")
             if splash and splash.isVisible():
                 splash.hide()
 
-            legal_dialog = LegalDialog()
-            center_window(legal_dialog)
+            # FIX: Create Anchor -> Show EULA -> Destroy Anchor
+            eula_anchor = _create_screen_anchor()
+            legal_dialog = LegalDialog(parent=eula_anchor)
+
             result = legal_dialog.exec()
 
+            eula_anchor.close()
+            eula_anchor.deleteLater()
+
             if result != QDialog.Accepted:
-                logging.info("User declined EULA or closed dialog. Exiting application.")
                 sys.exit(0)
 
             acceptance_time = datetime.now(timezone.utc).isoformat()
@@ -214,8 +294,8 @@ def _initialize_klyve(app, splash):
 
         # --- 6. Initialize Core Components ---
         orchestrator = MasterOrchestrator(db_manager=db_manager)
-        # FIX: Attach window to 'app' to prevent Garbage Collection from deleting it
-        # when this function ends.
+
+        # Attach to app so _resolve_parent finds it
         app._main_window = KlyveMainWindow(orchestrator=orchestrator)
         window = app._main_window
 
@@ -226,17 +306,15 @@ def _initialize_klyve(app, splash):
         if splash and splash.isVisible():
             QTimer.singleShot(0, lambda: splash.finish(window))
 
+        # FIX: Close the Splash Anchor now that main window is up
+        if splash_anchor:
+            QTimer.singleShot(100, splash_anchor.close)
+
     except Exception as e:
-        # CRITICAL SAFETY NET
         error_msg = f"Initialization Failure:\n{str(e)}"
-
-        # Only dump stack trace to console if in Dev Mode
         if config.is_dev_mode():
-            logging.disable(logging.NOTSET)
             logging.error(error_msg, exc_info=True)
-
-        if splash and splash.isVisible():
-            splash.hide()
+        if splash: splash.hide()
         QMessageBox.critical(None, "Critical Startup Error", error_msg)
         sys.exit(1)
 
@@ -248,8 +326,6 @@ if __name__ == "__main__":
         app = QApplication(sys.argv)
         sys.excepthook = global_exception_handler
 
-        # --- 1. Setup Application Assets ---
-        # Assets resolved via config for frozen support
         icon_path = Path(config.get_resource_path("gui/icons/klyve_logo.ico"))
         splash_path = Path(config.get_resource_path("gui/images/splash_screen.png"))
 
@@ -257,41 +333,51 @@ if __name__ == "__main__":
             app.setWindowIcon(QIcon(str(icon_path)))
 
         splash = None
+        splash_anchor = None
+
         if splash_path.exists():
             try:
                 splash_pix = QPixmap(str(splash_path))
 
-                # --- UPDATED LOGIC FOR PYSIDE 6 ---
-                # 1. Get the screen's pixel ratio (e.g., 1.0, 1.25, 1.5, 2.0)
+                # High-DPI Scaling
                 dpr = app.devicePixelRatio()
-
-                # 2. Define how wide the splash should LOOK (Logical pixels)
-                target_logical_width = 480
-
-                # 3. Calculate how many REAL pixels we need for sharpness
-                target_physical_width = int(target_logical_width * dpr)
-
-                # 4. Resize the high-res image to the physical target
+                target_physical_width = int(480 * dpr)
                 splash_pix = splash_pix.scaledToWidth(target_physical_width, Qt.TransformationMode.SmoothTransformation)
-
-                # 5. Tell Qt this pixmap is High-DPI (so it fits into the logical width)
                 splash_pix.setDevicePixelRatio(dpr)
-                # --- END UPDATED LOGIC ---
 
-                splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
-                center_window(splash)
+                # --- OS-SPECIFIC POSITIONING FIX ---
+                if sys.platform == "linux":
+                    # Linux/Wayland: Use Invisible Anchor Trick
+                    splash_anchor = _create_screen_anchor()
+
+                    # 1. Create Standard Splash (No parent in constructor)
+                    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+
+                    # 2. Manual Reparenting (Safe method)
+                    splash.setParent(splash_anchor)
+
+                    # 3. Manual Centering relative to Anchor
+                    splash_geo = splash.geometry()
+                    splash_geo.moveCenter(splash_anchor.rect().center())
+                    splash.move(splash_geo.topLeft())
+                else:
+                    # Windows: Standard Centering (Robust & Simple)
+                    splash_anchor = None # Not needed on Windows
+                    splash = QSplashScreen(splash_pix, Qt.WindowStaysOnTopHint)
+                    center_window(splash)
+                # -----------------------------------
+
                 splash.show()
                 app.processEvents()
             except Exception as e:
                 print(f"Failed to load splash screen: {e}")
 
-        # Start initialization after a brief delay to allow splash to render
-        QTimer.singleShot(3000, lambda: _initialize_klyve(app, splash))
+        # Pass splash_anchor to init for cleanup
+        QTimer.singleShot(3000, lambda: _initialize_klyve(app, splash, splash_anchor))
 
         sys.exit(app.exec())
 
     except Exception as e:
-        # Only print to console if in Dev Mode
         if config.is_dev_mode():
             print(f"CRITICAL STARTUP FAILURE: {e}")
             traceback.print_exc()

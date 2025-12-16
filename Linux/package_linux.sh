@@ -65,7 +65,7 @@ export QT_AUTO_SCREEN_SCALE_FACTOR=0
 export QT_SCALE_FACTOR=1.25
 
 # --- FIX: Force X11 Backend ---
-export QT_QPA_PLATFORM=xcb
+# export QT_QPA_PLATFORM=xcb
 
 SELF=\$(readlink -f "\$0")
 HERE=\${SELF%/*}
@@ -115,6 +115,8 @@ echo "Processing Compliance Docs..."
 cp "Third_Party_Notices.txt" "$DIST_DIR/" 2>/dev/null
 cp "Privacy_Policy.txt" "$DIST_DIR/" 2>/dev/null
 cp "EULA.txt" "$DIST_DIR/" 2>/dev/null
+# cp "klyve_sbom.spdx.json" "$DIST_DIR/" 2>/dev/null
+cp ".grype.yaml" "$DIST_DIR/" 2>/dev/null
 
 # --- Generate Linux-Specific SBOM ---
 echo "Generating Linux SBOM..."
@@ -130,7 +132,7 @@ fi
 # 7. Build the AppImage
 echo "--- Building AppImage ---"
 export ARCH=x86_64
-./appimagetool-x86_64.AppImage --appimage-extract-and-run $DIST_DIR
+./appimagetool-x86_64.AppImage --appimage-extract-and-run --runtime-file runtime-x86_64 "$DIST_DIR"
 
 if [ $? -eq 0 ]; then
     echo "✅ Packaging Complete."

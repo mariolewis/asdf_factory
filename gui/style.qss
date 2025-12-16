@@ -277,6 +277,14 @@ QLabel[objectName^="pmDefineHeaderLabel"] {
     font-weight: 500;
 }
 
+/* ---- Fix for Text Clipping in New Project Dialog (Linux HighDPI) ---- */
+QLabel[objectName="instructionLabel"] {
+    /* Increase vertical padding to prevent glyph clipping at 1.25x scaling */
+    padding: 8px 4px;
+    /* Ensure line-height calculation has breathing room */
+    margin-bottom: 5px;
+}
+
 /* ---- Splitter Handle ---- */
 QSplitter::handle {
     background-color: #4A4A4A;

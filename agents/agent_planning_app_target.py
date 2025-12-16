@@ -4,6 +4,7 @@ import logging
 import textwrap
 import json
 import re
+import time
 from llm_service import LLMService, parse_llm_json
 from klyve_db_manager import KlyveDBManager
 import vault
@@ -27,6 +28,7 @@ class PlanningAgent_AppTarget:
         """
         Analyzes specifications to deconstruct them into a structured list of
         backlog items, prioritizing UX specs when available.
+        Includes RETRY LOGIC to handle JSON format errors.
         """
         logging.info("PlanningAgent: Generating initial backlog items from specifications...")
 
@@ -48,25 +50,34 @@ class PlanningAgent_AppTarget:
 
         prompt = vault.get_prompt("agent_planning_app_target__prompt_48").format(ux_spec_context=ux_spec_context, final_spec_text=final_spec_text, tech_spec_text=tech_spec_text, db_spec_context=db_spec_context)
 
-        try:
-            response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
-            json_match = re.search(r'\[.*\]', response_json_str, re.DOTALL)
-            if not json_match:
-                raise ValueError("LLM response did not contain a valid JSON array.")
+        # RETRY LOOP ADDED
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
+                json_match = re.search(r'\[.*\]', response_json_str, re.DOTALL)
+                if not json_match:
+                    raise ValueError("LLM response did not contain a valid JSON array.")
 
-            cleaned_response = json_match.group(0)
-            parsed_json = parse_llm_json(cleaned_response)
-            logging.info(f"Successfully generated {len(parsed_json)} backlog items.")
-            return cleaned_response
-        except Exception as e:
-            logging.error(f"Failed to generate backlog items: {e}")
-            error_response = [{"error": "Failed to generate a valid backlog.", "details": str(e)}]
-            return json.dumps(error_response)
+                cleaned_response = json_match.group(0)
+                parsed_json = parse_llm_json(cleaned_response)
+                logging.info(f"Successfully generated {len(parsed_json)} backlog items.")
+                return cleaned_response
+
+            except Exception as e:
+                logging.warning(f"Attempt {attempt + 1}/{max_retries} failed to generate backlog: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1) # Brief pause before retry
+                    continue
+                else:
+                    logging.error(f"Failed to generate backlog items after {max_retries} attempts.")
+                    error_response = [{"error": "Failed to generate a valid backlog.", "details": str(e)}]
+                    return json.dumps(error_response)
 
     def generate_reference_backlog_from_specs(self, final_spec_text, tech_spec_text, ux_spec_text=None):
         """
-        Parses specs to generate a two-level (Epic -> Feature) reference model
-        of an existing codebase for the backlog.
+        Parses specs to generate a two-level (Epic -> Feature) reference model.
+        Includes RETRY LOGIC.
         """
         logging.info("PlanningAgent: Generating two-level reference backlog from specs...")
 
@@ -79,25 +90,31 @@ class PlanningAgent_AppTarget:
 
         prompt = vault.get_prompt("agent_planning_app_target__prompt_110").format(ux_spec_context=ux_spec_context, final_spec_text=final_spec_text, tech_spec_text=tech_spec_text)
 
-        try:
-            response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
-            # Robustly find and extract the JSON array from the LLM's response
-            json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
-            if not json_match:
-                raise ValueError("LLM response did not contain a valid JSON array.")
+        # RETRY LOOP ADDED
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response_text = self.llm_service.generate_text(prompt, task_complexity="complex")
+                # Robustly find and extract the JSON array
+                json_match = re.search(r'\[.*\]', response_text, re.DOTALL)
+                if not json_match:
+                    # Attempt robust fallback via service if regex fails here
+                    parsed = parse_llm_json(response_text)
+                    return json.dumps(parsed) # Return string representation if parsed successfully
 
-            cleaned_response = json_match.group(0)
-            # Final validation check
-            parse_llm_json(cleaned_response)
-            return cleaned_response
-        except Exception as e:
-            logging.error(f"Failed to generate reference backlog: {e}", exc_info=True)
-            # Re-raise the exception to be caught by the worker's error handler
-            raise e
+                cleaned_response = json_match.group(0)
+                parse_llm_json(cleaned_response) # Validation
+                return cleaned_response
+
+            except Exception as e:
+                logging.warning(f"Attempt {attempt + 1}/{max_retries} failed to generate reference backlog: {e}")
+                if attempt == max_retries - 1:
+                    logging.error(f"Failed to generate reference backlog after {max_retries} attempts.")
+                    raise e
+                time.sleep(1)
 
     def _summarize_text(self, text: str, document_type: str) -> str:
-        """Helper to summarize long texts to fit context windows."""
-        # This method is retained for future use as required by the PRD, but is not used by the direct prompt.
+        """Helper to summarize long texts."""
         logging.info(f"Summarizing {document_type}...")
         prompt = vault.get_prompt("agent_planning_app_target__prompt_167").format(document_type=document_type, text=text)
         try:
@@ -110,66 +127,74 @@ class PlanningAgent_AppTarget:
     def generate_development_plan(self, final_spec_text: str, tech_spec_text: str) -> str:
         """
         Analyzes specifications and generates a development plan as a JSON string.
-        This version uses the original, verified, working prompt.
+        Includes RETRY LOGIC.
         """
         logging.info("PlanningAgent: Generating development plan directly from full specifications...")
 
-        try:
-            if not final_spec_text or not tech_spec_text:
-                raise ValueError("Cannot generate plan: One or both of the specification documents are empty.")
+        if not final_spec_text or not tech_spec_text:
+            return json.dumps({"error": "Cannot generate plan: One or both of the specification documents are empty."})
 
-            # This is the original, known-good prompt from the working file.
-            prompt = vault.get_prompt("agent_planning_app_target__prompt_187").format(final_spec_text=final_spec_text, tech_spec_text=tech_spec_text)
+        prompt = vault.get_prompt("agent_planning_app_target__prompt_187").format(final_spec_text=final_spec_text, tech_spec_text=tech_spec_text)
 
-            response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
+        # RETRY LOOP ADDED
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
 
-            if not response_json_str or not response_json_str.strip():
-                raise ValueError("LLM returned an empty response. This may be due to a transient error.")
+                if not response_json_str or not response_json_str.strip():
+                    raise ValueError("LLM returned an empty response.")
 
-            # A more robust cleaning and validation step
-            cleaned_response = response_json_str.strip().removeprefix("```json").removesuffix("```").strip()
-            parsed = parse_llm_json(cleaned_response)
+                # Clean and parse
+                parsed = parse_llm_json(response_json_str)
 
-            if not isinstance(parsed, dict) or "development_plan" not in parsed:
-                raise ValueError("LLM returned invalid JSON structure for development plan.")
+                if not isinstance(parsed, dict) or "development_plan" not in parsed:
+                    # Sometimes LLM returns a list instead of dict wrapper, handle gracefully if possible
+                    if isinstance(parsed, list):
+                        parsed = {"development_plan": parsed}
+                    else:
+                        raise ValueError("LLM returned invalid JSON structure for development plan.")
 
-            logging.info("Successfully generated development plan.")
-            return cleaned_response
+                logging.info("Successfully generated development plan.")
+                return json.dumps(parsed) # Return clean JSON string
 
-        except Exception as e:
-            logging.error(f"Failed to generate development plan: {e}")
-            error_response = {"error": "Failed to generate a valid development plan.", "details": str(e)}
-            return json.dumps(error_response)
+            except Exception as e:
+                logging.warning(f"Attempt {attempt + 1}/{max_retries} failed to generate plan: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                else:
+                    logging.error(f"Failed to generate development plan after {max_retries} attempts: {e}")
+                    error_response = {"error": "Failed to generate a valid development plan.", "details": str(e)}
+                    return json.dumps(error_response)
 
     def refine_plan(self, current_plan_json: str, pm_feedback: str, final_spec_text: str, tech_spec_text: str) -> str:
         """
         Refines an existing development plan based on PM feedback.
+        Includes RETRY LOGIC.
         """
-        import re
-
         logging.info("PlanningAgent: Refining development plan based on PM feedback...")
 
         prompt = vault.get_prompt("agent_planning_app_target__prompt_237").format(final_spec_text=final_spec_text, tech_spec_text=tech_spec_text, current_plan_json=current_plan_json, pm_feedback=pm_feedback)
 
-        try:
-            response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
+        # RETRY LOOP ADDED
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response_json_str = self.llm_service.generate_text(prompt, task_complexity="complex")
 
-            # --- CORRECTED CLEANING AND VALIDATION LOGIC ---
-            # More robustly find and extract the JSON block using regex
-            json_match = re.search(r"\{.*\}", response_json_str, re.DOTALL)
+                # Try to extract JSON object
+                parsed = parse_llm_json(response_json_str)
 
-            if not json_match:
-                logging.error(f"PlanningAgent could not find a JSON object in the LLM response during refinement. Response: '{response_json_str}'")
-                raise ValueError("The AI model returned a response without a valid JSON object. Please try refining with different wording.")
+                logging.info("Successfully refined development plan from API.")
+                return json.dumps(parsed)
 
-            cleaned_response = json_match.group(0)
-            # --- END OF CORRECTION ---
-
-            # Final validation check
-            parse_llm_json(cleaned_response)
-            logging.info("Successfully refined development plan from API.")
-            return cleaned_response
-        except Exception as e:
-            logging.error(f"PlanningAgent_AppTarget refinement failed: {e}")
-            error_response = {"error": "Failed to refine the development plan.", "details": str(e)}
-            return json.dumps(error_response)
+            except Exception as e:
+                logging.warning(f"Attempt {attempt + 1}/{max_retries} failed to refine plan: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(1)
+                    continue
+                else:
+                    logging.error(f"PlanningAgent_AppTarget refinement failed after {max_retries} attempts.")
+                    error_response = {"error": "Failed to refine the development plan.", "details": str(e)}
+                    return json.dumps(error_response)
