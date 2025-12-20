@@ -237,7 +237,9 @@ class SettingsDialog(QDialog):
         self.logging_combo_box = QComboBox()
         self.logging_combo_box.addItems(["Standard", "Detailed", "Debug"])
         self.project_path_input = QLineEdit()
+        self.project_path_browse_button = QPushButton("Browse...")
         self.archive_path_input = QLineEdit()
+        self.archive_path_browse_button = QPushButton("Browse...")
         self.ide_path_input = QLineEdit()
         self.ide_path_browse_button = QPushButton("Browse...")
 
@@ -378,8 +380,17 @@ class SettingsDialog(QDialog):
         if config.is_dev_mode():
             factory_tab_layout.addRow("Logging Level:", self.logging_combo_box)
 
-        factory_tab_layout.addRow("Default Project Path:", self.project_path_input)
-        factory_tab_layout.addRow("Default Export Path:", self.archive_path_input)
+        # Default Project Path Layout
+        proj_path_layout = QHBoxLayout()
+        proj_path_layout.addWidget(self.project_path_input)
+        proj_path_layout.addWidget(self.project_path_browse_button)
+        factory_tab_layout.addRow("Default Project Path:", proj_path_layout)
+
+        # Default Export Path Layout
+        arch_path_layout = QHBoxLayout()
+        arch_path_layout.addWidget(self.archive_path_input)
+        arch_path_layout.addWidget(self.archive_path_browse_button)
+        factory_tab_layout.addRow("Default Export Path:", arch_path_layout)
 
         # IDE Path Layout
         ide_path_layout = QHBoxLayout()
@@ -692,6 +703,20 @@ class SettingsDialog(QDialog):
         self.activeStyleLabel.setText(f"Active Style: <b>{item.text()}</b>")
         # The path will be saved to DB when the user clicks "Save"
 
+    def _on_browse_project_path(self):
+        """Opens a directory picker for the default project path."""
+        current_path = self.project_path_input.text()
+        directory = QFileDialog.getExistingDirectory(self, "Select Default Project Folder", current_path)
+        if directory:
+            self.project_path_input.setText(directory)
+
+    def _on_browse_archive_path(self):
+        """Opens a directory picker for the default archive path."""
+        current_path = self.archive_path_input.text()
+        directory = QFileDialog.getExistingDirectory(self, "Select Default Archive Folder", current_path)
+        if directory:
+            self.archive_path_input.setText(directory)
+
     def _on_browse_for_ide(self):
         """
         Opens a file dialog to select an IDE executable.
@@ -785,6 +810,8 @@ class SettingsDialog(QDialog):
         self.provider_list.currentRowChanged.connect(self.on_integration_provider_changed)
         self.calibrate_button.clicked.connect(self.on_calibrate_clicked)
         self.ide_path_browse_button.clicked.connect(self._on_browse_for_ide)
+        self.project_path_browse_button.clicked.connect(self._on_browse_project_path)
+        self.archive_path_browse_button.clicked.connect(self._on_browse_archive_path)
 
         self.revoke_consent_button.clicked.connect(self.on_revoke_consent_clicked)
 
@@ -906,43 +933,6 @@ class SettingsDialog(QDialog):
         """
         Validates critical LLM settings if changed, then saves to DB.
         """
-        # --- VALIDATION: Check Path Permissions (Cross-Platform) ---
-        import os
-
-        # 1. Get the paths from the UI
-        proj_path = self.project_path_input.text().strip()
-        arch_path = self.archive_path_input.text().strip()
-
-        # 2. Expand user paths (e.g. '~' on Linux) just in case
-        proj_path = os.path.abspath(os.path.expanduser(proj_path))
-        arch_path = os.path.abspath(os.path.expanduser(arch_path))
-
-        # 3. Validation Helper Function
-        def is_writable(path):
-            # If path exists, check write permission
-            if os.path.exists(path):
-                return os.access(path, os.W_OK)
-            # If path doesn't exist, check if PARENT exists and is writable
-            # (because Klyve will try to create the folder)
-            parent = os.path.dirname(path)
-            return os.access(parent, os.W_OK)
-
-        # 4. Perform Checks
-        if proj_path and not is_writable(proj_path):
-            self.show_error(
-                "Permission Denied",
-                f"You do not have write permissions for the Project Path:\n{proj_path}\n\nPlease choose a location inside your user folder (e.g., /home/username/...)."
-            )
-            return
-
-        if arch_path and not is_writable(arch_path):
-            self.show_error(
-                "Permission Denied",
-                f"You do not have write permissions for the Archive Path:\n{arch_path}\n\nPlease choose a location inside your user folder."
-            )
-            return
-
-        # --- End Validation ---
         # --- Validation for Manual Context Limits ---
         current_provider = self.provider_combo_box.currentText()
         if current_provider in ["Ollama (Local)", "Any Other (OpenAI Compatible)"]:

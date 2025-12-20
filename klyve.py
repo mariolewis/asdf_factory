@@ -2,6 +2,8 @@
 
 import sys
 import os
+import platform
+import ctypes
 from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMessageBox, QSplashScreen, QDialog, QWidget, QStyle
 from PySide6.QtGui import QIcon, QPixmap
@@ -20,92 +22,95 @@ from gui.utils import center_window
 # =========================================================================
 # GLOBAL FIX: Monkey Patch QMessageBox for Linux Centering
 # =========================================================================
+# CHANGE: We check if we are on Linux. If NOT, we skip this entire block.
+if sys.platform == "linux":
+    def _create_screen_anchor():
+        """
+        Creates an invisible, full-screen widget to act as a parent.
+        This tricks Wayland into centering child dialogs (Splash/EULA)
+        perfectly on the screen.
+        """
+        anchor = QWidget()
+        anchor.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        anchor.setAttribute(Qt.WA_TranslucentBackground)
 
+        # Force it to cover the primary screen
+        screen = QApplication.primaryScreen()
+        if screen:
+            anchor.setGeometry(screen.geometry())
 
-def _create_screen_anchor():
-    """
-    Creates an invisible, full-screen widget to act as a parent.
-    This tricks Wayland into centering child dialogs (Splash/EULA)
-    perfectly on the screen.
-    """
-    anchor = QWidget()
-    anchor.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
-    anchor.setAttribute(Qt.WA_TranslucentBackground)
+        anchor.showFullScreen()
+        return anchor
 
-    # Force it to cover the primary screen
-    screen = QApplication.primaryScreen()
-    if screen:
-        anchor.setGeometry(screen.geometry())
+    def _resolve_parent(parent):
+        # 1. Use provided parent
+        if parent and isinstance(parent, QWidget):
+            return parent
+        # 2. Use Main Window attached to App (Best for Runtime)
+        app = QApplication.instance()
+        if app and hasattr(app, '_main_window') and app._main_window:
+            return app._main_window
+        # 3. Fallback
+        return QApplication.activeWindow()
 
-    anchor.showFullScreen()
-    return anchor
-
-# =========================================================================
-# GLOBAL FIX: Monkey Patch QMessageBox for Linux Centering
-# =========================================================================
-def _resolve_parent(parent):
-    # 1. Use provided parent
-    if parent and isinstance(parent, QWidget):
-        return parent
-    # 2. Use Main Window attached to App (Best for Runtime)
-    app = QApplication.instance()
-    if app and hasattr(app, '_main_window') and app._main_window:
-        return app._main_window
-    # 3. Fallback
-    return QApplication.activeWindow()
-
-def _center_msg_box(msg, parent):
-    msg.adjustSize()
-    def do_center():
-        target = _resolve_parent(parent)
-        if target:
-            child_geo = msg.frameGeometry()
-            child_geo.moveCenter(target.frameGeometry().center())
-            msg.move(child_geo.topLeft())
-        else:
-            screen = msg.screen() or QApplication.primaryScreen()
-            if screen:
+    def _center_msg_box(msg, parent):
+        msg.adjustSize()
+        def do_center():
+            target = _resolve_parent(parent)
+            if target:
                 child_geo = msg.frameGeometry()
-                child_geo.moveCenter(screen.availableGeometry().center())
+                child_geo.moveCenter(target.frameGeometry().center())
                 msg.move(child_geo.topLeft())
-    QTimer.singleShot(0, do_center)
+            else:
+                screen = msg.screen() or QApplication.primaryScreen()
+                if screen:
+                    child_geo = msg.frameGeometry()
+                    child_geo.moveCenter(screen.availableGeometry().center())
+                    msg.move(child_geo.topLeft())
+        QTimer.singleShot(0, do_center)
 
-def _patched_message_box(icon, parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
-    real_parent = _resolve_parent(parent)
-    msg = QMessageBox(real_parent) # Parented to Main Window
-    msg.setIcon(icon)
-    msg.setWindowTitle(title)
-    msg.setText(text)
-    msg.setStandardButtons(buttons)
-    msg.setDefaultButton(default)
-    _center_msg_box(msg, real_parent)
-    return msg.exec()
+    def _patched_message_box(icon, parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        real_parent = _resolve_parent(parent)
+        msg = QMessageBox(real_parent) # Parented to Main Window
+        msg.setIcon(icon)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(buttons)
+        msg.setDefaultButton(default)
+        _center_msg_box(msg, real_parent)
+        return msg.exec()
 
-# Wrappers
-def _patched_information(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
-    return _patched_message_box(QMessageBox.Information, parent, title, text, buttons, default)
-def _patched_warning(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
-    return _patched_message_box(QMessageBox.Warning, parent, title, text, buttons, default)
-def _patched_critical(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
-    return _patched_message_box(QMessageBox.Critical, parent, title, text, buttons, default)
-def _patched_question(parent, title, text, buttons=QMessageBox.Yes | QMessageBox.No, default=QMessageBox.NoButton):
-    return _patched_message_box(QMessageBox.Question, parent, title, text, buttons, default)
-def _patched_about(parent, title, text):
-    real_parent = _resolve_parent(parent)
-    msg = QMessageBox(real_parent)
-    msg.setWindowTitle(title)
-    msg.setText(text)
-    msg.setStandardButtons(QMessageBox.Ok)
-    msg.setIcon(QMessageBox.Information)
-    _center_msg_box(msg, real_parent)
-    msg.exec()
+    # Wrappers
+    def _patched_information(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        return _patched_message_box(QMessageBox.Information, parent, title, text, buttons, default)
+    def _patched_warning(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        return _patched_message_box(QMessageBox.Warning, parent, title, text, buttons, default)
+    def _patched_critical(parent, title, text, buttons=QMessageBox.Ok, default=QMessageBox.NoButton):
+        return _patched_message_box(QMessageBox.Critical, parent, title, text, buttons, default)
+    def _patched_question(parent, title, text, buttons=QMessageBox.Yes | QMessageBox.No, default=QMessageBox.NoButton):
+        return _patched_message_box(QMessageBox.Question, parent, title, text, buttons, default)
+    def _patched_about(parent, title, text):
+        real_parent = _resolve_parent(parent)
+        msg = QMessageBox(real_parent)
+        msg.setWindowTitle(title)
+        msg.setText(text)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.setIcon(QMessageBox.Information)
+        _center_msg_box(msg, real_parent)
+        msg.exec()
 
-# Apply Patch
-QMessageBox.information = _patched_information
-QMessageBox.warning = _patched_warning
-QMessageBox.critical = _patched_critical
-QMessageBox.question = _patched_question
-QMessageBox.about = _patched_about
+    # Apply Patch ONLY ON LINUX
+    QMessageBox.information = _patched_information
+    QMessageBox.warning = _patched_warning
+    QMessageBox.critical = _patched_critical
+    QMessageBox.question = _patched_question
+    QMessageBox.about = _patched_about
+
+# CHANGE: For Windows, we define this helper as None so the code below doesn't break
+else:
+    def _create_screen_anchor():
+        return None
+
 # =========================================================================
 
 def initialize_database(db_manager: KlyveDBManager):
@@ -274,14 +279,19 @@ def _initialize_klyve(app, splash, splash_anchor):
             if splash and splash.isVisible():
                 splash.hide()
 
-            # FIX: Create Anchor -> Show EULA -> Destroy Anchor
-            eula_anchor = _create_screen_anchor()
-            legal_dialog = LegalDialog(parent=eula_anchor)
+            # CHANGE: On Windows, _create_screen_anchor returns None, so we handle it gracefully
+            if sys.platform == "linux":
+                eula_anchor = _create_screen_anchor()
+                legal_dialog = LegalDialog(parent=eula_anchor)
+            else:
+                eula_anchor = None
+                legal_dialog = LegalDialog() # No parent needed on Windows, it will center itself
 
             result = legal_dialog.exec()
 
-            eula_anchor.close()
-            eula_anchor.deleteLater()
+            if eula_anchor:
+                eula_anchor.close()
+                eula_anchor.deleteLater()
 
             if result != QDialog.Accepted:
                 sys.exit(0)
@@ -320,6 +330,16 @@ def _initialize_klyve(app, splash, splash_anchor):
 
 if __name__ == "__main__":
     import traceback
+
+    # CHANGE: Add Windows High DPI Fix
+    if platform.system() == "Windows":
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            try:
+                ctypes.windll.user32.SetProcessDPIAware()
+            except Exception:
+                pass
 
     try:
         QApplication.setAttribute(Qt.AA_DontShowIconsInMenus, False)
