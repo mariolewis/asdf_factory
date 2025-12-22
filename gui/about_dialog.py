@@ -13,6 +13,11 @@ class AboutDialog(QDialog):
         self.ui = Ui_AboutDialog()
         self.ui.setupUi(self)
 
+        # FORCE the width here
+        self.setMinimumWidth(700)
+        # OR just resize it initially (can be shrunk by user later)
+        self.resize(700, 600)
+
         self._setup_branding()
         self._setup_credits()
         self._load_legal_text()

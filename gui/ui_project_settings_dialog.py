@@ -215,7 +215,7 @@ class Ui_ProjectSettingsDialog(object):
         self.changeRequestTypeIdLineEdit.setToolTip(QCoreApplication.translate("ProjectSettingsDialog", u"Optional: The ID for a custom 'Change Request' issue type.", None))
 #endif // QT_CONFIG(tooltip)
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.integrationsTab), QCoreApplication.translate("ProjectSettingsDialog", u"Integrations", None))
-        self.backendTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Backend Regression Test Command:", None))
+        self.backendTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Backend Unit/Regression Test Command:", None))
         self.integrationTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Backend Integration Test Command (Optional):", None))
         self.uiTestCommandLabel.setText(QCoreApplication.translate("ProjectSettingsDialog", u"Automated UI Test Command (Optional):", None))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.commandsTab), QCoreApplication.translate("ProjectSettingsDialog", u"Test Commands", None))

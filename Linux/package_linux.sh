@@ -60,15 +60,13 @@ echo "Creating AppRun..."
 cat > $DIST_DIR/AppRun <<EOF
 #!/bin/bash
 
-# --- FIX: Force UI Scaling ---
-export QT_AUTO_SCREEN_SCALE_FACTOR=0
-export QT_SCALE_FACTOR=1.25
-
-# --- FIX: Force X11 Backend ---
-# export QT_QPA_PLATFORM=xcb
-
 SELF=\$(readlink -f "\$0")
 HERE=\${SELF%/*}
+
+# --- Force UI Scaling ---
+export QT_AUTO_SCREEN_SCALE_FACTOR=0
+export QT_SCALE_FACTOR=1.35
+# export QT_QPA_PLATFORM=xcb
 
 # --- LIBRARY CONFIGURATION ---
 # 1. Bundled Libs, 2. Qt Libs, 3. System Libs
@@ -93,6 +91,7 @@ Exec=AppRun
 Icon=klyve_logo
 Type=Application
 Categories=Development;
+StartupWMClass=klyve
 EOF
 
 # 5. Icon Processing
@@ -115,7 +114,7 @@ echo "Processing Compliance Docs..."
 cp "Third_Party_Notices.txt" "$DIST_DIR/" 2>/dev/null
 cp "Privacy_Policy.txt" "$DIST_DIR/" 2>/dev/null
 cp "EULA.txt" "$DIST_DIR/" 2>/dev/null
-# cp "klyve_sbom.spdx.json" "$DIST_DIR/" 2>/dev/null
+#cp "klyve_sbom.spdx.json" "$DIST_DIR/" 2>/dev/null
 cp ".grype.yaml" "$DIST_DIR/" 2>/dev/null
 
 # --- Generate Linux-Specific SBOM ---

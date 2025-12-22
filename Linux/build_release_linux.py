@@ -192,16 +192,16 @@ def bundle_google_libs(project_root):
     This bypasses Nuitka compilation completely to avoid OOM crashes.
     """
     print("--- Side-loading Google Libraries (Bypassing Compiler) ---")
-    
+
     # Target directory: dist/klyve.dist
     # Note: Ensure DIST_DIR is defined in your script, or use project_root / "dist"
     target_dir = Path(project_root) / "dist" / "klyve.dist"
-    
+
     # We install google-genai (V1), requests (compatibility), and charset-normalizer (warning fix)
     cmd = [
-        sys.executable, "-m", "pip", "install", 
-        "google-genai", 
-        "requests", 
+        sys.executable, "-m", "pip", "install",
+        "google-genai",
+        "requests",
         "charset-normalizer",
         "--target", str(target_dir),
         "--upgrade",
@@ -285,11 +285,13 @@ def generate_linux_icon(project_root):
     print("--- Generating Linux Icon (ICO -> PNG) ---")
 
     icon_src = project_root / "gui" / "icons" / "klyve_logo.ico"
-    # Ensure destination directory exists (it should, but safety first)
-    icon_dst_dir = DIST_DIR / "klyve.dist"
-    icon_dst_dir.mkdir(parents=True, exist_ok=True)
+    # Path 1: Root of dist (for AppImage metadata)
+    icon_dst_root = DIST_DIR / "klyve.dist" / "klyve_logo.png"
 
-    icon_dst = icon_dst_dir / "klyve_logo.png"
+    # Path 2: gui/icons (for the running app to load)
+    icon_dst_gui_dir = DIST_DIR / "klyve.dist" / "gui" / "icons"
+    icon_dst_gui_dir.mkdir(parents=True, exist_ok=True)
+    icon_dst_gui = icon_dst_gui_dir / "klyve_logo.png"
 
     if not icon_src.exists():
         print(f"⚠️ Warning: Source icon not found at {icon_src}")
@@ -313,8 +315,13 @@ def generate_linux_icon(project_root):
         except EOFError:
             pass # End of frames
 
-        best_icon.save(icon_dst, format="PNG")
-        print(f"✅ Generated high-res PNG icon: {icon_dst}")
+        # Save to Root
+        best_icon.save(icon_dst_root, format="PNG")
+        print(f"✅ Generated AppImage icon: {icon_dst_root}")
+
+        # Save to GUI folder
+        best_icon.save(icon_dst_gui, format="PNG")
+        print(f"✅ Generated App Runtime icon: {icon_dst_gui}")
 
     except Exception as e:
         print(f"❌ Failed to generate Linux icon: {e}")

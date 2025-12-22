@@ -31,7 +31,7 @@ ArchitecturesInstallIn64BitMode=x64
 ; Icon
 SetupIconFile=gui\icons\klyve_logo.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
-WizardSmallImageFile=gui\icons\klyve_logo_small.bmp
+WizardSmallImageFile=gui\icons\klyve_logo_small.png
 LicenseFile=EULA.txt
 ; --- NEW: Windows Explorer Metadata (Mouseover / Details Tab) ---
 
@@ -86,6 +86,17 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent
 
 [Code]
+// NEW: Import the standard Windows command to bring windows to the front
+function SetForegroundWindow(hWnd: HWND): BOOL;
+external 'SetForegroundWindow@user32.dll stdcall';
+
+// NEW: This function runs automatically when the wizard starts
+procedure InitializeWizard;
+begin
+  // Force the installer window to the very front
+  SetForegroundWindow(WizardForm.Handle);
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataPath: String;

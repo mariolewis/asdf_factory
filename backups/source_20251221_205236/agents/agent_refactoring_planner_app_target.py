@@ -101,7 +101,7 @@ class RefactoringPlannerAgent_AppTarget:
         """
         from pathlib import Path
         for task in plan:
-            if task.get("component_type") == "source_code_generation":
+            if task.get("type") == "source_code_generation":
                 # Check if path is missing or empty
                 if not task.get("test_file_path"):
                     comp_path = task.get("component_file_path")
