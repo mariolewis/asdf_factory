@@ -42,7 +42,7 @@ class AboutDialog(QDialog):
         <body>
             <center>
                 <h3>KLYVE: Your Expertise. Scaled.</h3>
-                <p style="font-size: 11pt;">The Orchestrated Software Development Assistant</p><br>
+                <p style="font-size: 11pt;">The Automated Software Factory</p><br>
                 <p class="version">Version: {version}</p>
 
                 <hr style="border-top: 1px solid #4A4A4A;" width="50%">

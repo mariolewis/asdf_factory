@@ -216,7 +216,7 @@ class Ui_MainWindow(object):
     # setupUi
 
     def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Klyve - Autonomous Software Development Factory", None))
+        MainWindow.setWindowTitle(QCoreApplication.translate("MainWindow", u"Klyve - The Automated Software Factory", None))
         self.actionNew_Project.setText(QCoreApplication.translate("MainWindow", u"New Project...", None))
         self.actionOpen_Project.setText(QCoreApplication.translate("MainWindow", u"Open Project", None))
         self.actionClose_Project.setText(QCoreApplication.translate("MainWindow", u"Close Project", None))

@@ -254,7 +254,16 @@ class ReportGeneratorAgent:
                     elif tag.name == 'ol':
                         style_name = 'List Numbered'
                         for li in tag.find_all('li'): self._add_styled_paragraph(document, li.get_text(), style_name)
-
+                    elif tag.name == 'table':
+                        try:
+                            # Use the library to render the complex table structure
+                            parser = HtmlToDocx()
+                            # We must pass the string representation of the tag
+                            parser.add_html_to_document(str(tag), document)
+                        except Exception as e:
+                            logging.error(f"Failed to render table in DOCX: {e}")
+                            # Fallback: just dump the text
+                            self._add_styled_paragraph(document, tag.get_text(), 'Code Block')
                     elif tag.name == 'pre':
                         code_text = tag.get_text().strip()
 

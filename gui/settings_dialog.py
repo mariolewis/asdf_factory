@@ -164,69 +164,141 @@ class SettingsDialog(QDialog):
         self.llm_providers_tab = QWidget()
 
         self.llm_explanation_label = QLabel(
-            "Klyve uses a 'Reasoning' model for complex tasks and a 'Fast' model for speed. "
-            "You can further reduce its LLM usage cost by configuring the Fast Model for both."
+            "Klyve uses a 'Reasoning' model for complex tasks (planning, debugging) and a 'Fast' model for speed (routine code generation). "
+            "You can reduce costs by using a cheaper Fast Model."
         )
         self.llm_explanation_label.setWordWrap(True)
         self.llm_explanation_label.setObjectName("settingsInstructionLabel")
 
         self.provider_combo_box = QComboBox()
         self.provider_combo_box.addItems(["ChatGPT", "Claude", "Deepseek", "Gemini", "Grok", "Llama", "Ollama (Local)", "Any Other (OpenAI Compatible)"])
+        self.provider_combo_box.setToolTip(
+            "Select the AI LLM Klyve will use.\n"
+            "Different providers have different strengths, costs, and privacy policies."
+        )
         self.provider_stacked_widget = QStackedWidget()
 
+        # --- Gemini Page ---
         self.gemini_page = QWidget()
         self.gemini_api_key_input = QLineEdit()
         self.gemini_api_key_input.setEchoMode(QLineEdit.Password)
-        self.gemini_reasoning_model_input = QLineEdit()
-        self.gemini_fast_model_input = QLineEdit()
+        self.gemini_api_key_input.setPlaceholderText("XYzaBc...")
+        self.gemini_api_key_input.setToolTip("Your Google AI Studio API Key.")
 
+        self.gemini_reasoning_model_input = QLineEdit()
+        self.gemini_reasoning_model_input.setPlaceholderText("gemini-3-pro-preview")
+        self.gemini_reasoning_model_input.setToolTip("Model for complex tasks (Plan, Debug).")
+
+        self.gemini_fast_model_input = QLineEdit()
+        self.gemini_fast_model_input.setPlaceholderText("gemini-2.5-flash")
+        self.gemini_fast_model_input.setToolTip("Model for high-volume tasks (Code Gen).")
+
+        # --- ChatGPT Page ---
         self.chatgpt_page = QWidget()
         self.openai_api_key_input = QLineEdit()
         self.openai_api_key_input.setEchoMode(QLineEdit.Password)
-        self.openai_reasoning_model_input = QLineEdit()
-        self.openai_fast_model_input = QLineEdit()
+        self.openai_api_key_input.setPlaceholderText("sk-proj-...")
+        self.openai_api_key_input.setToolTip("Your OpenAI API Key.")
 
+        self.openai_reasoning_model_input = QLineEdit()
+        self.openai_reasoning_model_input.setPlaceholderText("gpt-5")
+        self.openai_reasoning_model_input.setToolTip("Model for complex tasks.")
+
+        self.openai_fast_model_input = QLineEdit()
+        self.openai_fast_model_input.setPlaceholderText("gpt-5-nano")
+        self.openai_fast_model_input.setToolTip("Model for speed and efficiency.")
+
+        # --- Claude Page ---
         self.claude_page = QWidget()
         self.anthropic_api_key_input = QLineEdit()
         self.anthropic_api_key_input.setEchoMode(QLineEdit.Password)
-        self.anthropic_reasoning_model_input = QLineEdit()
-        self.anthropic_fast_model_input = QLineEdit()
+        self.anthropic_api_key_input.setPlaceholderText("sk-ant-api03-...")
+        self.anthropic_api_key_input.setToolTip("Your Anthropic API Key.")
 
+        self.anthropic_reasoning_model_input = QLineEdit()
+        self.anthropic_reasoning_model_input.setPlaceholderText("claude-opus-4-5")
+        self.anthropic_reasoning_model_input.setToolTip("Smartest available Claude model.")
+
+        self.anthropic_fast_model_input = QLineEdit()
+        self.anthropic_fast_model_input.setPlaceholderText("claude-haiku-4-5-20251001")
+        self.anthropic_fast_model_input.setToolTip("Faster/Cheaper Claude model.")
+
+        # --- Ollama Page ---
         self.phi3local_page = QWidget()
         self.ollama_reasoning_model_input = QLineEdit()
-        self.ollama_reasoning_model_input.setPlaceholderText("e.g. llama3:latest")
-        self.ollama_fast_model_input = QLineEdit()
-        self.ollama_fast_model_input.setPlaceholderText("e.g. llama3:latest")
+        self.ollama_reasoning_model_input.setPlaceholderText("llama3.2:latest")
+        self.ollama_reasoning_model_input.setToolTip("Local model for complex logic.")
 
+        self.ollama_fast_model_input = QLineEdit()
+        self.ollama_fast_model_input.setPlaceholderText("qwen2.5-coder:latest")
+        self.ollama_fast_model_input.setToolTip("Local model for code generation.")
+
+        # --- Any Other Page ---
         self.anyother_page = QWidget()
         self.custom_endpoint_url_input = QLineEdit()
+        self.custom_endpoint_url_input.setPlaceholderText("https://api.example.com/v1")
+        self.custom_endpoint_url_input.setToolTip("The base URL of the OpenAI-compatible server.")
+
         self.custom_endpoint_api_key_input = QLineEdit()
         self.custom_endpoint_api_key_input.setEchoMode(QLineEdit.Password)
-        self.custom_reasoning_model_input = QLineEdit()
-        self.custom_fast_model_input = QLineEdit()
+        self.custom_endpoint_api_key_input.setPlaceholderText("sk-...")
+        self.custom_endpoint_api_key_input.setToolTip("API Key if required by the endpoint.")
 
+        self.custom_reasoning_model_input = QLineEdit()
+        self.custom_reasoning_model_input.setPlaceholderText("model-name")
+        self.custom_fast_model_input = QLineEdit()
+        self.custom_fast_model_input.setPlaceholderText("model-name")
+
+        # --- Grok Page ---
         self.grok_page = QWidget()
         self.grok_api_key_input = QLineEdit()
         self.grok_api_key_input.setEchoMode(QLineEdit.Password)
-        self.grok_reasoning_model_input = QLineEdit()
-        self.grok_fast_model_input = QLineEdit()
+        self.grok_api_key_input.setPlaceholderText("xai-...")
+        self.grok_api_key_input.setToolTip("Your xAI API Key.")
 
+        self.grok_reasoning_model_input = QLineEdit()
+        self.grok_reasoning_model_input.setPlaceholderText("x-ai/grok-4-1-fast-reasoning")
+        self.grok_fast_model_input = QLineEdit()
+        self.grok_fast_model_input.setPlaceholderText("x-ai/grok-4.1-fast")
+
+        # --- Deepseek Page ---
         self.deepseek_page = QWidget()
         self.deepseek_api_key_input = QLineEdit()
         self.deepseek_api_key_input.setEchoMode(QLineEdit.Password)
-        self.deepseek_reasoning_model_input = QLineEdit()
-        self.deepseek_fast_model_input = QLineEdit()
+        self.deepseek_api_key_input.setPlaceholderText("sk-...")
+        self.deepseek_api_key_input.setToolTip("Your DeepSeek API Key.")
 
+        self.deepseek_reasoning_model_input = QLineEdit()
+        self.deepseek_reasoning_model_input.setPlaceholderText("deepseek-v3.2-speciale")
+        self.deepseek_reasoning_model_input.setToolTip("Model with Chain-of-Thought capabilities.")
+
+        self.deepseek_fast_model_input = QLineEdit()
+        self.deepseek_fast_model_input.setPlaceholderText("deepseek-chat")
+        self.deepseek_fast_model_input.setToolTip("Standard chat model.")
+
+        # --- Llama Page ---
         self.llama_page = QWidget()
         self.llama_api_key_input = QLineEdit()
         self.llama_api_key_input.setEchoMode(QLineEdit.Password)
+        self.llama_api_key_input.setPlaceholderText("r8_...")
+        self.llama_api_key_input.setToolTip("Your Replicate.com API Key.")
+
         self.llama_reasoning_model_input = QLineEdit()
+        self.llama_reasoning_model_input.setPlaceholderText("nvidia/Llama-3_3-Nemotron-Super-49B-v1")
         self.llama_fast_model_input = QLineEdit()
+        self.llama_fast_model_input.setPlaceholderText("meta-llama/Llama-3.3-70B-Instruct-Turbo")
 
         # --- Factory Behavior Tab Widgets ---
         self.factory_behavior_tab = QWidget()
         self.max_debug_spin_box = QSpinBox()
         self.max_debug_spin_box.setRange(0, 10)
+        # Tooltip for Max Debug Attempts
+        self.max_debug_spin_box.setToolTip(
+            "How many times should Klyve try to fix a bug automatically?\n"
+            "• Higher (e.g., 5): More autonomy, potentially slower.\n"
+            "• Lower (e.g., 1): Escalate to you faster."
+        )
+
         self.context_limit_input = QLineEdit()
         self.context_limit_input.setReadOnly(False)
         self.calibrate_button = QPushButton("Auto-Calibrate Now")
@@ -236,12 +308,38 @@ class SettingsDialog(QDialog):
         self.context_help_label.setStyleSheet("color: #808080;")
         self.logging_combo_box = QComboBox()
         self.logging_combo_box.addItems(["Standard", "Detailed", "Debug"])
+        self.logging_combo_box.setToolTip("Controls the verbosity of the application logs.")
+
+        # --- Project Path ---
         self.project_path_input = QLineEdit()
+        self.project_path_input.setPlaceholderText("e.g. C:/Users/Name/Documents/KlyveProjects")
+        self.project_path_input.setToolTip(
+            "The central folder where Klyve will create all your new projects.\n"
+            "Klyve stores code, logs, and database files here.\n"
+            "Recommendation: Create a dedicated empty folder."
+        )
         self.project_path_browse_button = QPushButton("Browse...")
+        self.project_path_browse_button.setToolTip("Select the default project folder from your computer.")
+
+        # --- Archive Path ---
         self.archive_path_input = QLineEdit()
+        self.archive_path_input.setPlaceholderText("e.g. C:/Users/Name/Documents/KlyveArchives")
+        self.archive_path_input.setToolTip(
+            "The folder where Klyve will export zipped project snapshots.\n"
+            "Useful for backups or transferring projects to another machine."
+        )
         self.archive_path_browse_button = QPushButton("Browse...")
+        self.archive_path_browse_button.setToolTip("Select the default archive folder.")
+
+        # --- IDE Path ---
         self.ide_path_input = QLineEdit()
+        self.ide_path_input.setPlaceholderText("e.g. C:/Program Files/Microsoft VS Code/Code.exe")
+        self.ide_path_input.setToolTip(
+            "The executable path for your preferred IDE (VS Code, PyCharm, etc.).\n"
+            "Klyve uses this to open files directly for you."
+        )
         self.ide_path_browse_button = QPushButton("Browse...")
+        self.ide_path_browse_button.setToolTip("Locate your IDE executable.")
 
         # --- USER CONSENT REVOCATION ---
         self.revoke_consent_button = QPushButton("Reset Permissions & License")
@@ -253,14 +351,26 @@ class SettingsDialog(QDialog):
         self.template_instruction_label = QLabel("Here you can manage global document templates. A template provides a standard structure for a specification document. When a template is set, the AI will use it to structure its output according to it.")
         self.template_instruction_label.setWordWrap(True)
         self.template_instruction_label.setObjectName("settingsInstructionLabel")
+
         self.template_type_combo = QComboBox()
         self.template_type_combo.addItems(["Application Specification", "Technical Specification", "UX/UI Specification"])
+        self.template_type_combo.setToolTip("Select the document type you want to configure.")
+
         self.template_path_input = QLineEdit()
         self.template_path_input.setReadOnly(True)
+        self.template_path_input.setPlaceholderText("No custom template active (Using System Default)")
+
         self.template_browse_button = QPushButton("Browse...")
+        self.template_browse_button.setToolTip("Select a text or markdown file to use as the template.")
+
         self.template_add_button = QPushButton("Add/Update Template")
+        self.template_add_button.setToolTip("Save the selected file as the new default for this document type.")
+
         self.templates_list_widget = QListWidget()
+        self.templates_list_widget.setToolTip("List of your currently active custom templates.")
+
         self.template_remove_button = QPushButton("Remove Selected")
+        self.template_remove_button.setToolTip("Revert the selected template to the system default.")
 
         # --- Docx Styles Tab Widgets ---
         self.docxStylesTab = QWidget()
@@ -268,10 +378,19 @@ class SettingsDialog(QDialog):
                                                 "Templates MUST contain the following named styles: Title, Heading 1, Heading 2, Heading 3, Normal, Bullet List, List Numbered, Code Block.")
         self.docxStyleInstructionLabel.setWordWrap(True)
         self.docxStyleInstructionLabel.setObjectName("settingsInstructionLabel")
+
         self.docxStyleListWidget = QListWidget()
+        self.docxStyleListWidget.setToolTip("Select the visual style to apply to your exported Word documents.")
+
         self.addDocxStyleButton = QPushButton("Add New Style...")
+        self.addDocxStyleButton.setToolTip("Import a .docx file containing your custom styles/branding.")
+
         self.removeDocxStyleButton = QPushButton("Remove Selected")
+        self.removeDocxStyleButton.setToolTip("Delete the selected style template.")
+
         self.setActiveDocxStyleButton = QPushButton("Set as Active")
+        self.setActiveDocxStyleButton.setToolTip("Use this style for all future document exports.")
+
         self.activeStyleLabel = QLabel("Active Style Template:")
 
         self.button_box = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -279,8 +398,9 @@ class SettingsDialog(QDialog):
         # --- Integrations Tab Widgets
         self.integrations_tab = QWidget()
         self.provider_list = QListWidget()
-        self.provider_list.addItems(["None", "Jira"]) # Add more providers here in the future
+        self.provider_list.addItems(["None", "Jira"])
         self.provider_list.setMaximumWidth(150)
+        self.provider_list.setToolTip("Select a third-party tool to integrate with.")
 
         self.integrations_stacked_widget = QStackedWidget()
 
@@ -293,9 +413,17 @@ class SettingsDialog(QDialog):
         # Page for Jira settings
         self.jira_page = QWidget()
         self.jira_url_input = QLineEdit()
+        self.jira_url_input.setPlaceholderText("https://your-domain.atlassian.net")
+        self.jira_url_input.setToolTip("The base URL of your Jira instance.")
+
         self.jira_username_input = QLineEdit()
+        self.jira_username_input.setPlaceholderText("user@example.com")
+        self.jira_username_input.setToolTip("The email address you use to log in to Jira.")
+
         self.jira_token_input = QLineEdit()
         self.jira_token_input.setEchoMode(QLineEdit.Password)
+        self.jira_token_input.setPlaceholderText("ATATT...")
+        self.jira_token_input.setToolTip("Your Jira API Token (NOT your password).\nGenerate this in your Atlassian Account Settings.")
 
     def _create_layouts(self):
         """Creates and arranges layouts for the dialog."""

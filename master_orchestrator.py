@@ -2818,6 +2818,14 @@ class MasterOrchestrator:
         progress_callback = kwargs.get('progress_callback')
         self.is_task_processing = True
 
+        # Handles specific task retries (like Integration Tests) triggered by the UI
+        task_to_run = self.task_awaiting_approval.get("task_to_run") if self.task_awaiting_approval else None
+
+        if task_to_run == "sprint_integration_test":
+            # Clear the flag so we don't loop forever
+            self.task_awaiting_approval["task_to_run"] = None
+            return self._task_run_sprint_integration_test(progress_callback)
+
         # --- FIX MODE LOGIC ---
         if self.is_in_fix_mode:
             logging.info("--- In Fix Mode: Executing from fix plan. ---")
@@ -4851,9 +4859,42 @@ class MasterOrchestrator:
             success, raw_output = self.run_full_test_suite(progress_callback=progress_callback)
 
             # Step 4 & 5: Format and generate the .docx report.
+            #if progress_callback: progress_callback(("INFO", "Formatting and saving test report..."))
+            #report_formatter = TestReportFormattingAgent(self.llm_service)
+            #report_markdown = report_formatter.format_report(plan_json, raw_output)
+
+            # Step 4: Format the report (With Fallback)
             if progress_callback: progress_callback(("INFO", "Formatting and saving test report..."))
-            report_formatter = TestReportFormattingAgent(self.llm_service)
-            report_markdown = report_formatter.format_report(plan_json, raw_output)
+
+            report_markdown = ""
+            try:
+                report_formatter = TestReportFormattingAgent(self.llm_service)
+                report_markdown = report_formatter.format_report(plan_json, raw_output)
+                # LOG THE AI OUTPUT FOR DEBUGGING
+                logging.info(f"AI Report Generated (Length: {len(report_markdown)}). Preview: {report_markdown[:100]}...")
+            except Exception as e:
+                logging.warning(f"AI Report Formatting failed: {e}")
+
+            # --- LOGIC FIX: Verify and Append Raw Output ---
+
+            # 1. Fallback if AI returned basically nothing
+            if not report_markdown or len(str(report_markdown).strip()) < 50:
+                logging.warning("Report formatter returned insufficient content. Using raw output fallback.")
+                status_str = "PASSED" if success else "FAILED"
+                report_markdown = (
+                    f"# Backend Test Report (Raw Output)\n\n"
+                    f"**Test Status:** {status_str}\n\n"
+                    f"**Note:** The automated report formatter could not parse the test output.\n\n"
+                )
+
+            # 2. ALWAYS Append the Raw Log (Ensures content visibility even if Table rendering fails)
+            report_markdown += (
+                f"\n\n## Raw Execution Log\n"
+                f"```text\n{raw_output}\n```"
+            )
+            # ------------------------------------------------
+
+            # Step 5: Generate the DOCX (Existing Code)
 
             report_generator = ReportGeneratorAgent(self.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
@@ -4952,17 +4993,46 @@ class MasterOrchestrator:
     def _task_run_sprint_integration_test(self, progress_callback=None, **kwargs):
         """
         Background worker task that executes the test and transitions to a results page.
+        Now handles Environment Failures and Logic Failures specifically.
         """
-        if progress_callback: progress_callback(("INFO", "Preparing to execute sprint integration test..."))
-        command = self.task_awaiting_approval.get("sprint_integ_command_to_run")
-        project_root = self.db_manager.get_project_by_id(self.project_id)['project_root_folder']
+        # Local imports to ensure dependencies are available
+        from agents.agent_verification_app_target import VerificationAgent_AppTarget
+        from agents.agent_report_generator import ReportGeneratorAgent
+        from datetime import datetime, timezone
 
+        if progress_callback: progress_callback(("INFO", "Preparing to execute sprint integration test..."))
+
+        # 1. Retrieve Data (Preserving original keys)
+        command = self.task_awaiting_approval.get("sprint_integ_command_to_run")
+        project_details = self.db_manager.get_project_by_id(self.project_id)
+        project_root = project_details['project_root_folder']
+
+        # 2. Execute via Agent (Preserving original architecture)
         agent = VerificationAgent_AppTarget(self.llm_service)
         if progress_callback: progress_callback(("INFO", f"Executing command: {command}"))
+
         status, output = agent.run_all_tests(project_root, command)
+
         if progress_callback: progress_callback(("INFO", f"Execution finished with status: {status}"))
 
-        # Generate and save the report regardless of outcome
+        # --- 3. ENVIRONMENT FAILURE TRAP (New Safety Logic) ---
+        # We check the output for missing tool errors BEFORE generating the report.
+        # If the environment is broken, we stop immediately.
+        err_msg = output.lower() if output else ""
+        if "not recognized" in err_msg or "not found" in err_msg or "no such file" in err_msg or "command not found" in err_msg:
+            logging.error(f"Environment Tool Missing during integration test: {command}")
+
+            self.task_awaiting_approval = {
+                "failure_log": f"Command: {command}\nError: {output}",
+                "is_env_failure": True, # <--- Triggers the STOP/RETRY screen in UI
+                "task_to_run": "sprint_integration_test",
+                "sprint_integ_command_to_run": command # Preserve command for retry
+            }
+            self.set_phase("DEBUG_PM_ESCALATION")
+            return status
+
+        # --- 4. REPORT GENERATION (Preserved from Original) ---
+        # We generate the report if it wasn't a hard environment crash.
         try:
             report_generator = ReportGeneratorAgent(self.db_manager)
             report_markdown = f"# Sprint Integration Test Report\n\n**Command Executed:** `{command}`\n\n**Status:** {status}\n\n## Test Runner Output\n\n```\n{output}\n```"
@@ -4980,12 +5050,26 @@ class MasterOrchestrator:
         except Exception as e:
             logging.error(f"Failed to generate and save sprint integration test report: {e}")
 
-        # THIS IS THE FIX: Save results and transition to the new checkpoint
+        # --- 5. LOGIC FAILURE TRAP (New Safety Logic) ---
+        # If the tests ran but failed (e.g. assertion errors), we escalate to PM
+        # to decide whether to Debug or Acknowledge.
+        if status != "SUCCESS":
+            logging.warning("Integration tests failed logic verification.")
+            self.task_awaiting_approval = {
+                "failure_log": output,
+                "is_final_verification_failure": True, # <--- Triggers 'Acknowledge & Complete' button
+                "sprint_test_status": status # Save status so we can log it if acknowledged
+            }
+            self.set_phase("DEBUG_PM_ESCALATION")
+            return status
+
+        # --- 6. SUCCESS TRANSITION (Preserved from Original) ---
+        # Only reached if status == "SUCCESS"
         self.task_awaiting_approval['sprint_test_status'] = status
         self.task_awaiting_approval['sprint_test_output'] = output
         self.set_phase("AWAITING_INTEGRATION_TEST_RESULT_ACK")
 
-        return status # The worker still needs a return value
+        return status
 
     def handle_sprint_test_result_ack(self):
         """

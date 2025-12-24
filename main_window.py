@@ -114,7 +114,7 @@ class KlyveMainWindow(QMainWindow):
         self._create_menus_and_toolbar()
         self._connect_signals()
 
-        self.setWindowTitle(f"Klyve - The Desktop Software Factory")
+        self.setWindowTitle(f"Klyve - The Automated Software Factory")
 
         self.update_ui_after_state_change()
 
@@ -1461,10 +1461,10 @@ class KlyveMainWindow(QMainWindow):
                 instruction="Components with known issues were detected.",
                 details=details_text,
                 option1_text="Proceed Anyway",
-                option2_text="Stop & Export Project"
+                option2_text="Close for Manual Fix"
             )
             self.decision_page.option1_selected.connect(self.on_integration_confirmed)
-            self.decision_page.option2_selected.connect(self.on_stop_export_project)
+            self.decision_page.option2_selected.connect(self.on_close_project)
             self.ui.mainContentArea.setCurrentWidget(self.decision_page)
 
         elif current_phase_name == "AWAITING_SPRINT_VALIDATION_CHECK":
@@ -1518,10 +1518,10 @@ class KlyveMainWindow(QMainWindow):
                     instruction="The process is paused. Please resolve the environment issue.",
                     details=f"The factory has encountered an unrecoverable ENVIRONMENT error:<br><br>--- ERROR LOG ---{formatted_log}",
                     option1_text="I have fixed the issue, Retry",
-                    option2_text="Stop & Export Project"
+                    option2_text="Close for Manual Fix"
                 )
                 self.decision_page.option1_selected.connect(self.on_retry_environment_failure)
-                self.decision_page.option2_selected.connect(self.on_stop_export_project)
+                self.decision_page.option2_selected.connect(self.on_close_project)
             elif is_final_verification_failure:
                 self.decision_page.configure(
                     header="Backend Testing Failed",

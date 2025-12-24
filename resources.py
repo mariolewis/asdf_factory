@@ -61,7 +61,8 @@ BY USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THE TERMS OF THIS AGREEMENT. IF 
 
 PRIVACY_POLICY_TEXT = """PRIVACY POLICY FOR KLYVE Version 1.0 (Beta) Last Updated: 08-Dec-2025
 
-1. MY "LOCAL-FIRST" PROMISE I, Mario Joseph Lewis ("Developer"), believe your code and project data belong to you. Klyve ("the Software") is designed as a Local-First application. This means:
+1. MY "LOCAL-FIRST" PROMISE: 
+I, Mario J. Lewis ("Developer"), believe your code and project data belong to you. Klyve ("the Software") is designed as a Local-First application. This means:
 
 No Cloud Storage: I do not operate any cloud server to upload and store your project source code, specifications, or planning documents from your local environment.
 
@@ -69,7 +70,8 @@ Local Processing: All file generation, database management, and logic processing
 
 Direct Connection: When AI features are used, the Software connects directly from your machine to the AI provider (e.g., OpenAI, Google) using the API key you provide. Your data does not pass through any server owned or operated by the Developer.
 
-2. DATA COLLECTED Since the Software runs locally, data collection is minimal:
+2. DATA COLLECTED:
+Since the Software runs locally, data collection is minimal:
 
 Usage Data: I do not collect telemetry or usage data in this version of the Software.
 
@@ -77,7 +79,8 @@ Crash Reports: If you voluntarily submit a bug report via email or the website, 
 
 Website Data: If you download the Software from my website, standard web server logs (IP address, browser type) may be collected for security and download tracking purposes.
 
-3. DATA YOU TRANSMIT TO THIRD PARTIES (AI PROVIDERS) To function as an AI-powered developer, the Software transmits data to third-party Large Language Model (LLM) providers.
+3. DATA YOU TRANSMIT TO THIRD PARTIES (AI PROVIDERS):
+To function as an AI-powered developer, the Software transmits data to third-party Large Language Model (LLM) providers.
 
 What is sent: Code snippets, file structures, documentation text, and error logs from your active project.
 
@@ -87,13 +90,15 @@ Your Control: You control this transmission by providing (or revoking) your API 
 
 Governance: Data sent to these providers is governed by your separate agreement and privacy policy with them. The Developer is not a party to that transmission.
 
-4. YOUR DATA RIGHTS: Because I do not store your personal project data, I generally do not hold data to which "Right to Access" or "Right to Delete" requests would apply.
+4. YOUR DATA RIGHTS: 
+Because I do not store your personal project data, I generally do not hold data to which "Right to Access" or "Right to Delete" requests would apply.
 
 Project Data: You already possess all your project data on your local machine. You can delete it at any time by deleting it within the application and from your project folders.
 
 API Keys: Your API keys are stored locally in an encrypted database on your machine. I cannot see them or access them.
 
-5. CHANGES TO THIS POLICY: I may update this Privacy Policy from time to time. If I make material changes (e.g., if a future version introduces telemetry), I will issue a notification on the Software's website.
+5. CHANGES TO THIS POLICY: 
+I may update this Privacy Policy from time to time. If I make material changes (e.g., if a future version introduces telemetry), I will issue a notification on the Software's website.
 
 (End of Privacy Policy)"""
 
