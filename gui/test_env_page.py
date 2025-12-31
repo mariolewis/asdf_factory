@@ -2,7 +2,7 @@
 
 import logging
 import markdown
-from gui.utils import render_markdown_to_html
+from gui.utils import render_markdown_to_html, validate_security_input
 import re
 from pathlib import Path
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QTextEdit, QDialogButtonBox,
@@ -79,6 +79,10 @@ class TestEnvPage(QWidget):
         filename = self.ui.manualBuildScriptLineEdit.text().strip()
         if not filename:
             QMessageBox.warning(self, "Input Required", "Please enter the filename for your build script.")
+            return
+
+        # --- Security Check: Build Script Name ---
+        if not validate_security_input(self, filename, "PATH"):
             return
 
         try:
@@ -283,6 +287,12 @@ class TestEnvPage(QWidget):
         if not backend_command:
             QMessageBox.warning(self, "Input Required", "The Backend Test Command cannot be empty.")
             return
+        # --- Security Check: Test Commands ---
+        if not validate_security_input(self, backend_command, "COMMAND"):
+            return
+        if ui_command:
+            if not validate_security_input(self, ui_command, "COMMAND"):
+                return
         if self.orchestrator.finalize_test_environment_setup(backend_command, ui_command):
             self.test_env_setup_complete.emit()
         else:

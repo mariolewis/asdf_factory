@@ -3,6 +3,7 @@
 import logging
 from PySide6.QtWidgets import QWidget
 from PySide6.QtCore import Signal
+from gui.utils import validate_security_input
 
 from gui.ui_sprint_integration_test_page import Ui_SprintIntegrationTestPage
 from master_orchestrator import MasterOrchestrator
@@ -31,6 +32,10 @@ class SprintIntegrationTestPage(QWidget):
     def on_run_clicked(self):
         """Emits the run signal with the current command text."""
         command = self.ui.commandLineEdit.text().strip()
+        # Security Validation
+        if command:
+            if not validate_security_input(self, command, "COMMAND"):
+                return
         self.run_test_clicked.emit(command)
 
     def configure(self, file_path: str, command: str):

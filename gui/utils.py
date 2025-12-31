@@ -115,3 +115,58 @@ def center_window(widget):
     center_point = screen_geometry.center()
     widget_geometry.moveCenter(center_point)
     widget.move(widget_geometry.topLeft())
+
+def validate_security_input(parent_widget, input_text: str, input_type: str = "NAME") -> bool:
+    """
+    Validates user input against common security vulnerabilities (SQLi, OS Injection).
+
+    Args:
+        parent_widget: The widget to parent the blocking dialog to.
+        input_text (str): The raw string entered by the user.
+        input_type (str): 'NAME' (Strict), 'PATH' (Allow separators), or 'COMMAND' (Allow shell chars).
+
+    Returns:
+        bool: True if input is safe, False if potentially malicious.
+    """
+    if not input_text:
+        return True # Empty input is handled by specific form logic, not security validation
+
+    # 1. SQL Injection Patterns (Common to ALL inputs)
+    # Checks for dangerous SQL keywords or structural manipulation characters
+    sql_patterns = [
+        r"';\s*DROP\s+TABLE", r"--;", r"'\s+OR\s+'1'='1",
+        r"UNION\s+SELECT", r"exec\(\s*'"
+    ]
+    for pattern in sql_patterns:
+        if re.search(pattern, input_text, re.IGNORECASE):
+            QMessageBox.warning(parent_widget, "Security Alert",
+                "Potentially insecure input detected (SQL Injection Risk).\n"
+                "Please enter a valid input.")
+            return False
+
+    # 2. Strict Name Validation (Project Names, etc.)
+    if input_type == "NAME":
+        # Block: Quotes, Semicolons, Slashes, Shell Operators, Wildcards
+        if re.search(r"['\";/\\&\|\$><`*?]", input_text):
+            QMessageBox.warning(parent_widget, "Invalid Input",
+                "Project names cannot contain special characters, paths, or shell operators.\n"
+                "Allowed: Alphanumeric, underscores, hyphens.")
+            return False
+
+    # 3. Path Validation (File System Paths)
+    elif input_type == "PATH":
+        # Block: Quotes, Semicolons, Shell Operators
+        # Allow: Slashes (/ \), Colons (:) for drive letters
+        if re.search(r"['\";&\|\$><`]", input_text):
+            QMessageBox.warning(parent_widget, "Invalid Path",
+                "Paths cannot contain shell operators or injection characters.\n"
+                "Please use standard file system paths.")
+            return False
+
+    # 4. Command Validation (Test Commands)
+    elif input_type == "COMMAND":
+        # We ALLOW shell operators (e.g., &&, |) as they are valid in commands.
+        # We only strictly block the SQL injection patterns checked in Step 1.
+        pass
+
+    return True

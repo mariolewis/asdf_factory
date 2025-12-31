@@ -9,6 +9,7 @@ import subprocess
 import sys
 
 from gui.ui_env_setup_page import Ui_EnvSetupPage
+from gui.utils import validate_security_input
 from master_orchestrator import MasterOrchestrator
 
 class EnvSetupPage(QWidget):
@@ -92,6 +93,9 @@ class EnvSetupPage(QWidget):
         path_input = self.ui.projectPathLineEdit.text().strip()
         if not path_input:
             QMessageBox.warning(self, "Input Required", "Please enter a path for the project folder.")
+            return
+        # Security Validation for File System Paths
+        if not validate_security_input(self, path_input, "PATH"):
             return
 
         try:

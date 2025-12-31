@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QTabWidget, Q
                                QSizePolicy, QMessageBox, QHBoxLayout, QListWidget, QGroupBox, QListWidgetItem)
 from PySide6.QtCore import QThreadPool
 from .worker import Worker
+from gui.utils import validate_security_input
 
 from master_orchestrator import MasterOrchestrator
 
@@ -1061,6 +1062,54 @@ class SettingsDialog(QDialog):
         """
         Validates critical LLM settings if changed, then saves to DB.
         """
+        # --- Security Check: Default Project Path ---
+        if not validate_security_input(self, self.project_path_input.text(), "PATH"):
+            return
+        # --- Security Check: Default Archive Path ---
+        if not validate_security_input(self, self.archive_path_input.text(), "PATH"):
+            return
+        # --- Security Check: IDE Path ---
+        if not validate_security_input(self, self.ide_path_input.text(), "PATH"):
+            return
+        # --- Security Check: Jira Integration ---
+        if self.jira_url_input.text().strip():
+             if not validate_security_input(self, self.jira_url_input.text(), "PATH"):
+                return
+        if self.jira_username_input.text().strip():
+             if not validate_security_input(self, self.jira_username_input.text(), "PATH"):
+                return
+        # --- Security Check: Custom Endpoint (Any Other Provider) ---
+        # We validate these regardless of visibility to ensure no malicious data is saved.
+        # We use 'PATH' mode to allow URL characters (/, :, .) but block shell operators.
+        custom_inputs = [
+            self.custom_endpoint_url_input.text(),
+            self.custom_endpoint_api_key_input.text(),
+            self.custom_reasoning_model_input.text(),
+            self.custom_fast_model_input.text()
+        ]
+        for val in custom_inputs:
+            if val.strip(): # Only validate non-empty fields
+                if not validate_security_input(self, val, "PATH"):
+                    return
+        # --- Security Check: All LLM Provider Fields ---
+        # Validate API keys and model names for all providers to prevent injection.
+        llm_inputs = [
+            self.gemini_api_key_input, self.gemini_reasoning_model_input, self.gemini_fast_model_input,
+            self.openai_api_key_input, self.openai_reasoning_model_input, self.openai_fast_model_input,
+            self.anthropic_api_key_input, self.anthropic_reasoning_model_input, self.anthropic_fast_model_input,
+            self.grok_api_key_input, self.grok_reasoning_model_input, self.grok_fast_model_input,
+            self.deepseek_api_key_input, self.deepseek_reasoning_model_input, self.deepseek_fast_model_input,
+            self.llama_api_key_input, self.llama_reasoning_model_input, self.llama_fast_model_input,
+            self.ollama_reasoning_model_input, self.ollama_fast_model_input,
+            self.context_limit_input  # Also validate the context limit to ensure no special chars
+        ]
+        for widget in llm_inputs:
+            val = widget.text().strip()
+            if val:
+                # We use 'PATH' mode as it allows dots/slashes (common in model names)
+                # but blocks quotes, semicolons, and shell operators.
+                if not validate_security_input(self, val, "PATH"):
+                    return
         # --- Validation for Manual Context Limits ---
         current_provider = self.provider_combo_box.currentText()
         if current_provider in ["Ollama (Local)", "Any Other (OpenAI Compatible)"]:

@@ -62,6 +62,7 @@ from gui.delivery_assessment_page import DeliveryAssessmentPage
 from gui.codebase_analysis_page import CodebaseAnalysisPage
 from gui.project_dashboard_page import ProjectDashboardPage
 from gui.sprint_integration_test_page import SprintIntegrationTestPage
+from gui.utils import validate_security_input
 
 class KlyveMainWindow(QMainWindow):
     """
@@ -1620,17 +1621,25 @@ class KlyveMainWindow(QMainWindow):
         if self._exec_centered(dialog):
             # Check the custom result property we set in the dialog
             if getattr(dialog, 'result', 'spec') == 'codebase':
-                project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
-                if ok and project_name:
-                    # Pass the acquired name to the brownfield path sequence
-                    self.on_start_brownfield_project(project_name)
+                while True:
+                    project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
+                    if not ok:
+                        return
+                    if validate_security_input(self, project_name, "NAME"):
+                        # Pass the acquired name to the brownfield path sequence
+                        self.on_start_brownfield_project(project_name)
+                        break
             else: # Default is to create from spec (greenfield)
-                project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
-                if ok and project_name:
-                    suggested_path = self.orchestrator.start_new_project(project_name)
-                    self._reset_all_pages_for_new_project()
-                    self.env_setup_page.prepare_for_greenfield(suggested_path)
-                    self.update_ui_after_state_change()
+                while True:
+                    project_name, ok = QInputDialog.getText(self, "New Project", "Enter a name for your new project:")
+                    if not ok:
+                        return
+                    if validate_security_input(self, project_name, "NAME"):
+                        suggested_path = self.orchestrator.start_new_project(project_name)
+                        self._reset_all_pages_for_new_project()
+                        self.env_setup_page.prepare_for_greenfield(suggested_path)
+                        self.update_ui_after_state_change()
+                        break
 
     def on_start_brownfield_project(self, project_name: str): # MODIFIED: Added project_name argument
         """Gets a directory from the user and prepares the EnvSetupPage for the brownfield workflow."""
