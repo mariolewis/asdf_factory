@@ -117,6 +117,11 @@ class LogBridge(QObject, logging.Handler):
         try:
             raw_msg = self.format(record)
 
+            # Sanitize internal names from ALL logs ---
+            raw_msg = raw_msg.replace("BuildAndCommitAgent", "Automated Builder")
+            raw_msg = raw_msg.replace("TriageAgent", "Diagnostic System")
+            # ------------------------------------------------------------
+
             # A. Check for noise to ignore
             if any(pattern in raw_msg for pattern in self.ignored_patterns):
                 return
@@ -1596,17 +1601,17 @@ class KlyveMainWindow(QMainWindow):
 
         elif current_phase_name == "DEBUG_PM_ESCALATION":
             task_details = self.orchestrator.task_awaiting_approval or {}
+
+            # 1. Get and Sanitize Failure Log
             failure_log = task_details.get("failure_log", "No details provided.")
+            failure_log = failure_log.replace("BuildAndCommitAgent", "Automated Builder")
+            failure_log = failure_log.replace("TriageAgent", "Diagnostic System")
+
+            # 2. Get Flags
             is_env_failure = task_details.get("is_env_failure", False)
+            is_final_verification_failure = task_details.get("is_final_verification_failure", False)
 
-            # Format the log as pre-formatted HTML text for monospaced display
-            formatted_log = f"<pre style='color: #CC7832;'>{failure_log}</pre>"
-
-            task_details = self.orchestrator.task_awaiting_approval or {}
-            failure_log = task_details.get("failure_log", "No details provided.")
-            is_env_failure = task_details.get("is_env_failure", False)
-            is_final_verification_failure = task_details.get("is_final_verification_failure", False) # New variable
-
+            # 3. Format for Display
             formatted_log = f"<pre style='color: #CC7832;'>{failure_log}</pre>"
 
             if is_env_failure:

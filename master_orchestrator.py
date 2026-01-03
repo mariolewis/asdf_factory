@@ -6759,13 +6759,23 @@ class MasterOrchestrator:
         if not self.llm_service:
             raise Exception("Cannot plan fix: LLM Service is not configured.")
 
-        # 1. Fetch Project Details correctly (Fixes 'get_step_output' crash)
+        # 1. Fetch Project Details correctly
         project_row = self.db_manager.get_project_by_id(self.project_id)
         if not project_row:
              raise Exception(f"Project {self.project_id} not found in DB.")
 
+        # --- TRACKER VARIABLE ---
+        # We will store the discovered filename here to enforce it later.
+        target_fix_file = None
+
         # 2. Logic to Resolve Relevant Code (Auto-Discovery)
-        relevant_code = next(iter(context_package.values()), "")
+        # Check if context was passed in (get both path and content)
+        if context_package:
+            # Assuming context_package is {file_path: content}
+            target_fix_file = next(iter(context_package.keys()))
+            relevant_code = context_package[target_fix_file]
+        else:
+            relevant_code = ""
 
         # If no code context was passed, try to find it from the failure log
         if not relevant_code and self.task_awaiting_approval:
@@ -6780,12 +6790,14 @@ class MasterOrchestrator:
 
                 if files:
                     from pathlib import Path
-                    # CORRECTED: Get path from the row, not a non-existent method
                     project_root = Path(project_row['project_root_folder'])
                     target_file = files[0]
                     full_path = project_root / target_file
 
                     if full_path.exists():
+                        # CAPTURE THE FILE PATH
+                        target_fix_file = target_file
+
                         file_content = full_path.read_text(encoding='utf-8')
                         relevant_code = (
                             f"File Path: {target_file}\n"  # Explicitly label the path
@@ -6799,8 +6811,7 @@ class MasterOrchestrator:
         if not relevant_code:
             relevant_code = "No code context available."
 
-        # 3. Logic to Resolve Tech Spec (Fixes OS Hallucination)
-        # CORRECTED: Access the 'tech_spec_text' column directly
+        # 3. Logic to Resolve Tech Spec
         tech_spec = project_row['tech_spec_text']
 
         if not tech_spec:
@@ -6817,7 +6828,7 @@ class MasterOrchestrator:
         from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
         planner_agent = FixPlannerAgent_AppTarget(llm_service=self.llm_service)
 
-        # Pass the gathered context (Tech Spec + Auto-Discovered Code)
+        # Pass the gathered context
         fix_plan_str = planner_agent.create_fix_plan(
             root_cause_hypothesis=failure_log,
             relevant_code=relevant_code,
@@ -6831,6 +6842,16 @@ class MasterOrchestrator:
 
             if not parsed_plan:
                 raise Exception("FixPlannerAgent returned an empty plan.")
+
+            # --- SURGICAL FIX: Enforce Path Consistency ---
+            # Even if the LLM hallucinates a new filename (e.g. 'script_v2.py'),
+            # we FORCE the task to use the file we discovered/loaded.
+            if target_fix_file:
+                for task in parsed_plan:
+                    if 'component_file_path' in task:
+                        logging.info(f"Enforcing fix target: Overwriting '{task['component_file_path']}' with known correct file '{target_fix_file}'")
+                        task['component_file_path'] = target_fix_file
+            # ----------------------------------------------
 
             # Load the new plan into the separate fix track and activate fix mode.
             self.fix_plan = parsed_plan

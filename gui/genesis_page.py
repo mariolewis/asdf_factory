@@ -285,7 +285,12 @@ class GenesisPage(QWidget):
 
     def _on_task_error(self, error_tuple):
         """Handles an error from the worker and shows the continue button."""
-        error_msg = f"A critical error occurred in a background task:\n{error_tuple[1]}"
+        # --- Sanitize Error Message ---
+        raw_error = str(error_tuple[1])
+        sanitized_error = raw_error.replace("BuildAndCommitAgent", "Automated Builder")
+        sanitized_error = sanitized_error.replace("TriageAgent", "Diagnostic System")
+        # --------------------------------------------
+        error_msg = f"A critical error occurred in a background task:\n{sanitized_error}"
         self.ui.logOutputTextEdit.append(f"\n--- ERROR ---\n{error_msg}")
         self.ui.continueButton.setVisible(True)
 
