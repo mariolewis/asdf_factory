@@ -107,6 +107,10 @@ class GenesisPage(QWidget):
 
     def on_retry_automated_fix_clicked(self):
         """Triggers the orchestrator to attempt a new automated fix."""
+        # --- Security Check ---
+        if not self._confirm_ai_execution():
+            return
+        # ----------------------
         self.ui.stackedWidget.setCurrentWidget(self.ui.processingPage)
         self.ui.logOutputTextEdit.clear()
         self._set_ui_busy(True)
@@ -207,11 +211,43 @@ class GenesisPage(QWidget):
         if main_window and hasattr(main_window, 'show_persistent_status'):
             main_window.show_persistent_status(status_message)
 
+    def _confirm_ai_execution(self) -> bool:
+        """
+        Displays the EULA/Liability warning dialog.
+        Returns True if the user acknowledges and wants to proceed.
+        Returns False if the user cancels.
+        """
+        warning_text = (
+            "<b>Proceed with the next AI development task?</b><br><br>"
+            "<span style='font-size:10pt; color:#CCCCCC;'>"
+            "<i>The AI LLM provider can produce errors. We recommend having a current backup or Git commit.<br>"
+            "You remain responsible for reviewing and verifying all generated code.</i>"
+            "</span>"
+        )
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm AI Execution",
+            warning_text,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        return reply == QMessageBox.Yes
+
     def run_development_step(self):
         """Initiates the background task to run the next development step."""
 
         # Set the main window's status bar message for the current task
         details = self.orchestrator.get_current_task_details()
+        is_final_verification = not details or "micro_spec_id" not in details.get("task", {})
+        # 3. --- EULA Security Check ---
+        # Only show the popup if we are about to run an AI Development Task.
+        # We SKIP this check for Backend Testing since no AI code generation happens.
+        if not is_final_verification:
+            if not self._confirm_ai_execution():
+                return
+        # ------------------------------
         if details:
             task = details.get("task", {})
             cursor = details.get("cursor", 0)
@@ -221,7 +257,7 @@ class GenesisPage(QWidget):
             mode_prefix = "Fixing" if is_fix else "Developing"
             status_message = f"{mode_prefix} task {cursor + 1}/{total}: {task_name}..."
             self.window().statusBar().showMessage(status_message)
-        is_final_verification = not details or "micro_spec_id" not in details.get("task", {})
+
         if is_final_verification:
             self.window().statusBar().showMessage("Running Backend Testing...")
 
@@ -315,4 +351,5 @@ class GenesisPage(QWidget):
             self.ui.aiConfidenceGauge.setVisible(False)
             self.ui.nextTaskLabel.setText("No development plan loaded yet.")
             self.ui.proceedButton.setText("▶️ Proceed")
+
 

@@ -61,8 +61,12 @@ class PlanningAgent_AppTarget:
 
                 cleaned_response = json_match.group(0)
                 parsed_json = parse_llm_json(cleaned_response)
+
+                parsed_json = self._enforce_backlog_hierarchy(parsed_json)
+
                 logging.info(f"Successfully generated {len(parsed_json)} backlog items.")
-                return cleaned_response
+
+                return json.dumps(parsed_json)
 
             except Exception as e:
                 logging.warning(f"Attempt {attempt + 1}/{max_retries} failed to generate backlog: {e}")
@@ -198,3 +202,35 @@ class PlanningAgent_AppTarget:
                     logging.error(f"PlanningAgent_AppTarget refinement failed after {max_retries} attempts.")
                     error_response = {"error": "Failed to refine the development plan.", "details": str(e)}
                     return json.dumps(error_response)
+
+    def _enforce_backlog_hierarchy(self, backlog_data: list) -> list:
+        """
+        Sanitizes the greenfield project backlog to ensure the mandatory 3-tier structure:
+        Epic -> Feature -> Backlog Item.
+        """
+        if not backlog_data or not isinstance(backlog_data, list):
+            return backlog_data
+
+        for epic in backlog_data:
+            # 1. Ensure Epic has at least one Feature
+            # Prompt 48 defines the key as "features"
+            if "features" not in epic or not epic["features"]:
+                epic["features"] = [{
+                    "type": "FEATURE",
+                    "title": "Core Implementation",
+                    "description": "Implementation of the core functionality for this Epic.",
+                    "user_stories": []
+                }]
+
+            # 2. Ensure every Feature has at least one User Story
+            for feature in epic["features"]:
+                # Prompt 48 defines the key as "user_stories"
+                if "user_stories" not in feature or not feature["user_stories"]:
+                    feature["user_stories"] = [{
+                        "type": "BACKLOG_ITEM",
+                        "title": "Implement Core Logic",
+                        "description": "Develop the primary logic and functionality for this feature.",
+                        "priority": "High",
+                        "complexity": "Small"
+                    }]
+        return backlog_data

@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QLabel, QStac
                                QSpacerItem, QSizePolicy, QFileDialog,
                                QTextEdit, QLineEdit, QPlainTextEdit)
 from PySide6.QtGui import QAction, QStandardItemModel, QStandardItem, QIcon
-from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize, QTimer, QEvent
+from PySide6.QtCore import QFile, Signal, Qt, QDir, QSize, QTimer, QEvent, QObject
 from PySide6.QtCore import QThreadPool
 
 from gui.ui_main_window import Ui_MainWindow
@@ -63,6 +63,76 @@ from gui.codebase_analysis_page import CodebaseAnalysisPage
 from gui.project_dashboard_page import ProjectDashboardPage
 from gui.sprint_integration_test_page import SprintIntegrationTestPage
 from gui.utils import validate_security_input
+
+class LogBridge(QObject, logging.Handler):
+    """
+    Intercepts Python logs, translates them into user-friendly messages,
+    and emits them to the UI.
+    """
+    log_signal = Signal(tuple)
+
+    def __init__(self):
+        QObject.__init__(self)
+        logging.Handler.__init__(self)
+
+        # 1. Translation Map: Technical Substring -> User Friendly Message
+        self.friendly_map = {
+            "Invoking FixPlannerAgent": "AI is analyzing the failure...",
+            "TriageAgent": "Diagnosing root cause...",
+            "Stack trace analysis": "Parsing error logs...",
+            "Auto-discovered context": "Reading relevant source files...",
+            "Generating detailed code fix": "Generating fix implementation...",
+            "Successfully generated a fix plan": "Fix plan created. Starting repairs...",
+            "CodeReviewAgent": "Performing safety code review...",
+            "Wrote source code": "Applying fix to source files...",
+            "Wrote unit tests": "Saving new unit tests...",
+            "Running test suite": "Verifying fix with regression tests...",
+            "Verification execution finished": "Testing complete.",
+            "CodeSummarizationAgent: Generating code summary": "Summarizing changes...",
+            "Automated fix plan executed successfully": "Automated fix applied successfully."
+        }
+
+        # 2. Noise Filter: Ignore logs containing ANY of these strings
+        self.ignored_patterns = [
+            "HTTP Request",
+            "AFC is enabled",
+            "Project marked as dirty",
+            "Transitioning to phase",
+            "Attempting to save state",
+            "Project '", # Matches "Project 'test1' state automatically saved"
+            "Calculated SHA-256",
+            "No coding standard",
+            "missing 'relevant_languages' key",
+            "DEBUG PRE-FLIGHT",
+            "VerificationAgent initialized",
+            "CodeSummarizationAgent initialized",
+            "Running full test suite for project at", # Redundant with "Verifying fix..."
+            "Executing verification command",
+            "Executing full insulated command",
+            "Version control is disabled",
+            "Skipping commit"
+        ]
+
+    def emit(self, record):
+        try:
+            raw_msg = self.format(record)
+
+            # A. Check for noise to ignore
+            if any(pattern in raw_msg for pattern in self.ignored_patterns):
+                return
+
+            # B. Translate to user-friendly text
+            final_msg = raw_msg # Default to raw if no mapping found
+            for tech_key, user_text in self.friendly_map.items():
+                if tech_key in raw_msg:
+                    final_msg = user_text
+                    break
+
+            # Emit as ("INFO", "Message") which genesis_page expects
+            self.log_signal.emit(("INFO", final_msg))
+
+        except Exception:
+            self.handleError(record)
 
 class KlyveMainWindow(QMainWindow):
     """
@@ -1021,6 +1091,32 @@ class KlyveMainWindow(QMainWindow):
         msg.setDefaultButton(default)
         return self._exec_centered(msg)
 
+    def _confirm_ai_execution(self) -> bool:
+        """
+        Displays the EULA/Liability warning dialog for AI execution.
+        Returns True if the user acknowledges and wants to proceed.
+        """
+        # Ensure QMessageBox is available. It is likely already imported.
+        # If not, add: from PySide6.QtWidgets import QMessageBox
+
+        warning_text = (
+            "<b>Proceed with the next AI development task?</b><br><br>"
+            "<span style='font-size:10pt; color:#CCCCCC;'>"
+            "<i>The AI LLM provider can produce errors. We recommend having a current backup or Git commit.<br>"
+            "You remain responsible for reviewing and verifying all generated code.</i>"
+            "</span>"
+        )
+
+        reply = QMessageBox.question(
+            self,
+            "Confirm AI Execution",
+            warning_text,
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        return reply == QMessageBox.Yes
+
     def update_ui_after_state_change(self):
         logging.debug("update_ui_after_state_change: Method entered.")
         """
@@ -1810,29 +1906,57 @@ class KlyveMainWindow(QMainWindow):
 
     def on_decision_option1(self):
         # This handler is for the "Retry Automated Fix" button
+
+        # --- EULA Security Check ---
+        if not self._confirm_ai_execution():
+            return
+        # ---------------------------
         if not self.orchestrator.task_awaiting_approval:
             logging.warning("Retry clicked, but no failure context found.")
             return
 
         failure_log = self.orchestrator.task_awaiting_approval.get("failure_log", "No failure log available.")
 
-        # Set UI to busy state and transition to the Genesis processing view
+        # 1. Prepare UI: Set phase to GENESIS so the GenesisPage is active
         self.setEnabled(False)
         self.statusBar().showMessage("Attempting to generate a new automated fix plan...")
         self.orchestrator.set_phase("GENESIS")
-        self.update_ui_after_state_change() # This shows the Genesis Page's processing view
+        self.update_ui_after_state_change()
 
-        # Switch the Genesis page to its processing view to show the live log
+        # 2. Force Genesis Page to "Live Log" view & Clear previous logs
         self.genesis_page.ui.stackedWidget.setCurrentWidget(self.genesis_page.ui.processingPage)
         self.genesis_page.ui.logOutputTextEdit.clear()
 
-        # Start the background worker to generate the fix plan
+        # 3. Setup Smart LogBridge
+        self.log_bridge = LogBridge()
+        self.log_bridge.log_signal.connect(self.genesis_page.on_progress_update)
+
+        # Attach to root logger to capture ALL agent output
+        root_logger = logging.getLogger()
+        root_logger.addHandler(self.log_bridge)
+        # Ensure we capture INFO level logs (where agent updates live)
+        root_logger.setLevel(logging.INFO)
+
+        # 4. Start the background worker
         worker = Worker(self.orchestrator.handle_retry_fix_action, failure_log)
+
+        # Connect signals
         worker.signals.progress.connect(self.genesis_page.on_progress_update)
         worker.signals.result.connect(self._handle_retry_fix_result)
         worker.signals.error.connect(self._on_background_task_error)
-        worker.signals.finished.connect(self._on_background_task_finished)
+
+        # 5. Cleanup Logic (Define wrapper to detach logger safely)
+        def cleanup_task():
+            if hasattr(self, 'log_bridge') and self.log_bridge:
+                logging.getLogger().removeHandler(self.log_bridge)
+                self.log_bridge = None
+            self.setEnabled(True)
+            self.statusBar().clearMessage()
+
+        worker.signals.finished.connect(cleanup_task)
+        # Call genesis finished handler to show "Continue" button
         worker.signals.finished.connect(self.genesis_page._on_task_finished)
+
         self.threadpool.start(worker)
 
     def on_retry_environment_failure(self):
@@ -2337,9 +2461,11 @@ class KlyveMainWindow(QMainWindow):
 
     def _handle_retry_fix_result(self, result):
         """Handles the successful completion of the background retry/fix-plan task."""
-        # The main UI update is handled by the generic _on_background_task_finished
-        # slot. This handler is primarily for logging success.
         logging.info("Successfully completed the retry/fix-plan generation task.")
+
+        # Trigger 'Task Completed' screen on Genesis Page
+        if hasattr(self, 'genesis_page'):
+            self.genesis_page._handle_development_result((True, "Automated fix applied successfully."))
 
     def _handle_test_run_error(self, error_tuple):
         """Handles a system error from the test run worker."""

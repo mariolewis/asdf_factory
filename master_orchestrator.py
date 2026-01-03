@@ -998,7 +998,7 @@ class MasterOrchestrator:
                 # Generate the Technical Spec based on the newly created App Spec
                 from agents.agent_tech_stack_proposal import TechStackProposalAgent
                 tech_agent = TechStackProposalAgent(self.llm_service)
-                tech_spec = tech_agent.propose_stack(app_spec, "Windows")
+                tech_spec = tech_agent.propose_stack(app_spec, "Cross-platform")
                 if not tech_spec or tech_spec.strip().startswith("Error:"):
                     raise ValueError(f"The AI failed to synthesize a Technical Specification. Details: {tech_spec}")
 
@@ -4464,13 +4464,14 @@ class MasterOrchestrator:
         fix_successful = self._attempt_automated_fix(failure_log, **kwargs)
 
         if fix_successful:
-            logging.info("Automated fix was successful. Now re-attempting the original task...")
-            if progress_callback:
-                progress_callback(("SUCCESS", "Automated fix was successful. Now re-attempting the original task..."))
+            logging.info("Automated fix was successful. Waiting for user confirmation.")
+            #if progress_callback:
+            #    progress_callback(("SUCCESS", "Automated fix was successful. Now re-attempting the original task..."))
 
             # Now that the fix is in, re-run the *original* task that failed.
             # This will run the task at self.active_plan_cursor.
-            return self.handle_proceed_action(progress_callback=progress_callback, **kwargs)
+            #return self.handle_proceed_action(progress_callback=progress_callback, **kwargs)
+            return True
         else:
             # The fix attempt failed. _attempt_automated_fix already called escalate_for_manual_debug,
             # so the phase is already DEBUG_PM_ESCALATION.
@@ -4708,7 +4709,7 @@ class MasterOrchestrator:
                 None,
                 "Sprint Paused",
                 "The sprint has been paused and its state has been saved. The project will now be closed.\n\n"
-                "After making your manual fixes, please reload the project from the 'Load Exported Project' screen to continue."
+                "After making your manual fixes, please reopen the project to continue."
             )
         except Exception as e:
             logging.error(f"Failed to properly pause sprint: {e}", exc_info=True)
@@ -4735,6 +4736,7 @@ class MasterOrchestrator:
                 raise Exception("The Triage Agent could not form a hypothesis to create a fix plan.")
 
             if progress_callback: progress_callback(("INFO", f"Triage hypothesis: {hypothesis}"))
+            if progress_callback: progress_callback(("INFO", "Generating detailed code fix plan... (This may take roughly 30 seconds)"))
 
             if not self._plan_and_execute_fix(hypothesis, {}):
                 raise Exception("The AI was unable to generate a valid new fix plan after a manual retry.")
@@ -4758,9 +4760,14 @@ class MasterOrchestrator:
 
             # If the loop completes without error, the fix was applied
             logging.info("Automated fix plan executed successfully.")
+            # Advance cursor to skip the original failed task
+            if self.active_plan and self.active_plan_cursor < len(self.active_plan):
+                self.active_plan_cursor += 1
             self.is_in_fix_mode = False
             self.fix_plan = None
             self.fix_plan_cursor = 0
+            if progress_callback:
+                progress_callback(("COMPLETED", "Automated fix applied successfully."))
             return True # Signal that the fix was applied
 
         except Exception as e:
@@ -6752,12 +6759,69 @@ class MasterOrchestrator:
         if not self.llm_service:
             raise Exception("Cannot plan fix: LLM Service is not configured.")
 
-        relevant_code = next(iter(context_package.values()), "No code context available.")
+        # 1. Fetch Project Details correctly (Fixes 'get_step_output' crash)
+        project_row = self.db_manager.get_project_by_id(self.project_id)
+        if not project_row:
+             raise Exception(f"Project {self.project_id} not found in DB.")
 
+        # 2. Logic to Resolve Relevant Code (Auto-Discovery)
+        relevant_code = next(iter(context_package.values()), "")
+
+        # If no code context was passed, try to find it from the failure log
+        if not relevant_code and self.task_awaiting_approval:
+            try:
+                # We need the Triage Agent to parse the stack trace
+                from agents.agent_triage_app_target import TriageAgent_AppTarget
+                triage = TriageAgent_AppTarget(self.llm_service, self.db_manager)
+
+                # Extract file paths from the error log
+                failure_desc = self.task_awaiting_approval.get("failure_log", "")
+                files = triage.parse_stack_trace(failure_desc)
+
+                if files:
+                    from pathlib import Path
+                    # CORRECTED: Get path from the row, not a non-existent method
+                    project_root = Path(project_row['project_root_folder'])
+                    target_file = files[0]
+                    full_path = project_root / target_file
+
+                    if full_path.exists():
+                        file_content = full_path.read_text(encoding='utf-8')
+                        relevant_code = (
+                            f"File Path: {target_file}\n"  # Explicitly label the path
+                            f"Content:\n{file_content}\n"
+                            f"IMPORTANT: When generating the fix task, the 'component_file_path' MUST be exactly '{target_file}'."
+                        )
+                        logging.info(f"Auto-discovered context from {target_file}")
+            except Exception as e:
+                logging.warning(f"Auto-discovery of code context failed: {e}")
+
+        if not relevant_code:
+            relevant_code = "No code context available."
+
+        # 3. Logic to Resolve Tech Spec (Fixes OS Hallucination)
+        # CORRECTED: Access the 'tech_spec_text' column directly
+        tech_spec = project_row['tech_spec_text']
+
+        if not tech_spec:
+            # Fallback for Direct-to-Dev path
+            import os
+            host_os = "Windows" if os.name == 'nt' else "Linux/Mac"
+            tech_spec = (
+                f"Host Environment: {host_os}. "
+                "Constraint: Do NOT use OS-specific tools like sed, awk, or sudo if on Windows. "
+                "Programming Language: Infer strictly from file extensions in the Root Cause/Error Log."
+            )
+
+        # 4. Call the Agent
+        from agents.agent_fix_planner_app_target import FixPlannerAgent_AppTarget
         planner_agent = FixPlannerAgent_AppTarget(llm_service=self.llm_service)
+
+        # Pass the gathered context (Tech Spec + Auto-Discovered Code)
         fix_plan_str = planner_agent.create_fix_plan(
             root_cause_hypothesis=failure_log,
-            relevant_code=relevant_code
+            relevant_code=relevant_code,
+            tech_spec=tech_spec
         )
 
         try:
@@ -6768,12 +6832,10 @@ class MasterOrchestrator:
             if not parsed_plan:
                 raise Exception("FixPlannerAgent returned an empty plan.")
 
-            # --- THIS IS THE FIX ---
             # Load the new plan into the separate fix track and activate fix mode.
             self.fix_plan = parsed_plan
             self.fix_plan_cursor = 0
             self.is_in_fix_mode = True
-            # --- END OF FIX ---
 
             self.set_phase("GENESIS")
             logging.info(f"Successfully generated a fix plan with {len(parsed_plan)} steps. Entering fix mode.")
