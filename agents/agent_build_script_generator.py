@@ -9,7 +9,12 @@ technology stack by querying the LLM.
 import logging
 import json
 import textwrap
+import os
+import sys
 from typing import Tuple, Optional
+# Add parent directory to path to locate watermarker
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from watermarker import generate_watermark
 from llm_service import LLMService, parse_llm_json
 import vault
 
@@ -54,6 +59,10 @@ class BuildScriptGeneratorAgent:
             content = result.get("content")
 
             if filename and content:
+                # Append watermark to content
+                watermark = generate_watermark(filename)
+                if watermark:
+                    content += watermark
                 return filename, content
             else:
                 logging.error("LLM output was missing 'filename' or 'content' keys.")

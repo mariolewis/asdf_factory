@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 import logging
 import git
+import watermarker
 from agents.agent_verification_app_target import VerificationAgent_AppTarget
 from llm_service import LLMService
 
@@ -92,16 +93,18 @@ class BuildAndCommitAgentAppTarget:
             if sanitized_component_path:
                 component_path = self.repo_path / sanitized_component_path
                 component_path.parent.mkdir(parents=True, exist_ok=True)
-                component_path.write_text(component_code, encoding='utf-8')
+                component_path.write_text(component_code, encoding='utf-8', newline='\n')
                 files_to_commit.append(str(sanitized_component_path))
                 logging.info(f"Wrote source code to {component_path}")
+                watermarker.apply_watermark(str(component_path))
 
             if sanitized_test_path:
                 test_path = self.repo_path / sanitized_test_path
                 test_path.parent.mkdir(parents=True, exist_ok=True)
-                test_path.write_text(test_code, encoding='utf-8')
+                test_path.write_text(test_code, encoding='utf-8', newline='\n')
                 files_to_commit.append(str(sanitized_test_path))
                 logging.info(f"Wrote unit tests to {test_path}")
+                watermarker.apply_watermark(str(test_path))
 
             logging.info(f"Running test suite with command: '{test_command}'")
             verification_agent = VerificationAgent_AppTarget(llm_service=llm_service)

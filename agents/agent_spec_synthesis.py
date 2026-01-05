@@ -8,6 +8,9 @@ import os
 import subprocess
 import re
 import sys
+# Add parent directory to path to locate watermarker
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from watermarker import apply_watermark
 from gui.utils import render_markdown_to_html
 from pathlib import Path
 from PySide6.QtGui import QTextDocument
@@ -423,7 +426,9 @@ class SpecSynthesisAgent:
 
         # Save .md file (This should save the raw, headed markdown as it's a .md file)
         md_path = docs_dir / f"{file_base_name}.md"
+        # Apply watermark before saving
         md_path.write_text(final_content_for_files, encoding='utf-8')
+        apply_watermark(str(md_path))
         logging.info(f"Saved {doc_type_name} to {md_path}")
 
         # Save .docx file

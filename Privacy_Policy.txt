@@ -18,12 +18,18 @@ Crash Reports: If you voluntarily submit a bug report via email or the website, 
 
 Website Data: If you download the Software from my website, standard web server logs (IP address, browser type) may be collected for security and download tracking purposes.
 
+Transparency Note: Metadata indicating that files are AI-generated may be embedded within the files you create, solely for the purpose of regulatory compliance (e.g., EU AI Act), but this metadata does not contain personally identifiable information (PII).
+
 3. DATA YOU TRANSMIT TO THIRD PARTIES (AI PROVIDERS):
 To function as an AI-powered developer, the Software transmits data to third-party Large Language Model (LLM) providers.
 
 What is sent: Code snippets, file structures, documentation text, and error logs from your active project.
 
-Who receives it: The specific LLM provider you configured in the "Settings" menu. Depending on your configuration, this may include OpenAI, Google Gemini, Anthropic, Replicate, or DeepSeek. Please note that selecting certain providers (e.g., DeepSeek) may involve data transmission to servers located outside your primary jurisdiction.
+Who receives it: The specific LLM provider you configured in the "Settings" menu. Depending on your configuration, this may include OpenAI, Google Gemini, Anthropic, Replicate, DeepSeek or any other. Please note that selecting certain providers (e.g., DeepSeek) may involve data transmission to servers located outside your primary jurisdiction.
+
+Model Training & Your Data: I (the Developer) do not access, view, or store your project data. Consequently, I do not and cannot use your data to train or fine-tune any AI model of my own.
+
+Third-Party Providers: Whether the third-party LLM provider (e.g., OpenAI, Google, or any other) uses your data for training depends on their specific API policies and the tier of API access you have purchased from them. You are responsible for reviewing their data usage policies regarding API submissions.
 
 Your Control: You control this transmission by providing (or revoking) your API key.
 

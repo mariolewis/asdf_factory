@@ -5,8 +5,13 @@ import textwrap
 import json
 import ast
 import re
+import os
+import sys
 from pathlib import Path
 from typing import Tuple, Optional
+# Add parent directory to path to locate watermarker
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from watermarker import apply_watermark
 
 from llm_service import LLMService, parse_llm_json
 from klyve_db_manager import KlyveDBManager
@@ -91,7 +96,9 @@ class SprintIntegrationTestAgent:
             tests_dir = project_root / "tests"
             tests_dir.mkdir(exist_ok=True, parents=True)
             temp_test_path = tests_dir / "sprint_integration_temp_test.py"
-            temp_test_path.write_text(script_code, encoding='utf-8')
+            temp_test_path.write_text(script_code, encoding='utf-8', newline='\n')
+            # Apply watermark to the saved file
+            apply_watermark(str(temp_test_path))
             logging.info(f"Saved temporary integration test to: {temp_test_path}")
 
             relative_script_path = str(temp_test_path.relative_to(project_root)).replace('\\', '/')

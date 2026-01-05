@@ -1,6 +1,11 @@
 # agents/agent_dockerization.py
 import logging
 import textwrap
+import os
+import sys
+# Add parent directory to path to locate watermarker
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from watermarker import generate_watermark
 
 from llm_service import LLMService
 import vault
@@ -30,7 +35,12 @@ class DockerizationAgent:
             response_text = self.llm_service.generate_text(prompt, task_complexity="simple")
             if not response_text or response_text.strip().startswith("Error:"):
                 raise ValueError(f"LLM returned an error or empty response: {response_text}")
-            return response_text.strip()
+            # Append watermark before returning
+            content = response_text.strip()
+            watermark = generate_watermark("Dockerfile")
+            if watermark:
+                content += watermark
+            return content
         except Exception as e:
             logging.error(f"Failed to generate Dockerfile: {e}", exc_info=True)
             return None

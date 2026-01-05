@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QMessageBox, QInputDialog, QLineEdit, QApplication
 from PySide6.QtGui import Qt, QCursor
 from io import BytesIO # For image data
 
+from watermarker import apply_watermark
 from agents.agent_project_bootstrap import ProjectBootstrapAgent
 from agents.agent_integration_pmt import IntegrationAgentPMT
 from agents.agent_automated_ui_test_script import AutomatedUITestScriptAgent
@@ -1455,7 +1456,9 @@ class MasterOrchestrator:
 
             # 2. Save the HEADED version to the Markdown file. (Original 402)
             ux_spec_file_path_md = docs_dir / "ux_ui_specification.md"
+            # Apply watermark before saving
             ux_spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
+            apply_watermark(str(ux_spec_file_path_md))
             self._commit_document(ux_spec_file_path_md, "docs: Finalize UX/UI Specification (Markdown)")
 
             # 3. Generate and save the formatted .docx file. (Original 403)
@@ -1742,7 +1745,9 @@ class MasterOrchestrator:
 
                 # Save the HEADED version to the Markdown file for human review.
                 spec_file_path_md = docs_dir / "application_spec.md"
+                # Apply watermark before saving
                 spec_file_path_md.write_text(final_spec_markdown, encoding="utf-8")
+                apply_watermark(str(spec_file_path_md))
                 self._commit_document(spec_file_path_md, "docs: Finalize Application Specification (Markdown)")
 
                 # Generate and save the formatted .docx file for human use,
@@ -2558,7 +2563,9 @@ class MasterOrchestrator:
 
                 # Save the HEADED version to the Markdown file.
                 spec_file_path_md = docs_dir / "technical_spec.md"
+                # Apply watermark before saving
                 spec_file_path_md.write_text(final_tech_spec_markdown, encoding="utf-8")
+                apply_watermark(str(spec_file_path_md))
                 self._commit_document(spec_file_path_md, "docs: Finalize Technical Specification (Markdown)")
 
                 # Generate and save the formatted .docx file using the PURE content.
@@ -2624,8 +2631,9 @@ class MasterOrchestrator:
 
                 md_artifact_name = f"coding_standard_{safe_tech_name}.md"
                 standard_file_path_md = docs_dir / md_artifact_name
-
+                # Apply watermark before saving
                 standard_file_path_md.write_text(standard_content, encoding="utf-8")
+                apply_watermark(str(standard_file_path_md))
 
                 self._commit_document(standard_file_path_md, f"docs: Add coding standard for {technology} (Markdown)")
 
@@ -3056,7 +3064,9 @@ class MasterOrchestrator:
 
             # Use a specific filename to ensure consistency
             plan_path_md = docs_dir / "manual_ui_test_plan.md"
+            # Apply watermark before saving
             plan_path_md.write_text(final_plan_with_header, encoding="utf-8") # Save raw MD to the .md file
+            apply_watermark(str(plan_path_md))
 
             report_generator = ReportGeneratorAgent(self.db_manager)
             docx_bytes = report_generator.generate_text_document_docx(
@@ -3630,7 +3640,9 @@ class MasterOrchestrator:
                     )
                     db.update_project_field(self.project_id, doc_key, updated_content)
                     doc_path = docs_dir / file_name
+                    # Apply watermark before saving
                     doc_path.write_text(updated_content, encoding="utf-8")
+                    apply_watermark(str(doc_path))
                     self._commit_document(doc_path, f"docs: Update {doc_name} after sprint {self.active_sprint_id}")
                     if progress_callback: progress_callback(("SUCCESS", f"Successfully updated the {doc_name}."))
 
@@ -3794,7 +3806,9 @@ class MasterOrchestrator:
 
             # Save the HEADED version to the Markdown file.
             test_plan_file_path_md = docs_dir / "ui_test_plan.md"
+            # Apply watermark before saving
             test_plan_file_path_md.write_text(final_ui_test_plan_with_header, encoding="utf-8")
+            apply_watermark(str(test_plan_file_path_md))
             self._commit_document(test_plan_file_path_md, "docs: Add UI Test Plan (Markdown)")
 
             # Generate and save the formatted .docx file using the PURE content.
