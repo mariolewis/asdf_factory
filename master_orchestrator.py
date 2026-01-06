@@ -4860,9 +4860,109 @@ class MasterOrchestrator:
             if progress_callback: progress_callback(("INFO", "Scanning for test files to build plan..."))
             test_files_content = {}
             # A simple glob for common test patterns. A future enhancement could make this language-specific.
-            for pattern in ['test_*.py', '*_test.py', '*Test.java', '*Tests.cs']:
+            for pattern in ['test_*.py', '*_test.py', '*Test.java', '*Tests.cs',
+                            # Python (additional patterns)
+                            'test*.py', 'tests.py', '*_tests.py', 'test_*.py',
+
+                            # JavaScript/TypeScript
+                            '*.test.js', '*.spec.js', '*.test.ts', '*.spec.ts',
+                            '*.test.jsx', '*.spec.jsx', '*.test.tsx', '*.spec.tsx',
+
+                            # Java (additional patterns)
+                            '*Test.java', '*Tests.java', '*TestCase.java', '*IT.java',  # IT = Integration Test
+
+                            # C/C++ test patterns
+                            'test_*.c', '*_test.c', '*Test.c', '*_tests.c',
+                            'test_*.cpp', '*_test.cpp', '*Test.cpp', '*_tests.cpp',
+                            'test_*.cc', '*_test.cc', '*Test.cc',
+                            'test_*.cxx', '*_test.cxx', '*Test.cxx',
+
+                            # GoogleTest convention
+                            '*_unittest.cc', '*_unittest.cpp',
+
+                            # Header files with test code
+                            'test_*.h', '*_test.h',
+                            'test_*.hpp', '*_test.hpp',
+
+                            # C# (additional patterns)
+                            '*Test.cs', '*Tests.cs', '*Spec.cs', '*Specs.cs',
+
+                            # Go
+                            '*_test.go',
+
+                            # Rust
+                            'test_*.rs', '*_test.rs', 'tests.rs',
+
+                            # PHP
+                            '*Test.php', '*_test.php', 'test_*.php',
+
+                            # Ruby
+                            '*_test.rb', 'test_*.rb', '*_spec.rb', 'spec_*.rb',
+
+                            # Kotlin
+                            '*Test.kt', '*Tests.kt', '*Spec.kt',
+
+                            # Swift
+                            '*Tests.swift', '*Test.swift', '*Spec.swift',
+
+                            # Scala
+                            '*Test.scala', '*Spec.scala', '*Suite.scala',
+
+                            # Dart/Flutter
+                            '*_test.dart',
+
+                            # Elixir
+                            '*_test.exs',
+                        ]:
                 # Search in common locations like 'tests/' or 'src/tests/'
-                for test_dir in [project_root / 'tests', project_root / 'src' / 'tests']:
+                for test_dir in [   project_root / 'tests', project_root / 'src' / 'tests',
+
+                                    # Standard test directories
+                                    project_root / 'test',          # Singular (common in Go, Rust)
+                                    project_root / '__tests__',     # JavaScript/React convention
+                                    project_root / 'spec',          # Ruby/RSpec convention
+                                    project_root / 'specs',         # Alternative spelling
+
+                                    # Nested in src
+                                    project_root / 'src' / 'test',
+                                    project_root / 'src' / '__tests__',
+
+                                    # Language-specific conventions
+                                    project_root / 'test' / 'unit',
+                                    project_root / 'tests' / 'unit',
+                                    project_root / 'test' / 'integration',
+                                    project_root / 'tests' / 'integration',
+
+                                    # C/C++ specific paths
+                                    project_root / 'tests',
+                                    project_root / 'test',
+                                    project_root / 'unittest',      # Common in C/C++ projects
+                                    project_root / 'unittests',
+                                    project_root / 'gtests',        # GoogleTest
+                                    project_root / 'src' / 'tests',
+                                    project_root / 'src' / 'test',
+
+                                    # Java/Maven structure
+                                    project_root / 'src' / 'test' / 'java',
+                                    project_root / 'src' / 'test' / 'kotlin',
+
+                                    # .NET structure
+                                    project_root / 'test' / 'unit',
+                                    project_root / 'test' / 'integration',
+                                    project_root.parent / f'{project_root.name}.Tests',  # Parallel test project
+
+                                    # Go convention
+                                    project_root,  # Go tests live alongside source files
+
+                                    # Python alternatives
+                                    project_root / 'testing',
+                                    project_root / 'unit_tests',
+
+                                    # Frontend specific
+                                    project_root / 'src' / 'components' / '__tests__',  # Component tests
+                                    project_root / 'cypress',         # Cypress E2E tests
+                                    project_root / 'e2e',            # End-to-end tests
+                                ]:
                     if test_dir.exists():
                         for test_file in test_dir.rglob(pattern):
                             relative_path = test_file.relative_to(project_root)

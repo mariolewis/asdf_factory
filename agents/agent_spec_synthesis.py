@@ -63,13 +63,186 @@ class SpecSynthesisAgent:
         # Stage 2: Keyword Heuristic Analysis [cite: 199]
         logging.info("DB Detection Stage 2: Searching for database keywords in source files...")
         db_keywords = [
-            'sqlalchemy', 'sqlite3', 'psycopg2', 'mysql.connector',
-            'mongoose', 'sequelize', 'knex', 'typeorm', 'prisma',
-            'system.data.sqlclient', 'entityframeworkcore', 'dapper',
-            'create table', 'select from', 'insert into', 'update set',
-            'database', 'dbconnection', 'sqlconnection', 'jdbctemplate'
+            # Python ORM/Database Libraries
+            'sqlalchemy', 'sqlite3', 'psycopg2', 'pymongo', 'pymysql', 'mysqlclient',
+            'django.db', 'peewee', 'tortoise', 'pony.orm', 'sqlmodel', 'databases',
+            'asyncpg', 'motor', 'redis.py', 'cassandra-driver', 'cx_oracle',
+            'pyodbc', 'aiomysql', 'aiopg',
+
+            # JavaScript/TypeScript ORM/Database Libraries
+            'mongoose', 'sequelize', 'knex', 'typeorm', 'prisma', 'mongodb',
+            'pg', 'mysql2', 'better-sqlite3', 'node-postgres', 'bookshelf',
+            'objection', 'waterline', 'mikro-orm', 'drizzle', 'kysely',
+
+            # Java Database Libraries
+            'jdbc', 'hibernate', 'jpa', 'mybatis', 'spring.data', 'jdbctemplate',
+            'connection.preparestatement', 'entitymanager', 'repository',
+
+            # .NET Database Libraries
+            'system.data.sqlclient', 'entityframeworkcore', 'entityframework',
+            'dapper', 'nhibernate', 'ado.net', 'microsoft.data.sqlclient',
+            'system.data.sqlite', 'npgsql', 'mysql.data',
+
+            # Go Database Libraries
+            'database/sql', 'gorm', 'sqlx', 'pgx', 'go-redis', 'mongo-go-driver',
+            'db.query', 'db.exec',
+
+            # Rust Database Libraries
+            'diesel', 'sqlx', 'tokio-postgres', 'rusqlite', 'sea-orm',
+
+            # PHP Database Libraries
+            'mysqli', 'pdo', 'eloquent', 'doctrine', 'propel',
+
+            # Ruby Database Libraries
+            'activerecord', 'sequel', 'datamapper', 'mongoid',
+
+            # Python async database
+            'tortoise-orm', 'piccolo', 'encode/databases',
+
+            # Cloud/Managed Database Services
+            'dynamodb', 'cosmosdb', 'firestore', 'supabase', 'planetscale',
+            'aws.rds', 'azure.sql', 'cloudsql',
+
+            # NoSQL Databases
+            'mongodb', 'cassandra', 'couchdb', 'neo4j', 'redis', 'memcached',
+            'elasticsearch', 'influxdb', 'timescaledb', 'clickhouse',
+
+            # SQL Keywords (case-insensitive matches)
+            'create table', 'create database', 'alter table', 'drop table',
+            'select ', 'select*', 'from ', 'where ', 'join ',
+            'insert into', 'update ', 'delete from',
+            'group by', 'order by', 'having ',
+            'inner join', 'left join', 'right join', 'outer join',
+            'primary key', 'foreign key', 'unique constraint',
+            'create index', 'begin transaction', 'commit', 'rollback',
+
+            # Database Connection Patterns
+            'database', 'dbconnection', 'sqlconnection', 'connection.open',
+            'connection.close', 'createconnection', 'getconnection',
+            'connectionstring', 'datasource', 'db.connect', 'connectdb',
+
+            # Query Builders
+            'query(', 'execute(', 'executesql', 'rawquery', 'queryraw',
+            'prepared statement', 'preparestatement', 'executemany',
+
+            # Migration Tools
+            'alembic', 'flyway', 'liquibase', 'knex migrate', 'prisma migrate',
+            'rails db:migrate', 'django.db.migrations',
+
+            # Database Schema
+            'schema.', 'model.', 'entity.', 'table.', 'collection.',
+            '@entity', '@table', '@column', 'models.model',
+
+            # Connection Pools
+            'connection pool', 'pooling', 'dbpool', 'hikaricp', 'c3p0',
+
+            # Specific Database Clients
+            'pg.client', 'pg.pool', 'mysql.createconnection', 'sqlite.database',
+            'mongoclient', 'redisclient', 'cassandraclient',
+
+            # Transaction Management
+            'begintransaction', 'committransaction', 'session.commit',
+            'transaction.rollback', 'with transaction', 'db.transaction',
+
+            # Common Database File Extensions (for file-based DBs)
+            '.db', '.sqlite', '.sqlite3', '.mdb', '.accdb',
+
+            # iOS (Swift/Objective-C)
+            'coredata', 'fmdb', 'realm', 'sqlite3.h', 'nscoredata', 'nsfetchrequest',
+            'nsmanagedcontext', 'grdb', 'sqlcipher',
+
+            # Android (Java/Kotlin)
+            'room', 'sqlitedatabase', 'contentprovider', 'contentresolver',
+            'roomdatabase', 'android.database', 'sqliteopenhelper', 'rawquery',
+            'realm.android', 'greendao', 'objectbox',
+
+            # Flutter/Dart
+            'sqflite', 'drift', 'moor', 'hive', 'isar', 'sembast',
+
+            # React Native
+            'realm-react', 'asyncstorage', 'watermelondb', 'expo-sqlite',
+
+            # C/C++ Database Libraries
+            'libpq', 'libmysqlclient', 'sqlite3_', 'odbc', 'sqlapi',
+            'ocilib', 'soci', 'otl', 'mysql_', 'pqxx', 'rocksdb',
+            'leveldb', 'lmdb', 'berkeleydb', 'unixodbc',
         ]
-        source_extensions = ['.py', '.js', '.ts', '.cs', '.java', '.go', '.rs', '.php', '.rb', '.cpp', '.c', '.swift', '.kt', '.m', '.scala']
+        source_extensions = [
+            # Backend Languages (most likely to have DB code)
+            '.py',      # Python
+            '.js',      # JavaScript
+            '.ts',      # TypeScript
+            '.java',    # Java
+            '.cs',      # C#
+            '.go',      # Go
+            '.rs',      # Rust
+            '.php',     # PHP
+            '.rb',      # Ruby
+            '.kt',      # Kotlin
+            '.scala',   # Scala
+
+            # Less common but realistic backend languages
+            '.ex',      # Elixir (Phoenix framework)
+            '.exs',     # Elixir scripts
+            '.clj',     # Clojure
+            '.groovy',  # Groovy
+
+            # C/C++ (sometimes used for DB drivers or embedded DBs)
+            '.cpp',
+            '.c',
+            '.cc',
+            '.cxx',
+
+            # Mobile (may contain DB code)
+            '.swift',   # iOS
+            '.m',       # Objective-C
+            '.dart',    # Flutter
+
+            # C/C++ headers (important for DB driver includes)
+            '.h',
+            '.hpp',
+            '.hxx',
+
+            # Xamarin (cross-platform mobile)
+            '.xaml.cs',
+
+            # React Native
+            '.jsx',
+            '.tsx',
+
+            # SQL files themselves
+            '.sql',
+            '.psql',
+            '.plsql',
+
+            # Configuration files that might contain DB connection strings
+            '.env',         # Environment variables
+            '.config',      # .NET configs
+            '.properties',  # Java properties
+            '.yml',         # YAML configs
+            '.yaml',
+            '.toml',        # TOML configs
+            '.ini',         # INI files
+            '.json',        # JSON configs (package.json, appsettings.json)
+
+            # Server-side templates (may contain DB queries)
+            '.jsp',     # Java Server Pages
+            '.aspx',    # ASP.NET
+            '.erb',     # Ruby ERB
+            '.ejs',     # EJS (Node.js)
+            '.jinja',   # Jinja (Python)
+            '.jinja2',
+            '.twig',    # Twig (PHP)
+
+            # Framework-specific
+            '.prisma',      # Prisma schema
+            '.graphql',     # GraphQL (often backed by DB)
+            '.gql',
+
+            # Build/Migration files
+            '.gradle',      # Gradle (may have DB dependencies)
+            '.sbt',         # SBT (Scala Build Tool)
+        ]
         candidate_files = {}
 
         for dirpath, _, filenames in os.walk(project_root):
