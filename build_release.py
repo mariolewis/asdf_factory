@@ -91,7 +91,7 @@ def run_nuitka(staged_root):
         "--include-data-dir=data/templates=data/templates",
         "--windows-icon-from-ico=gui/icons/klyve_logo.ico",
 
-        # Use 'force' for debugging crashes, 'disable' for release
+        # Use 'force' for debugging crashes, 'disable' for release. Changed to force on 14-01. Change back to disable to undo.
         "--windows-console-mode=disable",
 
         # --- LGPL COMPLIANCE: EXCLUDE QT ---
@@ -99,6 +99,9 @@ def run_nuitka(staged_root):
         "--nofollow-import-to=PySide6",
         "--nofollow-import-to=shiboken6",
         #"--nofollow-import-to=google.genai",
+
+        # NEW: Exclude Plotly so we can side-load it manually. Remove this to undo last change.
+        "--nofollow-import-to=plotly",
 
         # --- INCLUSIONS (Keep Critical Deps) ---
         "--include-module=master_orchestrator",
@@ -131,8 +134,8 @@ def run_nuitka(staged_root):
         "--include-module=markdown",
         "--include-module=bs4",
         "--include-module=graphviz",
-        "--include-module=plotly",
-        "--include-module=kaleido",
+        #"--include-package=plotly", (add this back, but as module)
+        #"--include-package=kaleido", (add this back, but as module)
         "--include-module=PIL",
         "--include-module=pypdf",
 
@@ -192,6 +195,56 @@ def bundle_google_genai(project_root):
 
     shutil.copytree(src_path, dst_path)
     print(f"✅ Copied google.genai from {src_path}")
+
+def bundle_plotly(project_root):
+    """
+    Manually copies plotly and its hidden dependencies (_plotly_utils, kaleido, tenacity) 
+    to the dist folder. This fixes 'ModuleNotFoundError' and enables PNG export.
+    """
+    print("--- Bundling Plotly & Dependencies (Raw Source) ---")
+
+    # We use the location of the 'plotly' package to find the site-packages root
+    try:
+        import plotly
+    except ImportError:
+        print("❌ Critical: Plotly is not installed in this environment.")
+        return
+
+    # 'site-packages' is the parent directory of the 'plotly' folder
+    site_packages = Path(plotly.__file__).parent.parent
+    
+    # These are the folders we need to copy from site-packages to dist/klyve.dist/
+    # _plotly_utils: Required by plotly to start (Fixes your specific error).
+    # kaleido: Required for saving static images (PNG).
+    # tenacity: Required by plotly for retries.
+    targets = ["plotly", "_plotly_utils", "kaleido", "tenacity"]
+
+    dist_root = DIST_DIR / "klyve.dist"
+
+    for package_name in targets:
+        src_path = site_packages / package_name
+        dst_path = dist_root / package_name
+
+        if src_path.exists():
+            # Clean old copy if it exists to ensure fresh copy
+            if dst_path.exists():
+                shutil.rmtree(dst_path)
+            
+            try:
+                shutil.copytree(src_path, dst_path, ignore=shutil.ignore_patterns('__pycache__'))
+                print(f"✅ Copied {package_name}")
+            except Exception as e:
+                print(f"❌ Failed to copy {package_name}: {e}")
+        else:
+            # Check if it might be a single .py file instead of a folder
+            src_file = site_packages / f"{package_name}.py"
+            if src_file.exists():
+                 shutil.copy2(src_file, dist_root / f"{package_name}.py")
+                 print(f"✅ Copied {package_name}.py module")
+            else:
+                 # Kaleido is optional (only for PNGs), others are critical
+                 level = "⚠️ Warning" if package_name == "kaleido" else "❌ Critical"
+                 print(f"{level}: Could not find '{package_name}' in {site_packages}")
 
 def bundle_dependencies(project_root):
     """Copies the Graphviz sidecar."""
@@ -368,6 +421,9 @@ def main():
     bundle_dependencies(project_root)
     bundle_gui_assets(project_root)
     #bundle_google_genai(project_root)
+
+    # Added the below for Plotly. Remove to roll back.
+    bundle_plotly(project_root)
 
     # 3. Run LGPL Cleanup
     post_build_cleanup(DIST_DIR / "klyve.dist")

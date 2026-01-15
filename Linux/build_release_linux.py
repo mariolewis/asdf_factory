@@ -89,6 +89,7 @@ def run_nuitka(staged_root):
         "--nofollow-import-to=shiboken6",
         # "--nofollow-import-to=google",
         # "--nofollow-import-to=google.genai",
+        "--nofollow-import-to=plotly",
 
         # --- INCLUSIONS (Matching Windows Stability) ---
         "--include-module=master_orchestrator",
@@ -125,8 +126,8 @@ def run_nuitka(staged_root):
         "--include-module=markdown",
         "--include-module=bs4",
         "--include-module=graphviz",
-        "--include-module=plotly",
-        "--include-module=kaleido",
+        #"--include-module=plotly",
+        #"--include-module=kaleido",
         "--include-module=PIL",
         "--include-module=pypdf",
 
@@ -233,6 +234,52 @@ def bundle_gui_assets(project_root):
         dst = dist_gui / "images"
         if dst.exists(): shutil.rmtree(dst)
         shutil.copytree(src_images, dst)
+
+def bundle_plotly(project_root):
+    """
+    Manually copies plotly and its hidden dependencies (_plotly_utils, kaleido, tenacity) 
+    to the dist folder. This fixes 'ModuleNotFoundError' and enables PNG export.
+    """
+    print("--- Bundling Plotly & Dependencies (Raw Source) ---")
+
+    # We use the location of the 'plotly' package to find the site-packages root
+    try:
+        import plotly
+    except ImportError:
+        print("❌ Critical: Plotly is not installed in this environment.")
+        return
+
+    # 'site-packages' is the parent directory of the 'plotly' folder
+    site_packages = Path(plotly.__file__).parent.parent
+    
+    # These are the folders we need to copy from site-packages to dist/klyve.dist/
+    targets = ["plotly", "_plotly_utils", "kaleido", "tenacity"]
+
+    dist_root = DIST_DIR / "klyve.dist"
+
+    for package_name in targets:
+        src_path = site_packages / package_name
+        dst_path = dist_root / package_name
+
+        if src_path.exists():
+            # Clean old copy if it exists to ensure fresh copy
+            if dst_path.exists():
+                shutil.rmtree(dst_path)
+            
+            try:
+                shutil.copytree(src_path, dst_path, ignore=shutil.ignore_patterns('__pycache__'))
+                print(f"✅ Copied {package_name}")
+            except Exception as e:
+                print(f"❌ Failed to copy {package_name}: {e}")
+        else:
+            # Check if it might be a single .py file instead of a folder
+            src_file = site_packages / f"{package_name}.py"
+            if src_file.exists():
+                 shutil.copy2(src_file, dist_root / f"{package_name}.py")
+                 print(f"✅ Copied {package_name}.py module")
+            else:
+                 level = "⚠️ Warning" if package_name == "kaleido" else "❌ Critical"
+                 print(f"{level}: Could not find '{package_name}' in {site_packages}")
 
 def post_build_cleanup(dist_dir):
     """Replaces Nuitka-bundled Qt with clean system versions for LGPL."""
@@ -352,6 +399,7 @@ def main():
     # --- Bundle the skipped library ---
     # bundle_google_genai(project_root)
     # bundle_google_libs(project_root)
+    bundle_plotly(project_root)
 
     # --- Run LGPL Cleanup ---
     post_build_cleanup(DIST_DIR / "klyve.dist")

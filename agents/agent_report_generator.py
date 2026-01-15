@@ -23,8 +23,8 @@ import pandas as pd
 from datetime import datetime, timezone
 from gui.utils import format_timestamp_for_display
 from gui.rendering_utils import generate_dot_png, generate_plotly_png
-import plotly.graph_objects as go
-import plotly.io as pio
+#import plotly.graph_objects as go
+#import plotly.io as pio
 import markdown
 from bs4 import BeautifulSoup
 from PIL import Image
@@ -689,6 +689,14 @@ class ReportGeneratorAgent:
         logging.info(f"Generating Project Pulse DOCX (Plotly) for project: {project_name}")
         document = self._get_styled_document()
 
+        # Fix for graph not appearing
+        try:
+            import plotly.graph_objects as go
+        except ImportError:
+            logging.error("Plotly not found. Graphs will be skipped.")
+            go = None
+        # End of fix
+
         try:
             # --- Title ---
             timestamp_str = datetime.now(timezone.utc).isoformat()
@@ -716,17 +724,22 @@ class ReportGeneratorAgent:
                     document.add_heading("Backlog Completion Status", level=2)
 
                 if backlog_summary:
-                    labels = list(backlog_summary.keys())
-                    values = list(backlog_summary.values())
-                    fig = go.Figure(data=[go.Pie(labels=labels, values=values, textinfo='label+percent', hole=.3)])
-                    fig.update_layout(title_text='Backlog Items by Status', showlegend=False)
-                    image_bytes_io = generate_plotly_png(fig)
+                    if go:
+                    # Plotly is available: Generate the chart
+                        labels = list(backlog_summary.keys())
+                        values = list(backlog_summary.values())
+                        fig = go.Figure(data=[go.Pie(labels=labels, values=values, textinfo='label+percent', hole=.3)])
+                        fig.update_layout(title_text='Backlog Items by Status', showlegend=False)
+                        image_bytes_io = generate_plotly_png(fig)
 
-                    # CHANGED: Center the image
-                    p = document.add_paragraph()
-                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = p.add_run()
-                    run.add_picture(image_bytes_io, width=Inches(6.0))
+                        # CHANGED: Center the image
+                        p = document.add_paragraph()
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        run = p.add_run()
+                        run.add_picture(image_bytes_io, width=Inches(6.0))
+                    else:
+                        # Plotly is missing: Add text placeholder
+                        document.add_paragraph("[Chart skipped: Plotly library not loaded]", style='Normal')
                 else:
                     document.add_paragraph("No backlog status data available.", style='Normal')
             except Exception as e:
@@ -743,19 +756,24 @@ class ReportGeneratorAgent:
                     document.add_heading("Component Unit Test Status", level=2)
 
                 if test_summary:
-                    labels = list(test_summary.keys())
-                    values = list(test_summary.values())
-                    status_colors = {'PASSED': 'green', 'FAILED': 'red', 'NOT_TESTED': 'gray'}
-                    colors = [status_colors.get(label, 'blue') for label in labels]
-                    fig = go.Figure(data=[go.Bar(x=labels, y=values, marker_color=colors)])
-                    fig.update_layout(title_text='Code Components by Test Status')
-                    image_bytes_io = generate_plotly_png(fig)
+                    if go:
+                        # Plotly is available: Generate the chart
+                        labels = list(test_summary.keys())
+                        values = list(test_summary.values())
+                        status_colors = {'PASSED': 'green', 'FAILED': 'red', 'NOT_TESTED': 'gray'}
+                        colors = [status_colors.get(label, 'blue') for label in labels]
+                        fig = go.Figure(data=[go.Bar(x=labels, y=values, marker_color=colors)])
+                        fig.update_layout(title_text='Code Components by Test Status')
+                        image_bytes_io = generate_plotly_png(fig)
 
-                    # CHANGED: Center the image
-                    p = document.add_paragraph()
-                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = p.add_run()
-                    run.add_picture(image_bytes_io, width=Inches(6.0))
+                        # Center the image
+                        p = document.add_paragraph()
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        run = p.add_run()
+                        run.add_picture(image_bytes_io, width=Inches(6.0))
+                    else:
+                        # Plotly is missing: Add text placeholder
+                        document.add_paragraph("[Chart skipped: Plotly library not loaded]", style='Normal')
                 else:
                     document.add_paragraph("No component test data available.", style='Normal')
             except Exception as e:
@@ -777,11 +795,18 @@ class ReportGeneratorAgent:
 
     def generate_assessment_docx(self, analysis_data: dict, project_name: str) -> BytesIO:
         """
-        Generates a formatted .docx file for the Complexity & Risk Assessment report,
-        now including a Plotly bar chart to visualize the complexity ratings.
+        Generates a formatted .docx file for the Complexity & Risk Assessment report.
+        Safe for Nuitka builds (handles missing Plotly).
         """
         document = self._get_styled_document()
         title = f"Delivery Automation Risk Assessment: {project_name}"
+
+        # --- SAFE IMPORT: Try to load Plotly only when needed ---
+        try:
+            import plotly.graph_objects as go
+        except ImportError:
+            logging.warning("Plotly library not found. Charts will be skipped.")
+            go = None
 
         try:
             document.add_paragraph(title, style='Title')
@@ -796,7 +821,7 @@ class ReportGeneratorAgent:
             risk_data = analysis_data.get("risk_assessment", {})
             risk_level = risk_data.get("overall_risk_level", "N/A")
 
-            # Inverts risk level to confidence level (mirrors gui/delivery_assessment_page.py)
+            # Inverts risk level to confidence level
             CONFIDENCE_MAP = {
                 "Low": "High",
                 "Medium": "Medium",
@@ -819,7 +844,9 @@ class ReportGeneratorAgent:
         # --- 1. Generate and Add Plotly Chart ---
         try:
             comp_analysis = analysis_data.get("complexity_analysis", {})
-            if comp_analysis:
+            
+            # Logic: Check if we have data AND if Plotly (go) was successfully imported
+            if comp_analysis and go:
                 # Map text ratings to the 0-100 values used by the UI gauges
                 RATING_MAP = {"Low": 25, "Medium": 50, "High": 75, "Very Large": 100, "N/A": 0}
                 # Map ratings to the UI's color scheme
@@ -873,7 +900,12 @@ class ReportGeneratorAgent:
 
                 image_bytes_io = generate_plotly_png(fig)
                 document.add_picture(image_bytes_io, width=Inches(6.0))
+
+            elif comp_analysis and not go:
+                # We have data, but Plotly is missing
+                self._add_styled_paragraph(document, "[Chart skipped: Plotly library not loaded]", 'Normal')
             else:
+                # No data available
                 self._add_styled_paragraph(document, "[No complexity data available to generate chart]", 'Normal')
 
         except Exception as e:
@@ -1006,6 +1038,13 @@ class ReportGeneratorAgent:
         """
         logging.info(f"ReportGenerator: Generating Plotly burndown chart for sprint {burndown_data.get('sprint_id')}")
 
+        # Fix for graphs import sideload
+        try:
+            import plotly.graph_objects as go
+        except ImportError:
+            go = None
+        # End fix
+
         try:
             # --- Placeholder Chart Logic ---
             # Assumes burndown_data has keys like 'total', 'remaining_per_step': [total, points_step1, points_step2,...]
@@ -1059,6 +1098,13 @@ class ReportGeneratorAgent:
         """
         logging.info("ReportGenerator: Generating Plotly CFD chart image.")
 
+        # Fix for graph sideload
+        try:
+            import plotly.graph_objects as go
+        except ImportError:
+            go = None
+        # End fix
+
         try:
             # --- Placeholder Chart Logic ---
             # Assumes cfd_data contains historical counts per status per day/event
@@ -1106,6 +1152,13 @@ class ReportGeneratorAgent:
         (Placeholder implementation - needs historical data)
         """
         logging.info("ReportGenerator: Generating Plotly code quality trend chart image.")
+
+        # Fix for graphs import sideload
+        try:
+            import plotly.graph_objects as go
+        except ImportError:
+            go = None
+        # End fix
 
         try:
             # --- Placeholder Chart Logic ---
