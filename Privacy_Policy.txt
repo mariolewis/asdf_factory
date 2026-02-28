@@ -1,48 +1,43 @@
-PRIVACY POLICY FOR KLYVE Version 1.0 (Beta) Last Updated: 08-Dec-2025
+PRIVACY POLICY FOR KLYVE
+Version 1.1 (Open Source) | Last Updated: 28 February 2026
 
-1. MY "LOCAL-FIRST" PROMISE: 
-I, Mario J. Lewis ("Developer"), believe your code and project data belong to you. Klyve ("the Software") is designed as a Local-First application. This means:
+1. THE "LOCAL-FIRST" PROMISE
+I, Mario J. Lewis ("Developer"), believe your code and project data belong entirely to you. Klyve is designed as a Local-First application, ensuring that:
 
-No Cloud Storage: I do not operate any cloud server to upload and store your project source code, specifications, or planning documents from your local environment.
+No Cloud Storage: The Developer does not operate any cloud servers to upload, store, or monitor your project source code, specifications, or planning documents.
 
 Local Processing: All file generation, database management, and logic processing occur locally on your machine.
 
-Direct Connection: When AI features are used, the Software connects directly from your machine to the AI provider (e.g., OpenAI, Google) using the API key you provide. Your data does not pass through any server owned or operated by the Developer.
+Direct Connection: When AI features are used, the Software connects directly from your machine to the AI provider (e.g., OpenAI, Google, Anthropic) using the API key you provide. Your data does not pass through any server owned or operated by the Developer.
 
-2. DATA COLLECTED:
-Since the Software runs locally, data collection is minimal:
+2. DATA MINIMALISM
+Since the Software runs locally, data collection is non-existent to minimal:
 
-Usage Data: I do not collect telemetry or usage data in this version of the Software.
+No Telemetry: This version of the Software does not collect usage data, tracking metrics, or background telemetry.
 
-Crash Reports: If you voluntarily submit a bug report via email or the website, I receive only the data you choose to include (e.g., logs, screenshots).
+Crash Reports: If you voluntarily submit a bug report via email or the repository, the Developer receives only the data you choose to include (e.g., logs, screenshots).
 
-Website Data: If you download the Software from my website, standard web server logs (IP address, browser type) may be collected for security and download tracking purposes.
+Website Data: Accessing the Klyve website or GitHub repository results in standard web server logs (IP address, browser type) collected by the hosting provider for security and download tracking.
 
-Transparency Note: Metadata indicating that files are AI-generated may be embedded within the files you create, solely for the purpose of regulatory compliance (e.g., EU AI Act), but this metadata does not contain personally identifiable information (PII).
+Transparency Metadata: To comply with regulatory requirements (e.g., EU AI Act), machine-readable metadata indicating that files are AI-generated may be embedded within created files. This metadata does not contain personally identifiable information (PII).
 
-3. DATA YOU TRANSMIT TO THIRD PARTIES (AI PROVIDERS):
-To function as an AI-powered developer, the Software transmits data to third-party Large Language Model (LLM) providers.
+3. THIRD-PARTY AI PROVIDERS
+The Software functions by transmitting data to third-party Large Language Model (LLM) providers based on your configuration.
 
-What is sent: Code snippets, file structures, documentation text, and error logs from your active project.
+Data Transmitted: Code snippets, file structures, and documentation from your active project are sent to the provider you select.
 
-Who receives it: The specific LLM provider you configured in the "Settings" menu. Depending on your configuration, this may include OpenAI, Google Gemini, Anthropic, Replicate, DeepSeek or any other. Please note that selecting certain providers (e.g., DeepSeek) may involve data transmission to servers located outside your primary jurisdiction.
+Model Training: The Developer does not access or store this data and cannot use it to train or fine-tune proprietary models.
 
-Model Training & Your Data: I (the Developer) do not access, view, or store your project data. Consequently, I do not and cannot use your data to train or fine-tune any AI model of my own.
+Provider Policies: Whether a third-party provider uses your data for training depends on your specific agreement and API tier with them. You are responsible for reviewing the data usage policies of providers like OpenAI, Google, or Anthropic.
 
-Third-Party Providers: Whether the third-party LLM provider (e.g., OpenAI, Google, or any other) uses your data for training depends on their specific API policies and the tier of API access you have purchased from them. You are responsible for reviewing their data usage policies regarding API submissions.
+API Keys: Your API keys are stored locally in an encrypted database on your machine. The Developer cannot access or revoke them.
 
-Your Control: You control this transmission by providing (or revoking) your API key.
+4. YOUR DATA RIGHTS
+Because the Developer does not store your personal project data, "Right to Access" or "Right to Delete" requests do not apply to the Developer's infrastructure.
 
-Governance: Data sent to these providers is governed by your separate agreement and privacy policy with them. The Developer is not a party to that transmission.
+Project Control: You possess all project data on your local machine and can delete it at any time.
 
-4. YOUR DATA RIGHTS: 
-Because I do not store your personal project data, I generally do not hold data to which "Right to Access" or "Right to Delete" requests would apply.
+Key Management: You maintain full control over your API keys within the Software's settings.
 
-Project Data: You already possess all your project data on your local machine. You can delete it at any time by deleting it within the application and from your project folders.
-
-API Keys: Your API keys are stored locally in an encrypted database on your machine. I cannot see them or access them.
-
-5. CHANGES TO THIS POLICY: 
-I may update this Privacy Policy from time to time. If I make material changes (e.g., if a future version introduces telemetry), I will issue a notification on the Software's website.
-
-(End of Privacy Policy)
+5. GOVERNING LAW
+This Privacy Policy and your use of the Software are governed by the laws of India. Any disputes arising from this policy shall be subject to the exclusive jurisdiction of the courts in Bangalore, Karnataka, India.
