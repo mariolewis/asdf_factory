@@ -1,0 +1,21 @@
+# Klyve
+
+> Klyve is a free, local-first SDLC orchestrator. You manage the architecture, backlog, and sprints; Klyve forces the AI to execute code, tests, and documentation. It turns any LLM (Cloud, Local, or Corporate) into a disciplined software team to build complete applications.
+
+## About Klyve
+Klyve solves the "context drift" problem inherent in AI coding agents. Instead of relying on an open-ended chat interface, Klyve wraps the LLM in a structured methodology. It maintains a permanent "Project Memory" locally and feeds the LLM only the specific constraints needed for the current task. This allows a single developer to act as the Senior Partner, orchestrating the full software development lifecycle for both greenfield projects and brownfield maintenance.
+
+## Core Documentation
+- [Klyve website] (https://klyve.online): The Klyve home page with documentation and links to the source code repository as well as binary files.
+- [Getting Started](https://klyve.online/docs/setup.html): Installation guide for Windows/Linux and initial BYOK/Local model setup.
+- [The Orchestration Methodology](https://klyve.online/workflow.html): How Klyve handles the project workflow.
+- [Supported Models](https://klyve.online/docs/setup.html#3-connecting-intelligence-llm-setup): Configuration for local and cloud-based LLMs.
+
+## Workflow Guides
+- [Defining Specs & Standards](https://klyve.online/docs/onboarding.html): How to input application specifications, tech stacks, and enforce custom coding standards.
+- [Sprint Execution & Retry Loops](https://klyve.online/docs/sprinting.html): Managing the AI as it executes sprint development cycles.
+- [Maintaining existing applications](https://klyve.online/docs/sprinting.html): This workflow is for legacy application maintenance. 
+
+## Optional Resources
+- [The "Manager" Philosophy](https://klyve.online/about.html): Why structured state management beats probabilistic chat windows for software engineering.
+- [FAQ](https://klyve.online/faq.html): Strategic answers regarding Security, IP, and Factory Logic.
