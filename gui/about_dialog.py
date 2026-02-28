@@ -26,7 +26,7 @@ class AboutDialog(QDialog):
 
     def _setup_branding(self):
         """Sets the HTML content for the main About tab."""
-        version = "1.0 Beta"
+        version = "1.1 Beta"
         about_html = f"""
         <html>
         <head>
@@ -47,7 +47,7 @@ class AboutDialog(QDialog):
 
                 <hr style="border-top: 1px solid #4A4A4A;" width="50%">
 
-                <p class="footer">&copy; 2025 Mario J. Lewis. All Rights Reserved.</p>
+                <p class="footer">&copy; 2025 Mario J. Lewis. Licensed under the MIT License.</p>
                 <p class="sub">Use is subject to the End User License Agreement.</p>
             </center>
         </body>
