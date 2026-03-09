@@ -6,9 +6,10 @@ Klyve is a local-first SDLC orchestrator that puts you in charge of the Architec
 
 ---
 
-### Download
+### IP Protection, Build and Release
 Klyve can be executed in native Python or compiled (using Nuitka) into a desktop application.
 Build and package scripts for Windows (Installer) and Linux (AppImage) are included.
+Documentation related to how Klyve's key internal IP is protected (when compiled and built), and the build and release process for Windows and Linux is available in the build_documentation folder.
 
 ---
 
