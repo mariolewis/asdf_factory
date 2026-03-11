@@ -1,0 +1,13 @@
+# Technical Specification: [PROJECT NAME]
+
+## 1. Architecture (Template Structure)
+
+*This section will be filled in by the AI.*
+
+## 2. Technology Selections
+
+*The AI will propose the technology stack in this section.*
+
+## 3. Refinement Verification Section
+
+*This section must remain present even after a refinement cycle.*

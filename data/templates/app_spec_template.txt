@@ -1,0 +1,13 @@
+# Application Specification: [PROJECT NAME]
+
+## 1. Core Purpose (Template)
+
+*This section will be filled in by the AI, following the template structure.*
+
+## 2. Key Features
+
+*The AI should list the project's key features here.*
+
+## 3. Template Verification Section
+
+*This is a fixed section from the template to verify that it was used.*
